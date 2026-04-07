@@ -7,7 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gen:assets": "node scripts/generate-companion-assets.js",
+    "gen:cats": "node scripts/generate-companion-assets.js --cats",
+    "gen:rooms": "node scripts/generate-companion-assets.js --rooms",
+    "gen:accessories": "node scripts/generate-companion-assets.js --accessories",
+    "gen:foods": "node scripts/generate-companion-assets.js --foods"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",

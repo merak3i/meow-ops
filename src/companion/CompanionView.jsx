@@ -1,8 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   getState,
   hasCat,
-  getCat,
   getMood,
   getMemorial,
   feed,
@@ -16,6 +15,7 @@ import {
   claimSessionRewards,
   subscribe,
 } from '../lib/companion-store';
+import { getBreed } from '../lib/companion-breeds';
 import CompanionCat from './CompanionCat';
 import CompanionRoom from './CompanionRoom';
 import CompanionStats from './CompanionStats';
@@ -33,6 +33,7 @@ export default function CompanionView({ sessions }) {
   const [drawer, setDrawer] = useState(null); // 'feed' | 'wardrobe' | 'room' | null
   const [effect, setEffect] = useState(null);
   const [rewardToast, setRewardToast] = useState(null);
+  const catRef = useRef(null);
 
   // Subscribe to store mutations + heartbeat for decay
   useEffect(() => {
@@ -57,6 +58,7 @@ export default function CompanionView({ sessions }) {
   const cat = state.cat;
   const memorial = state.memorial;
   const mood = getMood(cat);
+  const breed = cat ? getBreed(cat.breed) : null;
 
   const handleAdoptNew = useCallback(() => {
     bury();
@@ -73,8 +75,9 @@ export default function CompanionView({ sessions }) {
   }, []);
 
   const fireEffect = (type) => {
-    setEffect({ type, id: Date.now() });
-    setTimeout(() => setEffect(null), 1700);
+    const catRect = catRef.current?.getBoundingClientRect() ?? null;
+    setEffect({ type, id: Date.now(), catRect });
+    setTimeout(() => setEffect(null), 2800);
   };
 
   const handleFeed = (foodKey) => {
@@ -131,11 +134,15 @@ export default function CompanionView({ sessions }) {
         {/* Left: scene + actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
           <CompanionRoom roomKey={cat.room?.key || 'corner_mat'}>
-            <div style={{ position: 'relative' }}>
+            <div ref={catRef} style={{ position: 'relative' }}>
               <CompanionCat cat={cat} mood={mood} size={340} />
-              <CompanionEffects effect={effect} />
             </div>
           </CompanionRoom>
+          <CompanionEffects
+            effect={effect}
+            catRect={effect?.catRect ?? null}
+            palette={breed?.palette}
+          />
           <CompanionActions onAction={handleAction} />
         </div>
 
