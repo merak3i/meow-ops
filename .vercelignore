@@ -1,0 +1,7 @@
+.env
+.env.local
+sync/.meow-ops-sync-state.json
+node_modules
+.git
+.claude
+dist

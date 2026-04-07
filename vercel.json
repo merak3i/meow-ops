@@ -1,0 +1,14 @@
+{
+  "rewrites": [
+    {
+      "source": "/((?!assets/|data/|api/|.*\\.(?:js|css|png|jpg|svg|ico|json|woff|woff2|webmanifest)).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/sw.js",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    }
+  ]
+}

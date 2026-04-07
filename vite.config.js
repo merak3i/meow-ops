@@ -1,0 +1,88 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import { spawn } from 'child_process';
+import { statSync } from 'fs';
+import { join } from 'path';
+
+// Local-only dev plugin: exposes POST /api/sync to run the export script
+// and GET /api/sync/status to read the timestamp of the generated JSON.
+function meowSyncPlugin() {
+  return {
+    name: 'meow-sync',
+    configureServer(server) {
+      server.middlewares.use('/api/sync/status', (req, res) => {
+        if (req.method !== 'GET') {
+          res.statusCode = 405;
+          res.end();
+          return;
+        }
+        try {
+          const filePath = join(server.config.root, 'public', 'data', 'sessions.json');
+          const stat = statSync(filePath);
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({
+            ok: true,
+            mtime: stat.mtimeMs,
+            size: stat.size,
+          }));
+        } catch (err) {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: false, error: 'No data file yet' }));
+        }
+      });
+
+      server.middlewares.use('/api/sync', (req, res) => {
+        if (req.method !== 'POST') {
+          res.statusCode = 405;
+          res.end();
+          return;
+        }
+        const scriptPath = join(server.config.root, 'sync', 'export-local.mjs');
+        const child = spawn('node', [scriptPath], {
+          cwd: server.config.root,
+          env: process.env,
+        });
+
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+        child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+
+        const timeout = setTimeout(() => {
+          child.kill();
+        }, 60000);
+
+        child.on('close', (code) => {
+          clearTimeout(timeout);
+          let stats = null;
+          try {
+            const filePath = join(server.config.root, 'public', 'data', 'sessions.json');
+            stats = statSync(filePath);
+          } catch {}
+
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({
+            ok: code === 0,
+            code,
+            stdout: stdout.slice(-2000),
+            stderr: stderr.slice(-1000),
+            mtime: stats?.mtimeMs || null,
+            size: stats?.size || null,
+          }));
+        });
+
+        child.on('error', (err) => {
+          clearTimeout(timeout);
+          res.setHeader('Content-Type', 'application/json');
+          res.statusCode = 500;
+          res.end(JSON.stringify({ ok: false, error: err.message }));
+        });
+      });
+    },
+  };
+}
+
+export default defineConfig({
+  plugins: [react(), tailwindcss(), meowSyncPlugin()],
+});

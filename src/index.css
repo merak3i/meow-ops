@@ -1,0 +1,91 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&display=swap');
+@import "tailwindcss";
+
+:root {
+  --bg-page: oklch(0.145 0 0);
+  --bg-card: oklch(0.205 0 0);
+  --bg-hover: oklch(0.269 0 0);
+  --bg-accent: oklch(0.371 0 0);
+
+  --border: oklch(1 0 0 / 10%);
+  --border-input: oklch(1 0 0 / 15%);
+  --border-hover: oklch(1 0 0 / 20%);
+
+  --text-primary: oklch(0.985 0 0);
+  --text-secondary: oklch(0.708 0 0);
+  --text-muted: oklch(0.556 0 0);
+
+  --accent: oklch(0.488 0.243 264.376);
+  --accent-hover: oklch(0.55 0.243 264.376);
+
+  --green: oklch(0.72 0.17 142);
+  --amber: oklch(0.78 0.15 85);
+  --red: oklch(0.63 0.2 25);
+  --purple: oklch(0.65 0.2 295);
+  --cyan: oklch(0.75 0.15 195);
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --sidebar-w: 220px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.16px;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  font-weight: 300;
+}
+
+code, .font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+@keyframes emerge {
+  from { opacity: 0; transform: scale(0.95) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.emerge {
+  animation: emerge 0.5s var(--ease) both;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow:
+    0px 0px 0px 0.5px oklch(1 0 0 / 5%) inset,
+    0px 1px 2px rgba(78, 50, 23, 0.04),
+    0px 4px 8px rgba(0, 0, 0, 0.06);
+  transition: border-color 0.3s var(--ease);
+}
+
+.card:hover {
+  border-color: var(--border-hover);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-accent);
+  border-radius: 3px;
+}
