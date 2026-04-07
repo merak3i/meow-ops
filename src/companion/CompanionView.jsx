@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, Component, lazy, Suspense } from 'react';
 import {
   getState,
   hasCat,
@@ -28,12 +28,33 @@ import FarewellModal from './FarewellModal';
 import BreedPicker from './BreedPicker';
 import CompanionEffects from './CompanionEffects';
 
+// Lazy-load the heavy Three.js scene — keeps main bundle lean
+const CompanionScene3D = lazy(() => import('./CompanionScene3D'));
+
+// Error boundary so a 3D crash never takes down the whole app
+class Scene3DErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  render() {
+    if (this.state.err) {
+      return (
+        <CompanionRoom roomKey={this.props.roomKey}>
+          <div ref={this.props.catRef} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 12 }}>
+            <CompanionCat cat={this.props.cat} mood={this.props.mood} size={300} />
+          </div>
+        </CompanionRoom>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function CompanionView({ sessions }) {
   const [tick, setTick] = useState(0);
   const [drawer, setDrawer] = useState(null); // 'feed' | 'wardrobe' | 'room' | null
   const [effect, setEffect] = useState(null);
   const [rewardToast, setRewardToast] = useState(null);
-  const catRef = useRef(null);
+  const sceneRef = useRef(null); // ref on the 3D scene container for effect catRect
 
   // Subscribe to store mutations + heartbeat for decay
   useEffect(() => {
@@ -72,10 +93,10 @@ export default function CompanionView({ sessions }) {
     if (id === 'play') { play(); fireEffect('play'); return; }
     if (id === 'groom') { groom(); fireEffect('groom'); return; }
     if (id === 'sleep') { sleep(); fireEffect('sleep'); return; }
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fireEffect = (type) => {
-    const catRect = catRef.current?.getBoundingClientRect() ?? null;
+    const catRect = sceneRef.current?.getBoundingClientRect() ?? null;
     setEffect({ type, id: Date.now(), catRect });
     setTimeout(() => setEffect(null), 2800);
   };
@@ -102,12 +123,11 @@ export default function CompanionView({ sessions }) {
     );
   }
 
-  // Cat ran away
+  // Cat ran away — keep 2D grayscale for the farewell screen
   if (cat.status === 'lost') {
     return (
       <>
         <FarewellModal cat={cat} onAdoptNew={handleAdoptNew} />
-        {/* Background scene still shows behind the modal */}
         <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 32px)' }}>
           <CompanionRoom roomKey={cat.room?.key || 'corner_mat'}>
             <div style={{ filter: 'grayscale(80%)', opacity: 0.3 }}>
@@ -118,6 +138,8 @@ export default function CompanionView({ sessions }) {
       </>
     );
   }
+
+  const roomKey = cat.room?.key || 'corner_mat';
 
   return (
     <div>
@@ -131,13 +153,24 @@ export default function CompanionView({ sessions }) {
           minHeight: 540,
         }}
       >
-        {/* Left: scene + actions */}
+        {/* Left: 3D scene + actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, position: 'relative' }}>
-          <CompanionRoom roomKey={cat.room?.key || 'corner_mat'}>
-            <div ref={catRef} style={{ position: 'relative' }}>
-              <CompanionCat cat={cat} mood={mood} size={340} />
-            </div>
-          </CompanionRoom>
+          {/* 3D scene container — ref used for effect catRect */}
+          <div
+            ref={sceneRef}
+            style={{ flex: 1, minHeight: 0, borderRadius: 16, overflow: 'hidden' }}
+          >
+            <Scene3DErrorBoundary roomKey={roomKey} cat={cat} mood={mood} catRef={sceneRef}>
+              <Suspense fallback={
+                <div style={{ width: '100%', height: '100%', background: 'var(--bg-card)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                  Loading scene…
+                </div>
+              }>
+                <CompanionScene3D cat={cat} mood={mood} breed={breed} />
+              </Suspense>
+            </Scene3DErrorBoundary>
+          </div>
+
           <CompanionEffects
             effect={effect}
             catRect={effect?.catRect ?? null}

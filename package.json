@@ -15,6 +15,7 @@
     "gen:foods": "node scripts/generate-companion-assets.js --foods"
   },
   "dependencies": {
+    "@react-three/fiber": "^9.5.0",
     "@supabase/supabase-js": "^2.101.1",
     "@tailwindcss/vite": "^4.2.2",
     "framer-motion": "^12.38.0",
@@ -22,7 +23,8 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "recharts": "^3.8.1",
-    "tailwindcss": "^4.2.2"
+    "tailwindcss": "^4.2.2",
+    "three": "^0.183.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
