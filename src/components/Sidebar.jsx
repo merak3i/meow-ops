@@ -153,7 +153,7 @@ export default function Sidebar({ activePage, onNavigate, onReload }) {
       }}
     >
       <div style={{ padding: '0 20px', marginBottom: 32, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <img src="/meow-logo-dark.png" alt="MCH" style={{ width: 32, height: 32, borderRadius: 6 }} />
+        <img src="/meow-logo-dark.png" alt="Meow Operations" style={{ width: 32, height: 32, borderRadius: 6 }} />
         <span style={{ fontSize: 15, fontWeight: 300, color: 'var(--text-primary)' }}>Meow Operations</span>
       </div>
 
