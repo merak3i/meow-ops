@@ -9,20 +9,21 @@
   "icons": [
     {
       "src": "/meow-favicon.png",
-      "sizes": "64x64",
-      "type": "image/png"
+      "sizes": "1080x1080",
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
-      "src": "/meow-logo-dark.png",
-      "sizes": "192x192",
+      "src": "/meow-logo-dark-512.png",
+      "sizes": "500x500",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/meow-logo-dark-512.png",
-      "sizes": "512x512",
+      "src": "/meow-logo-dark.png",
+      "sizes": "500x500",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }
