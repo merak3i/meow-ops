@@ -12,6 +12,45 @@ to be installed as a PWA on the macOS dock.
 > No accounts, no telemetry, no servers required. Your session data never leaves
 > your machine unless you explicitly upload it to your own Supabase bucket.
 
+> ⚠️ **The hosted demo at meow-ops.vercel.app is a personal instance** — clone
+> the repo and host your own. Don't depend on it for production use.
+
+---
+
+## Screenshots
+
+### Overview — daily token usage and tool distribution
+![Overview](docs/screenshots/01-overview.png)
+
+### Cost Tracker — daily, cumulative, and per-model spend
+![Cost Tracker](docs/screenshots/02-cost-tracker.png)
+
+### Cat Colony — projects as buildings, sessions as cats
+![Cat Colony](docs/screenshots/03-colony.png)
+
+### Live Sessions — real-time view with tool-usage bars
+![Live Sessions](docs/screenshots/04-live-sessions.png)
+
+### Focus Timer — Pomodoro with cat-breed unlocks
+![Focus Timer](docs/screenshots/05-focus-timer.png)
+
+<details>
+<summary>More screenshots</summary>
+
+### By Project
+![By Project](docs/screenshots/06-by-project.png)
+
+### By Day
+![By Day](docs/screenshots/07-by-day.png)
+
+### By Action
+![By Action](docs/screenshots/08-by-action.png)
+
+### Sessions table
+![Sessions](docs/screenshots/09-sessions.png)
+
+</details>
+
 ---
 
 ## What it does

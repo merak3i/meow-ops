@@ -114,23 +114,27 @@ function filterByDateRange(data, dateField, days) {
 }
 
 export async function fetchSessions(dateRange = 30) {
-  if (!supabase) {
-    const real = await loadRealSessions();
-    const source = real || DEMO_SESSIONS;
-    return filterByDateRange(source, 'started_at', dateRange);
-  }
+  // Always prefer the JSON file (local public/data or remote bucket).
+  // Supabase table query is only used as a last resort if a project really
+  // wants live DB-backed sessions.
+  const real = await loadRealSessions();
+  if (real) return filterByDateRange(real, 'started_at', dateRange);
+
+  if (!supabase) return filterByDateRange(DEMO_SESSIONS, 'started_at', dateRange);
+
   const cutoff = dateRange === 'all' ? '2020-01-01' : new Date(Date.now() - dateRange * 86400000).toISOString();
   const { data } = await supabase
     .from('meow_ops_sessions')
     .select('*')
     .gte('started_at', cutoff)
     .order('started_at', { ascending: false });
-  return data || [];
+  return (data && data.length > 0) ? data : filterByDateRange(DEMO_SESSIONS, 'started_at', dateRange);
 }
 
 export async function fetchDailyStats(dateRange = 30) {
-  if (!supabase) {
-    const real = await loadRealSessions();
+  // Same: prefer JSON, derive daily stats from it
+  const real = await loadRealSessions();
+  if (real || !supabase) {
     const source = real || DEMO_SESSIONS;
     const sessions = filterByDateRange(source, 'started_at', dateRange);
     const byDate = {};
