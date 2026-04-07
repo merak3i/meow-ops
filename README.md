@@ -342,6 +342,43 @@ meow-ops/
 └── .env.example
 ```
 
+## Forking guide
+
+Everything you need to fork this and make it yours — including the tools used
+to produce the screenshots in this README and the launch tweets that shipped it.
+
+### Take your own screenshots
+
+All README screenshots were captured with a Playwright script that spins up the
+app, navigates each page, forces animations to their final state, and saves
+1440×900 @2x PNGs to `docs/screenshots/`.
+
+**Prerequisites:** dev server running on `:5176`
+
+```bash
+npx playwright install chromium   # one-time setup
+node scripts/capture-screenshots.mjs
+```
+
+The script auto-creates `docs/screenshots/` if it doesn't exist. Captured pages
+in order: Overview, Cost Tracker, Cat Colony, Live Sessions, Focus Timer, By
+Project, By Day, By Action, Sessions.
+
+If you want to capture a different URL (e.g. your Vercel deployment):
+
+```bash
+MEOW_OPS_URL=https://your-instance.vercel.app node scripts/capture-screenshots.mjs
+```
+
+### Launch tweet templates
+
+`docs/launch-tweets.md` has four ready-to-post tweet variants (product reveal,
+contrarian angle, build-in-public, short form) plus a 6-tweet thread template
+and a posting checklist. Pick the angle that fits your voice, swap in your repo
+URL, attach the relevant screenshots, and you're done.
+
+---
+
 ## Contributing
 
 This started as a personal tool but it's open source because anyone using
