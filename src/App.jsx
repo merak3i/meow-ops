@@ -48,7 +48,7 @@ export default function App() {
     setReloadKey((k) => k + 1);
   }, []);
 
-  const stats = computeOverviewStats(sessions);
+  const stats = computeOverviewStats(sessions, dateRange);
   const projectData = getProjectBreakdown(sessions);
   const toolData = getToolBreakdownFromSessions(sessions);
   const modelData = getModelBreakdown(sessions);
@@ -56,7 +56,7 @@ export default function App() {
   const renderPage = () => {
     switch (page) {
       case 'overview':
-        return <Overview stats={stats} dailyData={dailyData} toolData={toolData} />;
+        return <Overview stats={stats} dailyData={dailyData} toolData={toolData} dateRange={dateRange} />;
       case 'sessions':
         return <Sessions sessions={sessions} />;
       case 'by-project':

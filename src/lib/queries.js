@@ -176,29 +176,42 @@ export async function fetchToolUsage(dateRange = 30) {
   return data || [];
 }
 
-export function computeOverviewStats(sessions) {
+export function computeOverviewStats(sessions, dateRange = 30) {
   const today = new Date().toISOString().slice(0, 10);
+
+  // Today's figures — always computed for sub-label context
   const todaySessions = sessions.filter((s) => s.started_at.slice(0, 10) === today);
-  const totalTokensToday = todaySessions.reduce((a, s) => a + s.total_tokens, 0);
-  const totalCostToday = todaySessions.reduce((a, s) => a + s.estimated_cost_usd, 0);
+  const tokensToday = todaySessions.reduce((a, s) => a + s.total_tokens, 0);
+  const costToday = todaySessions.reduce((a, s) => a + s.estimated_cost_usd, 0);
   const projectsToday = new Set(todaySessions.map((s) => s.project)).size;
 
-  const totalTokensAll = sessions.reduce((a, s) => a + s.total_tokens, 0);
-  const totalCostAll = sessions.reduce((a, s) => a + s.estimated_cost_usd, 0);
-  const projectsAll = new Set(sessions.map((s) => s.project)).size;
+  // Period figures — aggregate over the full filtered session list
+  const totalTokens = sessions.reduce((a, s) => a + s.total_tokens, 0);
+  const totalCost = sessions.reduce((a, s) => a + s.estimated_cost_usd, 0);
+  const totalProjects = new Set(sessions.map((s) => s.project)).size;
   const ghostCount = sessions.filter((s) => s.is_ghost).length;
+  const healthRatio = sessions.length > 0
+    ? ((sessions.length - ghostCount) / sessions.length * 100).toFixed(0)
+    : 100;
 
   return {
+    // Period-level primary values (respond to date filter)
+    periodSessions: sessions.length,
+    periodTokens: totalTokens,
+    periodCost: totalCost,
+    periodProjects: totalProjects,
+    // Today sub-label values
     sessionsToday: todaySessions.length,
-    tokensToday: totalTokensToday,
-    costToday: totalCostToday,
+    tokensToday,
+    costToday,
     projectsToday,
+    // Legacy aliases kept for CostTracker compatibility
     totalSessions: sessions.length,
-    totalTokens: totalTokensAll,
-    totalCost: totalCostAll,
-    totalProjects: projectsAll,
+    totalTokens,
+    totalCost,
+    totalProjects,
     ghostCount,
-    healthRatio: sessions.length > 0 ? ((sessions.length - ghostCount) / sessions.length * 100).toFixed(0) : 100,
+    healthRatio,
   };
 }
 
