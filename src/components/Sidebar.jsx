@@ -13,7 +13,7 @@ const NAV = [
   { id: 'by-day', label: 'By Day', icon: CalendarDays },
   { id: 'by-action', label: 'By Action', icon: Wrench },
   { id: 'cost', label: 'Cost Tracker', icon: DollarSign },
-  { id: 'colony', label: 'Colony', icon: Cat },
+  { id: 'companion', label: 'Companion', icon: Cat },
   { id: 'live', label: 'Live Sessions', icon: Activity },
   { id: 'pomodoro', label: 'Focus Timer', icon: Timer },
 ];

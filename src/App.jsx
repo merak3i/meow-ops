@@ -7,7 +7,7 @@ import ByProject from './pages/ByProject';
 import ByDay from './pages/ByDay';
 import ByAction from './pages/ByAction';
 import CostTracker from './pages/CostTracker';
-import ColonyView from './colony/ColonyView';
+import CompanionView from './companion/CompanionView';
 import Pomodoro from './pages/Pomodoro';
 import LiveSessions from './pages/LiveSessions';
 import {
@@ -67,8 +67,8 @@ export default function App() {
         return <ByAction toolData={toolData} />;
       case 'cost':
         return <CostTracker dailyData={dailyData} modelData={modelData} stats={stats} />;
-      case 'colony':
-        return <ColonyView sessions={sessions} />;
+      case 'companion':
+        return <CompanionView sessions={sessions} />;
       case 'live':
         return <LiveSessions sessions={sessions} />;
       case 'pomodoro':
@@ -88,7 +88,7 @@ export default function App() {
         padding: 32,
         maxWidth: 1280,
       }}>
-        {page !== 'pomodoro' && page !== 'colony' && page !== 'live' && (
+        {page !== 'pomodoro' && page !== 'companion' && page !== 'live' && (
           <div style={{
             display: 'flex',
             justifyContent: 'flex-end',
