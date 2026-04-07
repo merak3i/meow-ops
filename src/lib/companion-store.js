@@ -7,7 +7,7 @@
 
 import { COMPANION_FOODS } from './companion-foods';
 import { COMPANION_BREEDS } from './companion-breeds';
-import { COMPANION_ACCESSORIES } from './companion-accessories';
+import { COMPANION_ACCESSORIES, sumPassives } from './companion-accessories';
 import { unlockedRooms } from './companion-rooms';
 import {
   rewardForSession,
@@ -78,6 +78,19 @@ function load() {
     parsed.claimedSessionIds = parsed.claimedSessionIds || [];
     parsed.claimedPomodoroIds = parsed.claimedPomodoroIds || [];
     parsed.memorial = parsed.memorial || [];
+    // Strip any legacy accessories whose keys no longer exist
+    if (parsed.cat) {
+      if (Array.isArray(parsed.cat.inventory?.accessories)) {
+        parsed.cat.inventory.accessories = parsed.cat.inventory.accessories.filter(
+          (k) => COMPANION_ACCESSORIES[k]
+        );
+      }
+      if (Array.isArray(parsed.cat.appearance?.equippedAccessories)) {
+        parsed.cat.appearance.equippedAccessories = parsed.cat.appearance.equippedAccessories.filter(
+          (k) => COMPANION_ACCESSORIES[k]
+        );
+      }
+    }
     cached = parsed;
     return cached;
   } catch {
@@ -112,19 +125,26 @@ function applyDecay(cat) {
   const hours = Math.max(0, (now - last) / HOUR_MS);
   if (hours < 0.01) return cat;
 
+  const equipped = cat.appearance?.equippedAccessories || [];
+  const passives = sumPassives(equipped);
+
   const next = { ...cat, stats: { ...cat.stats } };
-  next.stats.hunger = clamp(cat.stats.hunger - DECAY.hunger * hours);
-  next.stats.energy = clamp(cat.stats.energy - DECAY.energy * hours);
-  next.stats.happiness = clamp(cat.stats.happiness - DECAY.happiness * hours);
+  next.stats.hunger = clamp(cat.stats.hunger + (passives.hunger - DECAY.hunger) * hours);
+  next.stats.energy = clamp(cat.stats.energy + (passives.energy - DECAY.energy) * hours);
+  next.stats.happiness = clamp(cat.stats.happiness + (passives.happiness - DECAY.happiness) * hours);
 
   // Health: drops 0.2/hr while hunger or happiness < 30, recovers 0.1/hr if both > 60
+  // Accessory passive is added to either branch.
   if (next.stats.hunger < 30 || next.stats.happiness < 30) {
-    next.stats.health = clamp(cat.stats.health - 0.2 * hours);
+    next.stats.health = clamp(cat.stats.health + (passives.health - 0.2) * hours);
   } else if (next.stats.hunger > 60 && next.stats.happiness > 60) {
-    next.stats.health = clamp(cat.stats.health + 0.1 * hours);
+    next.stats.health = clamp(cat.stats.health + (passives.health + 0.1) * hours);
   } else {
-    next.stats.health = cat.stats.health;
+    next.stats.health = clamp(cat.stats.health + passives.health * hours);
   }
+
+  // Shine passive (no decay but accessories grant gain)
+  next.stats.shine = clamp(cat.stats.shine + passives.shine * hours);
 
   next.lastSeenAt = new Date(now).toISOString();
   return next;

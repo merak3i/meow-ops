@@ -8,16 +8,27 @@ import { getRoom } from '../lib/companion-rooms';
 // supersedes the SVG scene. This lets users drop in 4K renders without
 // touching code.
 
+const roomImageCache = new Map();
+
+function checkRoomImage(key) {
+  if (roomImageCache.has(key)) return roomImageCache.get(key);
+  const p = new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img.naturalWidth > 0 && img.naturalHeight > 0);
+    img.onerror = () => resolve(false);
+    img.src = `/companion/rooms/${key}.jpg`;
+  });
+  roomImageCache.set(key, p);
+  return p;
+}
+
 export default function CompanionRoom({ roomKey, children }) {
   const room = getRoom(roomKey);
   const [hasImage, setHasImage] = useState(false);
 
   useEffect(() => {
     let aborted = false;
-    const url = `/companion/rooms/${room.key}.jpg`;
-    fetch(url, { method: 'HEAD' })
-      .then((r) => { if (!aborted) setHasImage(r.ok); })
-      .catch(() => { if (!aborted) setHasImage(false); });
+    checkRoomImage(room.key).then((ok) => { if (!aborted) setHasImage(ok); });
     return () => { aborted = true; };
   }, [room.key]);
 
