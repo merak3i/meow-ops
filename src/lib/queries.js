@@ -113,22 +113,35 @@ function filterByDateRange(data, dateField, days) {
   return data.filter((d) => new Date(d[dateField]) >= cutoff);
 }
 
+// Many Claude Code sessions are long-running JSONL files that get appended to
+// across multiple days. The file's `started_at` is the FIRST timestamp ever
+// recorded (often weeks ago) — useless for "what did I do today" charts.
+// `ended_at` is the most recent activity timestamp, which is what users mean
+// when they ask "is my dashboard up to date".
+function activityDate(s) {
+  return s.ended_at || s.started_at;
+}
+
+function activityDay(s) {
+  return activityDate(s).slice(0, 10);
+}
+
 export async function fetchSessions(dateRange = 30) {
   // Always prefer the JSON file (local public/data or remote bucket).
   // Supabase table query is only used as a last resort if a project really
   // wants live DB-backed sessions.
   const real = await loadRealSessions();
-  if (real) return filterByDateRange(real, 'started_at', dateRange);
+  if (real) return filterByDateRange(real, 'ended_at', dateRange);
 
-  if (!supabase) return filterByDateRange(DEMO_SESSIONS, 'started_at', dateRange);
+  if (!supabase) return filterByDateRange(DEMO_SESSIONS, 'ended_at', dateRange);
 
   const cutoff = dateRange === 'all' ? '2020-01-01' : new Date(Date.now() - dateRange * 86400000).toISOString();
   const { data } = await supabase
     .from('meow_ops_sessions')
     .select('*')
-    .gte('started_at', cutoff)
-    .order('started_at', { ascending: false });
-  return (data && data.length > 0) ? data : filterByDateRange(DEMO_SESSIONS, 'started_at', dateRange);
+    .gte('ended_at', cutoff)
+    .order('ended_at', { ascending: false });
+  return (data && data.length > 0) ? data : filterByDateRange(DEMO_SESSIONS, 'ended_at', dateRange);
 }
 
 export async function fetchDailyStats(dateRange = 30) {
@@ -136,10 +149,10 @@ export async function fetchDailyStats(dateRange = 30) {
   const real = await loadRealSessions();
   if (real || !supabase) {
     const source = real || DEMO_SESSIONS;
-    const sessions = filterByDateRange(source, 'started_at', dateRange);
+    const sessions = filterByDateRange(source, 'ended_at', dateRange);
     const byDate = {};
     for (const s of sessions) {
-      const date = s.started_at.slice(0, 10);
+      const date = activityDay(s);
       if (!byDate[date]) {
         byDate[date] = { date, session_count: 0, total_input_tokens: 0, total_output_tokens: 0, total_tokens: 0, total_tool_calls: 0, estimated_cost_usd: 0, active_projects: new Set(), ghost_count: 0 };
       }
@@ -177,10 +190,14 @@ export async function fetchToolUsage(dateRange = 30) {
 }
 
 export function computeOverviewStats(sessions, dateRange = 30) {
-  const today = new Date().toISOString().slice(0, 10);
+  // Use local-time today (matches the user's mental model). YYYY-MM-DD.
+  const today = new Date().toLocaleDateString('en-CA');
 
-  // Today's figures — always computed for sub-label context
-  const todaySessions = sessions.filter((s) => s.started_at.slice(0, 10) === today);
+  // "Today" = sessions that had any activity today (last activity timestamp)
+  const todaySessions = sessions.filter((s) => {
+    const localDay = new Date(activityDate(s)).toLocaleDateString('en-CA');
+    return localDay === today;
+  });
   const tokensToday = todaySessions.reduce((a, s) => a + s.total_tokens, 0);
   const costToday = todaySessions.reduce((a, s) => a + s.estimated_cost_usd, 0);
   const projectsToday = new Set(todaySessions.map((s) => s.project)).size;
@@ -218,13 +235,14 @@ export function computeOverviewStats(sessions, dateRange = 30) {
 export function getProjectBreakdown(sessions) {
   const byProject = {};
   for (const s of sessions) {
+    const last = activityDate(s);
     if (!byProject[s.project]) {
-      byProject[s.project] = { project: s.project, sessions: 0, tokens: 0, cost: 0, lastActive: s.started_at };
+      byProject[s.project] = { project: s.project, sessions: 0, tokens: 0, cost: 0, lastActive: last };
     }
     byProject[s.project].sessions++;
     byProject[s.project].tokens += s.total_tokens;
     byProject[s.project].cost += s.estimated_cost_usd;
-    if (s.started_at > byProject[s.project].lastActive) byProject[s.project].lastActive = s.started_at;
+    if (last > byProject[s.project].lastActive) byProject[s.project].lastActive = last;
   }
   return Object.values(byProject).sort((a, b) => b.tokens - a.tokens);
 }
