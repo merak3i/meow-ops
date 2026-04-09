@@ -142,7 +142,11 @@ export function parseSessionLines(lines, projectDir) {
 
   // Post-process
   for (const s of Object.values(sessions)) {
-    s.total_tokens = s.input_tokens + s.output_tokens;
+    // Include cache tokens in the total — users pay for cache creation and
+    // cache read, and cache_read can be enormous on long sessions. Excluding
+    // them caused the "Tokens" stat card to dramatically understate reality.
+    s.total_tokens = s.input_tokens + s.output_tokens
+      + s.cache_creation_tokens + s.cache_read_tokens;
     s.estimated_cost_usd = calculateCost(
       s.model, s.input_tokens, s.output_tokens,
       s.cache_creation_tokens, s.cache_read_tokens

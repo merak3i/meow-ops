@@ -12,48 +12,103 @@ import Pomodoro from './pages/Pomodoro';
 import LiveSessions from './pages/LiveSessions';
 import {
   fetchSessions,
+  fetchAllSessions,
   fetchDailyStats,
   fetchCostSummary,
+  filterDailySummaryByRange,
+  fillMissingDays,
   computeOverviewStats,
   getProjectBreakdown,
   getToolBreakdownFromSessions,
   getModelBreakdown,
   invalidateRealSessions,
+  hasNoData,
 } from './lib/queries';
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minutes
 
+// ─── No-data splash ───────────────────────────────────────────────────────────
+function NoDataScreen() {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      justifyContent: 'center', height: '80vh', gap: 20, textAlign: 'center',
+      padding: '0 48px',
+    }}>
+      <span style={{ fontSize: 48 }}>🐱</span>
+      <h2 style={{ fontSize: 22, fontWeight: 300, color: 'var(--text-primary)', margin: 0 }}>
+        No session data yet
+      </h2>
+      <p style={{ fontSize: 14, color: 'var(--text-muted)', maxWidth: 480, lineHeight: 1.7, margin: 0 }}>
+        Run the sync script to parse your Claude Code sessions:
+      </p>
+      <pre style={{
+        background: 'var(--bg-card)', border: '1px solid var(--border)',
+        borderRadius: 8, padding: '12px 20px', fontSize: 13,
+        color: 'var(--accent)', fontFamily: 'JetBrains Mono, monospace',
+      }}>
+        node sync/export-local.mjs
+      </pre>
+      <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
+        Then hit the sync button in the sidebar, or refresh this page.
+      </p>
+    </div>
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState('overview');
   const [dateRange, setDateRange] = useState(30);
-  const [sessions, setSessions] = useState([]);
-  const [dailyData, setDailyData] = useState([]);
-  const [costSummary, setCostSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [reloadKey, setReloadKey] = useState(0);
 
-  // Main data load — filtered sessions + daily stats + cost summary
+  // Two session arrays:
+  //   sessions    — date-filtered, used for display (table, charts, per-page views)
+  //   allSessions — no date filter, used for spend breakdown so week/month cards
+  //                 are never truncated by the date-range selector
+  const [sessions,    setSessions]    = useState([]);
+  const [allSessions, setAllSessions] = useState([]);
+  const [dailyData,   setDailyData]   = useState([]);
+  const [costSummary, setCostSummary] = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [noData,      setNoData]      = useState(false);
+  const [reloadKey,   setReloadKey]   = useState(0);
+
+  // Main data load
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
-      const [sess, daily, summary] = await Promise.all([
+
+      // Fetch everything in parallel
+      const [sess, all, summary] = await Promise.all([
         fetchSessions(dateRange),
-        fetchDailyStats(dateRange),
+        fetchAllSessions(),
         fetchCostSummary(),
       ]);
+
       if (cancelled) return;
+
+      // Check for genuine "no data" state (sessions.json missing or empty)
+      const empty = await hasNoData();
+      setNoData(empty && sess.length === 0);
+
       setSessions(sess);
-      setDailyData(daily);
+      setAllSessions(all);
       if (summary) setCostSummary(summary);
+
+      // Use cost-summary.daily_summary when available — it covers ALL sessions
+      // (no 1000-session cap). Fall back to computing from the in-memory array.
+      const raw = summary?.daily_summary?.length
+        ? filterDailySummaryByRange(summary.daily_summary, dateRange)
+        : await fetchDailyStats(dateRange, summary);
+
+      setDailyData(fillMissingDays(raw, dateRange));
       setLoading(false);
     }
     load();
     return () => { cancelled = true; };
   }, [dateRange, reloadKey]);
 
-  // Auto-refresh every 5 minutes — invalidates the in-memory session cache
-  // so the next tick re-fetches sessions.json + cost-summary.json from disk.
+  // Auto-refresh every 5 minutes
   useEffect(() => {
     const id = setInterval(() => {
       invalidateRealSessions();
@@ -73,19 +128,38 @@ export default function App() {
   const modelData   = getModelBreakdown(sessions);
 
   const renderPage = () => {
+    if (noData) return <NoDataScreen />;
+
     switch (page) {
       case 'overview':
-        return <Overview stats={stats} sessions={sessions} dailyData={dailyData} toolData={toolData} costSummary={costSummary} dateRange={dateRange} />;
+        return (
+          <Overview
+            stats={stats}
+            sessions={sessions}
+            allSessions={allSessions}
+            dailyData={dailyData}
+            toolData={toolData}
+            costSummary={costSummary}
+            dateRange={dateRange}
+          />
+        );
       case 'sessions':
         return <Sessions sessions={sessions} />;
       case 'by-project':
         return <ByProject projectData={projectData} />;
       case 'by-day':
-        return <ByDay dailyData={dailyData} />;
+        return <ByDay dailyData={dailyData} dateRange={dateRange} />;
       case 'by-action':
         return <ByAction toolData={toolData} />;
       case 'cost':
-        return <CostTracker dailyData={dailyData} modelData={modelData} stats={stats} costSummary={costSummary} />;
+        return (
+          <CostTracker
+            dailyData={dailyData}
+            modelData={modelData}
+            stats={stats}
+            costSummary={costSummary}
+          />
+        );
       case 'companion':
         return <CompanionView sessions={sessions} />;
       case 'live':
@@ -93,7 +167,17 @@ export default function App() {
       case 'pomodoro':
         return <Pomodoro />;
       default:
-        return <Overview stats={stats} sessions={sessions} dailyData={dailyData} toolData={toolData} costSummary={costSummary} />;
+        return (
+          <Overview
+            stats={stats}
+            sessions={sessions}
+            allSessions={allSessions}
+            dailyData={dailyData}
+            toolData={toolData}
+            costSummary={costSummary}
+            dateRange={dateRange}
+          />
+        );
     }
   };
 
@@ -101,12 +185,7 @@ export default function App() {
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} />
 
-      <main style={{
-        marginLeft: 'var(--sidebar-w)',
-        flex: 1,
-        padding: 32,
-        maxWidth: 1280,
-      }}>
+      <main style={{ marginLeft: 'var(--sidebar-w)', flex: 1, padding: 32, maxWidth: 1280 }}>
         {page !== 'pomodoro' && page !== 'companion' && page !== 'live' && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
             <DateFilter value={dateRange} onChange={setDateRange} />
@@ -115,14 +194,10 @@ export default function App() {
 
         {loading ? (
           <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: 400,
-            color: 'var(--text-muted)',
-            fontSize: 14,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            height: 400, color: 'var(--text-muted)', fontSize: 14,
           }}>
-            Loading...
+            Loading…
           </div>
         ) : (
           renderPage()

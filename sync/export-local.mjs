@@ -11,7 +11,9 @@ const CLAUDE_DIR = join(process.env.HOME, '.claude', 'projects');
 const CODEX_DIR  = join(process.env.HOME, '.codex', 'sessions');
 const OUTPUT_DIR = join(import.meta.dirname, '..', 'public', 'data');
 const OUTPUT_FILE = join(OUTPUT_DIR, 'sessions.json');
-const MAX_SESSIONS = 250; // Keep dashboard responsive
+// Raise via MEOW_MAX_SESSIONS env var (e.g. MEOW_MAX_SESSIONS=2000 node sync/export-local.mjs)
+// Default 1000 — sessions.json stays under ~2 MB; the browser handles it fine.
+const MAX_SESSIONS = parseInt(process.env.MEOW_MAX_SESSIONS || '1000', 10);
 
 console.log('🐱 Meow Operations — Local Export\n');
 
@@ -241,17 +243,57 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
     return acc;
   }, { cost: 0, tokens: 0, sessions: 0 });
 
+  // ── Per-day summary (ALL sessions, no 250/1000 cap) ──────────────────────────
+  // Used by ByDay chart and CostTracker so they show accurate data regardless
+  // of how many sessions are in sessions.json.
+  const dailyMap = {};
+  for (const s of allUnique) {
+    const date = istDate(activityTs(s));
+    if (!dailyMap[date]) {
+      dailyMap[date] = {
+        date,
+        session_count:          0,
+        total_input_tokens:     0,
+        total_output_tokens:    0,
+        total_cache_creation:   0,
+        total_cache_read:       0,
+        total_tokens:           0,
+        estimated_cost_usd:     0,
+        active_projects:        new Set(),
+        ghost_count:            0,
+      };
+    }
+    const d = dailyMap[date];
+    d.session_count++;
+    d.total_input_tokens   += s.input_tokens   || 0;
+    d.total_output_tokens  += s.output_tokens  || 0;
+    d.total_cache_creation += s.cache_creation_tokens || 0;
+    d.total_cache_read     += s.cache_read_tokens     || 0;
+    d.total_tokens         += s.total_tokens   || 0;
+    d.estimated_cost_usd   += s.estimated_cost_usd   || 0;
+    d.active_projects.add(s.project);
+    if (s.is_ghost) d.ghost_count++;
+  }
+  const daily_summary = Object.values(dailyMap)
+    .map((d) => ({ ...d, active_projects: d.active_projects.size }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
   const summary = {
-    exportedAt:  now.toISOString(),
-    today:       todayBucket,
-    thisWeek:    bucket(allUnique, thisWeekStart, now),
-    lastWeek:    bucket(allUnique, lastWeekStart, lastWeekEnd),
-    thisMonth:   bucket(allUnique, thisMonthStart, now),
-    lastMonth:   bucket(allUnique, lastMonthStart, lastMonthEnd),
-    thisYear:    bucket(allUnique, thisYearStart, now),
-    lastYear:    bucket(allUnique, lastYearStart, lastYearEnd),
-    allTime:     { cost: allUnique.reduce((a, s) => a + s.estimated_cost_usd, 0), sessions: allUnique.length, tokens: allUnique.reduce((a, s) => a + s.total_tokens, 0) },
-    bySource:    sourceMonth,
+    exportedAt:    now.toISOString(),
+    today:         todayBucket,
+    thisWeek:      bucket(allUnique, thisWeekStart, now),
+    lastWeek:      bucket(allUnique, lastWeekStart, lastWeekEnd),
+    thisMonth:     bucket(allUnique, thisMonthStart, now),
+    lastMonth:     bucket(allUnique, lastMonthStart, lastMonthEnd),
+    thisYear:      bucket(allUnique, thisYearStart, now),
+    lastYear:      bucket(allUnique, lastYearStart, lastYearEnd),
+    allTime:       {
+      cost:     allUnique.reduce((a, s) => a + s.estimated_cost_usd, 0),
+      sessions: allUnique.length,
+      tokens:   allUnique.reduce((a, s) => a + s.total_tokens, 0),
+    },
+    bySource:      sourceMonth,
+    daily_summary,
   };
 
   const SUMMARY_FILE = join(OUTPUT_DIR, 'cost-summary.json');

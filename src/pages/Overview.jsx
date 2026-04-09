@@ -1,11 +1,16 @@
 import { useState, useMemo } from 'react';
-import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus, Calendar } from 'lucide-react';
+import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import DailyChart from '../components/DailyChart';
 import ToolBreakdown from '../components/ToolBreakdown';
 import SpendChart from '../components/SpendChart';
 import { formatTokens, formatCost } from '../lib/format';
-import { computeOverviewStats, computeSpendBreakdown, getToolBreakdownFromSessions } from '../lib/queries';
+import {
+  computeOverviewStats,
+  computeSpendBreakdown,
+  getToolBreakdownFromSessions,
+  buildDailyFromSessions,
+} from '../lib/queries';
 
 // ─── Source filter toggle ─────────────────────────────────────────────────────
 const SOURCE_OPTIONS = [
@@ -43,9 +48,7 @@ function SourceToggle({ value, onChange }) {
 
 // ─── Spend card ───────────────────────────────────────────────────────────────
 function SpendCard({ label, current, previous, sessions, tokens, highlight }) {
-  const pct = previous > 0
-    ? ((current - previous) / previous) * 100
-    : null;
+  const pct = previous > 0 ? ((current - previous) / previous) * 100 : null;
   const up = pct !== null && pct >  0.5;
   const dn = pct !== null && pct < -0.5;
   const TrendIcon = up ? TrendingUp : dn ? TrendingDown : Minus;
@@ -90,9 +93,11 @@ function periodLabel(dateRange) {
   return `${dateRange} days`;
 }
 
+// ─── Overview ─────────────────────────────────────────────────────────────────
 export default function Overview({
   stats: rawStats,
-  sessions: rawSessions = [],
+  sessions: rawSessions = [],  // date-filtered sessions (for display cards)
+  allSessions = [],            // ALL sessions, no date filter (for accurate spend cards)
   dailyData,
   toolData: rawToolData,
   costSummary,
@@ -101,35 +106,58 @@ export default function Overview({
   const [source, setSource] = useState('both');
 
   const hasCodex = useMemo(
-    () => rawSessions.some((s) => s.source === 'codex'),
-    [rawSessions],
+    () => allSessions.some((s) => s.source === 'codex'),
+    [allSessions],
   );
 
+  // Filter both arrays by source
   const filterBySrc = (list) =>
     source === 'both' ? list : list.filter((s) => (s.source || 'claude') === source);
 
+  // Date-filtered + source-filtered sessions (for stat cards / charts)
   const sessions = useMemo(() => filterBySrc(rawSessions), [rawSessions, source]);
 
-  const stats    = useMemo(() => computeOverviewStats(sessions, dateRange), [sessions, dateRange]);
-  const toolData = useMemo(() => getToolBreakdownFromSessions(sessions),    [sessions]);
+  // ALL sessions filtered by source only (for spend breakdown — no date truncation)
+  const allSourceSessions = useMemo(() => filterBySrc(allSessions), [allSessions, source]);
 
-  // When a source filter is active, fall back to recomputing from sessions.
-  // Otherwise use the accurate pre-exported cost-summary.json.
-  const localSpend = useMemo(() => computeSpendBreakdown(sessions), [sessions]);
+  const stats    = useMemo(() => computeOverviewStats(sessions, dateRange),    [sessions, dateRange]);
+  const toolData = useMemo(() => getToolBreakdownFromSessions(sessions),       [sessions]);
+
+  // ── Spend breakdown ────────────────────────────────────────────────────────
+  // Priority:
+  //   1. cost-summary.json when "All sources" is selected — covers 100% of sessions
+  //   2. computeSpendBreakdown(allSourceSessions) when source filter is active
+  //      — uses ALL sessions (no date cap) filtered by the chosen source
+  //
+  // We never fall back to the date-filtered `sessions` array for spend cards,
+  // because switching date range to "7d" would incorrectly zero out "This Month".
+  const localSpend = useMemo(
+    () => computeSpendBreakdown(allSourceSessions),
+    [allSourceSessions],
+  );
 
   const spend = (source !== 'both' || !costSummary) ? localSpend : {
-    today:     costSummary.today,
-    thisWeek:  costSummary.thisWeek,
-    lastWeek:  costSummary.lastWeek,
-    thisMonth: costSummary.thisMonth,
-    lastMonth: costSummary.lastMonth,
-    thisYear:  costSummary.thisYear,
-    allTime:   costSummary.allTime,
-    bySource:  costSummary.bySource,
-    // weekly/monthly history arrays still from localSpend (accurate enough for chart bars)
+    today:          costSummary.today,
+    thisWeek:       costSummary.thisWeek,
+    lastWeek:       costSummary.lastWeek,
+    thisMonth:      costSummary.thisMonth,
+    lastMonth:      costSummary.lastMonth,
+    thisYear:       costSummary.thisYear,
+    lastYear:       costSummary.lastYear ?? null,
+    allTime:        costSummary.allTime,
+    bySource:       costSummary.bySource,
+    // History arrays still from localSpend (accurate enough for chart bars,
+    // and they respond to source filter changes immediately).
     weeklyHistory:  localSpend.weeklyHistory,
     monthlyHistory: localSpend.monthlyHistory,
   };
+
+  // Daily data for chart — when source filter is active, rebuild from sessions
+  // so the bar chart also reflects the filtered view.
+  const chartDailyData = useMemo(() => {
+    if (source === 'both') return dailyData;
+    return buildDailyFromSessions(sessions);
+  }, [source, sessions, dailyData]);
 
   const label = periodLabel(dateRange);
 
@@ -178,9 +206,16 @@ export default function Overview({
           <p style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
             Cost Breakdown
           </p>
-          {costSummary?.exportedAt && (
+          {costSummary?.exportedAt && source === 'both' && (
             <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-              updated {new Date(costSummary.exportedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} IST
+              updated {new Date(costSummary.exportedAt).toLocaleTimeString('en-IN', {
+                timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit',
+              })} IST
+            </span>
+          )}
+          {source !== 'both' && (
+            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+              filtered: {source === 'claude' ? '◆ Claude only' : '⬡ Codex only'}
             </span>
           )}
         </div>
@@ -236,7 +271,7 @@ export default function Overview({
           />
         </div>
 
-        {/* Source breakdown for this month — only in "All" mode with multiple sources */}
+        {/* Per-source month breakdown — only in "All" mode with multiple sources */}
         {source === 'both' && spend.bySource && Object.keys(spend.bySource).length > 1 && (
           <div style={{
             marginTop: 12,
@@ -265,7 +300,7 @@ export default function Overview({
 
       {/* ── Charts row ── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
-        <DailyChart data={dailyData} title="Token Usage (last period)" />
+        <DailyChart data={chartDailyData} title="Token Usage (last period)" />
         <ToolBreakdown data={toolData} title="Tool Distribution" />
       </div>
 
