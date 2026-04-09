@@ -1,4 +1,4 @@
-import { setup, assign, fromPromise } from 'xstate';
+import { setup, assign } from 'xstate';
 import type { DeveloperProfile } from '@/types/session';
 
 // ─── Context ──────────────────────────────────────────────────────────────────

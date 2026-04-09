@@ -7,7 +7,7 @@ import 'ag-grid-community/styles/ag-theme-quartz.css';
 import { computeVelocityMetrics, summariseVelocity } from '@/analytics/velocity';
 import { computeEfficiencyRecords, summariseEfficiency } from '@/analytics/efficiency';
 import { toDailySpend, computeBurnRate } from '@/analytics/burnRate';
-import { formatCost, formatTokens } from '@/lib/format';
+import { formatCost } from '@/lib/format';
 import type { Session, DailySummaryRow } from '@/types/session';
 
 // Register AG-Grid modules once

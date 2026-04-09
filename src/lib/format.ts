@@ -1,16 +1,16 @@
-export function formatTokens(n) {
+export function formatTokens(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
   return String(n);
 }
 
-export function formatCost(usd) {
+export function formatCost(usd: number): string {
   if (usd < 0.01) return '<$0.01';
   if (usd < 1) return '$' + usd.toFixed(2);
   return '$' + usd.toFixed(2);
 }
 
-export function formatDuration(seconds) {
+export function formatDuration(seconds: number): string {
   if (!seconds || seconds < 60) return '<1m';
   const m = Math.floor(seconds / 60);
   const h = Math.floor(m / 60);
@@ -20,7 +20,7 @@ export function formatDuration(seconds) {
 
 const IST = 'Asia/Kolkata';
 
-export function formatDate(iso) {
+export function formatDate(iso: string): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-IN', {
     timeZone: IST, month: 'short', day: 'numeric',
@@ -28,7 +28,7 @@ export function formatDate(iso) {
 }
 
 // IST datetime — e.g. "9 Apr, 07:21 AM IST"
-export function formatDateTime(iso) {
+export function formatDateTime(iso: string): string {
   if (!iso) return '—';
   const d = new Date(iso);
   const ist = d.toLocaleString('en-IN', {
@@ -43,18 +43,18 @@ export function formatDateTime(iso) {
 }
 
 // UTC datetime — e.g. "2026-04-09 01:49 UTC"
-export function formatDateTimeUTC(iso) {
+export function formatDateTimeUTC(iso: string): string {
   if (!iso) return '—';
   return new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
 }
 
 // IST date only for day grouping — "YYYY-MM-DD" in IST
-export function toISTDate(iso) {
+export function toISTDate(iso: string): string {
   if (!iso) return '';
   return new Date(iso).toLocaleDateString('en-CA', { timeZone: IST });
 }
 
-export function relativeTime(iso) {
+export function relativeTime(iso: string): string {
   if (!iso) return '';
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
