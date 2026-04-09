@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import Sidebar from './components/Sidebar';
 import DateFilter from './components/DateFilter';
 import Overview from './pages/Overview';
@@ -10,6 +10,10 @@ import CostTracker from './pages/CostTracker';
 import CompanionView from './companion/CompanionView';
 import Pomodoro from './pages/Pomodoro';
 import LiveSessions from './pages/LiveSessions';
+
+// Heavy pages — code-split to keep the main bundle lean
+const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
+const CompanionPageV2    = lazy(() => import('./companion-v2/CompanionPageV2'));
 import {
   fetchSessions,
   fetchAllSessions,
@@ -26,6 +30,15 @@ import {
 } from './lib/queries';
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minutes
+
+// ─── Page loader ─────────────────────────────────────────────────────────────
+function PageLoader() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 400, color: 'var(--text-muted)', fontSize: 14 }}>
+      Loading…
+    </div>
+  );
+}
 
 // ─── No-data splash ───────────────────────────────────────────────────────────
 function NoDataScreen() {
@@ -166,6 +179,21 @@ export default function App() {
         return <LiveSessions sessions={sessions} />;
       case 'pomodoro':
         return <Pomodoro />;
+      case 'analytics':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <AnalyticsDashboard
+              sessions={allSessions}
+              dailySummary={costSummary?.daily_summary ?? []}
+            />
+          </Suspense>
+        );
+      case 'companion-v2':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <CompanionPageV2 sessions={allSessions} />
+          </Suspense>
+        );
       default:
         return (
           <Overview
@@ -186,7 +214,8 @@ export default function App() {
       <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} />
 
       <main style={{ marginLeft: 'var(--sidebar-w)', flex: 1, padding: 32, maxWidth: 1280 }}>
-        {page !== 'pomodoro' && page !== 'companion' && page !== 'live' && (
+        {page !== 'pomodoro' && page !== 'companion' && page !== 'live' &&
+         page !== 'companion-v2' && page !== 'analytics' && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
             <DateFilter value={dateRange} onChange={setDateRange} />
           </div>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, List, FolderKanban, CalendarDays, Wrench, DollarSign,
-  Cat, Timer, Activity, RefreshCw, Check, AlertCircle,
+  Cat, Timer, Activity, RefreshCw, Check, AlertCircle, BarChart3, Sparkles,
 } from 'lucide-react';
 import { triggerSync, getSyncStatus, invalidateRealSessions, IS_PROD } from '../lib/queries';
 
@@ -13,9 +13,11 @@ const NAV = [
   { id: 'by-day', label: 'By Day', icon: CalendarDays },
   { id: 'by-action', label: 'By Action', icon: Wrench },
   { id: 'cost', label: 'Cost Tracker', icon: DollarSign },
-  { id: 'companion', label: 'Companion', icon: Cat },
-  { id: 'live', label: 'Live Sessions', icon: Activity },
-  { id: 'pomodoro', label: 'Focus Timer', icon: Timer },
+  { id: 'analytics',    label: 'Analytics',     icon: BarChart3 },
+  { id: 'companion',    label: 'Companion',     icon: Cat },
+  { id: 'companion-v2', label: 'Companion V2',  icon: Sparkles },
+  { id: 'live',         label: 'Live Sessions', icon: Activity },
+  { id: 'pomodoro',     label: 'Focus Timer',   icon: Timer },
 ];
 
 function relativeTime(ms) {
