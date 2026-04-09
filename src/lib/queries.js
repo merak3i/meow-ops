@@ -40,6 +40,19 @@ export function invalidateRealSessions() {
   REAL_SESSIONS_PROMISE = null;
 }
 
+// Fetch pre-aggregated cost summary — computed from all sessions in the export
+// (no 250-session cap). Accurate for today / weekly / monthly / yearly spend.
+export async function fetchCostSummary() {
+  try {
+    const url = '/data/cost-summary.json?t=' + Date.now();
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function triggerSync() {
   try {
     const r = await fetch('/api/sync', { method: 'POST' });
@@ -298,12 +311,19 @@ export function computeSpendBreakdown(sessions) {
   const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonthEnd   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
 
-  function sumCost(start, end) {
+  function bucket(start, end) {
     return sessions.reduce((acc, s) => {
       const d = new Date(s.ended_at || s.started_at);
-      return (d >= start && d <= end) ? acc + s.estimated_cost_usd : acc;
-    }, 0);
+      if (d >= start && d <= end) {
+        acc.cost     += s.estimated_cost_usd;
+        acc.tokens   += s.total_tokens;
+        acc.sessions += 1;
+      }
+      return acc;
+    }, { cost: 0, tokens: 0, sessions: 0 });
   }
+  // Back-compat alias
+  const sumCost = (start, end) => bucket(start, end).cost;
 
   // Last 8 weeks (oldest first) ending with the current partial week.
   const weeklyHistory = [];
@@ -342,11 +362,27 @@ export function computeSpendBreakdown(sessions) {
     bySource[src].tokens += s.total_tokens;
   }
 
+  // Today bucket using IST day match
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: IST });
+  const todayBucket = sessions.reduce((acc, s) => {
+    if (new Date(s.ended_at || s.started_at).toLocaleDateString('en-CA', { timeZone: IST }) === todayStr) {
+      acc.cost += s.estimated_cost_usd; acc.tokens += s.total_tokens; acc.sessions++;
+    }
+    return acc;
+  }, { cost: 0, tokens: 0, sessions: 0 });
+
+  const thisYearStart = new Date(now.getFullYear(), 0, 1);
+  const lastYearStart = new Date(now.getFullYear() - 1, 0, 1);
+  const lastYearEnd   = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
+
   return {
-    thisWeek:    sumCost(thisWeekStart, now),
-    lastWeek:    sumCost(lastWeekStart, lastWeekEnd),
-    thisMonth:   sumCost(thisMonthStart, now),
-    lastMonth:   sumCost(lastMonthStart, lastMonthEnd),
+    today:     todayBucket,
+    thisWeek:  bucket(thisWeekStart, now),
+    lastWeek:  bucket(lastWeekStart, lastWeekEnd),
+    thisMonth: bucket(thisMonthStart, now),
+    lastMonth: bucket(lastMonthStart, lastMonthEnd),
+    thisYear:  bucket(thisYearStart, now),
+    lastYear:  bucket(lastYearStart, lastYearEnd),
     weeklyHistory,
     monthlyHistory,
     bySource,

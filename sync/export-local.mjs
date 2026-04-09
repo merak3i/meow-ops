@@ -169,3 +169,92 @@ console.log(`Total cost: $${totalCost.toFixed(2)}`);
 writeFileSync(OUTPUT_FILE, JSON.stringify(latest, null, 0));
 const fileSize = (statSync(OUTPUT_FILE).size / 1024).toFixed(1);
 console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
+
+// ── Cost summary — computed from ALL sessions (no 250 cap) ──────────────────
+// This lets the dashboard show accurate today/weekly/monthly/yearly spend
+// without needing to load thousands of sessions into the browser.
+{
+  const IST = 'Asia/Kolkata';
+
+  function istDate(iso) {
+    return new Date(iso).toLocaleDateString('en-CA', { timeZone: IST });
+  }
+
+  function activityTs(s) { return s.ended_at || s.started_at; }
+
+  const now      = new Date();
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: IST });
+
+  // Calendar week start (Monday) in IST
+  const nowIST       = new Date(now.toLocaleString('en-US', { timeZone: IST }));
+  const dowIST       = nowIST.getDay(); // 0=Sun
+  const daysToMon    = dowIST === 0 ? 6 : dowIST - 1;
+  const thisWeekStart = new Date(nowIST);
+  thisWeekStart.setDate(nowIST.getDate() - daysToMon);
+  thisWeekStart.setHours(0, 0, 0, 0);
+
+  const lastWeekEnd   = new Date(thisWeekStart.getTime() - 1);
+  const lastWeekStart = new Date(thisWeekStart);
+  lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+
+  // Calendar month
+  const thisMonthStart = new Date(nowIST.getFullYear(), nowIST.getMonth(), 1);
+  const lastMonthStart = new Date(nowIST.getFullYear(), nowIST.getMonth() - 1, 1);
+  const lastMonthEnd   = new Date(nowIST.getFullYear(), nowIST.getMonth(), 0, 23, 59, 59, 999);
+
+  // Calendar year
+  const thisYearStart = new Date(nowIST.getFullYear(), 0, 1);
+  const lastYearStart = new Date(nowIST.getFullYear() - 1, 0, 1);
+  const lastYearEnd   = new Date(nowIST.getFullYear() - 1, 11, 31, 23, 59, 59, 999);
+
+  function bucket(sessions, start, end) {
+    return sessions.reduce((acc, s) => {
+      const d = new Date(activityTs(s));
+      if (d >= start && d <= end) {
+        acc.cost     += s.estimated_cost_usd;
+        acc.tokens   += s.total_tokens;
+        acc.sessions += 1;
+      }
+      return acc;
+    }, { cost: 0, tokens: 0, sessions: 0 });
+  }
+
+  // Per-source this-month split
+  const sourceMonth = {};
+  for (const s of allUnique) {
+    const d = new Date(activityTs(s));
+    if (d < thisMonthStart) continue;
+    const src = s.source || 'claude';
+    if (!sourceMonth[src]) sourceMonth[src] = { cost: 0, tokens: 0, sessions: 0 };
+    sourceMonth[src].cost     += s.estimated_cost_usd;
+    sourceMonth[src].tokens   += s.total_tokens;
+    sourceMonth[src].sessions += 1;
+  }
+
+  // Today bucket (IST day match)
+  const todayBucket = allUnique.reduce((acc, s) => {
+    if (istDate(activityTs(s)) === todayStr) {
+      acc.cost     += s.estimated_cost_usd;
+      acc.tokens   += s.total_tokens;
+      acc.sessions += 1;
+    }
+    return acc;
+  }, { cost: 0, tokens: 0, sessions: 0 });
+
+  const summary = {
+    exportedAt:  now.toISOString(),
+    today:       todayBucket,
+    thisWeek:    bucket(allUnique, thisWeekStart, now),
+    lastWeek:    bucket(allUnique, lastWeekStart, lastWeekEnd),
+    thisMonth:   bucket(allUnique, thisMonthStart, now),
+    lastMonth:   bucket(allUnique, lastMonthStart, lastMonthEnd),
+    thisYear:    bucket(allUnique, thisYearStart, now),
+    lastYear:    bucket(allUnique, lastYearStart, lastYearEnd),
+    allTime:     { cost: allUnique.reduce((a, s) => a + s.estimated_cost_usd, 0), sessions: allUnique.length, tokens: allUnique.reduce((a, s) => a + s.total_tokens, 0) },
+    bySource:    sourceMonth,
+  };
+
+  const SUMMARY_FILE = join(OUTPUT_DIR, 'cost-summary.json');
+  writeFileSync(SUMMARY_FILE, JSON.stringify(summary, null, 2));
+  console.log(`Wrote cost-summary.json — today $${summary.today.cost.toFixed(2)}, this week $${summary.thisWeek.cost.toFixed(2)}, this month $${summary.thisMonth.cost.toFixed(2)}, this year $${summary.thisYear.cost.toFixed(2)}`);
+}

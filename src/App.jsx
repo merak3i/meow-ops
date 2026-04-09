@@ -13,65 +13,69 @@ import LiveSessions from './pages/LiveSessions';
 import {
   fetchSessions,
   fetchDailyStats,
+  fetchCostSummary,
   computeOverviewStats,
-  computeSpendBreakdown,
   getProjectBreakdown,
   getToolBreakdownFromSessions,
   getModelBreakdown,
+  invalidateRealSessions,
 } from './lib/queries';
+
+const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minutes
 
 export default function App() {
   const [page, setPage] = useState('overview');
   const [dateRange, setDateRange] = useState(30);
   const [sessions, setSessions] = useState([]);
-  const [allSessions, setAllSessions] = useState([]);
   const [dailyData, setDailyData] = useState([]);
+  const [costSummary, setCostSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
 
-  // Filtered sessions for the selected date range (used by most pages).
+  // Main data load — filtered sessions + daily stats + cost summary
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
-      const [sess, daily] = await Promise.all([
+      const [sess, daily, summary] = await Promise.all([
         fetchSessions(dateRange),
         fetchDailyStats(dateRange),
+        fetchCostSummary(),
       ]);
       if (cancelled) return;
       setSessions(sess);
       setDailyData(daily);
+      if (summary) setCostSummary(summary);
       setLoading(false);
     }
     load();
     return () => { cancelled = true; };
   }, [dateRange, reloadKey]);
 
-  // All-time sessions — needed for accurate weekly/monthly spend breakdown
-  // regardless of which date-range filter the user has selected.
-  // loadRealSessions() caches in memory so this is free after the first load.
+  // Auto-refresh every 5 minutes — invalidates the in-memory session cache
+  // so the next tick re-fetches sessions.json + cost-summary.json from disk.
   useEffect(() => {
-    let cancelled = false;
-    fetchSessions('all').then((sess) => {
-      if (!cancelled) setAllSessions(sess);
-    });
-    return () => { cancelled = true; };
-  }, [reloadKey]);
+    const id = setInterval(() => {
+      invalidateRealSessions();
+      setReloadKey((k) => k + 1);
+    }, AUTO_REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
 
   const reloadData = useCallback(() => {
+    invalidateRealSessions();
     setReloadKey((k) => k + 1);
   }, []);
 
-  const stats = computeOverviewStats(sessions, dateRange);
-  const spendData = computeSpendBreakdown(allSessions);
+  const stats       = computeOverviewStats(sessions, dateRange);
   const projectData = getProjectBreakdown(sessions);
-  const toolData = getToolBreakdownFromSessions(sessions);
-  const modelData = getModelBreakdown(sessions);
+  const toolData    = getToolBreakdownFromSessions(sessions);
+  const modelData   = getModelBreakdown(sessions);
 
   const renderPage = () => {
     switch (page) {
       case 'overview':
-        return <Overview stats={stats} sessions={sessions} allSessions={allSessions} dailyData={dailyData} toolData={toolData} spendData={spendData} dateRange={dateRange} />;
+        return <Overview stats={stats} sessions={sessions} dailyData={dailyData} toolData={toolData} costSummary={costSummary} dateRange={dateRange} />;
       case 'sessions':
         return <Sessions sessions={sessions} />;
       case 'by-project':
@@ -81,7 +85,7 @@ export default function App() {
       case 'by-action':
         return <ByAction toolData={toolData} />;
       case 'cost':
-        return <CostTracker dailyData={dailyData} modelData={modelData} stats={stats} />;
+        return <CostTracker dailyData={dailyData} modelData={modelData} stats={stats} costSummary={costSummary} />;
       case 'companion':
         return <CompanionView sessions={sessions} />;
       case 'live':
@@ -89,7 +93,7 @@ export default function App() {
       case 'pomodoro':
         return <Pomodoro />;
       default:
-        return <Overview stats={stats} sessions={sessions} allSessions={allSessions} dailyData={dailyData} toolData={toolData} spendData={spendData} />;
+        return <Overview stats={stats} sessions={sessions} dailyData={dailyData} toolData={toolData} costSummary={costSummary} />;
     }
   };
 
@@ -104,11 +108,7 @@ export default function App() {
         maxWidth: 1280,
       }}>
         {page !== 'pomodoro' && page !== 'companion' && page !== 'live' && (
-          <div style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            marginBottom: 24,
-          }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
             <DateFilter value={dateRange} onChange={setDateRange} />
           </div>
         )}

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus, Calendar } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import DailyChart from '../components/DailyChart';
 import ToolBreakdown from '../components/ToolBreakdown';
@@ -30,8 +30,8 @@ function SourceToggle({ value, onChange }) {
             cursor: 'pointer',
             background: value === id ? 'var(--accent)' : 'transparent',
             color: value === id ? '#000' : 'var(--text-muted)',
-            transition: 'all 0.15s',
             fontWeight: value === id ? 500 : 400,
+            transition: 'all 0.15s',
           }}
         >
           {label}
@@ -41,35 +41,40 @@ function SourceToggle({ value, onChange }) {
   );
 }
 
-// ─── Spend mini-card ─────────────────────────────────────────────────────────
-function SpendCard({ label, current, previous }) {
+// ─── Spend card ───────────────────────────────────────────────────────────────
+function SpendCard({ label, current, previous, sessions, tokens, highlight }) {
   const pct = previous > 0
     ? ((current - previous) / previous) * 100
     : null;
-  const up = pct !== null && pct > 0.5;
+  const up = pct !== null && pct >  0.5;
   const dn = pct !== null && pct < -0.5;
   const TrendIcon = up ? TrendingUp : dn ? TrendingDown : Minus;
-  const trendColor = up ? 'var(--red, #f87171)' : dn ? 'var(--green)' : 'var(--text-muted)';
+  const trendColor = up ? '#f87171' : dn ? 'var(--green)' : 'var(--text-muted)';
 
   return (
     <div style={{
       background: 'var(--bg-card)',
-      border: '1px solid var(--border)',
+      border: `1px solid ${highlight ? 'var(--accent)' : 'var(--border)'}`,
       borderRadius: 10,
       padding: '14px 16px',
       display: 'flex',
       flexDirection: 'column',
-      gap: 6,
+      gap: 4,
     }}>
-      <span style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 1 }}>
+      <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
         {label}
       </span>
-      <span style={{ fontSize: 22, fontWeight: 300, color: 'var(--green)' }}>
+      <span style={{ fontSize: 22, fontWeight: 300, color: 'var(--green)', lineHeight: 1.2 }}>
         {formatCost(current)}
       </span>
+      {sessions != null && (
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {sessions} sessions · {formatTokens(tokens ?? 0)}
+        </span>
+      )}
       {pct !== null && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: trendColor }}>
-          <TrendIcon size={12} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: trendColor, marginTop: 2 }}>
+          <TrendIcon size={11} />
           {Math.abs(pct).toFixed(0)}% vs prev period
         </div>
       )}
@@ -88,31 +93,43 @@ function periodLabel(dateRange) {
 export default function Overview({
   stats: rawStats,
   sessions: rawSessions = [],
-  allSessions: rawAllSessions = [],
   dailyData,
   toolData: rawToolData,
-  spendData: rawSpendData,
+  costSummary,
   dateRange = 30,
 }) {
   const [source, setSource] = useState('both');
 
-  // Detect if any Codex sessions exist — only show toggle when both sources present.
   const hasCodex = useMemo(
-    () => rawAllSessions.some((s) => s.source === 'codex'),
-    [rawAllSessions],
+    () => rawSessions.some((s) => s.source === 'codex'),
+    [rawSessions],
   );
 
-  // Filter sessions by source.
   const filterBySrc = (list) =>
     source === 'both' ? list : list.filter((s) => (s.source || 'claude') === source);
 
-  const sessions    = useMemo(() => filterBySrc(rawSessions),    [rawSessions,    source]);
-  const allSessions = useMemo(() => filterBySrc(rawAllSessions), [rawAllSessions, source]);
+  const sessions = useMemo(() => filterBySrc(rawSessions), [rawSessions, source]);
 
-  // Recompute stats and spend breakdown when source filter changes.
-  const stats    = useMemo(() => computeOverviewStats(sessions, dateRange),   [sessions, dateRange]);
-  const toolData = useMemo(() => getToolBreakdownFromSessions(sessions),       [sessions]);
-  const spendData = useMemo(() => computeSpendBreakdown(allSessions),          [allSessions]);
+  const stats    = useMemo(() => computeOverviewStats(sessions, dateRange), [sessions, dateRange]);
+  const toolData = useMemo(() => getToolBreakdownFromSessions(sessions),    [sessions]);
+
+  // When a source filter is active, fall back to recomputing from sessions.
+  // Otherwise use the accurate pre-exported cost-summary.json.
+  const localSpend = useMemo(() => computeSpendBreakdown(sessions), [sessions]);
+
+  const spend = (source !== 'both' || !costSummary) ? localSpend : {
+    today:     costSummary.today,
+    thisWeek:  costSummary.thisWeek,
+    lastWeek:  costSummary.lastWeek,
+    thisMonth: costSummary.thisMonth,
+    lastMonth: costSummary.lastMonth,
+    thisYear:  costSummary.thisYear,
+    allTime:   costSummary.allTime,
+    bySource:  costSummary.bySource,
+    // weekly/monthly history arrays still from localSpend (accurate enough for chart bars)
+    weeklyHistory:  localSpend.weeklyHistory,
+    monthlyHistory: localSpend.monthlyHistory,
+  };
 
   const label = periodLabel(dateRange);
 
@@ -155,23 +172,95 @@ export default function Overview({
         />
       </div>
 
-      {/* ── Spend breakdown mini-cards ── */}
+      {/* ── Spend breakdown cards ── */}
       <div style={{ marginBottom: 24 }}>
-        <p style={{
-          fontSize: 11,
-          color: 'var(--text-muted)',
-          marginBottom: 10,
-          textTransform: 'uppercase',
-          letterSpacing: 1,
-        }}>
-          Spend breakdown
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-          <SpendCard label="This week"  current={spendData.thisWeek}  previous={spendData.lastWeek}  />
-          <SpendCard label="Last week"  current={spendData.lastWeek}  previous={null}               />
-          <SpendCard label="This month" current={spendData.thisMonth} previous={spendData.lastMonth} />
-          <SpendCard label="Last month" current={spendData.lastMonth} previous={null}               />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <p style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
+            Cost Breakdown
+          </p>
+          {costSummary?.exportedAt && (
+            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+              updated {new Date(costSummary.exportedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} IST
+            </span>
+          )}
         </div>
+
+        {/* Row 1: Today / This Week / Last Week */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
+          <SpendCard
+            label="Today"
+            current={spend.today?.cost ?? 0}
+            previous={null}
+            sessions={spend.today?.sessions}
+            tokens={spend.today?.tokens}
+            highlight
+          />
+          <SpendCard
+            label="This Week"
+            current={spend.thisWeek?.cost ?? 0}
+            previous={spend.lastWeek?.cost ?? 0}
+            sessions={spend.thisWeek?.sessions}
+            tokens={spend.thisWeek?.tokens}
+          />
+          <SpendCard
+            label="Last Week"
+            current={spend.lastWeek?.cost ?? 0}
+            previous={null}
+            sessions={spend.lastWeek?.sessions}
+            tokens={spend.lastWeek?.tokens}
+          />
+        </div>
+
+        {/* Row 2: This Month / Last Month / This Year */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+          <SpendCard
+            label="This Month"
+            current={spend.thisMonth?.cost ?? 0}
+            previous={spend.lastMonth?.cost ?? 0}
+            sessions={spend.thisMonth?.sessions}
+            tokens={spend.thisMonth?.tokens}
+          />
+          <SpendCard
+            label="Last Month"
+            current={spend.lastMonth?.cost ?? 0}
+            previous={null}
+            sessions={spend.lastMonth?.sessions}
+            tokens={spend.lastMonth?.tokens}
+          />
+          <SpendCard
+            label={`${new Date().getFullYear()} Total`}
+            current={spend.thisYear?.cost ?? 0}
+            previous={spend.lastYear?.cost ?? 0}
+            sessions={spend.thisYear?.sessions}
+            tokens={spend.thisYear?.tokens}
+          />
+        </div>
+
+        {/* Source breakdown for this month — only in "All" mode with multiple sources */}
+        {source === 'both' && spend.bySource && Object.keys(spend.bySource).length > 1 && (
+          <div style={{
+            marginTop: 12,
+            padding: '12px 16px',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            display: 'flex',
+            gap: 32,
+          }}>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', alignSelf: 'center', marginRight: 8 }}>
+              This month by source:
+            </span>
+            {Object.entries(spend.bySource).map(([src, d]) => (
+              <div key={src} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: src === 'codex' ? 'oklch(0.65 0.18 260)' : 'var(--accent)' }}>
+                  {src === 'codex' ? '⬡ Codex' : '◆ Claude'}
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 300, color: 'var(--green)' }}>{formatCost(d.cost)}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{d.sessions} sessions</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Charts row ── */}
@@ -181,7 +270,7 @@ export default function Overview({
       </div>
 
       {/* ── Spend history chart ── */}
-      <SpendChart spendData={spendData} source={source} />
+      <SpendChart spendData={spend} source={source} />
     </div>
   );
 }
