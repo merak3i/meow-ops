@@ -18,21 +18,47 @@ export function formatDuration(seconds) {
   return `${m}m`;
 }
 
-export function formatDate(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
-}
+const IST = 'Asia/Kolkata';
 
-export function formatDateTime(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-IN', {
-    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+export function formatDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-IN', {
+    timeZone: IST, month: 'short', day: 'numeric',
   });
 }
 
+// IST datetime — e.g. "9 Apr, 07:21 AM IST"
+export function formatDateTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  const ist = d.toLocaleString('en-IN', {
+    timeZone: IST,
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return ist + ' IST';
+}
+
+// UTC datetime — e.g. "2026-04-09 01:49 UTC"
+export function formatDateTimeUTC(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+}
+
+// IST date only for day grouping — "YYYY-MM-DD" in IST
+export function toISTDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: IST });
+}
+
 export function relativeTime(iso) {
+  if (!iso) return '';
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
+  if (mins < 1)  return 'just now';
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;

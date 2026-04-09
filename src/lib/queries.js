@@ -122,8 +122,10 @@ function activityDate(s) {
   return s.ended_at || s.started_at;
 }
 
+// Always bucket by IST date so "today" matches what the user sees on their clock.
+const IST = 'Asia/Kolkata';
 function activityDay(s) {
-  return activityDate(s).slice(0, 10);
+  return new Date(activityDate(s)).toLocaleDateString('en-CA', { timeZone: IST });
 }
 
 export async function fetchSessions(dateRange = 30) {
@@ -190,14 +192,11 @@ export async function fetchToolUsage(dateRange = 30) {
 }
 
 export function computeOverviewStats(sessions, dateRange = 30) {
-  // Use local-time today (matches the user's mental model). YYYY-MM-DD.
-  const today = new Date().toLocaleDateString('en-CA');
+  // Today in IST — matches the day-toggle in Sessions page and the user's clock.
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: IST });
 
-  // "Today" = sessions that had any activity today (last activity timestamp)
-  const todaySessions = sessions.filter((s) => {
-    const localDay = new Date(activityDate(s)).toLocaleDateString('en-CA');
-    return localDay === today;
-  });
+  // "Today" = sessions with any activity today (by IST date of ended_at)
+  const todaySessions = sessions.filter((s) => activityDay(s) === today);
   const tokensToday = todaySessions.reduce((a, s) => a + s.total_tokens, 0);
   const costToday = todaySessions.reduce((a, s) => a + s.estimated_cost_usd, 0);
   const projectsToday = new Set(todaySessions.map((s) => s.project)).size;
