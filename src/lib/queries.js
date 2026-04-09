@@ -276,6 +276,84 @@ function getCatToolProfile(catType) {
   return profiles[catType] || {};
 }
 
+// ─── Spend breakdown ─────────────────────────────────────────────────────────
+// Takes the full (unfiltered) session list so weekly/monthly figures are
+// always accurate regardless of the date-range filter selected in the UI.
+
+export function computeSpendBreakdown(sessions) {
+  const now = new Date();
+
+  // Calendar-week boundaries (Monday = week start, local time).
+  const dayOfWeek = now.getDay(); // 0 = Sun
+  const daysToMon = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const thisWeekStart = new Date(now);
+  thisWeekStart.setDate(now.getDate() - daysToMon);
+  thisWeekStart.setHours(0, 0, 0, 0);
+
+  const lastWeekEnd = new Date(thisWeekStart.getTime() - 1); // Sun 23:59:59.999
+  const lastWeekStart = new Date(thisWeekStart);
+  lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+
+  // Calendar-month boundaries.
+  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastMonthEnd   = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+  function sumCost(start, end) {
+    return sessions.reduce((acc, s) => {
+      const d = new Date(s.ended_at || s.started_at);
+      return (d >= start && d <= end) ? acc + s.estimated_cost_usd : acc;
+    }, 0);
+  }
+
+  // Last 8 weeks (oldest first) ending with the current partial week.
+  const weeklyHistory = [];
+  for (let i = 7; i >= 0; i--) {
+    const wStart = new Date(thisWeekStart);
+    wStart.setDate(thisWeekStart.getDate() - i * 7);
+    const wEnd = i === 0 ? now : new Date(wStart.getTime() + 7 * 86_400_000 - 1);
+    const label = i === 0
+      ? 'This wk'
+      : wStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    weeklyHistory.push({ label, cost: sumCost(wStart, wEnd), isCurrent: i === 0 });
+  }
+
+  // Last 6 months (oldest first) ending with the current partial month.
+  const monthlyHistory = [];
+  for (let i = 5; i >= 0; i--) {
+    const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const mEnd   = i === 0
+      ? now
+      : new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+    const label = i === 0
+      ? 'This mo'
+      : mStart.toLocaleDateString('en-US', { month: 'short' });
+    monthlyHistory.push({ label, cost: sumCost(mStart, mEnd), isCurrent: i === 0 });
+  }
+
+  // Source breakdown (Claude vs Codex) for the current calendar month.
+  const bySource = {};
+  for (const s of sessions) {
+    const d = new Date(s.ended_at || s.started_at);
+    if (d < thisMonthStart) continue;
+    const src = s.source || 'claude';
+    if (!bySource[src]) bySource[src] = { sessions: 0, cost: 0, tokens: 0 };
+    bySource[src].sessions++;
+    bySource[src].cost   += s.estimated_cost_usd;
+    bySource[src].tokens += s.total_tokens;
+  }
+
+  return {
+    thisWeek:    sumCost(thisWeekStart, now),
+    lastWeek:    sumCost(lastWeekStart, lastWeekEnd),
+    thisMonth:   sumCost(thisMonthStart, now),
+    lastMonth:   sumCost(lastMonthStart, lastMonthEnd),
+    weeklyHistory,
+    monthlyHistory,
+    bySource,
+  };
+}
+
 export function getModelBreakdown(sessions) {
   const byModel = {};
   for (const s of sessions) {

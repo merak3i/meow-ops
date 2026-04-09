@@ -5,8 +5,10 @@
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { parseSessionLines } from './parse-session.mjs';
+import { scanCodexSessions } from './parse-codex.mjs';
 
 const CLAUDE_DIR = join(process.env.HOME, '.claude', 'projects');
+const CODEX_DIR  = join(process.env.HOME, '.codex', 'sessions');
 const OUTPUT_DIR = join(import.meta.dirname, '..', 'public', 'data');
 const OUTPUT_FILE = join(OUTPUT_DIR, 'sessions.json');
 const MAX_SESSIONS = 250; // Keep dashboard responsive
@@ -55,6 +57,7 @@ function walkJsonl(dir, projectDir, isSubagent = false) {
           const fileKey = entry.replace('.jsonl', '');
           s.session_id = isSubagent ? `agent-${fileKey}` : `${s.session_id}-${fileKey}`;
           s.is_subagent = isSubagent;
+          s.source = 'claude';
           if (isSubagent) s.entrypoint = 'subagent';
         }
         allSessions.push(...sessions);
@@ -110,11 +113,26 @@ for (const s of allSessions) {
   if (refined) s.project = refined;
 }
 
+// Merge Codex sessions
+if (existsSync(CODEX_DIR)) {
+  const codexSessions = scanCodexSessions(CODEX_DIR);
+  console.log(`Found ${codexSessions.length} Codex session(s)`);
+  allSessions.push(...codexSessions);
+} else {
+  console.log('No Codex sessions directory found — skipping');
+}
+
 const allUnique = allSessions;
 console.log(`Total unique session entries: ${allUnique.length}`);
 
-// Sort by start time descending
-allUnique.sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+// Sort by most-recent activity (ended_at) descending.
+// This ensures long-running Claude sessions still active today aren't
+// pushed below stale sessions just because they started weeks ago.
+allUnique.sort((a, b) => {
+  const aTime = new Date(a.ended_at || a.started_at);
+  const bTime = new Date(b.ended_at || b.started_at);
+  return bTime - aTime;
+});
 
 // Take latest N (this is what the user asked for: "last 100")
 const latest = allUnique.slice(0, MAX_SESSIONS);

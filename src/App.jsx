@@ -14,6 +14,7 @@ import {
   fetchSessions,
   fetchDailyStats,
   computeOverviewStats,
+  computeSpendBreakdown,
   getProjectBreakdown,
   getToolBreakdownFromSessions,
   getModelBreakdown,
@@ -23,10 +24,12 @@ export default function App() {
   const [page, setPage] = useState('overview');
   const [dateRange, setDateRange] = useState(30);
   const [sessions, setSessions] = useState([]);
+  const [allSessions, setAllSessions] = useState([]);
   const [dailyData, setDailyData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // Filtered sessions for the selected date range (used by most pages).
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -44,11 +47,23 @@ export default function App() {
     return () => { cancelled = true; };
   }, [dateRange, reloadKey]);
 
+  // All-time sessions — needed for accurate weekly/monthly spend breakdown
+  // regardless of which date-range filter the user has selected.
+  // loadRealSessions() caches in memory so this is free after the first load.
+  useEffect(() => {
+    let cancelled = false;
+    fetchSessions('all').then((sess) => {
+      if (!cancelled) setAllSessions(sess);
+    });
+    return () => { cancelled = true; };
+  }, [reloadKey]);
+
   const reloadData = useCallback(() => {
     setReloadKey((k) => k + 1);
   }, []);
 
   const stats = computeOverviewStats(sessions, dateRange);
+  const spendData = computeSpendBreakdown(allSessions);
   const projectData = getProjectBreakdown(sessions);
   const toolData = getToolBreakdownFromSessions(sessions);
   const modelData = getModelBreakdown(sessions);
@@ -56,7 +71,7 @@ export default function App() {
   const renderPage = () => {
     switch (page) {
       case 'overview':
-        return <Overview stats={stats} dailyData={dailyData} toolData={toolData} dateRange={dateRange} />;
+        return <Overview stats={stats} sessions={sessions} allSessions={allSessions} dailyData={dailyData} toolData={toolData} spendData={spendData} dateRange={dateRange} />;
       case 'sessions':
         return <Sessions sessions={sessions} />;
       case 'by-project':
@@ -74,7 +89,7 @@ export default function App() {
       case 'pomodoro':
         return <Pomodoro />;
       default:
-        return <Overview stats={stats} dailyData={dailyData} toolData={toolData} />;
+        return <Overview stats={stats} sessions={sessions} allSessions={allSessions} dailyData={dailyData} toolData={toolData} spendData={spendData} />;
     }
   };
 
