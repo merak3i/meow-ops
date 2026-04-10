@@ -5,17 +5,40 @@ import { EffectComposer, DepthOfField, Bloom, Vignette } from '@react-three/post
 import { BlendFunction } from 'postprocessing';
 import * as THREE from 'three';
 
-import { CatMesh } from './CatMesh';
+import { CatMesh }          from './CatMesh';
+import { ActionParticles }  from './ActionParticles';
 import type { DeveloperProfile } from '@/types/session';
-import type { CompanionState } from '@/state/companionMachine';
+import type { CompanionState }   from '@/state/companionMachine';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface CompanionSceneProps {
-  profile:  DeveloperProfile | null;
-  cursorX:  number;
-  cursorY:  number;
-  state:    CompanionState;
+  profile:              DeveloperProfile | null;
+  cursorX:              number;
+  cursorY:              number;
+  state:                CompanionState;
+  roomTier?:            number;
+  actionEffect?:        string | null;
+  equippedAccessories?: string[];
+}
+
+// ─── Room tier → drei HDRI preset ────────────────────────────────────────────
+// tier 0/1: corner mat    → "sunset"     (warm wood)
+// tier 2:   cushion bed   → "apartment"  (purple)
+// tier 3:   wooden cottage→ "forest"     (warm wood)
+// tier 4:   enchanted tree→ "night"      (dark bioluminescent)
+// tier 5:   castle keep   → "warehouse"  (industrial stone)
+// tier 6:   throne room   → "city"       (dramatic night skyline)
+
+type DreiPreset = 'sunset' | 'apartment' | 'forest' | 'night' | 'warehouse' | 'city';
+
+function roomPreset(tier: number): DreiPreset {
+  if (tier <= 1) return 'sunset';
+  if (tier === 2) return 'apartment';
+  if (tier === 3) return 'forest';
+  if (tier === 4) return 'night';
+  if (tier === 5) return 'warehouse';
+  return 'city';
 }
 
 // ─── Cinematic camera rig ─────────────────────────────────────────────────────
@@ -24,17 +47,17 @@ function CameraRig({ state }: { state: CompanionState }) {
   const { camera } = useThree();
   const target     = useRef(new THREE.Vector3(0, 0, 4.5));
 
-  // Dolly camera based on companion state
   const stateZMap: Record<CompanionState, number> = {
     active:    4.5,
     idle:      5.2,
     focus:     4.0,
     fatigue:   5.5,
     neglected: 6.0,
+    concerned: 5.0,
   };
 
   useFrame(() => {
-    const targetZ = stateZMap[state];
+    const targetZ = stateZMap[state] ?? 4.5;
     target.current.z += (targetZ - target.current.z) * 0.03;
     camera.position.z  += (target.current.z - camera.position.z) * 0.05;
     camera.lookAt(0, 0.1, 0);
@@ -56,15 +79,19 @@ function Floor() {
 
 // ─── Scene (inside Canvas) ───────────────────────────────────────────────────
 
-function Scene({ profile, cursorX, cursorY, state }: CompanionSceneProps) {
+function Scene({
+  profile, cursorX, cursorY, state, roomTier, actionEffect, equippedAccessories,
+}: CompanionSceneProps) {
+  const preset = roomPreset(roomTier ?? 0);
+
   return (
     <>
       {/* Camera */}
       <PerspectiveCamera makeDefault fov={45} near={0.1} far={50} position={[0, 0.1, 4.5]} />
       <CameraRig state={state} />
 
-      {/* HDRI lighting */}
-      <Environment preset="apartment" background={false} />
+      {/* HDRI — swaps based on room tier */}
+      <Environment preset={preset} background={false} />
 
       {/* Subtle directional fill */}
       <directionalLight
@@ -82,13 +109,17 @@ function Scene({ profile, cursorX, cursorY, state }: CompanionSceneProps) {
           cursorX={cursorX}
           cursorY={cursorY}
           state={state}
-          geometry={null}   // glTF geometry loaded externally when available
+          geometry={null}
+          equippedAccessories={equippedAccessories ?? []}
         />
       </Suspense>
 
+      {/* Action particles */}
+      <ActionParticles effect={actionEffect ?? null} />
+
       <Floor />
 
-      {/* Orbit controls (disabled in production — for dev camera adjustment) */}
+      {/* Orbit controls — dev only */}
       {import.meta.env.DEV && (
         <OrbitControls
           enablePan={false}
@@ -124,15 +155,17 @@ function Scene({ profile, cursorX, cursorY, state }: CompanionSceneProps) {
 
 // ─── Exported canvas wrapper ──────────────────────────────────────────────────
 
-export function CompanionScene({ profile, cursorX, cursorY, state }: CompanionSceneProps) {
+export function CompanionScene({
+  profile, cursorX, cursorY, state, roomTier, actionEffect, equippedAccessories,
+}: CompanionSceneProps) {
   return (
     <Canvas
       shadows
       gl={{
-        antialias:     true,
-        toneMapping:   THREE.ACESFilmicToneMapping,
+        antialias:           true,
+        toneMapping:         THREE.ACESFilmicToneMapping,
         toneMappingExposure: 1.1,
-        outputColorSpace: THREE.SRGBColorSpace,
+        outputColorSpace:    THREE.SRGBColorSpace,
       }}
       style={{ width: '100%', height: '100%', background: 'transparent' }}
     >
@@ -141,6 +174,9 @@ export function CompanionScene({ profile, cursorX, cursorY, state }: CompanionSc
         cursorX={cursorX}
         cursorY={cursorY}
         state={state}
+        roomTier={roomTier}
+        actionEffect={actionEffect}
+        equippedAccessories={equippedAccessories}
       />
     </Canvas>
   );

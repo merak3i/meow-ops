@@ -26,6 +26,12 @@ export interface Session {
   source:                   'claude' | 'codex';
   cwd?:                     string;
   tools?:                   Record<string, number>;
+  // Agent hierarchy (populated by parse-session.mjs when parentUuid is present)
+  parent_session_id?:       string | null;
+  agent_id?:                string | null;
+  agent_slug?:              string | null;
+  is_sidechain?:            boolean;
+  agent_depth?:             number;   // 0 = main session, 1+ = subagent
 }
 
 export type CatType =

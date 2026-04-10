@@ -61,6 +61,17 @@ export function decodeProjectPath(dirName) {
 export function parseSessionLines(lines, projectDir) {
   const sessions = {};
 
+  // Extract hierarchy fields from the FIRST parseable line.
+  // Claude Code subagent files always have parentUuid / agentId / slug on line 1.
+  let firstEntry = null;
+  for (const line of lines) {
+    try { firstEntry = JSON.parse(line); break; } catch { /* skip */ }
+  }
+  const parentSessionId = firstEntry?.parentUuid ?? null;
+  const agentId         = firstEntry?.agentId    ?? null;
+  const agentSlug       = firstEntry?.slug        ?? null;
+  const isSidechain     = firstEntry?.isSidechain ?? false;
+
   for (const line of lines) {
     let entry;
     try {
@@ -95,6 +106,11 @@ export function parseSessionLines(lines, projectDir) {
         cat_type: 'ghost',
         is_ghost: false,
         tools: {},
+        // Hierarchy fields
+        parent_session_id: parentSessionId,
+        agent_id:          agentId,
+        agent_slug:        agentSlug,
+        is_sidechain:      isSidechain,
       };
     }
 

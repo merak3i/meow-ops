@@ -8,16 +8,19 @@ import { sssVertexShader, sssFragmentShader, defaultSSSUniforms } from './shader
 import { useIK } from './useIK';
 import { useMorphInfluences, morphToScale } from './useXPMorphs';
 import { LOD_DISTANCES, FUR_SHELLS_PER_LOD } from './useLOD';
+import { COMPANION_ACCESSORIES } from '@/lib/companion-accessories';
 import type { DeveloperProfile } from '@/types/session';
+import type { CompanionState } from '@/state/companionMachine';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface CatMeshProps {
-  profile:  DeveloperProfile | null;
-  cursorX:  number;
-  cursorY:  number;
-  state:    'active' | 'idle' | 'focus' | 'fatigue' | 'neglected';
-  geometry: THREE.BufferGeometry | null;   // pre-loaded high-poly geometry
+  profile:              DeveloperProfile | null;
+  cursorX:              number;
+  cursorY:              number;
+  state:                CompanionState;
+  geometry:             THREE.BufferGeometry | null;   // pre-loaded high-poly geometry
+  equippedAccessories?: string[];
 }
 
 // ─── Procedural cat geometry (placeholder) ───────────────────────────────────
@@ -128,9 +131,66 @@ function BodyMesh({
   );
 }
 
+// ─── Accessory overlays ───────────────────────────────────────────────────────
+// Procedural 3D primitives placed on the appropriate bone position.
+// Intentionally simple (game-like) — no 3D art assets needed.
+
+function AccessoryOverlays({ accessories }: { accessories: string[] }) {
+  return (
+    <>
+      {accessories.map((key) => {
+        const acc = COMPANION_ACCESSORIES[key as keyof typeof COMPANION_ACCESSORIES];
+        if (!acc) return null;
+
+        const color = new THREE.Color(acc.color);
+
+        switch (acc.slot) {
+          case 'head':
+            // Hat / crown — box on head group, y+0.35 from body centre
+            return (
+              <mesh key={key} position={[0, 0.35, 0.15]}>
+                <boxGeometry args={[0.25, 0.14, 0.25]} />
+                <meshStandardMaterial color={color} metalness={0.3} roughness={0.6} />
+              </mesh>
+            );
+
+          case 'neck':
+            // Collar — torus ring around neck
+            return (
+              <mesh key={key} position={[0, 0.18, 0]} rotation={[Math.PI / 2, 0, 0]}>
+                <torusGeometry args={[0.18, 0.03, 8, 24]} />
+                <meshStandardMaterial color={color} metalness={0.5} roughness={0.4} />
+              </mesh>
+            );
+
+          case 'back':
+          case 'shoulder': {
+            // Wings / mantle — two angled planes behind body
+            return (
+              <group key={key} position={[0, 0.08, -0.18]}>
+                <mesh position={[-0.26, 0, 0]} rotation={[0.1, -0.5, 0.3]}>
+                  <planeGeometry args={[0.38, 0.28]} />
+                  <meshStandardMaterial color={color} side={THREE.DoubleSide} transparent opacity={0.85} />
+                </mesh>
+                <mesh position={[0.26, 0, 0]} rotation={[0.1, 0.5, -0.3]}>
+                  <planeGeometry args={[0.38, 0.28]} />
+                  <meshStandardMaterial color={color} side={THREE.DoubleSide} transparent opacity={0.85} />
+                </mesh>
+              </group>
+            );
+          }
+
+          default:
+            return null;
+        }
+      })}
+    </>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function CatMesh({ profile, cursorX, cursorY, state, geometry }: CatMeshProps) {
+export function CatMesh({ profile, cursorX, cursorY, state, geometry, equippedAccessories = [] }: CatMeshProps) {
   const groupRef  = useRef<THREE.Group>(null);
   const meshRef   = useRef<THREE.Mesh>(null);
   const timeRef   = useRef(0);
@@ -140,7 +200,7 @@ export function CatMesh({ profile, cursorX, cursorY, state, geometry }: CatMeshP
   const morphInfluences = useMorphInfluences(profile);
   const scale           = profile ? morphToScale(profile.morph_weights) : 0.8;
 
-  const { headRef } = useIK(cursorX, cursorY, state !== 'fatigue' && state !== 'neglected');
+  const { headRef } = useIK(cursorX, cursorY, state !== 'fatigue' && state !== 'neglected' && state !== 'concerned');
 
   // Resolved geometry — prefer loaded glTF, fall back to placeholder
   const resolvedGeo = useMemo(
@@ -175,6 +235,12 @@ export function CatMesh({ profile, cursorX, cursorY, state, geometry }: CatMeshP
         groupRef.current.rotation.z = Math.sin(t * 0.3) * 0.02 - 0.03;
         break;
       }
+      case 'concerned': {
+        // Slow, laboured breathing — head droops
+        groupRef.current.position.y = Math.sin(t * 0.5) * 0.012 - 0.03;
+        groupRef.current.rotation.z = Math.sin(t * 0.35) * 0.025 - 0.04;
+        break;
+      }
       case 'fatigue': {
         // Heavy breathing, drooping head
         groupRef.current.position.y = Math.sin(t * 0.8) * 0.015 - 0.05;
@@ -199,6 +265,9 @@ export function CatMesh({ profile, cursorX, cursorY, state, geometry }: CatMeshP
 
   return (
     <group ref={groupRef} scale={[scale, scale, scale]}>
+      {/* Accessory overlays (rendered at group level — scale applies) */}
+      <AccessoryOverlays accessories={equippedAccessories} />
+
       {/* Head bone — IK applies rotation here */}
       <group ref={headRef as React.RefObject<THREE.Group>} position={[0, 0.35, 0]}>
         {/* Eyes would be a separate mesh in a real glTF — placeholder sphere */}

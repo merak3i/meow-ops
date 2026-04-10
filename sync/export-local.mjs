@@ -4,11 +4,21 @@
 
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { parseSessionLines } from './parse-session.mjs';
-import { scanCodexSessions } from './parse-codex.mjs';
+import { parseSessionLines }  from './parse-session.mjs';
+import { scanCodexSessions }  from './parse-codex.mjs';
+import { scanCursorSessions } from './parse-cursor.mjs';
+import { scanAiderProjects }  from './parse-aider.mjs';
 
 const CLAUDE_DIR = join(process.env.HOME, '.claude', 'projects');
 const CODEX_DIR  = join(process.env.HOME, '.codex', 'sessions');
+
+// Optional extra sources — configure via env vars
+// CURSOR_LOGS_DIR  — path to Cursor logs dir, e.g. ~/.cursor/logs
+// AIDER_PROJECTS   — colon-separated list of project dirs containing .aider.chat.history.md
+const CURSOR_LOGS_DIR  = process.env.CURSOR_LOGS_DIR  || join(process.env.HOME, '.cursor', 'logs');
+const AIDER_PROJECT_DIRS = process.env.AIDER_PROJECTS
+  ? process.env.AIDER_PROJECTS.split(':').filter(Boolean)
+  : [];
 const OUTPUT_DIR = join(import.meta.dirname, '..', 'public', 'data');
 const OUTPUT_FILE = join(OUTPUT_DIR, 'sessions.json');
 // Raise via MEOW_MAX_SESSIONS env var (e.g. MEOW_MAX_SESSIONS=2000 node sync/export-local.mjs)
@@ -122,6 +132,28 @@ if (existsSync(CODEX_DIR)) {
   allSessions.push(...codexSessions);
 } else {
   console.log('No Codex sessions directory found — skipping');
+}
+
+// Merge Cursor sessions (opt-in: CURSOR_LOGS_DIR must exist)
+if (existsSync(CURSOR_LOGS_DIR)) {
+  const cursorSessions = scanCursorSessions(CURSOR_LOGS_DIR);
+  if (cursorSessions.length > 0) {
+    console.log(`Found ${cursorSessions.length} Cursor session(s)`);
+    allSessions.push(...cursorSessions);
+  } else {
+    console.log('Cursor logs dir found but no sessions parsed — skipping');
+  }
+} else {
+  console.log('No Cursor logs directory found — skipping (set CURSOR_LOGS_DIR to enable)');
+}
+
+// Merge Aider sessions (opt-in: AIDER_PROJECTS env var must be set)
+if (AIDER_PROJECT_DIRS.length > 0) {
+  const aiderSessions = scanAiderProjects(AIDER_PROJECT_DIRS);
+  console.log(`Found ${aiderSessions.length} Aider session(s)`);
+  allSessions.push(...aiderSessions);
+} else {
+  console.log('No Aider projects configured — skipping (set AIDER_PROJECTS=path1:path2 to enable)');
 }
 
 const allUnique = allSessions;

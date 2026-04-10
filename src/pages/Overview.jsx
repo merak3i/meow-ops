@@ -87,9 +87,11 @@ function SpendCard({ label, current, previous, sessions, tokens, highlight }) {
 
 function periodLabel(dateRange) {
   if (dateRange === 'all') return 'All time';
-  if (dateRange === 7)  return '7 days';
-  if (dateRange === 30) return '30 days';
-  if (dateRange === 90) return '90 days';
+  if (dateRange === '1h')  return 'Last hour';
+  if (dateRange === '24h') return 'Last 24 h';
+  if (dateRange === 7)     return '7 days';
+  if (dateRange === 30)    return '30 days';
+  if (dateRange === 90)    return '90 days';
   return `${dateRange} days`;
 }
 

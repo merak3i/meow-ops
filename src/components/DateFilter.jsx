@@ -1,7 +1,9 @@
 const OPTIONS = [
-  { value: 7, label: '7d' },
-  { value: 30, label: '30d' },
-  { value: 90, label: '90d' },
+  { value: '1h',  label: '1h'  },
+  { value: '24h', label: '24h' },
+  { value: 7,     label: '7d'  },
+  { value: 30,    label: '30d' },
+  { value: 90,    label: '90d' },
   { value: 'all', label: 'All' },
 ];
 

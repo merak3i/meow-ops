@@ -16,6 +16,8 @@ export interface CompanionContext {
   fatigueScore:     number;
   /** Accumulated pet count (head click events) */
   petCount:         number;
+  /** Wellness score 0–1 driven by game stats (hunger/energy/health) */
+  wellnessScore:    number;
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -23,6 +25,7 @@ export interface CompanionContext {
 export type CompanionEvent =
   | { type: 'CURSOR_MOVE';     x: number; y: number }
   | { type: 'SESSION_UPDATE';  profile: DeveloperProfile }
+  | { type: 'GAME_UPDATE';     wellness: number; energy: number }
   | { type: 'POMODORO_START' }
   | { type: 'POMODORO_END' }
   | { type: 'PET' }
@@ -35,6 +38,7 @@ const isExhausted   = ({ context }: { context: CompanionContext }) => context.fa
 const isFocusing    = ({ context }: { context: CompanionContext }) => context.pomodoroActive;
 const isNeglected   = ({ context }: { context: CompanionContext }) => context.idleSeconds >= 3600; // 1 hour
 const isIdle        = ({ context }: { context: CompanionContext }) => context.idleSeconds >= 120;  // 2 min
+const isUnwell      = ({ context }: { context: CompanionContext }) => context.wellnessScore < 0.3 && !context.pomodoroActive;
 
 // ─── Machine ──────────────────────────────────────────────────────────────────
 
@@ -48,6 +52,7 @@ export const companionMachine = setup({
     isFocusing,
     isNeglected,
     isIdle,
+    isUnwell,
   },
   actions: {
     resetIdle: assign({ idleSeconds: 0 }),
@@ -76,6 +81,11 @@ export const companionMachine = setup({
 
     startPomodoro: assign({ pomodoroActive: true,  idleSeconds: 0 }),
     endPomodoro:   assign({ pomodoroActive: false }),
+
+    applyGameUpdate: assign(({ event }) => {
+      if (event.type !== 'GAME_UPDATE') return {};
+      return { wellnessScore: event.wellness };
+    }),
   },
 }).createMachine({
   id:      'companion',
@@ -89,12 +99,14 @@ export const companionMachine = setup({
     pomodoroActive: false,
     fatigueScore:   0,
     petCount:       0,
+    wellnessScore:  1,
   },
 
   on: {
     // Global transitions that apply from any state
     CURSOR_MOVE:    { actions: 'updateCursor' },
     SESSION_UPDATE: { actions: 'applyProfile' },
+    GAME_UPDATE:    { actions: 'applyGameUpdate' },
     PET:            { actions: 'incrementPet', target: '.active' },
   },
 
@@ -104,13 +116,13 @@ export const companionMachine = setup({
 
       on: {
         TICK: [
-          { guard: 'isExhausted',  target: 'fatigue',   actions: 'incrementIdle' },
-          { guard: 'isFocusing',   target: 'focus',     actions: 'incrementIdle' },
-          {                        actions: 'incrementIdle',
-            guard: 'isIdle',       target: 'idle' },
-          {                        actions: 'incrementIdle' },
+          { guard: 'isExhausted', target: 'fatigue',   actions: 'incrementIdle' },
+          { guard: 'isFocusing',  target: 'focus',     actions: 'incrementIdle' },
+          { guard: 'isUnwell',    target: 'concerned', actions: 'incrementIdle' },
+          { guard: 'isIdle',      target: 'idle',      actions: 'incrementIdle' },
+          {                                            actions: 'incrementIdle' },
         ],
-        POMODORO_START: { target: 'focus',   actions: 'startPomodoro' },
+        POMODORO_START: { target: 'focus', actions: 'startPomodoro' },
       },
     },
 
@@ -158,12 +170,36 @@ export const companionMachine = setup({
         TICK:        { actions: 'incrementIdle' },
       },
     },
+
+    concerned: {
+      // Low wellness (hunger/health/energy) — slow breathing, head droops
+      on: {
+        TICK: [
+          { guard: 'isExhausted', target: 'fatigue',   actions: 'incrementIdle' },
+          { guard: 'isFocusing',  target: 'focus',     actions: 'incrementIdle' },
+          {                                            actions: 'incrementIdle' },
+        ],
+        // Recovered when wellness comes back above threshold via GAME_UPDATE
+        GAME_UPDATE: [
+          {
+            guard: ({ event }) =>
+              event.type === 'GAME_UPDATE' && event.wellness >= 0.3,
+            target: 'active',
+            actions: 'applyGameUpdate',
+          },
+          { actions: 'applyGameUpdate' },
+        ],
+        CURSOR_MOVE:    { actions: ['updateCursor'] },
+        POMODORO_START: { target: 'focus', actions: 'startPomodoro' },
+        PET:            { actions: 'incrementPet', target: 'active' },
+      },
+    },
   },
 });
 
 // ─── State display helpers ────────────────────────────────────────────────────
 
-export type CompanionState = 'active' | 'idle' | 'focus' | 'fatigue' | 'neglected';
+export type CompanionState = 'active' | 'idle' | 'focus' | 'fatigue' | 'neglected' | 'concerned';
 
 export function stateLabel(state: CompanionState): string {
   const labels: Record<CompanionState, string> = {
@@ -172,8 +208,9 @@ export function stateLabel(state: CompanionState): string {
     focus:     'Focus Mode',
     fatigue:   'Exhausted',
     neglected: 'Lonely',
+    concerned: 'Needs Care',
   };
-  return labels[state];
+  return labels[state] ?? 'Active';
 }
 
 export function stateEmoji(state: CompanionState): string {
@@ -183,6 +220,7 @@ export function stateEmoji(state: CompanionState): string {
     focus:     '🎯',
     fatigue:   '😵',
     neglected: '🥺',
+    concerned: '😟',
   };
-  return emojis[state];
+  return emojis[state] ?? '😺';
 }

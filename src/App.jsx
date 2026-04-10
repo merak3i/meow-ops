@@ -7,13 +7,13 @@ import ByProject from './pages/ByProject';
 import ByDay from './pages/ByDay';
 import ByAction from './pages/ByAction';
 import CostTracker from './pages/CostTracker';
-import CompanionView from './companion/CompanionView';
 import Pomodoro from './pages/Pomodoro';
 import LiveSessions from './pages/LiveSessions';
 
 // Heavy pages — code-split to keep the main bundle lean
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const CompanionPageV2    = lazy(() => import('./companion-v2/CompanionPageV2'));
+const AgentVisualizer    = lazy(() => import('./pages/AgentVisualizer'));
 import {
   fetchSessions,
   fetchAllSessions,
@@ -173,8 +173,6 @@ export default function App() {
             costSummary={costSummary}
           />
         );
-      case 'companion':
-        return <CompanionView sessions={sessions} />;
       case 'live':
         return <LiveSessions sessions={sessions} />;
       case 'pomodoro':
@@ -188,10 +186,16 @@ export default function App() {
             />
           </Suspense>
         );
-      case 'companion-v2':
+      case 'companion':
         return (
           <Suspense fallback={<PageLoader />}>
             <CompanionPageV2 sessions={allSessions} />
+          </Suspense>
+        );
+      case 'agent-ops':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <AgentVisualizer sessions={allSessions} />
           </Suspense>
         );
       default:
@@ -215,7 +219,7 @@ export default function App() {
 
       <main style={{ marginLeft: 'var(--sidebar-w)', flex: 1, padding: 32, maxWidth: 1280 }}>
         {page !== 'pomodoro' && page !== 'companion' && page !== 'live' &&
-         page !== 'companion-v2' && page !== 'analytics' && (
+         page !== 'agent-ops' && page !== 'analytics' && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
             <DateFilter value={dateRange} onChange={setDateRange} />
           </div>

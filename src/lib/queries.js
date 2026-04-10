@@ -107,9 +107,22 @@ function istMidnight(dateStr) {
 }
 
 // ─── Date filter ─────────────────────────────────────────────────────────────
-function filterByDateRange(data, dateField, days) {
-  if (days === 'all') return data;
-  const cutoff = new Date(Date.now() - days * 86400000);
+// dateRange can be:
+//   'all'  — no filter
+//   '1h'   — last 60 minutes
+//   '24h'  — last 24 hours
+//   number — last N calendar days
+
+function dateRangeCutoff(dateRange) {
+  if (dateRange === 'all') return null;
+  if (dateRange === '1h')  return new Date(Date.now() - 3_600_000);
+  if (dateRange === '24h') return new Date(Date.now() - 86_400_000);
+  return new Date(Date.now() - dateRange * 86_400_000);
+}
+
+function filterByDateRange(data, dateField, dateRange) {
+  const cutoff = dateRangeCutoff(dateRange);
+  if (!cutoff) return data;
   return data.filter((d) => new Date(d[dateField]) >= cutoff);
 }
 
@@ -173,9 +186,8 @@ export async function fetchSessions(dateRange = 30) {
 
   if (!supabase) return filterByDateRange(DEMO_SESSIONS, 'ended_at', dateRange);
 
-  const cutoff = dateRange === 'all'
-    ? '2020-01-01'
-    : new Date(Date.now() - dateRange * 86400000).toISOString();
+  const cutoffTs = dateRangeCutoff(dateRange);
+  const cutoff   = cutoffTs ? cutoffTs.toISOString() : '2020-01-01';
   const { data } = await supabase
     .from('meow_ops_sessions')
     .select('*')
@@ -220,10 +232,15 @@ export async function fetchDailyStats(dateRange = 30, costSummary = null) {
   return buildDailyFromSessions(sessions);
 }
 
-// Filter a daily_summary array by a dateRange (in days, or 'all').
+// Filter a daily_summary array by a dateRange (number of days, or special strings).
 export function filterDailySummaryByRange(dailySummary, dateRange) {
   if (dateRange === 'all') return dailySummary;
-  const cutoff = new Date(Date.now() - dateRange * 86400000);
+  // For hour-based ranges, only include today's entry (daily_summary is per-day)
+  if (dateRange === '1h' || dateRange === '24h') {
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: IST });
+    return dailySummary.filter((d) => d.date === todayStr);
+  }
+  const cutoff    = new Date(Date.now() - dateRange * 86_400_000);
   const cutoffStr = cutoff.toLocaleDateString('en-CA', { timeZone: IST });
   return dailySummary.filter((d) => d.date >= cutoffStr);
 }
@@ -267,6 +284,8 @@ export function buildDailyFromSessions(sessions) {
 // Ensures the ByDay chart always has one entry per calendar day in the range,
 // with zeros for inactive days (no gaps, no jump-cuts in the area chart).
 export function fillMissingDays(dailyData, dateRange) {
+  // Hour-based ranges are sub-day — no day-filling needed
+  if (dateRange === '1h' || dateRange === '24h') return dailyData || [];
   if (dateRange === 'all' || !dailyData?.length) return dailyData || [];
   const existing = new Map(dailyData.map((d) => [d.date, d]));
   const filled = [];

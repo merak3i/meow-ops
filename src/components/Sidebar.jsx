@@ -2,22 +2,22 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, List, FolderKanban, CalendarDays, Wrench, DollarSign,
-  Cat, Timer, Activity, RefreshCw, Check, AlertCircle, BarChart3, Sparkles,
+  Cat, Timer, Activity, RefreshCw, Check, AlertCircle, BarChart3, GitBranch,
 } from 'lucide-react';
 import { triggerSync, getSyncStatus, invalidateRealSessions, IS_PROD } from '../lib/queries';
 
 const NAV = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { id: 'sessions', label: 'Sessions', icon: List },
-  { id: 'by-project', label: 'By Project', icon: FolderKanban },
-  { id: 'by-day', label: 'By Day', icon: CalendarDays },
-  { id: 'by-action', label: 'By Action', icon: Wrench },
-  { id: 'cost', label: 'Cost Tracker', icon: DollarSign },
-  { id: 'analytics',    label: 'Analytics',     icon: BarChart3 },
-  { id: 'companion',    label: 'Companion',     icon: Cat },
-  { id: 'companion-v2', label: 'Companion V2',  icon: Sparkles },
-  { id: 'live',         label: 'Live Sessions', icon: Activity },
-  { id: 'pomodoro',     label: 'Focus Timer',   icon: Timer },
+  { id: 'overview',   label: 'Overview',      icon: LayoutDashboard },
+  { id: 'sessions',   label: 'Sessions',      icon: List },
+  { id: 'by-project', label: 'By Project',    icon: FolderKanban },
+  { id: 'by-day',     label: 'By Day',        icon: CalendarDays },
+  { id: 'by-action',  label: 'By Action',     icon: Wrench },
+  { id: 'cost',       label: 'Cost Tracker',  icon: DollarSign },
+  { id: 'analytics',  label: 'Analytics',     icon: BarChart3 },
+  { id: 'agent-ops',  label: 'Agent Ops',     icon: GitBranch },
+  { id: 'companion',  label: 'Companion',     icon: Cat },
+  { id: 'live',       label: 'Live Sessions', icon: Activity },
+  { id: 'pomodoro',   label: 'Focus Timer',   icon: Timer },
 ];
 
 function relativeTime(ms) {
