@@ -1,6 +1,7 @@
 // ActionParticles.tsx — Three.js particle effect triggered by companion actions.
 // Feed → green rising sparkles, Play → orange bouncing dots,
 // Groom → pink hearts drift, Sleep → blue zzz float, Pet → yellow stars.
+// Session → gold burst (new session detected), Milestone → purple celebration.
 
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
@@ -9,18 +10,21 @@ import * as THREE from 'three';
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ActionParticlesProps {
-  effect: string | null;   // 'feed' | 'play' | 'groom' | 'sleep' | 'pet' | null
+  // 'feed'|'play'|'groom'|'sleep'|'pet'|'room'|'session'|'milestone' | null
+  effect: string | null;
 }
 
 // ─── Config per effect ────────────────────────────────────────────────────────
 
 const EFFECT_CONFIG: Record<string, { color: number; count: number; speed: number; spread: number }> = {
-  feed:  { color: 0x7ac74f, count: 24, speed: 0.8,  spread: 0.4 },
-  play:  { color: 0xff8830, count: 30, speed: 1.2,  spread: 0.6 },
-  groom: { color: 0xff80c0, count: 20, speed: 0.6,  spread: 0.3 },
-  sleep: { color: 0x80c0ff, count: 16, speed: 0.4,  spread: 0.2 },
-  pet:   { color: 0xffd700, count: 28, speed: 1.0,  spread: 0.5 },
-  room:  { color: 0xc084fc, count: 18, speed: 0.5,  spread: 0.3 },
+  feed:      { color: 0x7ac74f, count: 24, speed: 0.8,  spread: 0.4 },
+  play:      { color: 0xff8830, count: 30, speed: 1.2,  spread: 0.6 },
+  groom:     { color: 0xff80c0, count: 20, speed: 0.6,  spread: 0.3 },
+  sleep:     { color: 0x80c0ff, count: 16, speed: 0.4,  spread: 0.2 },
+  pet:       { color: 0xffd700, count: 28, speed: 1.0,  spread: 0.5 },
+  room:      { color: 0xc084fc, count: 18, speed: 0.5,  spread: 0.3 },
+  session:   { color: 0xffd700, count: 22, speed: 0.9,  spread: 0.5 },
+  milestone: { color: 0xe879f9, count: 48, speed: 1.6,  spread: 0.8 },
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import { LOD_DISTANCES, FUR_SHELLS_PER_LOD } from './useLOD';
 import { COMPANION_ACCESSORIES } from '@/lib/companion-accessories';
 import type { DeveloperProfile } from '@/types/session';
 import type { CompanionState } from '@/state/companionMachine';
+import type { MemoryMark } from './useCompanionGame';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ interface CatMeshProps {
   state:                CompanionState;
   geometry:             THREE.BufferGeometry | null;   // pre-loaded high-poly geometry
   equippedAccessories?: string[];
+  memoryMarks?:         MemoryMark[];
 }
 
 // ─── Procedural cat geometry (placeholder) ───────────────────────────────────
@@ -188,9 +190,51 @@ function AccessoryOverlays({ accessories }: { accessories: string[] }) {
   );
 }
 
+// ─── Memory mark overlays ─────────────────────────────────────────────────────
+// Permanent plane meshes earned by the cat over its lifetime.
+// Rendered at body-relative positions, depthWrite=false to avoid z-fighting.
+
+interface MarkConfig {
+  position: [number, number, number];
+  rotation: [number, number, number];
+  size:     [number, number];
+  color:    string;
+}
+
+const MARK_CONFIG: Record<string, MarkConfig> = {
+  'scar':          { position: [-0.25, 0.15, 0.20],  rotation: [0, 0.3, 0.1],    size: [0.12, 0.06], color: '#888888' },
+  'gold-stripe':   { position: [0,    -0.38, -0.18], rotation: [0.3, 0, 0],      size: [0.08, 0.22], color: '#FFD700' },
+  'star-mark':     { position: [0,     0.44, 0.30],  rotation: [0, 0, 0],        size: [0.10, 0.10], color: '#7C3AED' },
+  'big-run-blaze': { position: [0,     0.06, 0.42],  rotation: [0, 0, 0],        size: [0.20, 0.14], color: '#F97316' },
+  'crown-mark':    { position: [0,     0.54, 0.10],  rotation: [-0.25, 0, 0],    size: [0.14, 0.08], color: '#06B6D4' },
+};
+
+function MemoryMarkings({ marks }: { marks: MemoryMark[] }) {
+  return (
+    <>
+      {marks.map((m) => {
+        const cfg = MARK_CONFIG[m.type];
+        if (!cfg) return null;
+        return (
+          <mesh key={m.type} position={cfg.position} rotation={cfg.rotation}>
+            <planeGeometry args={cfg.size} />
+            <meshBasicMaterial
+              color={cfg.color}
+              transparent
+              opacity={0.72}
+              depthWrite={false}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        );
+      })}
+    </>
+  );
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function CatMesh({ profile, cursorX, cursorY, state, geometry, equippedAccessories = [] }: CatMeshProps) {
+export function CatMesh({ profile, cursorX, cursorY, state, geometry, equippedAccessories = [], memoryMarks = [] }: CatMeshProps) {
   const groupRef  = useRef<THREE.Group>(null);
   const meshRef   = useRef<THREE.Mesh>(null);
   const timeRef   = useRef(0);
@@ -267,6 +311,8 @@ export function CatMesh({ profile, cursorX, cursorY, state, geometry, equippedAc
     <group ref={groupRef} scale={[scale, scale, scale]}>
       {/* Accessory overlays (rendered at group level — scale applies) */}
       <AccessoryOverlays accessories={equippedAccessories} />
+      {/* Memory marks — permanent earned markings */}
+      <MemoryMarkings marks={memoryMarks} />
 
       {/* Head bone — IK applies rotation here */}
       <group ref={headRef as React.RefObject<THREE.Group>} position={[0, 0.35, 0]}>

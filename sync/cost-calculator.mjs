@@ -21,6 +21,43 @@ const PRICING = {
   'mistral-small':            { input: 0.1,  output: 0.3,  cacheCreate: 0,     cacheRead: 0     },
   // Llama (local inference — cost = $0, electricity excluded)
   'llama-3.3-70b':            { input: 0,    output: 0,    cacheCreate: 0,     cacheRead: 0     },
+
+  // DeepSeek (deepseek.com) — as of April 2026
+  'deepseek-v3':              { input: 0.27, output: 1.10, cacheCreate: 0,     cacheRead: 0.07  },
+  'deepseek-r1':              { input: 0.55, output: 2.19, cacheCreate: 0,     cacheRead: 0.14  },
+
+  // Qwen / Alibaba DashScope
+  'qwen-max':                 { input: 1.60, output: 6.40, cacheCreate: 0,     cacheRead: 0     },
+  'qwen-plus':                { input: 0.40, output: 1.20, cacheCreate: 0,     cacheRead: 0     },
+  'qwen-turbo':               { input: 0.05, output: 0.15, cacheCreate: 0,     cacheRead: 0     },
+
+  // Moonshot / Kimi
+  'kimi-k2':                  { input: 0.60, output: 2.50, cacheCreate: 0,     cacheRead: 0     },
+
+  // Zhipu GLM
+  'glm-4':                    { input: 0.07, output: 0.07, cacheCreate: 0,     cacheRead: 0     },
+  'glm-4-flash':              { input: 0,    output: 0,    cacheCreate: 0,     cacheRead: 0     },
+
+  // ByteDance Doubao
+  'doubao-pro':               { input: 0.008,output: 0.025,cacheCreate: 0,     cacheRead: 0     },
+
+  // xAI Grok
+  'grok-3':                   { input: 3.0,  output: 15.0, cacheCreate: 0,     cacheRead: 0     },
+  'grok-3-mini':              { input: 0.30, output: 0.50, cacheCreate: 0,     cacheRead: 0     },
+  'grok-2':                   { input: 2.0,  output: 10.0, cacheCreate: 0,     cacheRead: 0     },
+
+  // Cohere Command R
+  'command-r-plus':           { input: 2.50, output: 10.0, cacheCreate: 0,     cacheRead: 0     },
+  'command-r':                { input: 0.15, output: 0.60, cacheCreate: 0,     cacheRead: 0     },
+
+  // Amazon Nova
+  'amazon-nova-pro':          { input: 0.80, output: 3.20, cacheCreate: 0,     cacheRead: 0     },
+  'amazon-nova-lite':         { input: 0.06, output: 0.24, cacheCreate: 0,     cacheRead: 0     },
+  'amazon-nova-micro':        { input: 0.035,output: 0.14, cacheCreate: 0,     cacheRead: 0     },
+
+  // Perplexity Sonar
+  'sonar-pro':                { input: 3.0,  output: 15.0, cacheCreate: 0,     cacheRead: 0     },
+  'sonar':                    { input: 1.0,  output: 1.0,  cacheCreate: 0,     cacheRead: 0     },
 };
 
 const DEFAULT_CLAUDE_PRICING = { input: 3, output: 15, cacheCreate: 3.75, cacheRead: 0.3 };
@@ -53,6 +90,43 @@ function pickPricing(model) {
 
   // Llama / local model matching
   if (model.includes('llama') || model.includes('ollama'))   return PRICING['llama-3.3-70b'];
+
+  // DeepSeek
+  if (model.includes('deepseek-r1'))                         return PRICING['deepseek-r1'];
+  if (model.includes('deepseek'))                            return PRICING['deepseek-v3'];
+
+  // Qwen / Alibaba
+  if (model.includes('qwen-max') || model.includes('qwq'))   return PRICING['qwen-max'];
+  if (model.includes('qwen-turbo'))                          return PRICING['qwen-turbo'];
+  if (model.includes('qwen'))                                return PRICING['qwen-plus'];
+
+  // Moonshot / Kimi
+  if (model.includes('kimi') || model.includes('moonshot'))  return PRICING['kimi-k2'];
+
+  // Zhipu GLM
+  if (model.includes('glm-4-flash'))                         return PRICING['glm-4-flash'];
+  if (model.includes('glm'))                                 return PRICING['glm-4'];
+
+  // ByteDance Doubao
+  if (model.includes('doubao'))                              return PRICING['doubao-pro'];
+
+  // xAI Grok
+  if (model.includes('grok-3-mini'))                         return PRICING['grok-3-mini'];
+  if (model.includes('grok-3'))                              return PRICING['grok-3'];
+  if (model.includes('grok'))                                return PRICING['grok-2'];
+
+  // Cohere Command R
+  if (model.includes('command-r-plus') || model.includes('command-r+'))  return PRICING['command-r-plus'];
+  if (model.includes('command-r'))                           return PRICING['command-r'];
+
+  // Amazon Nova
+  if (model.includes('nova-pro'))                            return PRICING['amazon-nova-pro'];
+  if (model.includes('nova-lite'))                           return PRICING['amazon-nova-lite'];
+  if (model.includes('nova'))                                return PRICING['amazon-nova-micro'];
+
+  // Perplexity Sonar
+  if (model.includes('sonar-pro'))                           return PRICING['sonar-pro'];
+  if (model.includes('sonar'))                               return PRICING['sonar'];
 
   return DEFAULT_PRICING;
 }

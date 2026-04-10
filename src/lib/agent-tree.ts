@@ -142,33 +142,85 @@ export function getSessionRunGroups(sessions: Session[]): SessionRunGroup[] {
   return groups;
 }
 
+// ─── Efficiency helpers ───────────────────────────────────────────────────────
+
+/**
+ * Token efficiency index: output tokens per $1 spent (higher = more efficient).
+ * Rolls up the entire subtree (self + descendants).
+ */
+export function efficiencyIndex(node: AgentTreeNode): number {
+  if (node.totalCost === 0) return 0;
+  function sumOutputTokens(n: AgentTreeNode): number {
+    return (n.session.output_tokens || 0) +
+      n.children.reduce((sum, c) => sum + sumOutputTokens(c), 0);
+  }
+  return Math.round(sumOutputTokens(node) / node.totalCost);
+}
+
+/**
+ * Prompt cache hit rate for a single session (0–1).
+ * High values (>50%) indicate good context reuse.
+ */
+export function cacheHitRate(session: Session): number {
+  const total = session.total_tokens || 0;
+  if (total === 0) return 0;
+  return (session.cache_read_tokens || 0) / total;
+}
+
 // ─── Model family → colour ────────────────────────────────────────────────────
 
 export function modelColor(model: string | null): string {
   if (!model) return 'var(--text-muted)';
-  if (model.includes('opus'))   return '#c084fc';   // purple
-  if (model.includes('sonnet')) return 'var(--accent)'; // blue
-  if (model.includes('haiku'))  return 'var(--cyan)';   // teal
+  if (model.includes('opus'))                   return '#c084fc';         // purple
+  if (model.includes('sonnet'))                 return 'var(--accent)';   // blue
+  if (model.includes('haiku'))                  return 'var(--cyan)';     // teal
   if (model.startsWith('o3') || model.startsWith('o4')) return '#f87171'; // red
-  if (model.includes('gpt'))    return 'var(--amber)';  // amber
+  if (model.includes('gpt'))                    return 'var(--amber)';    // amber
+  if (model.includes('deepseek') || model.includes('qwen') ||
+      model.includes('kimi') || model.includes('glm') ||
+      model.includes('doubao'))                 return '#34d399';         // green (Chinese)
+  if (model.includes('grok'))                   return '#f472b6';         // pink (xAI)
+  if (model.includes('command'))                return '#fb923c';         // orange (Cohere)
+  if (model.includes('nova'))                   return '#a78bfa';         // violet (Amazon)
+  if (model.includes('sonar'))                  return '#38bdf8';         // sky (Perplexity)
+  if (model.includes('gemini'))                 return '#4ade80';         // lime (Google)
+  if (model.includes('mistral'))                return '#fbbf24';         // yellow
+  if (model.includes('llama'))                  return '#94a3b8';         // slate (local)
   return 'var(--text-secondary)';
 }
 
 export function modelLabel(model: string | null): string {
   if (!model) return 'unknown';
-  if (model.includes('opus'))          return 'Opus';
-  if (model.includes('sonnet'))        return 'Sonnet';
-  if (model.includes('haiku'))         return 'Haiku';
-  if (model.includes('gpt-4o-mini'))   return 'GPT-4o-mini';
-  if (model.includes('gpt-4o'))        return 'GPT-4o';
-  if (model.includes('gpt-5'))         return 'GPT-5';
-  if (model.startsWith('o3'))          return 'o3';
-  if (model.startsWith('o4'))          return 'o4-mini';
-  if (model.includes('gemini-2.5'))    return 'Gemini 2.5';
+  if (model.includes('opus'))             return 'Opus';
+  if (model.includes('sonnet'))           return 'Sonnet';
+  if (model.includes('haiku'))            return 'Haiku';
+  if (model.includes('gpt-4o-mini'))      return 'GPT-4o-mini';
+  if (model.includes('gpt-4o'))           return 'GPT-4o';
+  if (model.includes('gpt-5'))            return 'GPT-5';
+  if (model.startsWith('o3'))             return 'o3';
+  if (model.startsWith('o4'))             return 'o4-mini';
+  if (model.includes('gemini-2.5'))       return 'Gemini 2.5';
   if (model.includes('gemini-2.0') || model.includes('flash')) return 'Flash';
-  if (model.includes('gemini'))        return 'Gemini';
-  if (model.includes('mistral-large')) return 'Mistral L';
-  if (model.includes('mistral'))       return 'Mistral';
-  if (model.includes('llama'))         return 'Llama';
+  if (model.includes('gemini'))           return 'Gemini';
+  if (model.includes('mistral-large'))    return 'Mistral L';
+  if (model.includes('mistral'))          return 'Mistral';
+  if (model.includes('llama'))            return 'Llama';
+  if (model.includes('deepseek-r1'))      return 'DeepSeek R1';
+  if (model.includes('deepseek'))         return 'DeepSeek';
+  if (model.includes('qwen-max'))         return 'Qwen Max';
+  if (model.includes('qwen'))             return 'Qwen';
+  if (model.includes('kimi') || model.includes('moonshot')) return 'Kimi';
+  if (model.includes('glm'))              return 'GLM';
+  if (model.includes('doubao'))           return 'Doubao';
+  if (model.includes('grok-3-mini'))      return 'Grok 3 mini';
+  if (model.includes('grok-3'))           return 'Grok 3';
+  if (model.includes('grok'))             return 'Grok 2';
+  if (model.includes('command-r-plus') || model.includes('command-r+')) return 'Cmd R+';
+  if (model.includes('command-r'))        return 'Cmd R';
+  if (model.includes('nova-pro'))         return 'Nova Pro';
+  if (model.includes('nova-lite'))        return 'Nova Lite';
+  if (model.includes('nova'))             return 'Nova';
+  if (model.includes('sonar-pro'))        return 'Sonar Pro';
+  if (model.includes('sonar'))            return 'Sonar';
   return model.slice(0, 12);
 }

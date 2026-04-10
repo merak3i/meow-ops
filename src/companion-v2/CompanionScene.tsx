@@ -9,6 +9,7 @@ import { CatMesh }          from './CatMesh';
 import { ActionParticles }  from './ActionParticles';
 import type { DeveloperProfile } from '@/types/session';
 import type { CompanionState }   from '@/state/companionMachine';
+import type { MemoryMark }       from './useCompanionGame';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ interface CompanionSceneProps {
   roomTier?:            number;
   actionEffect?:        string | null;
   equippedAccessories?: string[];
+  memoryMarks?:         MemoryMark[];
 }
 
 // ─── Room tier → drei HDRI preset ────────────────────────────────────────────
@@ -80,7 +82,7 @@ function Floor() {
 // ─── Scene (inside Canvas) ───────────────────────────────────────────────────
 
 function Scene({
-  profile, cursorX, cursorY, state, roomTier, actionEffect, equippedAccessories,
+  profile, cursorX, cursorY, state, roomTier, actionEffect, equippedAccessories, memoryMarks,
 }: CompanionSceneProps) {
   const preset = roomPreset(roomTier ?? 0);
 
@@ -111,6 +113,7 @@ function Scene({
           state={state}
           geometry={null}
           equippedAccessories={equippedAccessories ?? []}
+          memoryMarks={memoryMarks ?? []}
         />
       </Suspense>
 
@@ -156,16 +159,17 @@ function Scene({
 // ─── Exported canvas wrapper ──────────────────────────────────────────────────
 
 export function CompanionScene({
-  profile, cursorX, cursorY, state, roomTier, actionEffect, equippedAccessories,
+  profile, cursorX, cursorY, state, roomTier, actionEffect, equippedAccessories, memoryMarks,
 }: CompanionSceneProps) {
   return (
     <Canvas
       shadows
       gl={{
-        antialias:           true,
-        toneMapping:         THREE.ACESFilmicToneMapping,
-        toneMappingExposure: 1.1,
-        outputColorSpace:    THREE.SRGBColorSpace,
+        antialias:              true,
+        toneMapping:            THREE.ACESFilmicToneMapping,
+        toneMappingExposure:    1.1,
+        outputColorSpace:       THREE.SRGBColorSpace,
+        preserveDrawingBuffer:  true,   // required for toDataURL() in cat card export
       }}
       style={{ width: '100%', height: '100%', background: 'transparent' }}
     >
@@ -177,6 +181,7 @@ export function CompanionScene({
         roomTier={roomTier}
         actionEffect={actionEffect}
         equippedAccessories={equippedAccessories}
+        memoryMarks={memoryMarks}
       />
     </Canvas>
   );

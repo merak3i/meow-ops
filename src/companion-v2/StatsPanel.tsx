@@ -1,17 +1,19 @@
-// StatsPanel.tsx — 5 stat bars + 6 action buttons + mood indicator + life stage badge.
+// StatsPanel.tsx — 5 stat bars + 6 action buttons + mood + life stage + trait badge + share.
 // Right panel of the Companion page.
 
-import type { CatState, DrawerState } from './useCompanionGame';
+import type { CatState, DrawerState, PersonalityTrait } from './useCompanionGame';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface StatsPanelProps {
-  cat:     CatState;
-  mood:    string;
-  drawers: DrawerState;
-  onPlay:  () => void;
-  onGroom: () => void;
-  onSleep: () => void;
+  cat:      CatState;
+  mood:     string;
+  drawers:  DrawerState;
+  trait?:   PersonalityTrait | null;
+  onPlay:   () => void;
+  onGroom:  () => void;
+  onSleep:  () => void;
+  onShare?: () => void;
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -73,11 +75,11 @@ function ActionBtn({
         transition:   'all 0.2s',
       }}
       onMouseEnter={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = 'var(--bg-hover)';
+        (e.currentTarget as HTMLButtonElement).style.background  = 'var(--bg-hover)';
         (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border-hover)';
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+        (e.currentTarget as HTMLButtonElement).style.background  = 'transparent';
         (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
       }}
     >
@@ -113,7 +115,7 @@ const STAGE_COLORS: Record<string, string> = {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function StatsPanel({ cat, mood, drawers, onPlay, onGroom, onSleep }: StatsPanelProps) {
+export function StatsPanel({ cat, mood, drawers, trait, onPlay, onGroom, onSleep, onShare }: StatsPanelProps) {
   const stageColor = STAGE_COLORS[cat.lifeStage] ?? 'var(--accent)';
   const moodColor  = MOOD_COLORS[mood] ?? 'var(--text-secondary)';
   const moodIcon   = MOOD_ICONS[mood] ?? '😺';
@@ -121,13 +123,11 @@ export function StatsPanel({ cat, mood, drawers, onPlay, onGroom, onSleep }: Sta
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
       {/* Header: life stage + mood */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
         <div>
           <span style={{
-            fontSize: 10,
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: 1,
+            fontSize: 10, fontWeight: 600,
+            textTransform: 'uppercase', letterSpacing: 1,
             color: stageColor,
           }}>
             {cat.lifeStage.replace('youngAdult', 'Young Adult')}
@@ -141,6 +141,29 @@ export function StatsPanel({ cat, mood, drawers, onPlay, onGroom, onSleep }: Sta
           <span style={{ fontSize: 10, textTransform: 'capitalize' }}>{mood}</span>
         </div>
       </div>
+
+      {/* Personality trait badge */}
+      {trait && (
+        <div
+          title={trait.bonus}
+          style={{
+            display:      'flex',
+            alignItems:   'center',
+            gap:          6,
+            marginBottom: 12,
+            padding:      '5px 10px',
+            background:   'var(--border)',
+            borderRadius: 6,
+            cursor:       'help',
+          }}
+        >
+          <span style={{ fontSize: 14 }}>{trait.badge}</span>
+          <span style={{ fontSize: 11, color: trait.color, fontWeight: 500 }}>{trait.name}</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>
+            {trait.bonus}
+          </span>
+        </div>
+      )}
 
       {/* Stat bars */}
       <StatBar label="Hunger"    value={cat.stats.hunger}    color="var(--amber)" />
@@ -166,6 +189,37 @@ export function StatsPanel({ cat, mood, drawers, onPlay, onGroom, onSleep }: Sta
         <ActionBtn icon="👒" label="Wardrobe" onClick={() => drawers.setWardrobeOpen(true)} />
         <ActionBtn icon="🏠" label="Room"     onClick={() => drawers.setRoomOpen(true)} />
       </div>
+
+      {/* Share button */}
+      {onShare && (
+        <button
+          onClick={onShare}
+          title="Export as PNG card"
+          style={{
+            width:        '100%',
+            marginTop:    10,
+            padding:      '7px 0',
+            border:       '1px solid var(--border)',
+            borderRadius: 7,
+            background:   'transparent',
+            color:        'var(--text-muted)',
+            fontSize:     11,
+            cursor:       'pointer',
+            fontFamily:   'inherit',
+            transition:   'all 0.15s',
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background  = 'var(--bg-hover)';
+            (e.currentTarget as HTMLButtonElement).style.color       = 'var(--text-secondary)';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background  = 'transparent';
+            (e.currentTarget as HTMLButtonElement).style.color       = 'var(--text-muted)';
+          }}
+        >
+          📸 Share card
+        </button>
+      )}
     </div>
   );
 }

@@ -9,17 +9,65 @@ import { WardrobeDrawer }      from './WardrobeDrawer';
 import { RoomDrawer }          from './RoomDrawer';
 import { FarewellOverlay }     from './FarewellOverlay';
 import { MemorialPanel }       from './MemorialPanel';
+import { MilestoneOverlay }    from './MilestoneOverlay';
+import { exportCatCard }       from './CatCardExport';
 import { useCompanionGame }    from './useCompanionGame';
 import { companionMachine, stateLabel, stateEmoji } from '@/state/companionMachine';
 import { buildDeveloperProfile }                    from '@/analytics/profile';
 import type { Session }        from '@/types/session';
 import type { CompanionState } from '@/state/companionMachine';
+import type { MemoryMark }     from './useCompanionGame';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface CompanionPageV2Props {
   sessions: Session[];
 }
+
+// ─── Milestone helpers (localStorage-based, no backend needed) ───────────────
+
+const MILESTONES_KEY = 'meow-milestones-shown';
+
+function getShownMilestones(): Set<string> {
+  try {
+    const raw = localStorage.getItem(MILESTONES_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function markMilestoneShown(key: string): void {
+  try {
+    const set = getShownMilestones();
+    set.add(key);
+    localStorage.setItem(MILESTONES_KEY, JSON.stringify([...set]));
+  } catch { /* quota exceeded — ignore */ }
+}
+
+interface MilestoneData {
+  title:       string;
+  description: string;
+  emoji:       string;
+}
+
+const GROWTH_MILESTONES: Partial<Record<string, MilestoneData>> = {
+  juvenile:   { title: 'Adolescent!',   description: 'Your kitten is growing up. 7 days together.',       emoji: '🐱' },
+  adult:      { title: 'Young Adult!',  description: 'A mature cat. 30 days of consistent coding.',       emoji: '😺' },
+  elder:      { title: 'Elder!',        description: 'Wise beyond years. 90 days of dedication.',         emoji: '👴🐱' },
+};
+
+const THRESHOLD_MILESTONES: [string, (tokens: number, cost: number, streak: number) => boolean, MilestoneData][] = [
+  ['1M-tokens',   (t) => t >= 1_000_000,   { title: '1 Million Tokens!',   description: 'Your cat has witnessed 1M tokens fly by.',          emoji: '🎯' }],
+  ['10M-tokens',  (t) => t >= 10_000_000,  { title: '10 Million Tokens!',  description: 'A true AI power user. Your cat is proud.',           emoji: '🚀' }],
+  ['100M-tokens', (t) => t >= 100_000_000, { title: '100 Million Tokens!', description: 'Legend territory. The cat glows with respect.',      emoji: '🌟' }],
+  ['7d-streak',   (_, __, s) => s >= 7,    { title: '7-Day Streak!',       description: 'A week of consistent coding. Dedication!',           emoji: '🔥' }],
+  ['30d-streak',  (_, __, s) => s >= 30,   { title: '30-Day Streak!',      description: 'A full month without a break. Extraordinary.',       emoji: '💎' }],
+  ['$10',         (_, c) => c >= 10,       { title: '$10 Invested',        description: 'First major AI investment milestone.',               emoji: '💰' }],
+  ['$50',         (_, c) => c >= 50,       { title: '$50 Invested',        description: "You're serious about this.",                         emoji: '💸' }],
+  ['$100',        (_, c) => c >= 100,      { title: '$100 Invested',       description: 'High roller. Your cat respects it.',                 emoji: '🎰' }],
+  ['$500',        (_, c) => c >= 500,      { title: '$500 Invested',       description: 'Elite tier AI usage. Legendary.',                   emoji: '👑' }],
+];
 
 // ─── Morph weight bar ─────────────────────────────────────────────────────────
 
@@ -44,6 +92,20 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   const cursorRef            = useRef({ x: 0, y: 0 });
   const [cursor, setCursor]  = useState({ x: 0, y: 0 });
   const [actionEffect, setActionEffect] = useState<string | null>(null);
+  const [pendingMilestone, setPendingMilestone] = useState<MilestoneData | null>(null);
+
+  // Ref to the 3D viewport div — used for canvas capture in cat card export
+  const viewportRef = useRef<HTMLDivElement>(null);
+
+  // Track previous growth stage for milestone detection
+  const prevGrowthStageRef = useRef<string>('');
+
+  // Trigger action particle effect, auto-clear after 2s
+  // Defined early so polling + milestone effects can reference it safely
+  const triggerEffect = useCallback((type: string) => {
+    setActionEffect(type);
+    setTimeout(() => setActionEffect(null), 2000);
+  }, []);
 
   const game    = useCompanionGame(sessions);
   const profile = buildDeveloperProfile(sessions);
@@ -71,6 +133,107 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
     return () => window.clearInterval(id);
   }, [send]);
 
+  // ── Session polling (detect new sessions while page is open) ─────────────────
+  // Polls /data/sessions.json every 30s. When the count grows, the cat reacts.
+  useEffect(() => {
+    let lastCount: number | null = null;
+
+    const poll = async () => {
+      try {
+        const res = await fetch('/data/sessions.json?_t=' + Date.now());
+        if (!res.ok) return;
+        const data = await res.json() as unknown[];
+        const count = data.length;
+        if (lastCount !== null && count > lastCount) {
+          triggerEffect('session');
+          send({ type: 'SESSION_UPDATE', profile: buildDeveloperProfile(sessions) });
+        }
+        lastCount = count;
+      } catch {
+        // No sessions.json yet — silently skip
+      }
+    };
+
+    const id = window.setInterval(poll, 30_000);
+    return () => window.clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Growth stage milestone detection ─────────────────────────────────────────
+  useEffect(() => {
+    const prev = prevGrowthStageRef.current;
+    const curr = profile.growth_stage;
+    if (prev && prev !== curr) {
+      const ms = GROWTH_MILESTONES[curr];
+      if (ms) {
+        const key = `growth-${curr}`;
+        if (!getShownMilestones().has(key)) {
+          markMilestoneShown(key);
+          setPendingMilestone(ms);
+          triggerEffect('milestone');
+        }
+      }
+    }
+    prevGrowthStageRef.current = curr;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.growth_stage]);
+
+  // ── Token / cost / streak milestone detection ────────────────────────────────
+  useEffect(() => {
+    const t = profile.total_tokens;
+    const c = profile.total_cost_usd;
+    const s = game.cat?.streakDays ?? profile.active_streak_days;
+    const shown = getShownMilestones();
+    for (const [key, condition, ms] of THRESHOLD_MILESTONES) {
+      if (!shown.has(key) && condition(t, c, s)) {
+        markMilestoneShown(key);
+        setPendingMilestone(ms);
+        triggerEffect('milestone');
+        break; // Show one at a time
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile.total_tokens, profile.total_cost_usd, game.cat?.streakDays, profile.active_streak_days]);
+
+  // ── Auto-dismiss milestone overlay after 4s ───────────────────────────────────
+  useEffect(() => {
+    if (!pendingMilestone) return;
+    const id = window.setTimeout(() => setPendingMilestone(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [pendingMilestone]);
+
+  // ── Memory mark awarding ──────────────────────────────────────────────────────
+  // Checks on every cat stat change — addMemoryMark deduplicates internally.
+  useEffect(() => {
+    if (!game.cat) return;
+    const { stats, streakDays } = game.cat;
+    const now = new Date().toISOString();
+
+    if (stats.health < 5) {
+      game.actions.addMemoryMark({ type: 'scar', date: now });
+    }
+    if (streakDays >= 7) {
+      game.actions.addMemoryMark({ type: 'gold-stripe', date: now });
+    }
+    if (profile.total_sessions >= 100) {
+      game.actions.addMemoryMark({ type: 'star-mark', date: now });
+    }
+    if (streakDays >= 30) {
+      game.actions.addMemoryMark({ type: 'crown-mark', date: now });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game.cat?.stats.health, game.cat?.streakDays, profile.total_sessions]);
+
+  // ── Big-run blaze: awarded if any session cost > $1 ──────────────────────────
+  useEffect(() => {
+    if (!game.cat) return;
+    const bigRun = sessions.find((s) => s.estimated_cost_usd > 1);
+    if (bigRun) {
+      game.actions.addMemoryMark({ type: 'big-run-blaze', date: bigRun.started_at });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions.length, game.cat?.id]);
+
   // Cursor tracking — normalised to −1…+1 in viewport space
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -81,11 +244,11 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
     send({ type: 'CURSOR_MOVE', x, y });
   }, [send]);
 
-  // Trigger action particle effect, auto-clear after 2s
-  const triggerEffect = useCallback((type: string) => {
-    setActionEffect(type);
-    setTimeout(() => setActionEffect(null), 2000);
-  }, []);
+  // Cat card export
+  const handleShare = useCallback(() => {
+    if (!game.cat) return;
+    exportCatCard(viewportRef.current, game.cat, profile, game.trait);
+  }, [game.cat, game.trait, profile]);
 
   const currentState = actorRef.value as CompanionState;
   const ctx          = actorRef.context;
@@ -98,9 +261,8 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   const fusedSize = game.cat
     ? Math.max(morph.size, (game.cat.growthXP / 1500) * 0.8)
     : morph.size;
-  const fusedMorphs = { ...morph, fatigue: fusedFatigue, size: Math.min(1, fusedSize) };
-
-  const fusedProfile = { ...profile, morph_weights: fusedMorphs };
+  const fusedMorphs   = { ...morph, fatigue: fusedFatigue, size: Math.min(1, fusedSize) };
+  const fusedProfile  = { ...profile, morph_weights: fusedMorphs };
 
   const GROWTH_COLORS: Record<string, string> = {
     kitten:   'var(--cyan)',
@@ -109,13 +271,17 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
     elder:    '#c084fc',
   };
   const stageColor = GROWTH_COLORS[profile.growth_stage] ?? 'var(--accent)';
-
-  // Room tier → scene
-  const roomTier = game.cat?.room?.tier ?? 0;
+  const roomTier   = game.cat?.room?.tier ?? 0;
 
   return (
     <>
-      {/* ── Overlays ─────────────────────────────────────────────────────────── */}
+      {/* ── Milestone overlay ─────────────────────────────────────────────────── */}
+      <MilestoneOverlay
+        milestone={pendingMilestone}
+        onDismiss={() => setPendingMilestone(null)}
+      />
+
+      {/* ── Cat adoption / farewell overlays ─────────────────────────────────── */}
       {!game.cat && (
         <BreedPickerModal onAdopt={game.actions.adopt} />
       )}
@@ -149,6 +315,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
 
         {/* ── 3D Viewport ──────────────────────────────────────────────────── */}
         <div
+          ref={viewportRef}
           style={{
             background:   'var(--bg-card)',
             border:       '1px solid var(--border)',
@@ -168,6 +335,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             roomTier={roomTier}
             actionEffect={actionEffect}
             equippedAccessories={game.cat?.appearance.equippedAccessories ?? []}
+            memoryMarks={game.memoryMarks}
           />
 
           {/* State badge overlay */}
@@ -181,6 +349,29 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             <span style={{ fontSize: 16 }}>{stateEmoji(currentState)}</span>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{stateLabel(currentState)}</span>
           </div>
+
+          {/* Memory marks legend — bottom right */}
+          {game.memoryMarks.length > 0 && (
+            <div style={{
+              position: 'absolute', bottom: 16, right: 14,
+              display: 'flex', gap: 4, pointerEvents: 'none',
+            }}>
+              {game.memoryMarks.map((m) => {
+                const labels: Record<string, string> = {
+                  'scar':          '🩹',
+                  'gold-stripe':   '✨',
+                  'star-mark':     '⭐',
+                  'big-run-blaze': '🔥',
+                  'crown-mark':    '👑',
+                };
+                return (
+                  <span key={m.type} style={{ fontSize: 14 }} title={m.type}>
+                    {labels[m.type] ?? '◆'}
+                  </span>
+                );
+              })}
+            </div>
+          )}
 
           {/* Click hint */}
           <div style={{
@@ -200,9 +391,11 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
               cat={game.cat}
               mood={game.mood}
               drawers={game.drawers}
+              trait={game.trait}
               onPlay={() => { game.actions.play(); triggerEffect('play'); }}
               onGroom={() => { game.actions.groom(); triggerEffect('groom'); }}
               onSleep={() => { game.actions.sleep(); triggerEffect('sleep'); }}
+              onShare={handleShare}
             />
           )}
 
@@ -299,6 +492,8 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
               <div>idle:    {ctx.idleSeconds}s</div>
               <div>fatigue: {fusedMorphs.fatigue.toFixed(2)}</div>
               <div>cursor:  ({cursor.x.toFixed(2)}, {cursor.y.toFixed(2)})</div>
+              <div>trait:   {game.trait?.name ?? 'none'}</div>
+              <div>marks:   {game.memoryMarks.map((m: MemoryMark) => m.type).join(', ') || 'none'}</div>
             </div>
           )}
         </div>

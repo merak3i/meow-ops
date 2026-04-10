@@ -1,6 +1,7 @@
 // useCompanionGame.ts — wraps companion-store.js for V2 React tree.
 // Subscribes to store updates so components re-render on any mutation.
 // All game actions are passed through unchanged — no logic lives here.
+// Also owns personality trait derivation and memory mark persistence.
 
 import { useState, useEffect, useCallback } from 'react';
 import * as store from '@/lib/companion-store';
@@ -60,6 +61,73 @@ export interface MemorialEntry {
   finalLifeStage: LifeStage;
 }
 
+// ─── Personality trait system ─────────────────────────────────────────────────
+
+export interface PersonalityTrait {
+  name:  string;
+  badge: string;
+  color: string;
+  bonus: string;       // short human-readable bonus description
+}
+
+const TRAIT_MAP: Record<string, PersonalityTrait> = {
+  architect:   { name: 'Methodical',  badge: '📐', color: '#c084fc', bonus: '+5% happiness decay resistance' },
+  builder:     { name: 'Prolific',    badge: '🔨', color: 'var(--amber)', bonus: '+10% shine from feed' },
+  detective:   { name: 'Vigilant',    badge: '🔍', color: 'var(--cyan)',  bonus: '+5% health passive' },
+  commander:   { name: 'Bold',        badge: '⚡', color: '#f87171',      bonus: '+10% energy from sleep' },
+  guardian:    { name: 'Steadfast',   badge: '🛡️', color: 'var(--green)', bonus: '+5% max health' },
+  storyteller: { name: 'Expressive',  badge: '📝', color: '#fb923c',      bonus: '+5% happiness from play' },
+  ghost:       { name: 'Mysterious',  badge: '👻', color: 'var(--text-muted)', bonus: 'Occasional translucent shimmer' },
+};
+
+/**
+ * Derives the cat's personality trait from the developer's last 14 days of sessions.
+ * Returns null if there aren't enough sessions to determine a pattern.
+ */
+export function derivePersonalityTrait(sessions: Session[]): PersonalityTrait | null {
+  const cutoffMs = Date.now() - 14 * 86_400_000;
+  const recent   = sessions.filter(
+    (s) => new Date(s.ended_at || s.started_at).getTime() > cutoffMs,
+  );
+  if (recent.length < 5) return null;
+
+  const counts: Record<string, number> = {};
+  for (const s of recent) {
+    counts[s.cat_type] = (counts[s.cat_type] || 0) + 1;
+  }
+
+  const [dominant] = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  if (!dominant) return null;
+
+  return TRAIT_MAP[dominant[0]] ?? null;
+}
+
+// ─── Memory marks ─────────────────────────────────────────────────────────────
+
+export interface MemoryMark {
+  type: string;    // 'scar' | 'gold-stripe' | 'star-mark' | 'big-run-blaze' | 'crown-mark'
+  date: string;    // ISO-8601 when awarded
+}
+
+const MARKS_KEY_PREFIX = 'meow-marks-';
+
+function loadMarks(catId: string): MemoryMark[] {
+  try {
+    const raw = localStorage.getItem(MARKS_KEY_PREFIX + catId);
+    return raw ? (JSON.parse(raw) as MemoryMark[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveMarks(catId: string, marks: MemoryMark[]): void {
+  try {
+    localStorage.setItem(MARKS_KEY_PREFIX + catId, JSON.stringify(marks));
+  } catch {
+    // quota exceeded — silently skip
+  }
+}
+
 // ─── Drawer state ─────────────────────────────────────────────────────────────
 
 export interface DrawerState {
@@ -74,10 +142,12 @@ export interface DrawerState {
 // ─── Hook return ─────────────────────────────────────────────────────────────
 
 export interface UseCompanionGameReturn {
-  cat:      CatState | null;
-  memorial: MemorialEntry[];
-  mood:     string;
-  drawers:  DrawerState;
+  cat:         CatState | null;
+  memorial:    MemorialEntry[];
+  mood:        string;
+  trait:       PersonalityTrait | null;
+  memoryMarks: MemoryMark[];
+  drawers:     DrawerState;
   actions: {
     adopt:           (breed: string, name: string) => void;
     feed:            (foodKey: string) => void;
@@ -91,6 +161,7 @@ export interface UseCompanionGameReturn {
     claimSessions:   (sessions: Session[]) => void;
     claimPomodoros:  (history: { id: string }[]) => void;
     rollDailyStreak: (streakDays: number) => void;
+    addMemoryMark:   (mark: MemoryMark) => void;
   };
 }
 
@@ -126,6 +197,22 @@ export function useCompanionGame(sessions: Session[]): UseCompanionGameReturn {
   const cat      = (gameState.cat as CatState | null) ?? null;
   const memorial = (gameState.memorial ?? []) as MemorialEntry[];
   const mood     = store.getMood(cat);
+
+  // ── Memory marks ──────────────────────────────────────────────────────────
+  // Scoped to cat.id — clears automatically when a new cat is adopted.
+
+  const [memoryMarks, setMemoryMarks] = useState<MemoryMark[]>(() =>
+    cat ? loadMarks(cat.id) : [],
+  );
+
+  // Reload marks when cat changes (new adoption or bury)
+  useEffect(() => {
+    setMemoryMarks(cat ? loadMarks(cat.id) : []);
+  }, [cat?.id]);
+
+  // ── Personality trait ──────────────────────────────────────────────────────
+  // Pure derivation from sessions — no persistence needed.
+  const trait = derivePersonalityTrait(sessions);
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -177,10 +264,22 @@ export function useCompanionGame(sessions: Session[]): UseCompanionGameReturn {
     store.rollDailyStreakBonus(streakDays);
   }, []);
 
+  const addMemoryMark = useCallback((mark: MemoryMark) => {
+    if (!cat) return;
+    setMemoryMarks((prev) => {
+      if (prev.some((m) => m.type === mark.type)) return prev; // already awarded
+      const next = [...prev, mark];
+      saveMarks(cat.id, next);
+      return next;
+    });
+  }, [cat]);
+
   return {
     cat,
     memorial,
     mood,
+    trait,
+    memoryMarks,
     drawers: {
       foodOpen,
       wardrobeOpen,
@@ -202,6 +301,7 @@ export function useCompanionGame(sessions: Session[]): UseCompanionGameReturn {
       claimSessions,
       claimPomodoros,
       rollDailyStreak,
+      addMemoryMark,
     },
   };
 }
