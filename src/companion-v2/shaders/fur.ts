@@ -61,7 +61,7 @@ export const furFragmentShader = /* glsl */ `
   precision highp float;
 
   // ── Uniforms ────────────────────────────────────────────────────────────────
-  uniform sampler2D uFurMap;         // alpha mask: 1 = strand, 0 = gap
+  // uFurMap removed — strand mask is now fully procedural (no texture needed)
   uniform vec3  uBaseColor;
   uniform vec3  uTipColor;
   uniform vec3  uLightDir;           // world space, normalised
@@ -96,12 +96,27 @@ export const furFragmentShader = /* glsl */ `
     return normalize(T + shift * N);
   }
 
+  // ── Procedural strand mask (replaces fur texture) ─────────────────────────
+  // Hash two UV cell coords → 0..1. Cheap & consistent across GPUs.
+  float hash2(vec2 p) {
+    p = fract(p * vec2(127.1, 311.7));
+    p += dot(p, p + 19.19);
+    return fract(p.x * p.y);
+  }
+
+  // Returns 1.0 inside a fur strand, 0.0 in the gap.
+  // strandDensity 0→1 controls how many strands remain at this shell.
+  float strandMask(vec2 uv, float strandDensity) {
+    vec2 cell = floor(uv * 55.0);
+    float h    = hash2(cell);
+    return step(1.0 - strandDensity, h);
+  }
+
   void main() {
-    // ── Fur mask ────────────────────────────────────────────────────────────
-    float mask = texture2D(uFurMap, vUv).r;
-    // Progressively thin strands toward the tip
-    float density = 1.0 - vShellFraction;
-    if (mask < density * 0.7) discard;
+    // ── Fur mask — thins from base (dense) to tip (sparse) ──────────────────
+    float strandDensity = mix(0.92, 0.18, vShellFraction);
+    float mask = strandMask(vUv, strandDensity);
+    if (mask < 0.5) discard;
 
     // ── Base diffuse (Kajiya-Kay diffuse = sqrt(1 - dot(T, L)^2)) ──────────
     vec3  T      = normalize(vTangent);
@@ -152,7 +167,6 @@ export function defaultFurUniforms() {
     uShellCount:   { value: 32 },
     uWindDir:      { value: [0.3, 0, 0.7] },
     uWindStrength:  { value: 0.02 },
-    uFurMap:       { value: null },
     uBaseColor:    { value: [0.18, 0.14, 0.12] },
     uTipColor:     { value: [0.55, 0.48, 0.40] },
     uLightDir:     { value: [0.4, 0.8, 0.5] },

@@ -8,8 +8,8 @@
  * inside the skin).  Back-scatter adds a translucent glow on the silhouette
  * when the light is behind the surface, most visible on ears and paws.
  *
- * Reference: Eugene d'Eon, "A Better Diffuse Model for Translucent Materials",
- * GDC 2007.  Simplified for real-time use.
+ * uAlbedoColor replaces the old uAlbedo texture sampler — no texture file
+ * is needed; the colour is passed as a vec3 uniform from the component.
  */
 
 export const sssVertexShader = /* glsl */ `
@@ -31,7 +31,7 @@ export const sssFragmentShader = /* glsl */ `
   precision highp float;
 
   // ── Uniforms ────────────────────────────────────────────────────────────────
-  uniform sampler2D uAlbedo;
+  uniform vec3  uAlbedoColor;      // solid surface colour (replaces texture)
   uniform vec3  uLightDir;         // world space, normalised
   uniform vec3  uLightColor;
   uniform vec3  uSubsurfaceColor;  // pinkish for skin, warm amber for paws
@@ -49,34 +49,30 @@ export const sssFragmentShader = /* glsl */ `
   varying vec2 vUv;
 
   // ── Wrap lighting ────────────────────────────────────────────────────────────
-  // Extends diffuse past terminator:  (dot(N, L) + k) / (1 + k)
   float wrapDiffuse(vec3 N, vec3 L, float k) {
     return max(0.0, (dot(N, L) + k) / (1.0 + k));
   }
 
   // ── Back-scatter (thin-surface translucency) ─────────────────────────────────
-  // Simulates light that punches through a thin surface (ears, paws, tail tip).
   float backScatter(vec3 N, vec3 L, vec3 V, float distortion, float power, float scale) {
-    vec3  H       = normalize(L + N * distortion);
-    float VdotH   = max(0.0, dot(V, -H));
-    float scatter  = scale * pow(VdotH, power);
-    return scatter;
+    vec3  H      = normalize(L + N * distortion);
+    float VdotH  = max(0.0, dot(V, -H));
+    return scale * pow(VdotH, power);
   }
 
   void main() {
-    vec4 albedoSample = texture2D(uAlbedo, vUv);
-    vec3 albedo       = albedoSample.rgb;
+    vec3 albedo = uAlbedoColor;
 
     vec3 N = normalize(vWorldNormal);
     vec3 L = normalize(uLightDir);
     vec3 V = normalize(uCamPos - vWorldPos);
 
     // ── Wrap diffuse ─────────────────────────────────────────────────────────
-    float diffuse = wrapDiffuse(N, L, uWrapFactor);
+    float diffuse     = wrapDiffuse(N, L, uWrapFactor);
     vec3  diffuseColor = albedo * uLightColor * diffuse;
 
     // ── Subsurface back-scatter ──────────────────────────────────────────────
-    float scatter = backScatter(N, L, V, uDistortion, uPower, uScale);
+    float scatter     = backScatter(N, L, V, uDistortion, uPower, uScale);
     vec3  scatterColor = uSubsurfaceColor * uLightColor * scatter;
 
     // ── Ambient ──────────────────────────────────────────────────────────────
@@ -84,7 +80,7 @@ export const sssFragmentShader = /* glsl */ `
 
     // ── Composite ────────────────────────────────────────────────────────────
     vec3 color = ambient + diffuseColor + scatterColor;
-    gl_FragColor = vec4(color, albedoSample.a);
+    gl_FragColor = vec4(color, 1.0);
   }
 `;
 
@@ -92,16 +88,16 @@ export const sssFragmentShader = /* glsl */ `
 
 export function defaultSSSUniforms() {
   return {
-    uAlbedo:          { value: null },
+    uAlbedoColor:     { value: [0.7, 0.6, 0.5] },   // warm grey fallback
     uLightDir:        { value: [0.4, 0.8, 0.5] },
     uLightColor:      { value: [1.0, 0.95, 0.85] },
-    uSubsurfaceColor: { value: [0.9, 0.4, 0.3] },    // warm skin pink
+    uSubsurfaceColor: { value: [0.9, 0.4, 0.3] },   // warm skin pink
     uCamPos:          { value: [0, 0, 5] },
     uWrapFactor:      { value: 0.5 },
     uDistortion:      { value: 0.3 },
     uPower:           { value: 8.0 },
     uScale:           { value: 1.5 },
-    uAmbientStr:      { value: 0.2 },
-    uAmbientColor:    { value: [0.4, 0.45, 0.6] },   // cool sky ambient
+    uAmbientStr:      { value: 0.22 },
+    uAmbientColor:    { value: [0.4, 0.45, 0.6] },  // cool sky ambient
   };
 }
