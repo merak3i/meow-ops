@@ -46,7 +46,7 @@ hook you're going with.
 > Installs as a PWA on your dock.
 >
 > Open source: github.com/merak3i/meow-ops
-> Live demo: meow-ops.vercel.app
+> Live demo: [link in bio]
 
 **Attach:** Carousel of 4 — Overview, Colony, Live Sessions, Focus Timer
 
