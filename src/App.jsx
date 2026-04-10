@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { PasswordGate } from './components/PasswordGate';
 import Sidebar from './components/Sidebar';
 import DateFilter from './components/DateFilter';
 import Overview from './pages/Overview';
@@ -214,6 +215,7 @@ export default function App() {
   };
 
   return (
+    <PasswordGate>
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} />
 
@@ -237,5 +239,6 @@ export default function App() {
         )}
       </main>
     </div>
+    </PasswordGate>
   );
 }
