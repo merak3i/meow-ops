@@ -97,6 +97,9 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   // Ref to the 3D viewport div — used for canvas capture in cat card export
   const viewportRef = useRef<HTMLDivElement>(null);
 
+  // Pet signal — set to true on click, consumed by useCatAnimation inside CatMesh
+  const petSignalRef = useRef(false);
+
   // Track previous growth stage for milestone detection
   const prevGrowthStageRef = useRef<string>('');
 
@@ -325,17 +328,19 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             cursor:       'none',
           }}
           onMouseMove={handleMouseMove}
-          onClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); }}
+          onClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); petSignalRef.current = true; }}
         >
           <CompanionScene
             profile={fusedProfile}
             cursorX={cursor.x}
             cursorY={cursor.y}
             state={currentState}
+            breed={game.cat?.breed ?? 'tabby'}
             roomTier={roomTier}
             actionEffect={actionEffect}
             equippedAccessories={game.cat?.appearance.equippedAccessories ?? []}
             memoryMarks={game.memoryMarks}
+            onPetSignal={petSignalRef}
           />
 
           {/* State badge overlay */}

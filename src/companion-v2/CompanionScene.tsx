@@ -18,19 +18,15 @@ interface CompanionSceneProps {
   cursorX:              number;
   cursorY:              number;
   state:                CompanionState;
+  breed?:               string;
   roomTier?:            number;
   actionEffect?:        string | null;
   equippedAccessories?: string[];
   memoryMarks?:         MemoryMark[];
+  onPetSignal?:         React.MutableRefObject<boolean>;
 }
 
 // ─── Room tier → drei HDRI preset ────────────────────────────────────────────
-// tier 0/1: corner mat    → "sunset"     (warm wood)
-// tier 2:   cushion bed   → "apartment"  (purple)
-// tier 3:   wooden cottage→ "forest"     (warm wood)
-// tier 4:   enchanted tree→ "night"      (dark bioluminescent)
-// tier 5:   castle keep   → "warehouse"  (industrial stone)
-// tier 6:   throne room   → "city"       (dramatic night skyline)
 
 type DreiPreset = 'sunset' | 'apartment' | 'forest' | 'night' | 'warehouse' | 'city';
 
@@ -68,41 +64,51 @@ function CameraRig({ state }: { state: CompanionState }) {
   return null;
 }
 
-// ─── Floor plane (receives contact shadow) ────────────────────────────────────
+// ─── Floor ────────────────────────────────────────────────────────────────────
 
 function Floor() {
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.72, 0]} receiveShadow>
       <planeGeometry args={[10, 10]} />
-      <shadowMaterial opacity={0.18} />
+      <shadowMaterial opacity={0.22} />
     </mesh>
   );
 }
 
-// ─── Scene (inside Canvas) ───────────────────────────────────────────────────
+// ─── Scene ────────────────────────────────────────────────────────────────────
 
 function Scene({
-  profile, cursorX, cursorY, state, roomTier, actionEffect, equippedAccessories, memoryMarks,
+  profile, cursorX, cursorY, state, breed, roomTier, actionEffect,
+  equippedAccessories, memoryMarks, onPetSignal,
 }: CompanionSceneProps) {
   const preset = roomPreset(roomTier ?? 0);
 
   return (
     <>
-      {/* Camera */}
       <PerspectiveCamera makeDefault fov={45} near={0.1} far={50} position={[0, 0.1, 4.5]} />
       <CameraRig state={state} />
 
-      {/* HDRI — swaps based on room tier */}
+      {/* HDRI environment */}
       <Environment preset={preset} background={false} />
 
-      {/* Subtle directional fill */}
+      {/* Warm key light — upper right front */}
       <directionalLight
-        position={[3, 5, 3]}
-        intensity={0.8}
+        position={[2.5, 4.5, 3]}
+        intensity={1.2}
         castShadow
         shadow-mapSize={[1024, 1024]}
+        color="#fff5e0"
       />
-      <ambientLight intensity={0.15} />
+
+      {/* Cool rim light from behind — creates Stray-style silhouette separation */}
+      <directionalLight
+        position={[-1.5, 2.5, -3.5]}
+        intensity={0.40}
+        color="#a0c8ff"
+      />
+
+      {/* Warm fill from lower left */}
+      <pointLight position={[-2, 0.8, 2]} intensity={0.28} color="#ffcc88" />
 
       {/* Cat */}
       <Suspense fallback={null}>
@@ -111,18 +117,16 @@ function Scene({
           cursorX={cursorX}
           cursorY={cursorY}
           state={state}
-          geometry={null}
+          breed={breed ?? 'tabby'}
           equippedAccessories={equippedAccessories ?? []}
           memoryMarks={memoryMarks ?? []}
+          onPetSignal={onPetSignal}
         />
       </Suspense>
 
-      {/* Action particles */}
       <ActionParticles effect={actionEffect ?? null} />
-
       <Floor />
 
-      {/* Orbit controls — dev only */}
       {import.meta.env.DEV && (
         <OrbitControls
           enablePan={false}
@@ -132,7 +136,6 @@ function Scene({
         />
       )}
 
-      {/* Post-processing */}
       <EffectComposer>
         <DepthOfField
           focusDistance={0.01}
@@ -141,9 +144,9 @@ function Scene({
           height={480}
         />
         <Bloom
-          luminanceThreshold={0.7}
+          luminanceThreshold={0.65}
           luminanceSmoothing={0.9}
-          intensity={0.4}
+          intensity={0.5}
           blendFunction={BlendFunction.SCREEN}
         />
         <Vignette
@@ -159,17 +162,18 @@ function Scene({
 // ─── Exported canvas wrapper ──────────────────────────────────────────────────
 
 export function CompanionScene({
-  profile, cursorX, cursorY, state, roomTier, actionEffect, equippedAccessories, memoryMarks,
+  profile, cursorX, cursorY, state, breed, roomTier, actionEffect,
+  equippedAccessories, memoryMarks, onPetSignal,
 }: CompanionSceneProps) {
   return (
     <Canvas
       shadows
       gl={{
-        antialias:              true,
-        toneMapping:            THREE.ACESFilmicToneMapping,
-        toneMappingExposure:    1.1,
-        outputColorSpace:       THREE.SRGBColorSpace,
-        preserveDrawingBuffer:  true,   // required for toDataURL() in cat card export
+        antialias:             true,
+        toneMapping:           THREE.ACESFilmicToneMapping,
+        toneMappingExposure:   1.15,
+        outputColorSpace:      THREE.SRGBColorSpace,
+        preserveDrawingBuffer: true,
       }}
       style={{ width: '100%', height: '100%', background: 'transparent' }}
     >
@@ -178,10 +182,12 @@ export function CompanionScene({
         cursorX={cursorX}
         cursorY={cursorY}
         state={state}
+        breed={breed}
         roomTier={roomTier}
         actionEffect={actionEffect}
         equippedAccessories={equippedAccessories}
         memoryMarks={memoryMarks}
+        onPetSignal={onPetSignal}
       />
     </Canvas>
   );

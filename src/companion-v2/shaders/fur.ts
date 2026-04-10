@@ -19,6 +19,8 @@ export const furVertexShader = /* glsl */ `
   uniform int   uShellCount;    // total shell count
   uniform vec3  uWindDir;
   uniform float uWindStrength;
+  uniform float uStripeScale;    // 0 = no stripes; 3–5 = visible bands
+  uniform float uPatternType;    // 0=solid, 1=stripes, 2=spots
 
   attribute vec3  aTangent;
 
@@ -70,6 +72,8 @@ export const furFragmentShader = /* glsl */ `
   uniform float uSpecPower2;         // secondary lobe shininess (~20)
   uniform float uSpecShift;          // tangent shift for secondary lobe (~0.1)
   uniform float uSpecStrength;
+  uniform float uStripeScale;
+  uniform float uPatternType;
 
   // ── Varyings ────────────────────────────────────────────────────────────────
   varying vec3  vWorldPos;
@@ -119,8 +123,16 @@ export const furFragmentShader = /* glsl */ `
     float spec  = (spec1 + spec2 * 0.5) * uSpecStrength;
     spec = spec * step(0.0, dot(vWorldNormal, L)); // backface mask
 
+    // ── Pattern — procedural stripes from world Y ────────────────────────────
+    float stripeT = 0.0;
+    if (uPatternType > 0.5) {
+      float band = sin(vWorldPos.y * uStripeScale * 6.2832) * 0.5 + 0.5;
+      stripeT = smoothstep(0.35, 0.65, band) * 0.38;
+    }
+
     // ── Colour blend along shell ─────────────────────────────────────────────
-    vec3 furColor = mix(uBaseColor, uTipColor, vShellFraction);
+    vec3 baseWithPattern = mix(uBaseColor, uBaseColor * 0.60, stripeT);
+    vec3 furColor = mix(baseWithPattern, uTipColor, vShellFraction);
 
     // ── Final composite ──────────────────────────────────────────────────────
     vec3 color = furColor * (uAmbient + diffuse) + vec3(spec);
@@ -151,5 +163,7 @@ export function defaultFurUniforms() {
     uSpecPower2:   { value: 20 },
     uSpecShift:    { value: 0.1 },
     uSpecStrength: { value: 0.6 },
+    uStripeScale:  { value: 0 },
+    uPatternType:  { value: 0 },
   };
 }
