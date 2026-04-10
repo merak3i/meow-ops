@@ -181,18 +181,24 @@ function Eye({ eyeColor, flip }: { eyeColor: string; flip: boolean }) {
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
+export type CatZone = 'head' | 'body' | 'tail' | 'paws';
+
 interface ProceduralCatProps {
-  breed:        string;
-  headRef:      React.RefObject<THREE.Object3D | null>;
-  eyesRef:      React.RefObject<THREE.Object3D | null>;
-  animTargets:  React.MutableRefObject<CatAnimTargets>;
-  morphWeights: MorphWeights;
+  breed:         string;
+  headRef:       React.RefObject<THREE.Object3D | null>;
+  eyesRef:       React.RefObject<THREE.Object3D | null>;
+  animTargets:   React.MutableRefObject<CatAnimTargets>;
+  morphWeights:  MorphWeights;
+  onZoneEnter?:  (zone: CatZone) => void;
+  onZoneLeave?:  () => void;
+  onZoneClick?:  (zone: CatZone) => void;
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function ProceduralCat({
   breed, headRef, eyesRef, animTargets, morphWeights,
+  onZoneEnter, onZoneLeave, onZoneClick,
 }: ProceduralCatProps) {
 
   // ── Breed data ─────────────────────────────────────────────────────────────
@@ -506,8 +512,51 @@ export function ProceduralCat({
             timeRef={timeRef}
             fatigue={fatigue}
           />
+          {/* Tail hit zone */}
+          <mesh
+            onPointerEnter={(e) => { e.stopPropagation(); onZoneEnter?.('tail'); }}
+            onPointerLeave={() => onZoneLeave?.()}
+            onClick={(e) => { e.stopPropagation(); onZoneClick?.('tail'); }}
+          >
+            <sphereGeometry args={[0.28, 6, 6]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
         </group>
       </group>
+
+      {/* ── Invisible hit zones (raycasting only) ─────────────────────────── */}
+      {/* Body */}
+      <mesh
+        onPointerEnter={(e) => { e.stopPropagation(); onZoneEnter?.('body'); }}
+        onPointerLeave={() => onZoneLeave?.()}
+        onClick={(e) => { e.stopPropagation(); onZoneClick?.('body'); }}
+      >
+        <sphereGeometry args={[0.50, 8, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
+      {/* Head — inside head group so it inherits IK transform */}
+      <group position={[0, headCentreY, 0.042]}>
+        <mesh
+          onPointerEnter={(e) => { e.stopPropagation(); onZoneEnter?.('head'); }}
+          onPointerLeave={() => onZoneLeave?.()}
+          onClick={(e) => { e.stopPropagation(); onZoneClick?.('head'); }}
+        >
+          <sphereGeometry args={[0.36, 8, 8]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+      </group>
+
+      {/* Paws */}
+      <mesh
+        position={[0, -0.460, 0.200]}
+        onPointerEnter={(e) => { e.stopPropagation(); onZoneEnter?.('paws'); }}
+        onPointerLeave={() => onZoneLeave?.()}
+        onClick={(e) => { e.stopPropagation(); onZoneClick?.('paws'); }}
+      >
+        <boxGeometry args={[0.50, 0.14, 0.32]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
 
     </group>
   );

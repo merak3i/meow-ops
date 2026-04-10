@@ -6,6 +6,7 @@ import { BlendFunction } from 'postprocessing';
 import * as THREE from 'three';
 
 import { CatMesh }          from './CatMesh';
+import type { CatZone }     from './ProceduralCat';
 import { ActionParticles }  from './ActionParticles';
 import type { DeveloperProfile } from '@/types/session';
 import type { CompanionState }   from '@/state/companionMachine';
@@ -24,6 +25,9 @@ interface CompanionSceneProps {
   equippedAccessories?: string[];
   memoryMarks?:         MemoryMark[];
   onPetSignal?:         React.MutableRefObject<boolean>;
+  onZoneEnter?:         (zone: CatZone) => void;
+  onZoneLeave?:         () => void;
+  onZoneClick?:         (zone: CatZone) => void;
 }
 
 // ─── Room tier → drei HDRI preset ────────────────────────────────────────────
@@ -80,6 +84,7 @@ function Floor() {
 function Scene({
   profile, cursorX, cursorY, state, breed, roomTier, actionEffect,
   equippedAccessories, memoryMarks, onPetSignal,
+  onZoneEnter, onZoneLeave, onZoneClick,
 }: CompanionSceneProps) {
   const preset = roomPreset(roomTier ?? 0);
 
@@ -121,6 +126,9 @@ function Scene({
           equippedAccessories={equippedAccessories ?? []}
           memoryMarks={memoryMarks ?? []}
           onPetSignal={onPetSignal}
+          onZoneEnter={onZoneEnter}
+          onZoneLeave={onZoneLeave}
+          onZoneClick={onZoneClick}
         />
       </Suspense>
 
@@ -164,6 +172,7 @@ function Scene({
 export function CompanionScene({
   profile, cursorX, cursorY, state, breed, roomTier, actionEffect,
   equippedAccessories, memoryMarks, onPetSignal,
+  onZoneEnter, onZoneLeave, onZoneClick,
 }: CompanionSceneProps) {
   return (
     <Canvas
@@ -188,6 +197,9 @@ export function CompanionScene({
         equippedAccessories={equippedAccessories}
         memoryMarks={memoryMarks}
         onPetSignal={onPetSignal}
+        onZoneEnter={onZoneEnter}
+        onZoneLeave={onZoneLeave}
+        onZoneClick={onZoneClick}
       />
     </Canvas>
   );

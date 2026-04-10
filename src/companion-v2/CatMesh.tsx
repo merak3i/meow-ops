@@ -6,6 +6,7 @@ import { useIK }                    from './useIK';
 import { useMorphInfluences, morphToScale } from './useXPMorphs';
 import { useCatAnimation }          from './useCatAnimation';
 import { ProceduralCat }            from './ProceduralCat';
+import type { CatZone }             from './ProceduralCat';
 import { COMPANION_ACCESSORIES }    from '@/lib/companion-accessories';
 import type { DeveloperProfile }    from '@/types/session';
 import type { CompanionState }      from '@/state/companionMachine';
@@ -22,6 +23,9 @@ interface CatMeshProps {
   equippedAccessories?: string[];
   memoryMarks?:         MemoryMark[];
   onPetSignal?:         React.MutableRefObject<boolean>;
+  onZoneEnter?:         (zone: CatZone) => void;
+  onZoneLeave?:         () => void;
+  onZoneClick?:         (zone: CatZone) => void;
 }
 
 // ─── Accessory overlays ───────────────────────────────────────────────────────
@@ -119,6 +123,9 @@ export function CatMesh({
   equippedAccessories = [],
   memoryMarks = [],
   onPetSignal,
+  onZoneEnter,
+  onZoneLeave,
+  onZoneClick,
 }: CatMeshProps) {
   const groupRef = useRef<THREE.Group>(null);
 
@@ -158,6 +165,9 @@ export function CatMesh({
         eyesRef={eyesRef as React.RefObject<THREE.Object3D | null>}
         animTargets={animTargets}
         morphWeights={morphWeights}
+        onZoneEnter={onZoneEnter}
+        onZoneLeave={onZoneLeave}
+        onZoneClick={onZoneClick}
       />
     </group>
   );
