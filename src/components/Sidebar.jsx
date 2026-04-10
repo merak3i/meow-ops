@@ -261,7 +261,8 @@ export default function Sidebar({ activePage, onNavigate, onReload }) {
       {IS_PROD ? <RefreshButton onReload={onReload} /> : <SyncButton onReload={onReload} />}
 
       <div style={{ padding: '0 20px', color: 'var(--text-muted)', fontSize: 11 }}>
-        Meow Creative Haus
+        <span style={{ opacity: 0.5 }}>powered by</span>{' '}
+        <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Meow Creative Haus</span>
       </div>
     </aside>
   );
