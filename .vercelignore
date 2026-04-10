@@ -5,3 +5,6 @@ node_modules
 .git
 .claude
 dist
+# Real session data — never deploy to public demo
+public/data/sessions.json
+public/data/cost-summary.json

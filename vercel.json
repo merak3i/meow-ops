@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/data/sessions.json",
+      "destination": "/data/demo-sessions.json"
+    },
+    {
+      "source": "/data/cost-summary.json",
+      "destination": "/data/demo-cost-summary.json"
+    },
+    {
       "source": "/((?!assets/|data/|api/|.*\\.(?:js|css|png|jpg|svg|ico|json|woff|woff2|webmanifest)).*)",
       "destination": "/index.html"
     }
