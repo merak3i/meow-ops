@@ -155,15 +155,15 @@ function FurShells({
 function Eye({ eyeColor, flip }: { eyeColor: string; flip: boolean }) {
   return (
     <>
-      {/* Sclera */}
+      {/* Sclera — clearcoat gives the wet-cornea gloss */}
       <mesh>
         <sphereGeometry args={[0.078, 20, 20]} />
-        <meshStandardMaterial color="white" roughness={0.04} />
+        <meshPhysicalMaterial color="#f8f5f0" roughness={0.10} clearcoat={0.6} clearcoatRoughness={0.1} />
       </mesh>
-      {/* Iris */}
+      {/* Iris — high clearcoat for vivid glassy sheen */}
       <mesh position={[0, 0, 0.072]}>
         <circleGeometry args={[0.060, 28]} />
-        <meshStandardMaterial color={eyeColor} roughness={0.04} metalness={0.2} />
+        <meshPhysicalMaterial color={eyeColor} roughness={0.06} clearcoat={1.0} clearcoatRoughness={0.04} />
       </mesh>
       {/* Pupil — vertical slit */}
       <mesh position={[0, 0, 0.074]}>
@@ -173,7 +173,7 @@ function Eye({ eyeColor, flip }: { eyeColor: string; flip: boolean }) {
       {/* Catchlight */}
       <mesh position={[flip ? -0.026 : 0.026, 0.024, 0.068]}>
         <sphereGeometry args={[0.014, 8, 8]} />
-        <meshStandardMaterial color="white" emissive="white" emissiveIntensity={1.0} roughness={0} />
+        <meshStandardMaterial color="white" emissive="white" emissiveIntensity={1.4} roughness={0} />
       </mesh>
     </>
   );

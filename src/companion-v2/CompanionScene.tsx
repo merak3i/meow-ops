@@ -144,22 +144,23 @@ function Scene({
         />
       )}
 
+      {/* Post-processing: threshold 0.88 so only specular highlights bloom, not the fur coat */}
       <EffectComposer>
         <DepthOfField
-          focusDistance={0.01}
-          focalLength={0.04}
-          bokehScale={3}
+          focusDistance={0.018}
+          focalLength={0.08}
+          bokehScale={2}
           height={480}
         />
         <Bloom
-          luminanceThreshold={0.65}
-          luminanceSmoothing={0.9}
-          intensity={0.5}
+          luminanceThreshold={0.88}
+          luminanceSmoothing={0.85}
+          intensity={0.18}
           blendFunction={BlendFunction.SCREEN}
         />
         <Vignette
-          offset={0.4}
-          darkness={0.55}
+          offset={0.35}
+          darkness={0.45}
           blendFunction={BlendFunction.NORMAL}
         />
       </EffectComposer>
@@ -180,7 +181,7 @@ export function CompanionScene({
       gl={{
         antialias:             true,
         toneMapping:           THREE.ACESFilmicToneMapping,
-        toneMappingExposure:   1.15,
+        toneMappingExposure:   0.95,
         outputColorSpace:      THREE.SRGBColorSpace,
         preserveDrawingBuffer: true,
       }}
