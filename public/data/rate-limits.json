@@ -1,0 +1,25 @@
+{
+  "_note": "Auto-populated by sync/fetch-claude-limits.mjs. Run that script to refresh.",
+  "_updated": "2026-04-12T21:06:00+05:30",
+  "claude": {
+    "session": {
+      "used_pct": 18,
+      "resets_in_label": "3 hr 26 min",
+      "resets_at": null
+    },
+    "weekly": {
+      "all_models_used_pct": 83,
+      "sonnet_only_used_pct": 56,
+      "resets_label": "Tue 7:30 PM"
+    },
+    "extra_usage": {
+      "spent_usd": 0,
+      "limit_usd": 5,
+      "balance_usd": 100
+    }
+  },
+  "chatgpt": {
+    "_status": "not_connected",
+    "note": "Run sync/fetch-claude-limits.mjs --chatgpt to connect"
+  }
+}
