@@ -3,7 +3,10 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { spawn } from 'child_process';
 import { statSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 // Local-only dev plugin: exposes POST /api/sync to run the export script
 // and GET /api/sync/status to read the timestamp of the generated JSON.
@@ -84,5 +87,10 @@ function meowSyncPlugin() {
 }
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src'),
+    },
+  },
   plugins: [react(), tailwindcss(), meowSyncPlugin()],
 });
