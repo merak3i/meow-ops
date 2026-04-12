@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, List, FolderKanban, CalendarDays, Wrench, DollarSign,
-  Cat, Timer, Activity, RefreshCw, Check, AlertCircle, BarChart3, GitBranch, Swords,
+  Cat, Timer, RefreshCw, Check, AlertCircle, BarChart3, GitBranch, Swords,
 } from 'lucide-react';
 import { formatCost, formatTokens } from '../lib/format';
 import { triggerSync, getSyncStatus, invalidateRealSessions, IS_PROD } from '../lib/queries';
@@ -18,7 +18,6 @@ const NAV = [
   { id: 'agent-ops',  label: 'Agent Ops',       icon: GitBranch },
   { id: 'sanctum',    label: 'Scrying Sanctum', icon: Swords },
   { id: 'companion',  label: 'Companion',       icon: Cat },
-  { id: 'live',       label: 'Live Sessions',   icon: Activity },
   { id: 'pomodoro',   label: 'Focus Timer',     icon: Timer },
 ];
 

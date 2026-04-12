@@ -287,7 +287,7 @@ export default function App() {
           ? { padding: 0, maxWidth: 'none', display: 'flex', flexDirection: 'column', height: '100vh' }
           : { padding: 32, maxWidth: 1280 }),
       }}>
-        {page !== 'pomodoro' && page !== 'companion' && page !== 'live' &&
+        {page !== 'pomodoro' && page !== 'companion' &&
          page !== 'agent-ops' && page !== 'analytics' && page !== 'sanctum' && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
             <DateFilter value={dateRange} onChange={setDateRange} />
