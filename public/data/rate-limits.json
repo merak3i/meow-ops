@@ -1,6 +1,6 @@
 {
   "_note": "Auto-populated by sync/fetch-claude-limits.mjs. Run that script to refresh.",
-  "_updated": "2026-04-12T21:06:00+05:30",
+  "_updated": "2026-04-13T00:00:00+05:30",
   "claude": {
     "session": {
       "used_pct": 18,
@@ -18,8 +18,10 @@
       "balance_usd": 100
     }
   },
-  "chatgpt": {
-    "_status": "not_connected",
-    "note": "Run sync/fetch-claude-limits.mjs --chatgpt to connect"
+  "codex": {
+    "weekly": {
+      "remaining_pct": 80,
+      "resets_label": "17 Apr"
+    }
   }
 }

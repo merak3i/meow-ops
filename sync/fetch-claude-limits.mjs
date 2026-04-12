@@ -97,7 +97,13 @@ Example:
   const weeklySonnetPct = parseInt(process.env.CLAUDE_WEEKLY_SONNET_PCT ?? existing?.claude?.weekly?.sonnet_only_used_pct ?? '0');
   const resetsLabel     = process.env.CLAUDE_RESETS_LABEL ?? existing?.claude?.weekly?.resets_label ?? '';
 
-  return { sessionPct, weeklyAllPct, weeklySonnetPct, resetsLabel };
+  // Codex limits (CODEX_WEEKLY_REMAINING_PCT = % remaining shown in Codex UI)
+  const codexWeeklyRemainingPct = process.env.CODEX_WEEKLY_REMAINING_PCT != null
+    ? parseInt(process.env.CODEX_WEEKLY_REMAINING_PCT)
+    : existing?.codex?.weekly?.remaining_pct ?? null;
+  const codexResetsLabel = process.env.CODEX_RESETS_LABEL ?? existing?.codex?.weekly?.resets_label ?? null;
+
+  return { sessionPct, weeklyAllPct, weeklySonnetPct, resetsLabel, codexWeeklyRemainingPct, codexResetsLabel };
 }
 
 // ─── Write output ─────────────────────────────────────────────────────────────
@@ -109,7 +115,7 @@ async function main() {
 
   const chromeSession = await tryReadChromeSession();
 
-  const { sessionPct, weeklyAllPct, weeklySonnetPct, resetsLabel } = promptManual();
+  const { sessionPct, weeklyAllPct, weeklySonnetPct, resetsLabel, codexWeeklyRemainingPct, codexResetsLabel } = promptManual();
 
   const now = new Date().toISOString();
 
@@ -133,9 +139,11 @@ async function main() {
         balance_usd: 100,
       },
     },
-    chatgpt: existing?.chatgpt ?? {
-      _status: 'not_connected',
-      note:    'Run sync/fetch-claude-limits.mjs --chatgpt to connect',
+    codex: {
+      weekly: codexWeeklyRemainingPct != null ? {
+        remaining_pct: codexWeeklyRemainingPct,
+        resets_label:  codexResetsLabel,
+      } : (existing?.codex?.weekly ?? null),
     },
   };
 

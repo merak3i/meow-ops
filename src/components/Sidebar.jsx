@@ -361,35 +361,38 @@ function SourceUsagePanel({ sourceStats, tokenBudget, onBudgetChange, rateLimits
               label="Month tokens" used={monthTokens} budget={budget.month}
               color={color} srcKey={src} period="month" onSetBudget={handleSetBudget}
             />
-            {/* Claude.ai rate limit bars — only for Claude row */}
+            {/* Per-source rate limit bars */}
             {src === 'claude' && rl && (
-              <div style={{
-                marginTop: 8, paddingTop: 8,
-                borderTop: '1px solid var(--border)',
-              }}>
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.08em',
                   textTransform: 'uppercase', marginBottom: 5 }}>
                   Claude.ai limits
                 </div>
                 {rl.session?.used_pct != null && (
-                  <RateLimitBar
-                    label="Session"
-                    usedPct={rl.session.used_pct}
-                    resetLabel={rl.session.resets_in_label ?? null}
-                  />
+                  <RateLimitBar label="Session" usedPct={rl.session.used_pct}
+                    resetLabel={rl.session.resets_in_label ?? null} />
                 )}
                 {rl.weekly?.all_models_used_pct != null && (
-                  <RateLimitBar
-                    label="Weekly (all)"
-                    usedPct={rl.weekly.all_models_used_pct}
-                    resetLabel={rl.weekly.resets_label ?? null}
-                  />
+                  <RateLimitBar label="Weekly (all)" usedPct={rl.weekly.all_models_used_pct}
+                    resetLabel={rl.weekly.resets_label ?? null} />
                 )}
                 {rl.weekly?.sonnet_only_used_pct != null && (
+                  <RateLimitBar label="Weekly (Sonnet)" usedPct={rl.weekly.sonnet_only_used_pct}
+                    resetLabel={null} />
+                )}
+              </div>
+            )}
+            {src === 'codex' && rateLimits?.codex && (
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.08em',
+                  textTransform: 'uppercase', marginBottom: 5 }}>
+                  Codex limits
+                </div>
+                {rateLimits.codex.weekly?.remaining_pct != null && (
                   <RateLimitBar
-                    label="Weekly (Sonnet)"
-                    usedPct={rl.weekly.sonnet_only_used_pct}
-                    resetLabel={null}
+                    label="Weekly"
+                    usedPct={100 - rateLimits.codex.weekly.remaining_pct}
+                    resetLabel={rateLimits.codex.weekly.resets_label ?? null}
                   />
                 )}
               </div>
