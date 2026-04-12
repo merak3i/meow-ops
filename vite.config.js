@@ -41,7 +41,8 @@ function meowSyncPlugin() {
           res.end();
           return;
         }
-        const scriptPath = join(server.config.root, 'sync', 'export-local.mjs');
+        const scriptPath      = join(server.config.root, 'sync', 'export-local.mjs');
+        const limitsScriptPath = join(server.config.root, 'sync', 'fetch-claude-limits.mjs');
         const child = spawn('node', [scriptPath], {
           cwd: server.config.root,
           env: process.env,
@@ -73,6 +74,16 @@ function meowSyncPlugin() {
             mtime: stats?.mtimeMs || null,
             size: stats?.size || null,
           }));
+
+          // After session sync completes, refresh rate limits in the background.
+          // Reads Chrome cookie if possible; falls back to existing values.
+          // Pass --push to also commit + push rate-limits.json to GitHub.
+          spawn('node', [limitsScriptPath, '--push'], {
+            cwd: server.config.root,
+            env: process.env,
+            stdio: 'ignore',
+            detached: true,
+          }).unref();
         });
 
         child.on('error', (err) => {

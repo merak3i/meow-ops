@@ -105,6 +105,8 @@ Example:
 async function main() {
   console.log('🔮 Meow Ops — Fetching rate limits…');
 
+  const shouldPush = process.argv.includes('--push');
+
   const chromeSession = await tryReadChromeSession();
 
   const { sessionPct, weeklyAllPct, weeklySonnetPct, resetsLabel } = promptManual();
@@ -141,6 +143,25 @@ async function main() {
   console.log(`✓  Saved to ${OUT}`);
   console.log(`   Claude session: ${sessionPct}% used`);
   console.log(`   Claude weekly:  ${weeklyAllPct}% all models, ${weeklySonnetPct}% Sonnet`);
+
+  if (shouldPush) {
+    console.log('📤 Pushing to GitHub…');
+    const { execSync: exec } = await import('node:child_process');
+    const root = join(__dir, '..');
+    try {
+      exec('git add public/data/rate-limits.json', { cwd: root, stdio: 'pipe' });
+      exec(`git commit -m "chore: update Claude rate limits (${now.slice(0, 10)})"`, { cwd: root, stdio: 'pipe' });
+      exec('git push origin main', { cwd: root, stdio: 'pipe' });
+      console.log('✓  Pushed to GitHub — Vercel will redeploy automatically');
+    } catch (err) {
+      // "nothing to commit" is fine — only log real errors
+      if (!err.message.includes('nothing to commit')) {
+        console.log(`⚠  Git push failed: ${err.message}`);
+      } else {
+        console.log('✓  No changes to push');
+      }
+    }
+  }
 }
 
 main().catch((err) => {

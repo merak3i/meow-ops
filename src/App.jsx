@@ -158,6 +158,13 @@ export default function App() {
   const reloadData = useCallback(() => {
     invalidateRealSessions();
     setReloadKey((k) => k + 1);
+    // Re-fetch rate limits so bars update after sync
+    setTimeout(() => {
+      fetch('/data/rate-limits.json')
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => { if (data) setRateLimits(data); })
+        .catch(() => {});
+    }, 3000); // slight delay — limits script runs after sessions export
   }, []);
 
   const stats       = computeOverviewStats(sessions, dateRange);
