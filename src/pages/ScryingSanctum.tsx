@@ -1,127 +1,62 @@
-// ScryingSanctum.tsx — WoW × Mario MMORPG agent pipeline visualizer
-// Full dungeon aesthetic: unit frames, ley lines, mana bars, gold costs
+// ScryingSanctum.tsx — WebGL isometric RPG agent pipeline visualizer
+// OrthographicCamera at 45° · Stone dungeon floor · Champion primitives · Ley lines · Runestones
 
-import { useState, useMemo, useEffect } from 'react';
+import { useRef, useState, useMemo, Suspense } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { Html, Line, OrbitControls } from '@react-three/drei';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
+import * as THREE from 'three';
 import type { Session } from '@/types/session';
 import { getSessionRunGroups } from '@/lib/agent-tree';
 import type { AgentTreeNode, SessionRunGroup } from '@/lib/agent-tree';
 
-// ─── Class configuration ──────────────────────────────────────────────────────
+// ─── Class config ─────────────────────────────────────────────────────────────
 
 interface ClassConfig {
-  color: string;
-  gradient: string;
-  classLabel: string;
-  faction: string;
-  icon: string;
-  auraColor: string;
+  color:    string;
+  emissive: string;
+  label:    string;
+  aura:     string;
 }
 
 const CLASS_MAP: Record<string, ClassConfig> = {
-  builder:     { color: '#f59e0b', gradient: 'linear-gradient(160deg, #1c0e00 0%, #0a0400 100%)', classLabel: 'WARRIOR',      faction: 'Argent',      icon: '⚔️',  auraColor: '#f59e0b33' },
-  detective:   { color: '#34d399', gradient: 'linear-gradient(160deg, #001c0e 0%, #000a04 100%)', classLabel: 'ROGUE',         faction: 'Ebon Blade',  icon: '🗡️',  auraColor: '#34d39933' },
-  commander:   { color: '#60a5fa', gradient: 'linear-gradient(160deg, #00101c 0%, #00050e 100%)', classLabel: 'MAGE',          faction: 'Kirin Tor',   icon: '❄️',  auraColor: '#60a5fa33' },
-  architect:   { color: '#a78bfa', gradient: 'linear-gradient(160deg, #0e001c 0%, #04000a 100%)', classLabel: 'WARLOCK',       faction: 'Dalaran',     icon: '🌀',  auraColor: '#a78bfa33' },
-  guardian:    { color: '#fbbf24', gradient: 'linear-gradient(160deg, #1c1400 0%, #0a0800 100%)', classLabel: 'PALADIN',       faction: 'Silver Hand', icon: '🛡️',  auraColor: '#fbbf2433' },
-  storyteller: { color: '#e2e8f0', gradient: 'linear-gradient(160deg, #0c1015 0%, #050810 100%)', classLabel: 'PRIEST',        faction: 'Moonwhisper', icon: '✨',  auraColor: '#e2e8f022' },
-  ghost:       { color: '#4ade80', gradient: 'linear-gradient(160deg, #000e04 0%, #000500 100%)', classLabel: 'DEATH KNIGHT',  faction: 'The Scourge', icon: '💀',  auraColor: '#4ade8022' },
+  builder:     { color: '#f59e0b', emissive: '#7c3f00', label: 'WARRIOR',      aura: '#f59e0b' } as ClassConfig,
+  detective:   { color: '#34d399', emissive: '#004d2e', label: 'ROGUE',        aura: '#34d399' } as ClassConfig,
+  commander:   { color: '#60a5fa', emissive: '#003566', label: 'MAGE',         aura: '#60a5fa' } as ClassConfig,
+  architect:   { color: '#a78bfa', emissive: '#3b0078', label: 'WARLOCK',      aura: '#a78bfa' } as ClassConfig,
+  guardian:    { color: '#fbbf24', emissive: '#5c4000', label: 'PALADIN',      aura: '#fbbf24' } as ClassConfig,
+  storyteller: { color: '#e2e8f0', emissive: '#2a3040', label: 'PRIEST',       aura: '#e2e8f0' } as ClassConfig,
+  ghost:       { color: '#4ade80', emissive: '#00401a', label: 'DEATH KNIGHT', aura: '#4ade80' } as ClassConfig,
 };
+const FALLBACK_CLASS: ClassConfig = { color: '#888', emissive: '#222', label: 'AGENT', aura: '#888' };
 
-// ─── Fantasy name generation ──────────────────────────────────────────────────
+const PIPELINE_ROLES = ['VANGUARD', 'SCOUT', 'ARCHMAGE', 'HERALD'];
+const EXTRA_ROLES    = ['RUNNER',   'LINK',  'BRANCH',   'AUXILIARY'];
 
-const FACTION_PREFIXES: Record<string, string[]> = {
-  builder:     ['Argent', 'Ironforge', 'Thunder Bluff'],
-  detective:   ['Ebon', 'Shadow', 'Darkstone'],
-  commander:   ['Storm', 'Crimson', 'Blade'],
-  architect:   ['Dalaran', 'Kirin Tor', 'Arcane'],
-  guardian:    ['Silver Hand', 'Argent', 'Light\'s Hope'],
-  storyteller: ['Moonwhisper', 'Ivory', 'Sable'],
-  ghost:       ['Forsaken', 'Scourge', 'Lich'],
-};
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const ROLE_SUFFIXES: Record<number, string[]> = {
-  0: ['Vanguard', 'High Sentinel', 'Warden', 'Commander'],
-  1: ['Scout', 'Adept', 'Blade', 'Agent'],
-  2: ['Acolyte', 'Initiate', 'Squire', 'Recruit'],
-};
-
-const PIPELINE_ROLES = ['INPUT SENTRY', 'RESEARCH SCOUT', 'LLM ARCHMAGE', 'OUTPUT EMISSARY'];
-const EXTRA_ROLES    = ['CHAIN RUNNER',  'SIDECHAIN LINK', 'BRANCH NODE',   'AUXILIARY'];
-
-function getFantasyName(session: Session, idx: number, depth: number): string {
-  const slug = session.agent_slug;
-  if (slug) return slug.split('-').map((w) => w[0]?.toUpperCase() + w.slice(1)).join(' ');
-  const cat      = session.cat_type ?? 'ghost';
-  const prefixes = FACTION_PREFIXES[cat] ?? ['Unknown'];
-  const prefix   = prefixes[idx % prefixes.length];
-  const suffixes = ROLE_SUFFIXES[Math.min(depth, 2)] ?? ROLE_SUFFIXES[2];
-  return `${prefix} ${suffixes[idx % suffixes.length]}`;
+function getPipelineRole(i: number, total: number): string {
+  if (total <= 1) return PIPELINE_ROLES[2]!;
+  if (total <= 4) return PIPELINE_ROLES[Math.min(i, 3)]!;
+  return EXTRA_ROLES[i % EXTRA_ROLES.length]!;
 }
 
-function getPipelineRole(idx: number, total: number): string {
-  if (total <= 1) return PIPELINE_ROLES[2];
-  if (total <= 4) {
-    const positions = [0, Math.round(total * 0.33), Math.round(total * 0.67), total - 1];
-    let best = 0;
-    positions.forEach((pos, i) => {
-      if (Math.abs(pos - idx) < Math.abs(positions[best] - idx)) best = i;
-    });
-    return PIPELINE_ROLES[best];
+function getChampionName(session: Session, i: number): string {
+  if (session.agent_slug) {
+    return session.agent_slug.split('-').map((w) => w[0]?.toUpperCase() + w.slice(1)).join(' ');
   }
-  return EXTRA_ROLES[idx % EXTRA_ROLES.length];
+  const cat = session.cat_type ?? 'ghost';
+  const cls = CLASS_MAP[cat] ?? FALLBACK_CLASS;
+  return `${cls.label} ${String.fromCharCode(0x03b1 + (i % 24))}`;
 }
 
-// ─── Ley-line status ──────────────────────────────────────────────────────────
-
-type LeyStatus = 'healthy' | 'choked' | 'severed';
-
-function leyStatus(session: Session): LeyStatus {
-  if (session.is_ghost) return 'severed';
-  if (session.estimated_cost_usd > 0.05) return 'choked';
-  return 'healthy';
+function hpPercent(costUsd: number, maxCost: number): number {
+  const ratio = maxCost > 0 ? costUsd / maxCost : 0;
+  return Math.max(12, Math.round(100 - ratio * 60));
 }
 
-// ─── Inject keyframe CSS once ─────────────────────────────────────────────────
-
-let _stylesInjected = false;
-function injectSanctumStyles() {
-  if (_stylesInjected) return;
-  _stylesInjected = true;
-  const el = document.createElement('style');
-  el.textContent = `
-    @keyframes ley-flow   { from { stroke-dashoffset: 60 } to { stroke-dashoffset: 0 } }
-    @keyframes aura-pulse { 0%,100% { opacity:.45 } 50% { opacity:.9 } }
-    @keyframes rune-glow  { 0%,100% { text-shadow: 0 0 6px currentColor } 50% { text-shadow: 0 0 18px currentColor, 0 0 40px currentColor } }
-    @keyframes sanctum-grid { 0%,100% { opacity:.04 } 50% { opacity:.07 } }
-    @keyframes boss-shimmer { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
-    @keyframes emerge-card  { from { opacity:0; transform:translateY(16px) scale(.97) } to { opacity:1; transform:none } }
-  `;
-  document.head.appendChild(el);
-}
-
-// ─── Unit Frame ───────────────────────────────────────────────────────────────
-
-interface CardData {
-  session:     Session;
-  depth:       number;
-  idx:         number;
-  total:       number;
-  name:        string;
-  role:        string;
-  cls:         ClassConfig;
-  leyStatus:   LeyStatus;
-}
-
-function hpPercent(session: Session, maxCost: number): number {
-  if (session.is_ghost) return 8;
-  // Invert cost: cheaper = healthier
-  const ratio = maxCost > 0 ? session.estimated_cost_usd / maxCost : 0;
-  return Math.max(30, Math.round(100 - ratio * 55));
-}
-
-function manaPercent(session: Session, maxTokens: number): number {
-  const t = session.total_tokens ?? 0;
-  return maxTokens > 0 ? Math.min(100, Math.round((t / maxTokens) * 100)) : 0;
+function manaPercent(tokens: number, maxTokens: number): number {
+  return maxTokens > 0 ? Math.min(100, Math.round((tokens / maxTokens) * 100)) : 0;
 }
 
 function formatGold(usd: number): string {
@@ -134,636 +69,748 @@ function formatDur(s: number): string {
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
 
-function UnitFrame({
-  card, maxCost, maxTokens, selected, onSelect,
+// ─── Layout ───────────────────────────────────────────────────────────────────
+
+interface PositionedNode {
+  session:  Session;
+  depth:    number;
+  idx:      number;
+  total:    number;
+  pos:      [number, number, number];
+  cls:      ClassConfig;
+  name:     string;
+  role:     string;
+}
+
+function layoutNodes(roots: AgentTreeNode[]): PositionedNode[] {
+  // Group nodes by depth level first
+  const byDepth: Array<Array<{ node: AgentTreeNode; depth: number }>> = [];
+
+  function collect(node: AgentTreeNode, depth: number) {
+    if (!byDepth[depth]) byDepth[depth] = [];
+    byDepth[depth].push({ node, depth });
+    node.children.forEach((c) => collect(c, depth + 1));
+  }
+  roots.forEach((r) => collect(r, 0));
+
+  const allPositioned: PositionedNode[] = [];
+  let globalIdx = 0;
+  const total = byDepth.reduce((acc, arr) => acc + arr.length, 0);
+
+  byDepth.forEach((row, depth) => {
+    const count = row.length;
+    row.forEach(({ node }, i) => {
+      const x = (i - (count - 1) / 2) * 4.5;
+      const z = depth * 4.5;
+      const cat = node.session.cat_type ?? 'ghost';
+      allPositioned.push({
+        session:  node.session,
+        depth,
+        idx:      globalIdx,
+        total,
+        pos:      [x, 0, z],
+        cls:      CLASS_MAP[cat] ?? FALLBACK_CLASS,
+        name:     getChampionName(node.session, globalIdx),
+        role:     getPipelineRole(globalIdx, total),
+      });
+      globalIdx++;
+    });
+  });
+
+  return allPositioned;
+}
+
+// ─── Stone Floor ─────────────────────────────────────────────────────────────
+
+function StoneFloor({ extent }: { extent: number }) {
+  const tiles = useMemo(() => {
+    const out: Array<[number, number]> = [];
+    for (let x = -extent; x <= extent; x++) {
+      for (let z = -extent; z <= extent; z++) {
+        out.push([x, z]);
+      }
+    }
+    return out;
+  }, [extent]);
+
+  return (
+    <>
+      {tiles.map(([x, z]) => {
+        // Subtle variation in darkness per tile
+        const shade = 0.035 + ((Math.abs(x * 3 + z * 7)) % 7) * 0.004;
+        return (
+          <mesh key={`${x}_${z}`} position={[x * 1.04, -0.06, z * 1.04]} receiveShadow>
+            <boxGeometry args={[0.96, 0.08, 0.96]} />
+            <meshStandardMaterial
+              color={new THREE.Color(shade, shade, shade * 1.05)}
+              roughness={0.9}
+              metalness={0.05}
+            />
+          </mesh>
+        );
+      })}
+    </>
+  );
+}
+
+// ─── Champion geometry variant ────────────────────────────────────────────────
+
+function ChampionGeometry({ catType, depth }: { catType: string; depth: number }) {
+  if (depth === 0) return <octahedronGeometry args={[0.62, 0]} />;
+  switch (catType) {
+    case 'builder':     return <boxGeometry args={[0.72, 0.72, 0.72]} />;
+    case 'detective':   return <coneGeometry args={[0.44, 1.05, 4]} />;
+    case 'commander':   return <cylinderGeometry args={[0.34, 0.48, 1.08, 6]} />;
+    case 'architect':   return <torusGeometry args={[0.36, 0.14, 8, 24]} />;
+    case 'guardian':    return <dodecahedronGeometry args={[0.54, 0]} />;
+    case 'storyteller': return <sphereGeometry args={[0.44, 14, 14]} />;
+    case 'ghost':       return <icosahedronGeometry args={[0.52, 0]} />;
+    default:            return <octahedronGeometry args={[0.5, 0]} />;
+  }
+}
+
+// ─── Runestone (sphere traveling along a ley line) ────────────────────────────
+
+function Runestone({
+  from, to, color, offset = 0,
 }: {
-  card: CardData; maxCost: number; maxTokens: number; selected: boolean; onSelect: () => void;
+  from:   [number, number, number];
+  to:     [number, number, number];
+  color:  string;
+  offset?: number;
 }) {
-  const { session, name, role, cls } = card;
-  const isGhost = !!session.is_ghost;
-  const hp      = hpPercent(session, maxCost);
-  const mp      = manaPercent(session, maxTokens);
-  const cost    = session.estimated_cost_usd;
-  const dur     = session.duration_seconds;
+  const ref  = useRef<THREE.Mesh>(null);
+  const t    = useRef(offset % 1);
+  const midY = Math.max(from[1], to[1]) + 2.2;
 
-  const borderColor = selected ? '#63f7b3' : cls.color;
-  const glowStr     = selected
-    ? '0 0 0 2px #63f7b366, 0 0 32px #63f7b344'
-    : `0 0 0 1px ${cls.color}44, 0 0 24px ${cls.auraColor}`;
+  useFrame((_, delta) => {
+    t.current = (t.current + delta * 0.38) % 1;
+    if (!ref.current) return;
+    const tt  = t.current;
+    const inv = 1 - tt;
+    ref.current.position.set(
+      inv * inv * from[0] + 2 * inv * tt * ((from[0] + to[0]) / 2) + tt * tt * to[0],
+      inv * inv * from[1] + 2 * inv * tt * midY                    + tt * tt * to[1],
+      inv * inv * from[2] + 2 * inv * tt * ((from[2] + to[2]) / 2) + tt * tt * to[2],
+    );
+  });
 
+  return (
+    <mesh ref={ref}>
+      <sphereGeometry args={[0.09, 8, 8]} />
+      <meshStandardMaterial color={color} emissive={color} emissiveIntensity={4} />
+    </mesh>
+  );
+}
+
+// ─── Ley line connection ──────────────────────────────────────────────────────
+
+function LeyConnection({
+  from, to, color, choked,
+}: {
+  from:   [number, number, number];
+  to:     [number, number, number];
+  color:  string;
+  choked: boolean;
+}) {
+  const midY = Math.max(from[1], to[1]) + 2.2;
+  const mid: [number, number, number] = [
+    (from[0] + to[0]) / 2,
+    midY,
+    (from[2] + to[2]) / 2,
+  ];
+
+  const points = useMemo(() => {
+    const curve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(...from),
+      new THREE.Vector3(...mid),
+      new THREE.Vector3(...to),
+    );
+    return curve.getPoints(32);
+  }, [from[0], from[1], from[2], to[0], to[1], to[2]]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const lineColor = choked ? '#ff6b35' : color;
+
+  return (
+    <>
+      <Line
+        points={points}
+        color={lineColor}
+        lineWidth={1.2}
+        opacity={0.55}
+        transparent
+      />
+      <Runestone from={from} to={to} color={lineColor} offset={0} />
+      <Runestone from={from} to={to} color={lineColor} offset={0.5} />
+    </>
+  );
+}
+
+// ─── Floating unit frame (DOM inside Canvas via Html) ─────────────────────────
+
+function UnitFrameHtml({
+  pn, maxCost, maxTokens, selected,
+}: {
+  pn:        PositionedNode;
+  maxCost:   number;
+  maxTokens: number;
+  selected:  boolean;
+}) {
+  const hp  = hpPercent(pn.session.estimated_cost_usd, maxCost);
+  const mp  = manaPercent(pn.session.total_tokens ?? 0, maxTokens);
+  const c   = pn.cls;
+  const brd = selected ? '#63f7b3' : c.color;
+
+  return (
+    <Html
+      center
+      distanceFactor={9}
+      style={{ pointerEvents: 'none' }}
+    >
+      <div style={{
+        width: 130,
+        background: 'rgba(4,2,12,.88)',
+        border: `1px solid ${brd}`,
+        borderRadius: 4,
+        padding: '5px 7px 6px',
+        boxShadow: `0 0 12px ${c.aura}44`,
+        fontFamily: 'monospace',
+        transform: 'translateY(-110%)',
+        userSelect: 'none',
+      }}>
+        {/* Role */}
+        <div style={{ fontSize: 7.5, color: c.color, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 2 }}>
+          {pn.role}
+        </div>
+        {/* Name */}
+        <div style={{ fontSize: 10, color: '#e8d5a3', fontWeight: 600, marginBottom: 4, lineHeight: 1.2, letterSpacing: 0.5 }}>
+          {pn.name}
+        </div>
+        {/* HP bar */}
+        <div style={{ marginBottom: 3 }}>
+          <div style={{ fontSize: 7, color: '#4ade80', letterSpacing: 1, marginBottom: 1 }}>HP</div>
+          <div style={{ height: 4, background: '#0a1a0a', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${hp}%`, height: '100%', background: hp > 60 ? '#22c55e' : hp > 30 ? '#f59e0b' : '#ef4444', borderRadius: 2 }} />
+          </div>
+        </div>
+        {/* Mana bar */}
+        <div style={{ marginBottom: 4 }}>
+          <div style={{ fontSize: 7, color: '#60a5fa', letterSpacing: 1, marginBottom: 1 }}>MANA</div>
+          <div style={{ height: 4, background: '#050e1a', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${mp}%`, height: '100%', background: '#3b82f6', borderRadius: 2 }} />
+          </div>
+        </div>
+        {/* Stats */}
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 8, color: '#c8a85599' }}>{formatGold(pn.session.estimated_cost_usd)}</span>
+          <span style={{ fontSize: 8, color: '#c8a85599' }}>{formatDur(pn.session.duration_seconds)}</span>
+        </div>
+      </div>
+    </Html>
+  );
+}
+
+// ─── Animated champion node ───────────────────────────────────────────────────
+
+function ChampionNode({
+  pn, maxCost, maxTokens, selected, onClick,
+}: {
+  pn:        PositionedNode;
+  maxCost:   number;
+  maxTokens: number;
+  selected:  boolean;
+  onClick:   () => void;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const ringRef = useRef<THREE.Mesh>(null);
+  const c       = pn.cls;
+
+  useFrame((state) => {
+    if (!meshRef.current) return;
+    const t = state.clock.getElapsedTime();
+    // Hover float
+    meshRef.current.position.y = pn.pos[1] + 0.6 + Math.sin(t * 1.4 + pn.idx * 0.7) * 0.08;
+    // Slow spin on Y
+    meshRef.current.rotation.y = t * 0.35 + pn.idx * 0.9;
+    // Aura ring pulse
+    if (ringRef.current) {
+      const s = 1 + Math.sin(t * 2.2 + pn.idx) * 0.07;
+      ringRef.current.scale.setScalar(s);
+    }
+  });
+
+  const emissiveIntensity = selected ? 1.8 : 1.0;
+
+  return (
+    <group position={pn.pos}>
+      {/* Aura ring on floor */}
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
+        <ringGeometry args={[0.7, 0.85, 32]} />
+        <meshStandardMaterial
+          color={c.aura}
+          emissive={c.aura}
+          emissiveIntensity={0.6}
+          transparent
+          opacity={0.35}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
+      {/* Champion primitive */}
+      <mesh
+        ref={meshRef}
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        castShadow
+      >
+        <ChampionGeometry catType={pn.session.cat_type ?? 'ghost'} depth={pn.depth} />
+        <meshStandardMaterial
+          color={c.color}
+          emissive={c.emissive}
+          emissiveIntensity={emissiveIntensity}
+          roughness={0.25}
+          metalness={0.6}
+        />
+      </mesh>
+
+      {/* Selection ring */}
+      {selected && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}>
+          <ringGeometry args={[0.9, 1.0, 32]} />
+          <meshStandardMaterial
+            color="#63f7b3"
+            emissive="#63f7b3"
+            emissiveIntensity={2}
+            transparent
+            opacity={0.7}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+
+      {/* Floating unit frame */}
+      <UnitFrameHtml
+        pn={pn}
+        maxCost={maxCost}
+        maxTokens={maxTokens}
+        selected={selected}
+      />
+    </group>
+  );
+}
+
+// ─── Full 3D scene ────────────────────────────────────────────────────────────
+
+function Scene({
+  group,
+  selectedId,
+  onSelect,
+}: {
+  group:      SessionRunGroup;
+  selectedId: string | null;
+  onSelect:   (id: string | null) => void;
+}) {
+  const nodes = useMemo(() => {
+    const roots: AgentTreeNode[] = group.roots;
+    return layoutNodes(roots);
+  }, [group]);
+
+  const maxCost   = useMemo(() => Math.max(...nodes.map((n) => n.session.estimated_cost_usd), 0.001), [nodes]);
+  const maxTokens = useMemo(() => Math.max(...nodes.map((n) => n.session.total_tokens ?? 0), 1), [nodes]);
+
+  // Position lookup for ley lines
+  const posMap = useMemo(() => {
+    const m = new Map<string, [number, number, number]>();
+    nodes.forEach((n) => m.set(n.session.session_id, n.pos));
+    return m;
+  }, [nodes]);
+
+  // Build ley line pairs (child → parent)
+  const connections = useMemo(() => {
+    return nodes
+      .filter((n) => n.session.parent_session_id && posMap.has(n.session.parent_session_id))
+      .map((n) => ({
+        from:   posMap.get(n.session.parent_session_id!)!,
+        to:     n.pos,
+        color:  n.cls.color,
+        choked: n.session.estimated_cost_usd > 0.05,
+        key:    n.session.session_id,
+      }));
+  }, [nodes, posMap]);
+
+  // Floor extent
+  const floorExtent = Math.max(6, Math.ceil(nodes.length * 1.5));
+
+  // Camera focus point
+  const center = useMemo(() => {
+    if (!nodes.length) return new THREE.Vector3(0, 0, 0);
+    const xs = nodes.map((n) => n.pos[0]);
+    const zs = nodes.map((n) => n.pos[2]);
+    return new THREE.Vector3(
+      (Math.min(...xs) + Math.max(...xs)) / 2,
+      0,
+      (Math.min(...zs) + Math.max(...zs)) / 2,
+    );
+  }, [nodes]);
+
+  return (
+    <>
+      {/* ── Lighting ──────────────────────────────────── */}
+      <ambientLight intensity={0.15} color="#1a1040" />
+      <directionalLight position={[10, 20, 10]} intensity={0.9} color="#fff8e8" castShadow />
+      <directionalLight position={[-8, 5, -8]} intensity={0.3} color="#4040ff" />
+      <pointLight position={[0, 8, 0]} intensity={0.4} color="#c8a855" distance={40} />
+
+      {/* ── Floor ─────────────────────────────────────── */}
+      <Suspense fallback={null}>
+        <StoneFloor extent={floorExtent} />
+      </Suspense>
+
+      {/* ── Ley lines ─────────────────────────────────── */}
+      {connections.map((conn) => (
+        <LeyConnection
+          key={conn.key}
+          from={conn.from}
+          to={conn.to}
+          color={conn.color}
+          choked={conn.choked}
+        />
+      ))}
+
+      {/* ── Champion nodes ────────────────────────────── */}
+      {nodes.map((pn) => (
+        <ChampionNode
+          key={pn.session.session_id}
+          pn={pn}
+          maxCost={maxCost}
+          maxTokens={maxTokens}
+          selected={selectedId === pn.session.session_id}
+          onClick={() => onSelect(selectedId === pn.session.session_id ? null : pn.session.session_id)}
+        />
+      ))}
+
+      {/* ── Camera controls ───────────────────────────── */}
+      <OrbitControls
+        target={center}
+        enableDamping
+        dampingFactor={0.06}
+        minZoom={30}
+        maxZoom={180}
+        maxPolarAngle={Math.PI / 2.4}
+        minPolarAngle={Math.PI / 8}
+      />
+
+      {/* ── Bloom ─────────────────────────────────────── */}
+      <EffectComposer>
+        <Bloom
+          intensity={0.9}
+          luminanceThreshold={0.3}
+          luminanceSmoothing={0.7}
+          mipmapBlur
+        />
+      </EffectComposer>
+    </>
+  );
+}
+
+// ─── Detail drawer (DOM overlay) ─────────────────────────────────────────────
+
+function DetailDrawer({
+  session,
+  cls,
+  name,
+  role,
+  onClose,
+}: {
+  session: Session;
+  cls:     ClassConfig;
+  name:    string;
+  role:    string;
+  onClose: () => void;
+}) {
   const tools = session.tools
-    ? Object.entries(session.tools).sort((a, b) => b[1] - a[1]).slice(0, 4)
+    ? Object.entries(session.tools).sort((a, b) => b[1] - a[1]).slice(0, 6)
     : [];
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onSelect}
-      onKeyDown={(e) => e.key === 'Enter' && onSelect()}
-      style={{
-        width: 186,
-        flexShrink: 0,
-        background: cls.gradient,
-        border: `2px solid ${borderColor}`,
-        borderRadius: 6,
-        cursor: 'pointer',
-        position: 'relative',
-        boxShadow: glowStr,
-        transform: selected ? 'scale(1.04) translateY(-4px)' : 'scale(1)',
-        transition: 'box-shadow .2s, transform .15s',
-        animation: 'emerge-card .35s cubic-bezier(.4,0,.2,1) both',
-        overflow: 'visible',
-      }}
-    >
-      {/* Aura ring */}
-      <div style={{
-        position: 'absolute', inset: -8, borderRadius: 12,
-        border: `1px solid ${cls.color}33`,
-        animation: isGhost ? undefined : 'aura-pulse 2.8s ease-in-out infinite',
-        pointerEvents: 'none',
-      }} />
-
-      {/* Corner ornaments */}
-      {[
-        { top: -3, left: -3 },
-        { top: -3, right: -3 },
-        { bottom: -3, left: -3 },
-        { bottom: -3, right: -3 },
-      ].map((pos, i) => (
-        <div key={i} style={{
-          position: 'absolute', ...pos,
-          width: 8, height: 8,
-          background: cls.color,
-          clipPath: 'polygon(0 0, 100% 0, 100% 30%, 70% 30%, 70% 70%, 30% 70%, 30% 100%, 0 100%)',
-          opacity: 0.7,
-        }} />
-      ))}
-
-      {/* ── Portrait + name header ─────────────── */}
-      <div style={{
-        padding: '8px 10px 6px',
-        borderBottom: `1px solid ${cls.color}22`,
-        display: 'flex', alignItems: 'center', gap: 8,
-      }}>
-        {/* Portrait */}
-        <div style={{
-          width: 32, height: 32, borderRadius: 4,
-          background: `${cls.color}18`,
-          border: `1px solid ${cls.color}55`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 16, flexShrink: 0,
-          boxShadow: `inset 0 0 8px ${cls.auraColor}`,
-        }}>
-          {isGhost ? '💀' : cls.icon}
-        </div>
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontSize: 9, fontWeight: 700,
-            color: cls.color,
-            letterSpacing: .8, textTransform: 'uppercase',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            animation: 'rune-glow 3s ease-in-out infinite',
-          }}>
-            {name}
-          </div>
-          <div style={{ fontSize: 7.5, color: '#e8d5a355', letterSpacing: 1.2, textTransform: 'uppercase', marginTop: 1 }}>
-            {cls.classLabel}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Role label ─────────────────────────── */}
-      <div style={{
-        padding: '3px 10px',
-        fontSize: 7.5, letterSpacing: 1.8, textTransform: 'uppercase',
-        color: '#e8d5a344',
-        borderBottom: `1px solid ${cls.color}15`,
-      }}>
-        {role}
-      </div>
-
-      {/* ── HP / Mana bars ─────────────────────── */}
-      <div style={{ padding: '7px 10px 5px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {/* HP */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-            <span style={{ fontSize: 7.5, color: '#86efac', letterSpacing: .5 }}>HP</span>
-            <span style={{ fontSize: 7.5, color: '#86efac99' }}>
-              {isGhost ? 'SLAIN' : `${hp}%`}
-            </span>
-          </div>
-          <div style={{
-            height: 7, background: 'rgba(0,0,0,.55)', borderRadius: 2,
-            border: '1px solid rgba(255,255,255,.07)', overflow: 'hidden',
-          }}>
-            <div style={{
-              height: '100%', width: `${hp}%`,
-              background: isGhost
-                ? 'linear-gradient(90deg,#7f1d1d,#991b1b)'
-                : hp > 60
-                  ? 'linear-gradient(90deg,#16a34a,#22c55e)'
-                  : hp > 30
-                    ? 'linear-gradient(90deg,#ca8a04,#eab308)'
-                    : 'linear-gradient(90deg,#dc2626,#ef4444)',
-              borderRadius: 2,
-              transition: 'width .6s cubic-bezier(.4,0,.2,1)',
-            }} />
-          </div>
-        </div>
-
-        {/* Mana */}
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-            <span style={{ fontSize: 7.5, color: '#93c5fd', letterSpacing: .5 }}>MANA</span>
-            <span style={{ fontSize: 7.5, color: '#93c5fd99' }}>{mp}%</span>
-          </div>
-          <div style={{
-            height: 7, background: 'rgba(0,0,0,.55)', borderRadius: 2,
-            border: '1px solid rgba(255,255,255,.07)', overflow: 'hidden',
-          }}>
-            <div style={{
-              height: '100%', width: `${mp}%`,
-              background: 'linear-gradient(90deg,#1d4ed8,#3b82f6)',
-              borderRadius: 2,
-              transition: 'width .6s cubic-bezier(.4,0,.2,1)',
-            }} />
-          </div>
-        </div>
-      </div>
-
-      {/* ── Tools (spells) ─────────────────────── */}
-      {tools.length > 0 && (
-        <div style={{ padding: '0 10px 5px', display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-          {tools.map(([t, n]) => (
-            <span key={t} style={{
-              fontSize: 7.5, padding: '1px 5px',
-              background: `${cls.color}18`,
-              border: `1px solid ${cls.color}33`,
-              borderRadius: 2, color: `${cls.color}cc`,
-              letterSpacing: .3,
-            }}>
-              {t.slice(0, 5)}×{n}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* ── Stats footer ───────────────────────── */}
-      <div style={{
-        padding: '5px 10px 8px',
-        borderTop: `1px solid ${cls.color}18`,
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      }}>
-        <span style={{ fontSize: 10, color: '#f59e0b', fontFamily: 'monospace', fontWeight: 600 }}>
-          💰 {formatGold(cost)}
-        </span>
-        <span style={{ fontSize: 8.5, color: '#64748b' }}>
-          ⏱ {formatDur(dur)}
-        </span>
-      </div>
-
-      {/* Ghost diagonal overlay */}
-      {isGhost && (
-        <div style={{
-          position: 'absolute', inset: 0, borderRadius: 4, pointerEvents: 'none',
-          backgroundImage: 'repeating-linear-gradient(-45deg,transparent,transparent 5px,rgba(0,0,0,.22) 5px,rgba(0,0,0,.22) 10px)',
-        }} />
-      )}
-    </div>
-  );
-}
-
-// ─── Ley Line connector ───────────────────────────────────────────────────────
-
-const LEY_COLORS: Record<LeyStatus, string> = {
-  healthy: '#63f7b3',
-  choked:  '#f59e0b',
-  severed: '#ef4444',
-};
-
-function LeyLine({ status }: { status: LeyStatus }) {
-  const color = LEY_COLORS[status];
-  const W = 76;
-  const MY = 30;
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', flexShrink: 0, marginTop: -10 }}>
-      <svg width={W} height={60} viewBox={`0 0 ${W} 60`} overflow="visible" style={{ overflow: 'visible' }}>
-        <defs>
-          <filter id={`glow-${status}`} x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="2.5" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
-          <linearGradient id={`lg-${status}`} x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%"   stopColor={color} stopOpacity=".15" />
-            <stop offset="45%"  stopColor={color} stopOpacity=".9"  />
-            <stop offset="55%"  stopColor={color} stopOpacity=".9"  />
-            <stop offset="100%" stopColor={color} stopOpacity=".15" />
-          </linearGradient>
-        </defs>
-
-        {/* Track */}
-        <line x1="0" y1={MY} x2={W} y2={MY} stroke={color} strokeWidth="1" opacity=".15" />
-
-        {/* Flowing line */}
-        <line
-          x1="0" y1={MY} x2={W} y2={MY}
-          stroke={`url(#lg-${status})`}
-          strokeWidth="2.5"
-          strokeDasharray={status === 'severed' ? '4 9' : '14 7'}
-          opacity={status === 'severed' ? .35 : .85}
-          filter={`url(#glow-${status})`}
-          style={status !== 'severed' ? {
-            animation: `ley-flow ${status === 'healthy' ? '1.1s' : '2.2s'} linear infinite`,
-          } : undefined}
-        />
-
-        {/* Mid rune dot */}
-        <circle
-          cx={W / 2} cy={MY} r="4"
-          fill={color}
-          opacity={status === 'severed' ? .25 : .95}
-          filter={`url(#glow-${status})`}
-          style={status === 'healthy' ? { animation: 'aura-pulse 2s ease-in-out infinite' } : undefined}
-        />
-
-        {/* Arrowhead */}
-        {status !== 'severed' && (
-          <polygon
-            points={`${W - 1},${MY - 4} ${W - 1},${MY + 4} ${W + 4},${MY}`}
-            fill={color} opacity=".85"
-          />
-        )}
-        {status === 'severed' && (
-          <text x={W / 2} y={MY - 8} textAnchor="middle" fontSize="9" fill={color} opacity=".6">✕</text>
-        )}
-      </svg>
-    </div>
-  );
-}
-
-// ─── Boss health bar (pipeline cost) ─────────────────────────────────────────
-
-function BossBar({ cost, label }: { cost: number; label: string }) {
-  const pct = Math.min(100, (cost / 0.5) * 100);
-  const color = pct > 70 ? '#ef4444' : pct > 35 ? '#f59e0b' : '#22c55e';
-
-  return (
     <div style={{
-      background: 'rgba(0,0,0,.55)',
-      border: '1px solid #c8a85533',
-      borderRadius: 6,
-      padding: '10px 16px',
-      display: 'flex', alignItems: 'center', gap: 14,
-    }}>
-      <div style={{
-        fontSize: 9, color: '#c8a855', letterSpacing: 2,
-        textTransform: 'uppercase', flexShrink: 0, fontWeight: 700,
-      }}>
-        ⚗️ {label}
-      </div>
-
-      <div style={{ flex: 1, height: 13, background: 'rgba(0,0,0,.6)', borderRadius: 3, overflow: 'hidden', border: '1px solid #c8a85522', position: 'relative' }}>
-        <div style={{
-          height: '100%', width: `${Math.max(pct, 1.5)}%`,
-          background: `linear-gradient(90deg, ${color}88, ${color})`,
-          borderRadius: 2, transition: 'width .8s cubic-bezier(.4,0,.2,1)',
-          backgroundSize: '200% 100%',
-          animation: 'boss-shimmer 3s linear infinite',
-        }} />
-        {/* Segment overlay */}
-        <div style={{
-          position: 'absolute', inset: 0,
-          backgroundImage: 'repeating-linear-gradient(90deg,transparent,transparent 19px,rgba(0,0,0,.3) 19px,rgba(0,0,0,.3) 20px)',
-        }} />
-      </div>
-
-      <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#f59e0b', flexShrink: 0, fontWeight: 700 }}>
-        💰 ${cost.toFixed(4)}
-      </span>
-    </div>
-  );
-}
-
-// ─── Detail drawer ────────────────────────────────────────────────────────────
-
-function DetailDrawer({ card, onClose }: { card: CardData; onClose: () => void }) {
-  const s = card.session;
-  const tools = s.tools ? Object.entries(s.tools).sort((a, b) => b[1] - a[1]) : [];
-  const { cls } = card;
-
-  return (
-    <div style={{
-      margin: '0 24px',
-      background: `linear-gradient(135deg, rgba(0,0,0,.75), ${cls.gradient.replace('linear-gradient(160deg,', 'linear-gradient(135deg,').replace(' 100%)', ' 60%)')}`,
-      border: `1px solid ${cls.color}44`,
-      borderRadius: 8,
-      padding: '14px 18px 16px',
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))',
-      gap: 14,
-      position: 'relative',
+      position: 'absolute', bottom: 0, left: 0, right: 0,
+      background: 'rgba(4,2,12,.95)',
+      borderTop: `1px solid ${cls.color}55`,
+      padding: '14px 24px 16px',
+      zIndex: 30,
+      fontFamily: 'monospace',
+      boxShadow: `0 -8px 40px ${cls.aura}22`,
     }}>
       <button
         onClick={onClose}
         style={{
-          position: 'absolute', top: 10, right: 12,
-          background: 'none', border: 'none', cursor: 'pointer',
-          color: '#64748b', fontSize: 14, padding: 4,
+          position: 'absolute', top: 10, right: 16,
+          background: 'none', border: `1px solid ${cls.color}44`,
+          color: cls.color, borderRadius: 3,
+          padding: '2px 8px', cursor: 'pointer', fontSize: 10,
         }}
       >
-        ✕
+        CLOSE
       </button>
 
-      {[
-        { label: 'Session',  value: `${s.session_id.slice(0, 24)}…`, mono: true },
-        { label: 'Model',    value: s.model, mono: true, color: cls.color },
-        { label: 'Tokens',   value: `${(s.input_tokens ?? 0).toLocaleString()} in / ${(s.output_tokens ?? 0).toLocaleString()} out`, mono: true },
-        { label: 'Cache',    value: `${(s.cache_read_tokens ?? 0).toLocaleString()} read / ${(s.cache_creation_tokens ?? 0).toLocaleString()} written`, mono: true, color: '#63f7b3' },
-        { label: 'Project',  value: s.project },
-        { label: 'Duration', value: formatDur(s.duration_seconds) },
-      ].map(({ label, value, mono, color }) => (
-        <div key={label}>
-          <div style={{ fontSize: 8.5, color: '#c8a85577', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 3 }}>{label}</div>
-          <div style={{
-            fontSize: 10.5, color: color ?? '#e8d5a3',
-            fontFamily: mono ? 'monospace' : 'inherit',
-            wordBreak: 'break-all',
-          }}>
-            {value}
-          </div>
-        </div>
-      ))}
-
-      {tools.length > 0 && (
+      <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        {/* Identity */}
         <div>
-          <div style={{ fontSize: 8.5, color: '#c8a85577', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 }}>Spells Cast</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-            {tools.map(([t, n]) => (
-              <span key={t} style={{
-                fontSize: 9, padding: '2px 7px',
-                background: `${cls.color}1a`,
-                border: `1px solid ${cls.color}44`,
-                borderRadius: 3, color: cls.color,
-              }}>
-                {t} ×{n}
-              </span>
-            ))}
-          </div>
+          <div style={{ fontSize: 8, color: cls.color, letterSpacing: 2, marginBottom: 3 }}>{role}</div>
+          <div style={{ fontSize: 15, color: '#e8d5a3', letterSpacing: 1.5, fontWeight: 600 }}>{name}</div>
+          <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 2 }}>{session.model}</div>
         </div>
-      )}
+
+        {/* Stats */}
+        {[
+          { label: 'COST',     val: formatGold(session.estimated_cost_usd) },
+          { label: 'DURATION', val: formatDur(session.duration_seconds)     },
+          { label: 'TOKENS',   val: (session.total_tokens ?? 0).toLocaleString() },
+          { label: 'MESSAGES', val: String(session.message_count)           },
+          { label: 'PROJECT',  val: session.project                         },
+        ].map(({ label, val }) => (
+          <div key={label}>
+            <div style={{ fontSize: 8, color: '#c8a85566', letterSpacing: 2, marginBottom: 3 }}>{label}</div>
+            <div style={{ fontSize: 11, color: '#e8d5a3' }}>{val}</div>
+          </div>
+        ))}
+
+        {/* Tools */}
+        {tools.length > 0 && (
+          <div>
+            <div style={{ fontSize: 8, color: '#c8a85566', letterSpacing: 2, marginBottom: 5 }}>TOP TOOLS</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+              {tools.map(([tool, count]) => (
+                <div key={tool} style={{
+                  fontSize: 8.5, padding: '2px 7px',
+                  border: `1px solid ${cls.color}33`,
+                  borderRadius: 2, color: cls.color,
+                  background: `${cls.aura}08`,
+                }}>
+                  {tool} ×{count}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-
-// ─── Legend ───────────────────────────────────────────────────────────────────
-
-const LEGEND_ITEMS = [
-  { color: '#63f7b3', dot: true,  label: 'HEALTHY LEY LINE' },
-  { color: '#f59e0b', dot: true,  label: 'CHOKED LEY LINE' },
-  { color: '#ef4444', dot: true,  label: 'SEVERED' },
-  { color: '#4ade80', dot: false, label: '⌘ JSON RUNESTONE' },
-  { color: '#e2e8f0', dot: false, label: '✦ TEXT RUNESTONE' },
-  { color: '#f87171', dot: false, label: '⚠ ERROR RUNESTONE' },
-];
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
 function EmptyState() {
   return (
     <div style={{
-      minHeight: 420, display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      background: 'radial-gradient(ellipse at center,#1a0933 0%,#080612 100%)',
-      borderRadius: 12, gap: 14,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      minHeight: 'calc(100vh - 80px)',
+      background: 'radial-gradient(ellipse at 25% 15%,#160828 0%,#07040f 55%,#030208 100%)',
+      flexDirection: 'column', gap: 12,
+      color: '#c8a85544', fontFamily: 'monospace',
     }}>
-      <div style={{ fontSize: 44 }}>🔮</div>
-      <div style={{ fontSize: 15, color: '#e8d5a377', letterSpacing: 1, textTransform: 'uppercase' }}>
-        The Sanctum Awaits
-      </div>
-      <div style={{ fontSize: 12, color: '#c8a85555', maxWidth: 320, textAlign: 'center', lineHeight: 1.7 }}>
-        No agent sessions found. Run Claude Code with subagents enabled, then sync.
-      </div>
-      <pre style={{
-        fontSize: 11, color: '#63f7b3', fontFamily: 'monospace',
-        background: 'rgba(0,0,0,.4)', border: '1px solid #63f7b322',
-        borderRadius: 6, padding: '8px 18px',
-      }}>
+      <div style={{ fontSize: 36 }}>🔮</div>
+      <div style={{ fontSize: 11, letterSpacing: 3, textTransform: 'uppercase' }}>Sanctum Awaits</div>
+      <pre style={{ fontSize: 11, color: '#63f7b3', background: 'rgba(0,0,0,.4)', padding: '8px 18px', borderRadius: 6 }}>
         node sync/export-local.mjs
       </pre>
     </div>
   );
 }
 
-// ─── Main page ────────────────────────────────────────────────────────────────
+// ─── Main export ──────────────────────────────────────────────────────────────
 
-export default function ScryingSanctum({ sessions }: { sessions: Session[] }) {
-  const [runIdx,    setRunIdx]    = useState(0);
-  const [selected,  setSelected]  = useState<string | null>(null);
-
-  useEffect(() => { injectSanctumStyles(); }, []);
+export default function ScryingSanctum({ sessions, onReload }: { sessions: Session[]; onReload?: () => void }) {
+  const [runIdx,   setRunIdx]   = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [syncing,  setSyncing]  = useState(false);
 
   const groups = useMemo(() => getSessionRunGroups(sessions), [sessions]);
   const group  = groups[runIdx] ?? null;
 
-  // Flatten the run group into a display list
-  const cards: CardData[] = useMemo(() => {
-    if (!group) return [];
-    const flat: CardData[] = [];
-    let idx = 0;
-
-    function walk(node: AgentTreeNode, depth: number) {
-      const cat = node.session.cat_type ?? 'ghost';
-      flat.push({
-        session:   node.session,
-        depth,
-        idx:       idx++,
-        total:     0,          // backfilled below
-        name:      getFantasyName(node.session, idx - 1, depth),
-        role:      '',         // backfilled below
-        cls:       CLASS_MAP[cat] ?? CLASS_MAP.ghost,
-        leyStatus: leyStatus(node.session),
-      });
-      for (const child of node.children) walk(child, depth + 1);
+  // When groups change (new sync loaded), reset to most recent run (idx 0)
+  const prevGroupsLen = useRef(groups.length);
+  useEffect(() => {
+    if (prevGroupsLen.current !== groups.length) {
+      prevGroupsLen.current = groups.length;
+      setRunIdx(0);
+      setSelected(null);
     }
-    for (const root of group.roots) walk(root, 0);
+  }, [groups.length]);
 
-    const total = flat.length;
-    flat.forEach((c, i) => {
-      c.total = total;
-      c.role  = getPipelineRole(i, total);
-    });
-    return flat;
+  async function handleSync() {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      await fetch('/api/sync', { method: 'POST' });
+      onReload?.();
+    } catch { /* ignore in prod */ } finally {
+      setSyncing(false);
+    }
+  }
+
+  // Flatten group for detail lookup
+  const flatNodes: PositionedNode[] = useMemo(() => {
+    if (!group) return [];
+    return layoutNodes(group.roots);
   }, [group]);
 
-  const maxCost   = useMemo(() => Math.max(...cards.map((c) => c.session.estimated_cost_usd), 0.001), [cards]);
-  const maxTokens = useMemo(() => Math.max(...cards.map((c) => c.session.total_tokens ?? 0), 1), [cards]);
-  const totalCost = group?.totalCost ?? 0;
-  const runName   = group?.project ?? 'Primary Sanctum';
-
-  const selectedCard = cards.find((c) => c.session.session_id === selected) ?? null;
+  const selectedNode = flatNodes.find((n) => n.session.session_id === selected) ?? null;
 
   if (groups.length === 0) return <EmptyState />;
 
   return (
     <div style={{
       minHeight: 'calc(100vh - 80px)',
-      background: 'radial-gradient(ellipse at 25% 15%,#160828 0%,#07040f 55%,#030208 100%)',
+      background: '#030208',
       borderRadius: 12,
       overflow: 'hidden',
       position: 'relative',
       display: 'flex',
       flexDirection: 'column',
     }}>
-      {/* Dungeon grid pattern */}
+      {/* ── Header ─────────────────────────────────────── */}
       <div style={{
-        position: 'absolute', inset: 0, pointerEvents: 'none',
-        backgroundImage: 'radial-gradient(circle at 1px 1px,rgba(200,168,85,.05) 1px,transparent 0)',
-        backgroundSize: '28px 28px',
-        animation: 'sanctum-grid 6s ease-in-out infinite',
-      }} />
-
-      {/* Corner runes */}
-      {['╔', '╗', '╚', '╝'].map((r, i) => (
-        <div key={i} style={{
-          position: 'absolute',
-          top: i < 2 ? 8 : undefined,
-          bottom: i >= 2 ? 8 : undefined,
-          left: i % 2 === 0 ? 8 : undefined,
-          right: i % 2 === 1 ? 8 : undefined,
-          fontSize: 20, color: '#c8a85522',
-          fontFamily: 'monospace', lineHeight: 1,
-          pointerEvents: 'none',
-        }}>
-          {r}
-        </div>
-      ))}
-
-      {/* ── Boss bar ───────────────────────────────────── */}
-      <div style={{ padding: '16px 24px 0', position: 'relative', zIndex: 2 }}>
-        <BossBar cost={totalCost} label="Pipeline Mana Cost" />
-      </div>
-
-      {/* ── Header ────────────────────────────────────── */}
-      <div style={{
-        padding: '12px 24px 10px',
+        padding: '12px 20px 10px',
         borderBottom: '1px solid rgba(200,168,85,.12)',
-        display: 'flex', alignItems: 'center', gap: 16,
-        position: 'relative', zIndex: 2,
+        display: 'flex', alignItems: 'center', gap: 14,
+        zIndex: 10, position: 'relative',
+        background: 'rgba(4,2,12,.75)',
+        backdropFilter: 'blur(8px)',
       }}>
         <div>
-          <div style={{ fontSize: 9, color: '#c8a85566', letterSpacing: 3, textTransform: 'uppercase' }}>
+          <div style={{ fontSize: 8.5, color: '#c8a85555', letterSpacing: 3, textTransform: 'uppercase' }}>
             Scrying Sanctum
           </div>
-          <div style={{
-            fontSize: 17, color: '#e8d5a3', fontWeight: 300,
-            letterSpacing: 1.5, textTransform: 'uppercase',
-          }}>
-            {runName}
+          <div style={{ fontSize: 16, color: '#e8d5a3', fontWeight: 300, letterSpacing: 1.5, fontFamily: 'monospace' }}>
+            {group?.project ?? '—'}
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 9, color: '#94a3b8' }}>
-            {cards.length} agent{cards.length !== 1 ? 's' : ''}
+          <span style={{ fontSize: 9, color: '#64748b', fontFamily: 'monospace' }}>
+            {flatNodes.length} agent{flatNodes.length !== 1 ? 's' : ''}
+          </span>
+          <span style={{ fontSize: 9, color: '#c8a855', fontFamily: 'monospace' }}>
+            {formatGold(group?.totalCost ?? 0)}
           </span>
 
           <select
             value={runIdx}
             onChange={(e) => { setRunIdx(+e.target.value); setSelected(null); }}
             style={{
-              background: 'rgba(0,0,0,.65)',
-              border: '1px solid #c8a85533',
-              borderRadius: 4, color: '#e8d5a3',
-              fontSize: 11, padding: '5px 10px',
-              fontFamily: 'inherit', cursor: 'pointer',
+              background: 'rgba(0,0,0,.7)', border: '1px solid #c8a85533',
+              borderRadius: 4, color: '#e8d5a3', fontSize: 11,
+              padding: '5px 10px', fontFamily: 'monospace', cursor: 'pointer',
             }}
           >
             {groups.slice(0, 40).map((g, i) => (
               <option key={i} value={i}>
-                {g.project} — ${g.totalCost.toFixed(3)} · {g.roots.length} root{g.roots.length !== 1 ? 's' : ''}
+                {g.project} — {formatGold(g.totalCost)} · {g.roots.length} root{g.roots.length !== 1 ? 's' : ''}
               </option>
             ))}
           </select>
+
+          {/* Sync button */}
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            title="Sync latest sessions"
+            style={{
+              background: 'rgba(0,0,0,.6)', border: '1px solid #c8a85533',
+              borderRadius: 4, color: syncing ? '#c8a85566' : '#c8a855',
+              fontSize: 10, padding: '4px 10px', fontFamily: 'monospace',
+              cursor: syncing ? 'wait' : 'pointer', letterSpacing: 1,
+            }}
+          >
+            {syncing ? '⟳ SYNCING…' : '⟳ SYNC'}
+          </button>
 
           <div style={{
             fontSize: 8.5, letterSpacing: 2, padding: '3px 10px',
             border: '1px solid #63f7b355', borderRadius: 2,
             color: '#63f7b3', background: 'rgba(99,247,179,.07)',
-            textTransform: 'uppercase',
+            fontFamily: 'monospace', textTransform: 'uppercase',
           }}>
             ACTIVE
           </div>
         </div>
       </div>
 
-      {/* ── Pipeline canvas ────────────────────────────── */}
-      <div style={{
-        flex: 1, padding: '36px 24px 20px',
-        overflowX: 'auto', overflowY: 'visible',
-        position: 'relative', zIndex: 2,
-      }}>
-        {cards.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#c8a85544', padding: '60px 0', fontSize: 13 }}>
-            No agents in this run
-          </div>
-        ) : (
-          <div style={{
-            display: 'flex', alignItems: 'center',
-            minWidth: 'max-content',
-            padding: '20px 24px',
-            gap: 0,
-          }}>
-            {cards.map((card, i) => (
-              <div key={card.session.session_id} style={{ display: 'contents' }}>
-                <UnitFrame
-                  card={card}
-                  maxCost={maxCost}
-                  maxTokens={maxTokens}
-                  selected={selected === card.session.session_id}
-                  onSelect={() => setSelected(
-                    selected === card.session.session_id ? null : card.session.session_id
-                  )}
-                />
-                {i < cards.length - 1 && (
-                  <LeyLine status={card.leyStatus} />
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* ── Detail drawer ──────────────────────────────── */}
-      {selectedCard && (
-        <div style={{ position: 'relative', zIndex: 2, paddingBottom: 12 }}>
-          <DetailDrawer card={selectedCard} onClose={() => setSelected(null)} />
-        </div>
-      )}
-
       {/* ── Legend ─────────────────────────────────────── */}
       <div style={{
-        padding: '12px 24px 14px',
-        borderTop: '1px solid rgba(200,168,85,.1)',
-        display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center',
-        position: 'relative', zIndex: 2,
+        position: 'absolute', top: 60, left: 16, zIndex: 10,
+        display: 'flex', flexDirection: 'column', gap: 4,
+        pointerEvents: 'none',
       }}>
-        {LEGEND_ITEMS.map(({ color, dot, label }) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            {dot
-              ? <div style={{ width: 7, height: 7, borderRadius: '50%', background: color, boxShadow: `0 0 5px ${color}` }} />
-              : <span style={{ fontSize: 9, color }} />}
-            <span style={{ fontSize: 8.5, color: '#c8a85566', letterSpacing: 1.2, textTransform: 'uppercase' }}>
+        {[
+          { color: '#f59e0b', label: 'WARRIOR',      shape: '◆' },
+          { color: '#34d399', label: 'ROGUE',        shape: '▲' },
+          { color: '#60a5fa', label: 'MAGE',         shape: '⬡' },
+          { color: '#a78bfa', label: 'WARLOCK',      shape: '⊙' },
+          { color: '#4ade80', label: 'DEATH KNIGHT', shape: '⬡' },
+        ].map(({ color, label, shape }) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 9, color, opacity: 0.7 }}>{shape}</span>
+            <span style={{ fontSize: 7.5, color: '#c8a85555', letterSpacing: 1.2, fontFamily: 'monospace' }}>
               {label}
             </span>
           </div>
         ))}
-        <div style={{ marginLeft: 'auto', fontSize: 8.5, color: '#c8a85533' }}>
-          SCROLL TO ZOOM · DRAG TO PAN
-        </div>
       </div>
+
+      {/* ── Controls hint ──────────────────────────────── */}
+      <div style={{
+        position: 'absolute', top: 60, right: 16, zIndex: 10,
+        pointerEvents: 'none',
+        fontFamily: 'monospace',
+      }}>
+        {[
+          'SCROLL · ZOOM',
+          'DRAG  · PAN',
+          'CLICK · SELECT',
+        ].map((hint) => (
+          <div key={hint} style={{ fontSize: 7.5, color: '#c8a85533', letterSpacing: 1.5, textAlign: 'right', marginBottom: 2 }}>
+            {hint}
+          </div>
+        ))}
+      </div>
+
+      {/* ── WebGL Canvas ───────────────────────────────── */}
+      <div style={{ flex: 1, minHeight: 520, position: 'relative' }}>
+        <Canvas
+          orthographic
+          camera={{ position: [14, 14, 14], zoom: 70, up: [0, 1, 0], near: 0.1, far: 500 }}
+          shadows
+          gl={{ antialias: true, alpha: false }}
+          style={{ background: 'radial-gradient(ellipse at 30% 20%, #160828 0%, #07040f 50%, #030208 100%)' }}
+          onClick={(e) => {
+            // Click on canvas background → deselect
+            if (e.target === e.currentTarget) setSelected(null);
+          }}
+        >
+          <Suspense fallback={null}>
+            {group && (
+              <Scene
+                group={group}
+                selectedId={selected}
+                onSelect={setSelected}
+              />
+            )}
+          </Suspense>
+        </Canvas>
+      </div>
+
+      {/* ── Detail drawer ──────────────────────────────── */}
+      {selectedNode && (
+        <DetailDrawer
+          session={selectedNode.session}
+          cls={selectedNode.cls}
+          name={selectedNode.name}
+          role={selectedNode.role}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }
