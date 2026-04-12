@@ -187,7 +187,10 @@ function parseTok(str) {
 }
 
 // ── Token quota mini-row ──────────────────────────────────────────────────────
-function QuotaRow({ label, used, budget, color, srcKey, period, onSetBudget }) {
+// softMax: when no hard budget is set, use peer-period tokens as a soft reference
+// (week bar → softMax = monthTokens shows week as % of month;
+//  month bar → softMax = weekTokens * 4.3 shows month pacing)
+function QuotaRow({ label, used, budget, color, srcKey, period, onSetBudget, softMax }) {
   const [editing, setEditing] = useState(false);
   const [draft,   setDraft]   = useState('');
 
@@ -197,10 +200,13 @@ function QuotaRow({ label, used, budget, color, srcKey, period, onSetBudget }) {
     setEditing(false);
   }
 
-  const hasBudget = budget > 0;
-  const pct       = hasBudget ? Math.min(100, Math.round((used / budget) * 100)) : 0;
-  const remaining = hasBudget ? budget - used : 0;
-  const isOver    = hasBudget && used > budget;
+  const hasBudget  = budget > 0;
+  const effectiveMax = hasBudget ? budget : (softMax > used ? softMax : 0);
+  const isSoft     = !hasBudget && effectiveMax > 0;
+  const pct        = effectiveMax > 0 ? Math.min(100, Math.round((used / effectiveMax) * 100)) : 0;
+  const remaining  = effectiveMax > 0 ? effectiveMax - used : 0;
+  const isOver     = hasBudget && used > budget;
+  const barColor   = isOver ? 'var(--red, #ff4a4a)' : isSoft ? `${color}88` : color;
 
   return (
     <div style={{ marginBottom: 6 }}>
@@ -238,27 +244,27 @@ function QuotaRow({ label, used, budget, color, srcKey, period, onSetBudget }) {
         )}
       </div>
 
-      {hasBudget ? (
-        <>
-          <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 2 }}>
-            <div style={{
-              height: '100%', width: `${pct}%`,
-              background: isOver ? 'var(--red, #ff4a4a)' : color,
-              borderRadius: 2, transition: 'width 0.4s ease',
-            }} />
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9 }}>
-            <span style={{ color: 'var(--text-muted)' }}>{fmtTok(used)} used</span>
-            <span style={{ color: isOver ? 'var(--red, #ff4a4a)' : 'var(--green)' }}>
-              {isOver ? `${fmtTok(used - budget)} over` : `${fmtTok(remaining)} left`}
-            </span>
-          </div>
-        </>
-      ) : (
-        <div style={{ fontSize: 9, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-          {fmtTok(used)} used this {label.toLowerCase().replace(' tokens', '')}
-        </div>
-      )}
+      <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 2 }}>
+        <div style={{
+          height: '100%', width: `${pct}%`,
+          background: barColor,
+          borderRadius: 2, transition: 'width 0.4s ease',
+        }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9 }}>
+        <span style={{ color: 'var(--text-muted)' }}>{fmtTok(used)} used</span>
+        {hasBudget && (
+          <span style={{ color: isOver ? 'var(--red, #ff4a4a)' : 'var(--green)' }}>
+            {isOver ? `${fmtTok(used - budget)} over` : `${fmtTok(remaining)} left`}
+          </span>
+        )}
+        {isSoft && period === 'week' && (
+          <span style={{ color: 'var(--text-muted)', fontSize: 8 }}>{pct}% of month</span>
+        )}
+        {isSoft && period === 'month' && (
+          <span style={{ color: 'var(--text-muted)', fontSize: 8 }}>~{fmtTok(effectiveMax)} est</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -352,14 +358,16 @@ function SourceUsagePanel({ sourceStats, tokenBudget, onBudgetChange, rateLimits
               <span>{sessions.toLocaleString()} sessions</span>
               <span style={{ color: 'var(--green)' }}>{formatCost(cost)}</span>
             </div>
-            {/* Token quota rows */}
+            {/* Token quota rows — softMax gives a bar even before a hard limit is set */}
             <QuotaRow
               label="Week tokens" used={weekTokens} budget={budget.week}
               color={color} srcKey={src} period="week" onSetBudget={handleSetBudget}
+              softMax={monthTokens}
             />
             <QuotaRow
               label="Month tokens" used={monthTokens} budget={budget.month}
               color={color} srcKey={src} period="month" onSetBudget={handleSetBudget}
+              softMax={Math.max(weekTokens * 4.3, monthTokens * 1.05)}
             />
             {/* Per-source rate limit bars */}
             {src === 'claude' && rl && (
