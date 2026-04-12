@@ -67,6 +67,7 @@ Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, and *
 | **Overview** | Sessions, tokens, cost, healthy/ghost ratio, daily chart, tool distribution, spend by period |
 | **Sessions** | Sortable table with cat-type classification per session |
 | **Agent Ops** | Wall-clock Gantt timeline of parent + subagent runs, efficiency index, drill-down panel |
+| **Scrying Sanctum** | WoW × MMORPG pipeline visualizer — unit frames, ley lines, boss bars |
 | **By Project** | Horizontal bar breakdown per project |
 | **By Day** | Area chart of token usage and session counts over time |
 | **By Action** | Which tools your agents actually reach for |
@@ -88,6 +89,50 @@ Run: patherle — 3 agents — $0.84 — 12m ago
 ```
 
 Click any row for a full breakdown: token split, cache hit rate, tool usage, sidechain flag.
+
+### Scrying Sanctum (MMORPG Visualizer)
+
+An alternate view of the same agent pipeline data — rendered as a dungeon encounter.
+
+Each agent becomes a **unit frame** with WoW-style aesthetics:
+- **Portrait + class** — auto-assigned based on session cat type (Warrior, Rogue, Mage, Warlock, Paladin, Priest, Death Knight)
+- **HP bar** — inverted cost: cheap sessions are healthy, expensive ones are bleeding
+- **Mana bar** — token volume (total tokens / max in run)
+- **Spells cast** — top tools used by that agent
+- **Gold cost** — displayed in `g/c` (gold/copper) notation
+
+Agents are connected by **ley lines** that reflect pipeline health:
+- 🟢 Green flowing — healthy (cheap, fast)
+- 🟡 Amber pulsing — choked (expensive or slow)
+- 🔴 Red dashed + ✕ — severed (ghost session, no output)
+
+A **boss bar** at the top shows the total pipeline mana cost as a raid health bar — red when burning money, green when efficient.
+
+Click any unit frame to expand a full detail drawer showing token breakdown, cache stats, and project.
+
+### Rate Limit Panel (Sidebar)
+
+The sidebar SOURCE USAGE section shows your actual Claude.ai rate limits alongside local session stats:
+
+```
+◆ Claude                              $714.65
+Session · resets in 50 min   ████████░░  62% left
+Weekly (all) · resets Tue    █████████░  19% left
+Weekly (Sonnet)              ██████████  47% left
+
+79 sessions this week
+44.2M tokens this week
+
+⬡ Codex                               $8.01
+1 session total
+```
+
+Rate limits are seeded from `public/data/rate-limits.json`. To update after checking `claude.ai/settings/usage`:
+
+```bash
+CLAUDE_SESSION_PCT=38 CLAUDE_WEEKLY_ALL_PCT=81 CLAUDE_WEEKLY_SONNET_PCT=53 \
+  node sync/fetch-claude-limits.mjs
+```
 
 ### The Cat Companion
 
@@ -311,9 +356,10 @@ Every feature on the roadmap is an open issue. The highest-impact contributions:
 - Sound design (purring on focus, chirps on breakthroughs)
 - Cat card frame designs (community-submitted overlays)
 
-**Agent Visualizer**
+**Agent Visualizer / Scrying Sanctum**
 - Live replay mode (replay a session's agent operations at 10× speed)
 - Cross-run comparison (trend lines: are your runs getting cheaper?)
+- Scrying Sanctum zoom/pan canvas (true spatial layout, not horizontal scroll)
 
 PRs welcome. Open an issue first for anything substantial.
 
@@ -347,6 +393,7 @@ meow-ops/
 │   ├── pages/
 │   │   ├── AgentVisualizer.tsx  Gantt timeline, ghost flagging, drill-down
 │   │   ├── AgentDetailPanel.tsx Slide-in session detail panel
+│   │   ├── ScryingSanctum.tsx   WoW × MMORPG pipeline visualizer
 │   │   └── ...                  Overview, Sessions, ByDay, ByProject, etc.
 │   ├── state/
 │   │   └── companionMachine.ts  XState machine — emotional states, cursor tracking
@@ -359,6 +406,7 @@ meow-ops/
 │   ├── parse-aider.mjs          Aider chat history parser
 │   ├── cost-calculator.mjs      30+ model pricing with fuzzy matching
 │   ├── export-local.mjs         All sources → sessions.json + cost-summary.json
+│   ├── fetch-claude-limits.mjs  Update rate-limits.json from claude.ai/settings/usage
 │   ├── upload-to-supabase.mjs   Push to Storage bucket
 │   ├── full-sync.mjs            export + upload in one shot
 │   └── launchd-example.plist    macOS hourly auto-sync template
