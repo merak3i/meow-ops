@@ -74,6 +74,18 @@ Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, and *
 | **Cost Tracker** | Daily cost line, cumulative burn, per-model breakdown |
 | **Live Sessions** | Real-time agent cards with tool-usage bars |
 
+### Source Breakdown
+
+When you use both Claude Code and OpenAI Codex Desktop, the **Overview** page shows a full side-by-side comparison and the **sidebar** shows a compact Source Usage panel:
+
+- Sessions count and percentage share per source
+- Total cost and tokens per source
+- Average cost per session
+- Ghost rate (empty/useless sessions) with a red flag when > 15%
+- Filter the whole dashboard to one source via the `◆ Claude` / `⬡ Codex` toggle buttons
+
+The Source Usage sidebar panel is hidden automatically when only one source has data.
+
 ### Agent Operations Visualizer
 
 When Claude Code runs with subagents, meow-ops turns the session tree into a Gantt timeline showing exactly what ran in parallel vs. sequentially:
@@ -90,53 +102,38 @@ Run: patherle — 3 agents — $0.84 — 12m ago
 
 Click any row for a full breakdown: token split, cache hit rate, tool usage, sidechain flag.
 
-### Scrying Sanctum (MMORPG Visualizer)
+### Scrying Sanctum
 
-An alternate view of the same agent pipeline data — rendered as a dungeon encounter.
-
-Each agent becomes a **unit frame** with WoW-style aesthetics:
-- **Portrait + class** — auto-assigned based on session cat type (Warrior, Rogue, Mage, Warlock, Paladin, Priest, Death Knight)
-- **HP bar** — inverted cost: cheap sessions are healthy, expensive ones are bleeding
-- **Mana bar** — token volume (total tokens / max in run)
-- **Spells cast** — top tools used by that agent
-- **Gold cost** — displayed in `g/c` (gold/copper) notation
-
-Agents are connected by **ley lines** that reflect pipeline health:
-- 🟢 Green flowing — healthy (cheap, fast)
-- 🟡 Amber pulsing — choked (expensive or slow)
-- 🔴 Red dashed + ✕ — severed (ghost session, no output)
-
-A **boss bar** at the top shows the total pipeline mana cost as a raid health bar — red when burning money, green when efficient.
-
-Click any unit frame to expand a full detail drawer showing token breakdown, cache stats, and project.
-
-### Rate Limit Panel (Sidebar)
-
-The sidebar SOURCE USAGE section shows your actual Claude.ai rate limits alongside local session stats:
+A real-time multi-agent pipeline visualizer with a fantasy WotLK aesthetic. Watch your AI agents communicate — see every token flow traverse the network as animated runestones along glowing ley lines.
 
 ```
-◆ Claude                              $714.65
-Session · resets in 50 min   ████████░░  62% left
-Weekly (all) · resets Tue    █████████░  19% left
-Weekly (Sonnet)              ██████████  47% left
-
-79 sessions this week
-44.2M tokens this week
-
-⬡ Codex                               $8.01
-1 session total
+Argent Vanguard ──────────── Ebon Blade Scout ──────────── Dalaran Archmage ──── Argent Herald
+  [active]       healthy ley     [active]       choked ley     [active]            [idle]
+  $0.0009                        $0.0041                        $0.0223             $0.0003
+  112ms                          1480ms                         3240ms              58ms
 ```
 
-Rate limits are seeded from `public/data/rate-limits.json`. To update after checking `claude.ai/settings/usage`:
+**Features:**
+- Four champion node types with distinct sigils and accent colors
+- Ley line health states: `healthy` (fast flow), `choked` (slow flow), `severed` (flickering)
+- Animated runestones travel along ley line paths carrying JSON/text/error payloads
+- Click any runestone to open a Loot Box modal showing full payload, token count, and latency
+- D3 zoom/pan canvas — scroll to zoom, drag to pan
+- Demo mode: cycles pre-built pipelines when not authenticated; no Supabase account required
+- Supabase Realtime mode: live data from `ss_pipelines`, `ss_nodes`, `ss_edges`, `ss_runestones` tables with multi-tenant RLS
 
-```bash
-CLAUDE_SESSION_PCT=38 CLAUDE_WEEKLY_ALL_PCT=81 CLAUDE_WEEKLY_SONNET_PCT=53 \
-  node sync/fetch-claude-limits.mjs
-```
+See `db/migrations/0003_scrying_sanctum.sql` for the full schema and RLS policies.
 
 ### The Cat Companion
 
-A living 3D companion rendered in WebGL (Kajiya-Kay fur, subsurface scattering) that evolves based on your actual session data.
+A living 3D companion rendered in WebGL with Kajiya-Kay fur shading, subsurface scattering, and proper procedural anatomy — that evolves based on your actual session data.
+
+**Procedural anatomy** (no glTF required, runs in every browser):
+- Multi-part body: capsule torso, sphere head, cylinder neck, capsule limbs, sphere paws, cubic Bezier tail, cone ears
+- Canvas-generated fur texture: 9000 directional micro-strands per part, breed-specific base color + accent stripes
+- Layered eye system: sclera (clearcoat 0.6) + iris (clearcoat 1.0, vertical slit pupil) + specular catchlight
+- Whiskers rendered as `LineSegments` — 3 per side, tapered opacity
+- Post-processing tuned to prevent bloom overexposure: `luminanceThreshold 0.88`, `focalLength 0.08`, `toneMappingExposure 0.95`
 
 **Physical evolution — real mesh deformations:**
 
@@ -173,6 +170,17 @@ A living 3D companion rendered in WebGL (Kajiya-Kay fur, subsurface scattering) 
 **Cat card export** — 📸 Share button → PNG download with name, breed, stats, trait badge, meow-ops watermark.
 
 **Live session detection** — page polls every 30s. When new sessions are detected while you're working, the cat reacts with a gold sparkle burst.
+
+### macOS Menu Bar
+
+A native-feeling menu bar widget that auto-syncs your sessions in the background:
+
+```bash
+cp sync/launchd-example.plist ~/Library/LaunchAgents/com.meow-ops.sync.plist
+launchctl load ~/Library/LaunchAgents/com.meow-ops.sync.plist
+```
+
+Runs `export-local.mjs` every hour, keeping your deployed dashboard current without opening a terminal.
 
 ### How Sessions Are Classified
 
@@ -257,6 +265,17 @@ launchctl load ~/Library/LaunchAgents/com.meow-ops.sync.plist
 2. Address bar → install icon (⊕)
 3. Right-click dock icon → Options → Keep in Dock
 
+### 6. Scrying Sanctum (Supabase Realtime, optional)
+
+Run the migration to enable live agent pipeline visualization:
+
+```bash
+# In Supabase SQL editor:
+-- Run db/migrations/0003_scrying_sanctum.sql
+```
+
+This creates `ss_pipelines`, `ss_nodes`, `ss_edges`, `ss_runestones` with multi-tenant RLS and enables Realtime publication. Without this, the Scrying Sanctum page runs in demo mode automatically.
+
 ---
 
 ## Architecture
@@ -278,12 +297,13 @@ Local machine                                         Cloud (optional)
               └──── sync/upload-to-supabase.mjs ──► Supabase Storage
                                                          │
 PWA on dock ──► vercel.app ──── fetch sessions.json ─────┘
-              React 19 + Vite 8 + Recharts
+              React 19 + Vite 8 + Recharts + D3
               Three.js companion (WebGL)
               XState emotional state machine
+              Supabase Realtime (Scrying Sanctum)
 ```
 
-**No backend. No database. No server-side rendering.** The entire production build is a static bundle plus one JSON file.
+**No backend. No server-side rendering.** The entire production build is a static bundle plus one JSON file. Supabase Realtime is opt-in for the Scrying Sanctum pipeline visualizer.
 
 ---
 
@@ -295,11 +315,33 @@ PWA on dock ──► vercel.app ──── fetch sessions.json ────�
 | 3D Companion | Three.js + React Three Fiber + custom GLSL shaders |
 | State machine | XState 5 (companion emotional states) |
 | Charts | Recharts |
+| Pipeline visualizer | D3 (zoom/pan/SVG) |
 | Styling | Tailwind CSS 4 + OKLCH design tokens |
 | Data grid | AG-Grid (session analytics table) |
 | Storage | Supabase Storage (opt-in) |
+| Realtime | Supabase Realtime (Scrying Sanctum, opt-in) |
 | Hosting | Vercel (or any static host) |
 | Sync | Node.js ESM scripts |
+
+---
+
+## Testing
+
+End-to-end tests run against the production build using Playwright:
+
+```bash
+npm run build         # build dist/
+npx playwright test   # runs all 15 tests against npm run preview
+```
+
+Tests cover all 12 pages, key interactions, PWA manifest, and data endpoints. The `playwright.config.ts` uses a single Chromium project against `http://localhost:4173` (Vite preview port).
+
+To run a single test file or test by name:
+
+```bash
+npx playwright test --grep "Scrying Sanctum"
+npx playwright test --reporter=list
+```
 
 ---
 
@@ -329,6 +371,13 @@ Parsers for additional AI tools:
 - `sync/parse-gemini.mjs` — Gemini CLI session logs
 - `sync/parse-openrouter.mjs` — unified cost across all OpenRouter models
 - `sync/parse-ollama.mjs` — local model sessions (cost = electricity estimate)
+
+### Scrying Sanctum enhancements _(planned)_
+
+- Supabase integration guide for connecting your own multi-agent pipelines
+- WebSocket bridge for non-Supabase backends
+- Node clustering for large pipelines (10+ agents)
+- Replay mode: scrub through a completed pipeline run
 
 ### Community Cat Registry _(planned)_
 
@@ -375,11 +424,18 @@ meow-ops/
 │   └── data/                    Generated by export-local.mjs
 │       ├── sessions.json        All parsed sessions (last 1000)
 │       └── cost-summary.json    Today/week/month/year spend buckets
+├── db/
+│   └── migrations/
+│       ├── 0001_sessions.sql    Core sessions schema
+│       ├── 0002_backfill.sql    Tenant ID backfill
+│       └── 0003_scrying_sanctum.sql  Pipeline viz schema + RLS + Realtime
+├── e2e/
+│   └── meow-ops.spec.ts         Playwright e2e tests (15 tests, all pages)
 ├── src/
 │   ├── analytics/               Velocity, efficiency, burn-rate, profile modules
 │   ├── companion-v2/            WebGL companion
-│   │   ├── CatMesh.tsx          Fur shaders, IK, morph weights, memory marks
-│   │   ├── CompanionScene.tsx   R3F canvas, HDRI rooms, particles
+│   │   ├── ProceduralCat.tsx    Procedural anatomy, fur textures, eye shader
+│   │   ├── CompanionScene.tsx   R3F canvas, HDRI rooms, particles, post-processing
 │   │   ├── CompanionPageV2.tsx  Orchestrator — polling, milestones, marks
 │   │   ├── StatsPanel.tsx       Stat bars, actions, trait badge, share button
 │   │   ├── useCompanionGame.ts  Store wrapper, personality trait, memory marks
@@ -395,6 +451,15 @@ meow-ops/
 │   │   ├── AgentDetailPanel.tsx Slide-in session detail panel
 │   │   ├── ScryingSanctum.tsx   WoW × MMORPG pipeline visualizer
 │   │   └── ...                  Overview, Sessions, ByDay, ByProject, etc.
+│   ├── scrying-sanctum/         Agent pipeline visualizer (D3 + Supabase Realtime)
+│   │   ├── ScryingSanctum.tsx   Main page — D3 zoom canvas, legend, loot box
+│   │   ├── ChampionNode.tsx     SVG foreignObject node card
+│   │   ├── LeyLine.tsx          SVG path with flow animation + runestones
+│   │   ├── Runestone.tsx        Animated token packet (RAF path-following)
+│   │   ├── championsConfig.ts   Node metadata, colors, Bezier path builder
+│   │   ├── useScryingData.ts    Supabase/demo data hook with Realtime subscriptions
+│   │   ├── types.ts             SsNode, SsEdge, SsRunestone, SsPipeline types
+│   │   └── scrying-sanctum.css  Ley line animations, champion cards, loot box
 │   ├── state/
 │   │   └── companionMachine.ts  XState machine — emotional states, cursor tracking
 │   └── types/
@@ -410,6 +475,7 @@ meow-ops/
 │   ├── upload-to-supabase.mjs   Push to Storage bucket
 │   ├── full-sync.mjs            export + upload in one shot
 │   └── launchd-example.plist    macOS hourly auto-sync template
+├── playwright.config.ts         Playwright configuration
 └── .env.example
 ```
 

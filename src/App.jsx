@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { PasswordGate } from './components/PasswordGate';
 import Sidebar from './components/Sidebar';
 import DateFilter from './components/DateFilter';
@@ -15,7 +15,7 @@ import LiveSessions from './pages/LiveSessions';
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const CompanionPageV2    = lazy(() => import('./companion-v2/CompanionPageV2'));
 const AgentVisualizer    = lazy(() => import('./pages/AgentVisualizer'));
-const ScryingSanctum     = lazy(() => import('./pages/ScryingSanctum'));
+const ScryingSanctum     = lazy(() => import('./scrying-sanctum/ScryingSanctum'));
 import {
   fetchSessions,
   fetchAllSessions,
@@ -88,6 +88,19 @@ export default function App() {
   const [reloadKey,   setReloadKey]   = useState(0);
   const [rateLimits,  setRateLimits]  = useState(null);
 
+  // Token budgets — weekly and monthly limits per source (persisted in localStorage)
+  const [tokenBudget, setTokenBudget] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('meow-ops-token-budget')) ||
+        { claude: { week: 0, month: 0 }, codex: { week: 0, month: 0 } };
+    } catch { return { claude: { week: 0, month: 0 }, codex: { week: 0, month: 0 } }; }
+  });
+
+  const saveBudget = useCallback((next) => {
+    setTokenBudget(next);
+    localStorage.setItem('meow-ops-token-budget', JSON.stringify(next));
+  }, []);
+
   // Main data load
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +164,34 @@ export default function App() {
   const toolData    = getToolBreakdownFromSessions(sessions);
   const modelData   = getModelBreakdown(sessions);
 
+  // Source breakdown for sidebar + overview — computed from ALL sessions (no date filter)
+  // Also computes this-week and this-month token usage for budget tracking
+  const sourceStats = useMemo(() => {
+    const now = new Date();
+    const day = now.getDay(); // 0=Sun
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+    weekStart.setHours(0, 0, 0, 0);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const acc = {
+      claude: { sessions: 0, cost: 0, tokens: 0, weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0 },
+      codex:  { sessions: 0, cost: 0, tokens: 0, weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0 },
+    };
+    allSessions.forEach(s => {
+      const src = s.source === 'codex' ? 'codex' : 'claude';
+      const tok = s.total_tokens || 0;
+      acc[src].sessions++;
+      acc[src].cost   += s.estimated_cost_usd || 0;
+      acc[src].tokens += tok;
+
+      const d = new Date(s.started_at);
+      if (d >= weekStart)  { acc[src].weekTokens  += tok; acc[src].weekSessions++;  }
+      if (d >= monthStart) { acc[src].monthTokens += tok; acc[src].monthSessions++; }
+    });
+    return acc;
+  }, [allSessions]);
+
   const renderPage = () => {
     if (noData) return <NoDataScreen />;
 
@@ -165,6 +206,9 @@ export default function App() {
             toolData={toolData}
             costSummary={costSummary}
             dateRange={dateRange}
+            sourceStats={sourceStats}
+            tokenBudget={tokenBudget}
+            onBudgetChange={saveBudget}
           />
         );
       case 'sessions':
@@ -212,7 +256,7 @@ export default function App() {
       case 'sanctum':
         return (
           <Suspense fallback={<PageLoader />}>
-            <ScryingSanctum sessions={allSessions} />
+            <ScryingSanctum />
           </Suspense>
         );
       default:
@@ -225,6 +269,9 @@ export default function App() {
             toolData={toolData}
             costSummary={costSummary}
             dateRange={dateRange}
+            sourceStats={sourceStats}
+            tokenBudget={tokenBudget}
+            onBudgetChange={saveBudget}
           />
         );
     }
@@ -233,9 +280,14 @@ export default function App() {
   return (
     <PasswordGate>
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} allSessions={allSessions} rateLimits={rateLimits} />
+      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} sourceStats={sourceStats} tokenBudget={tokenBudget} onBudgetChange={saveBudget} />
 
-      <main style={{ marginLeft: 'var(--sidebar-w)', flex: 1, padding: 32, maxWidth: 1280 }}>
+      <main style={{
+        marginLeft: 'var(--sidebar-w)', flex: 1,
+        ...(page === 'sanctum'
+          ? { padding: 0, maxWidth: 'none', display: 'flex', flexDirection: 'column', height: '100vh' }
+          : { padding: 32, maxWidth: 1280 }),
+      }}>
         {page !== 'pomodoro' && page !== 'companion' && page !== 'live' &&
          page !== 'agent-ops' && page !== 'analytics' && page !== 'sanctum' && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>

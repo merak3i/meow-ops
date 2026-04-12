@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, List, FolderKanban, CalendarDays, Wrench, DollarSign,
-  Cat, Timer, Activity, RefreshCw, Check, AlertCircle, BarChart3, GitBranch,
-  Swords,
+  Cat, Timer, Activity, RefreshCw, Check, AlertCircle, BarChart3, GitBranch, Eye,
 } from 'lucide-react';
+import { formatCost, formatTokens } from '../lib/format';
 import { triggerSync, getSyncStatus, invalidateRealSessions, IS_PROD } from '../lib/queries';
 
 const NAV = [
@@ -16,7 +16,7 @@ const NAV = [
   { id: 'cost',       label: 'Cost Tracker',    icon: DollarSign },
   { id: 'analytics',  label: 'Analytics',       icon: BarChart3 },
   { id: 'agent-ops',  label: 'Agent Ops',       icon: GitBranch },
-  { id: 'sanctum',    label: 'Scrying Sanctum', icon: Swords },
+  { id: 'sanctum',    label: 'Scrying Sanctum', icon: Eye },
   { id: 'companion',  label: 'Companion',       icon: Cat },
   { id: 'live',       label: 'Live Sessions',   icon: Activity },
   { id: 'pomodoro',   label: 'Focus Timer',     icon: Timer },
@@ -170,219 +170,170 @@ function SyncButton({ onReload }) {
   );
 }
 
-// ─── SOURCE USAGE panel ───────────────────────────────────────────────────────
-
-function formatTokens(n) {
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
-  if (n >= 1_000_000)     return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)         return `${(n / 1_000).toFixed(0)}K`;
+// ── Token formatting helpers ──────────────────────────────────────────────────
+function fmtTok(n) {
+  if (!n) return '0';
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
   return String(n);
 }
 
-function RateBar({ pct, color, label, sublabel }) {
-  const remaining = 100 - pct;
-  const barColor =
-    pct > 85 ? '#ef4444' :
-    pct > 60 ? '#f59e0b' :
-    color;
+function parseTok(str) {
+  const s = str.trim().toUpperCase();
+  if (s.endsWith('B')) return parseFloat(s) * 1e9;
+  if (s.endsWith('M')) return parseFloat(s) * 1e6;
+  if (s.endsWith('K')) return parseFloat(s) * 1e3;
+  return parseFloat(s) || 0;
+}
+
+// ── Token quota mini-row ──────────────────────────────────────────────────────
+function QuotaRow({ label, used, budget, color, srcKey, period, onSetBudget }) {
+  const [editing, setEditing] = useState(false);
+  const [draft,   setDraft]   = useState('');
+
+  function commit() {
+    const v = parseTok(draft);
+    if (v > 0) onSetBudget(srcKey, period, v);
+    setEditing(false);
+  }
+
+  const hasBudget = budget > 0;
+  const pct       = hasBudget ? Math.min(100, Math.round((used / budget) * 100)) : 0;
+  const remaining = hasBudget ? budget - used : 0;
+  const isOver    = hasBudget && used > budget;
 
   return (
-    <div style={{ marginBottom: 7 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-        <span style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: .5 }}>{label}</span>
-        <span style={{ fontSize: 9, color: barColor, fontFamily: 'monospace' }}>
-          {remaining}% left
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+        <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          {label}
         </span>
+        {editing ? (
+          <div style={{ display: 'flex', gap: 3 }}>
+            <input
+              autoFocus
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
+              placeholder="e.g. 10B"
+              style={{
+                width: 56, fontSize: 9, background: 'var(--bg-card)', border: '1px solid var(--border)',
+                borderRadius: 3, color: 'var(--text-primary)', padding: '1px 4px', outline: 'none',
+              }}
+            />
+            <button onClick={commit} style={{ fontSize: 9, background: 'none', border: 'none',
+              color: 'var(--green)', cursor: 'pointer', padding: 0 }}>✓</button>
+            <button onClick={() => setEditing(false)} style={{ fontSize: 9, background: 'none', border: 'none',
+              color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>✕</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => { setDraft(hasBudget ? fmtTok(budget) : ''); setEditing(true); }}
+            style={{ fontSize: 9, background: 'none', border: 'none',
+              color: 'var(--text-muted)', cursor: 'pointer', padding: 0,
+              textDecoration: 'underline dotted', }}
+          >
+            {hasBudget ? `limit: ${fmtTok(budget)}` : 'set limit'}
+          </button>
+        )}
       </div>
-      <div style={{
-        height: 5, background: 'var(--border)', borderRadius: 3, overflow: 'hidden',
-      }}>
-        <div style={{
-          height: '100%', width: `${pct}%`,
-          background: `linear-gradient(90deg, ${barColor}aa, ${barColor})`,
-          borderRadius: 3,
-          transition: 'width .6s cubic-bezier(.4,0,.2,1)',
-        }} />
-      </div>
-      {sublabel && (
-        <div style={{ fontSize: 8.5, color: 'var(--text-muted)', marginTop: 2, opacity: .7 }}>
-          {sublabel}
+
+      {hasBudget ? (
+        <>
+          <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 2 }}>
+            <div style={{
+              height: '100%', width: `${pct}%`,
+              background: isOver ? 'var(--red, #ff4a4a)' : color,
+              borderRadius: 2, transition: 'width 0.4s ease',
+            }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9 }}>
+            <span style={{ color: 'var(--text-muted)' }}>{fmtTok(used)} used</span>
+            <span style={{ color: isOver ? 'var(--red, #ff4a4a)' : 'var(--green)' }}>
+              {isOver ? `${fmtTok(used - budget)} over` : `${fmtTok(remaining)} left`}
+            </span>
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 9, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+          {fmtTok(used)} used this {label.toLowerCase().replace(' tokens', '')}
         </div>
       )}
     </div>
   );
 }
 
-function SourceUsagePanel({ allSessions, rateLimits }) {
-  const [expanded, setExpanded] = useState(false);
+// ── Source usage mini-panel ───────────────────────────────────────────────────
+function SourceUsagePanel({ sourceStats, tokenBudget, onBudgetChange }) {
+  if (!sourceStats) return null;
+  const { claude, codex } = sourceStats;
+  const totalSess = claude.sessions + codex.sessions;
+  if (totalSess === 0) return null;
 
-  // Compute local session stats per source (last 7 days)
-  const stats = (() => {
-    const now  = Date.now();
-    const week = now - 7 * 24 * 60 * 60 * 1000;
-    const weekSessions = (allSessions ?? []).filter(
-      (s) => new Date(s.started_at).getTime() >= week
-    );
-    const bySource = (src) => weekSessions.filter((s) => s.source === src);
-    const sum = (arr, key) => arr.reduce((t, s) => t + (s[key] ?? 0), 0);
-
-    const claudeSess = bySource('claude');
-    const codexSess  = bySource('codex');
-    const allSess    = (allSessions ?? []);
-
-    return {
-      claude: {
-        weekSessions: claudeSess.length,
-        weekTokens:   sum(claudeSess, 'total_tokens'),
-        weekCost:     sum(claudeSess, 'estimated_cost_usd'),
-        totalSessions: allSess.filter((s) => s.source === 'claude').length,
-        totalCost:    sum(allSess.filter((s) => s.source === 'claude'), 'estimated_cost_usd'),
-      },
-      codex: {
-        weekSessions: codexSess.length,
-        weekCost:     sum(codexSess, 'estimated_cost_usd'),
-        totalSessions: allSess.filter((s) => s.source === 'codex').length,
-        totalCost:    sum(allSess.filter((s) => s.source === 'codex'), 'estimated_cost_usd'),
-      },
+  function handleSetBudget(src, period, value) {
+    const next = {
+      ...tokenBudget,
+      [src]: { ...tokenBudget[src], [period]: value },
     };
-  })();
+    onBudgetChange(next);
+  }
 
-  const rl = rateLimits?.claude;
+  const rows = [
+    { src: 'claude', label: '◆ Claude', color: 'var(--accent)', ...claude },
+    { src: 'codex',  label: '⬡ Codex',  color: 'oklch(0.65 0.18 260)', ...codex },
+  ];
 
   return (
     <div style={{
-      margin: '0 12px 10px',
+      margin: '0 16px 12px',
+      padding: '10px 12px',
       background: 'var(--bg-page)',
       border: '1px solid var(--border)',
       borderRadius: 8,
-      overflow: 'hidden',
     }}>
-      {/* Header */}
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center',
-          justifyContent: 'space-between', padding: '8px 12px',
-          background: 'none', border: 'none', cursor: 'pointer',
-          fontFamily: 'inherit',
-        }}
-      >
-        <span style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: 1.5, textTransform: 'uppercase' }}>
-          Source Usage
-        </span>
-        <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{expanded ? '▲' : '▼'}</span>
-      </button>
-
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.22 }}
-            style={{ overflow: 'hidden' }}
-          >
-            <div style={{ padding: '0 12px 12px', borderTop: '1px solid var(--border)' }}>
-
-              {/* ── Claude ── */}
-              <div style={{ paddingTop: 10 }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8,
-                }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>Claude</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                    ${stats.claude.totalCost.toFixed(2)}
-                  </span>
-                </div>
-
-                {/* Rate limit bars from claude.ai/settings/usage */}
-                {rl ? (
-                  <div style={{ marginBottom: 4 }}>
-                    <RateBar
-                      pct={rl.session?.used_pct ?? 0}
-                      color="var(--accent)"
-                      label={`Session${rl.session?.resets_in_label ? ` · resets in ${rl.session.resets_in_label}` : ''}`}
-                      sublabel={null}
-                    />
-                    <RateBar
-                      pct={rl.weekly?.all_models_used_pct ?? 0}
-                      color="var(--accent)"
-                      label={`Weekly (all)${rl.weekly?.resets_label ? ` · resets ${rl.weekly.resets_label}` : ''}`}
-                      sublabel={null}
-                    />
-                    <RateBar
-                      pct={rl.weekly?.sonnet_only_used_pct ?? 0}
-                      color="var(--cyan)"
-                      label="Weekly (Sonnet)"
-                      sublabel={null}
-                    />
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 6 }}>
-                    Rate limits: run{' '}
-                    <code style={{ fontSize: 8.5, color: 'var(--accent)' }}>sync/fetch-claude-limits.mjs</code>
-                  </div>
-                )}
-
-                {/* Local session stats */}
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', lineHeight: 1.7 }}>
-                  <div>{stats.claude.weekSessions} sessions this week</div>
-                  <div>{formatTokens(stats.claude.weekTokens)} tokens this week</div>
-                  <div>{stats.claude.totalSessions} sessions total</div>
-                </div>
-              </div>
-
-              <div style={{ height: 1, background: 'var(--border)', margin: '10px 0' }} />
-
-              {/* ── Codex / OpenAI ── */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#10b981', flexShrink: 0 }} />
-                  <span style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>Codex</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-                    ${stats.codex.totalCost.toFixed(2)}
-                  </span>
-                </div>
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', lineHeight: 1.7 }}>
-                  <div>{stats.codex.weekSessions} sessions this week</div>
-                  <div>{stats.codex.totalSessions} sessions total</div>
-                </div>
-              </div>
-
-              <div style={{ height: 1, background: 'var(--border)', margin: '10px 0' }} />
-
-              {/* ── ChatGPT ── */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--border)', border: '1px solid var(--text-muted)', flexShrink: 0 }} />
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>ChatGPT</span>
-                  <span style={{ marginLeft: 'auto', fontSize: 9, color: 'var(--text-muted)' }}>—</span>
-                </div>
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', opacity: .65 }}>
-                  Not connected. Tracking via local sessions coming soon.
-                </div>
-              </div>
-
-              {/* Refresh hint */}
-              <div style={{ marginTop: 10, fontSize: 8.5, color: 'var(--text-muted)', opacity: .55, lineHeight: 1.5 }}>
-                Rate limits pulled from{' '}
-                <span style={{ color: 'var(--accent)' }}>claude.ai/settings/usage</span>
-                {rateLimits?._updated && (
-                  <> · {new Date(rateLimits._updated).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })}</>
-                )}
-              </div>
+      <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em',
+        textTransform: 'uppercase', marginBottom: 8 }}>
+        Source Usage
+      </div>
+      {rows.map(({ src, label, color, sessions, cost, weekTokens, monthTokens }) => {
+        if (sessions === 0) return null;
+        const pct = totalSess > 0 ? Math.round((sessions / totalSess) * 100) : 0;
+        const budget = tokenBudget?.[src] || { week: 0, month: 0 };
+        return (
+          <div key={src} style={{ marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+              marginBottom: 3 }}>
+              <span style={{ fontSize: 11, color, fontWeight: 500 }}>{label}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{pct}%</span>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            {/* Session share bar */}
+            <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 3 }}>
+              <div style={{ height: '100%', width: `${pct}%`, background: color,
+                borderRadius: 2, transition: 'width 0.4s ease' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9,
+              color: 'var(--text-muted)', marginBottom: 6 }}>
+              <span>{sessions.toLocaleString()} sessions</span>
+              <span style={{ color: 'var(--green)' }}>{formatCost(cost)}</span>
+            </div>
+            {/* Token quota rows */}
+            <QuotaRow
+              label="Week tokens" used={weekTokens} budget={budget.week}
+              color={color} srcKey={src} period="week" onSetBudget={handleSetBudget}
+            />
+            <QuotaRow
+              label="Month tokens" used={monthTokens} budget={budget.month}
+              color={color} srcKey={src} period="month" onSetBudget={handleSetBudget}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-// ─── Main Sidebar ─────────────────────────────────────────────────────────────
-
-export default function Sidebar({ activePage, onNavigate, onReload, allSessions, rateLimits }) {
+export default function Sidebar({ activePage, onNavigate, onReload, sourceStats, tokenBudget, onBudgetChange }) {
   return (
     <aside
       style={{
@@ -454,10 +405,8 @@ export default function Sidebar({ activePage, onNavigate, onReload, allSessions,
         })}
       </nav>
 
-      {/* SOURCE USAGE */}
-      <div style={{ flexShrink: 0 }}>
-        <SourceUsagePanel allSessions={allSessions} rateLimits={rateLimits} />
-      </div>
+      <SourceUsagePanel sourceStats={sourceStats} tokenBudget={tokenBudget} onBudgetChange={onBudgetChange} />
+      {IS_PROD ? <RefreshButton onReload={onReload} /> : <SyncButton onReload={onReload} />}
 
       {/* Sync/Refresh */}
       <div style={{ flexShrink: 0 }}>
