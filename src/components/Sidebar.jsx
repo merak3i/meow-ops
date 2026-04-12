@@ -263,8 +263,42 @@ function QuotaRow({ label, used, budget, color, srcKey, period, onSetBudget }) {
   );
 }
 
+// ── Rate limit bar (shows remaining %) ───────────────────────────────────────
+function RateLimitBar({ label, usedPct, resetLabel }) {
+  const remaining = Math.max(0, 100 - (usedPct ?? 0));
+  const color =
+    remaining > 50 ? 'var(--green, #4caf82)' :
+    remaining > 20 ? '#e8a030' :
+    'var(--red, #ff4a4a)';
+
+  return (
+    <div style={{ marginBottom: 5 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+        <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+          {label}
+        </span>
+        <span style={{ fontSize: 9, color, fontVariantNumeric: 'tabular-nums' }}>
+          {remaining}% left
+        </span>
+      </div>
+      <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 2 }}>
+        <div style={{
+          height: '100%', width: `${remaining}%`,
+          background: color,
+          borderRadius: 2, transition: 'width 0.4s ease',
+        }} />
+      </div>
+      {resetLabel && (
+        <div style={{ fontSize: 8.5, color: 'var(--text-muted)', textAlign: 'right' }}>
+          resets {resetLabel}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Source usage mini-panel ───────────────────────────────────────────────────
-function SourceUsagePanel({ sourceStats, tokenBudget, onBudgetChange }) {
+function SourceUsagePanel({ sourceStats, tokenBudget, onBudgetChange, rateLimits }) {
   if (!sourceStats) return null;
   const { claude, codex } = sourceStats;
   const totalSess = claude.sessions + codex.sessions;
@@ -282,6 +316,8 @@ function SourceUsagePanel({ sourceStats, tokenBudget, onBudgetChange }) {
     { src: 'claude', label: '◆ Claude', color: 'var(--accent)', ...claude },
     { src: 'codex',  label: '⬡ Codex',  color: 'oklch(0.65 0.18 260)', ...codex },
   ];
+
+  const rl = rateLimits?.claude;
 
   return (
     <div style={{
@@ -325,6 +361,39 @@ function SourceUsagePanel({ sourceStats, tokenBudget, onBudgetChange }) {
               label="Month tokens" used={monthTokens} budget={budget.month}
               color={color} srcKey={src} period="month" onSetBudget={handleSetBudget}
             />
+            {/* Claude.ai rate limit bars — only for Claude row */}
+            {src === 'claude' && rl && (
+              <div style={{
+                marginTop: 8, paddingTop: 8,
+                borderTop: '1px solid var(--border)',
+              }}>
+                <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.08em',
+                  textTransform: 'uppercase', marginBottom: 5 }}>
+                  Claude.ai limits
+                </div>
+                {rl.session?.used_pct != null && (
+                  <RateLimitBar
+                    label="Session"
+                    usedPct={rl.session.used_pct}
+                    resetLabel={rl.session.resets_in_label ?? null}
+                  />
+                )}
+                {rl.weekly?.all_models_used_pct != null && (
+                  <RateLimitBar
+                    label="Weekly (all)"
+                    usedPct={rl.weekly.all_models_used_pct}
+                    resetLabel={rl.weekly.resets_label ?? null}
+                  />
+                )}
+                {rl.weekly?.sonnet_only_used_pct != null && (
+                  <RateLimitBar
+                    label="Weekly (Sonnet)"
+                    usedPct={rl.weekly.sonnet_only_used_pct}
+                    resetLabel={null}
+                  />
+                )}
+              </div>
+            )}
           </div>
         );
       })}
@@ -332,7 +401,7 @@ function SourceUsagePanel({ sourceStats, tokenBudget, onBudgetChange }) {
   );
 }
 
-export default function Sidebar({ activePage, onNavigate, onReload, sourceStats, tokenBudget, onBudgetChange }) {
+export default function Sidebar({ activePage, onNavigate, onReload, sourceStats, tokenBudget, onBudgetChange, rateLimits }) {
   return (
     <aside
       style={{
@@ -404,7 +473,7 @@ export default function Sidebar({ activePage, onNavigate, onReload, sourceStats,
         })}
       </nav>
 
-      <SourceUsagePanel sourceStats={sourceStats} tokenBudget={tokenBudget} onBudgetChange={onBudgetChange} />
+      <SourceUsagePanel sourceStats={sourceStats} tokenBudget={tokenBudget} onBudgetChange={onBudgetChange} rateLimits={rateLimits} />
       <div style={{ flexShrink: 0 }}>
         {IS_PROD ? <RefreshButton onReload={onReload} /> : <SyncButton onReload={onReload} />}
       </div>

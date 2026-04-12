@@ -279,7 +279,7 @@ export default function App() {
   return (
     <PasswordGate>
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} sourceStats={sourceStats} tokenBudget={tokenBudget} onBudgetChange={saveBudget} />
+      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} sourceStats={sourceStats} tokenBudget={tokenBudget} onBudgetChange={saveBudget} rateLimits={rateLimits} />
 
       <main style={{
         marginLeft: 'var(--sidebar-w)', flex: 1,
