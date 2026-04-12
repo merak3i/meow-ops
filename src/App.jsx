@@ -9,7 +9,6 @@ import ByDay from './pages/ByDay';
 import ByAction from './pages/ByAction';
 import CostTracker from './pages/CostTracker';
 import Pomodoro from './pages/Pomodoro';
-import LiveSessions from './pages/LiveSessions';
 
 // Heavy pages — code-split to keep the main bundle lean
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
@@ -230,8 +229,6 @@ export default function App() {
             costSummary={costSummary}
           />
         );
-      case 'live':
-        return <LiveSessions sessions={sessions} />;
       case 'pomodoro':
         return <Pomodoro />;
       case 'analytics':
@@ -258,7 +255,7 @@ export default function App() {
       case 'sanctum':
         return (
           <Suspense fallback={<PageLoader />}>
-            <ScryingSanctum sessions={allSessions} />
+            <ScryingSanctum sessions={allSessions} onReload={reloadData} />
           </Suspense>
         );
       default:

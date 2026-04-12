@@ -1,7 +1,7 @@
 // ScryingSanctum.tsx — WebGL isometric RPG agent pipeline visualizer
 // OrthographicCamera at 45° · Stone dungeon floor · Champion primitives · Ley lines · Runestones
 
-import { useRef, useState, useMemo, Suspense } from 'react';
+import { useRef, useState, useMemo, useEffect, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Html, Line, OrbitControls } from '@react-three/drei';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
