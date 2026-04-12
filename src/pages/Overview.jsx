@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus, SquareCode, Code2 } from 'lucide-react';
+import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus, SquareCode, Code2, Pencil, Check, X } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import DailyChart from '../components/DailyChart';
 import ToolBreakdown from '../components/ToolBreakdown';
@@ -133,6 +133,184 @@ function SourceComparisonPanel({ allSessions }) {
   );
 }
 
+// ─── Token quota helpers ──────────────────────────────────────────────────────
+function fmtTok(n) {
+  if (!n) return '0';
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+  return String(n);
+}
+
+function parseTok(str) {
+  const s = String(str).trim().toUpperCase();
+  if (s.endsWith('B')) return parseFloat(s) * 1e9;
+  if (s.endsWith('M')) return parseFloat(s) * 1e6;
+  if (s.endsWith('K')) return parseFloat(s) * 1e3;
+  return parseFloat(s) || 0;
+}
+
+// Per-period (week or month) quota row for Overview cards
+function QuotaBand({ period, used, budget, color, srcKey, onSetBudget }) {
+  const [editing, setEditing] = useState(false);
+  const [draft,   setDraft]   = useState('');
+
+  const hasBudget = budget > 0;
+  const pct       = hasBudget ? Math.min(100, (used / budget) * 100) : 0;
+  const remaining = hasBudget ? budget - used : 0;
+  const isOver    = hasBudget && used > budget;
+
+  function commit() {
+    const v = parseTok(draft);
+    if (v > 0) onSetBudget(srcKey, period, v);
+    setEditing(false);
+  }
+
+  const periodLabel = period === 'week' ? 'This Week' : 'This Month';
+
+  return (
+    <div style={{
+      background: 'var(--bg-page)',
+      border: `1px solid ${isOver ? 'rgba(248,113,113,0.3)' : 'var(--border)'}`,
+      borderRadius: 8,
+      padding: '10px 12px',
+    }}>
+      {/* Header row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          {periodLabel}
+        </span>
+        {editing ? (
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <input
+              autoFocus
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
+              placeholder="e.g. 10B"
+              style={{
+                width: 64, fontSize: 11, background: 'var(--bg-card)',
+                border: '1px solid var(--accent)', borderRadius: 4,
+                color: 'var(--text-primary)', padding: '2px 6px', outline: 'none',
+              }}
+            />
+            <button onClick={commit} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--green)', padding: 0 }}>
+              <Check size={12} />
+            </button>
+            <button onClick={() => setEditing(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0 }}>
+              <X size={12} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => { setDraft(hasBudget ? fmtTok(budget) : ''); setEditing(true); }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--text-muted)', padding: 0, display: 'flex', alignItems: 'center', gap: 3,
+              fontSize: 10,
+            }}
+          >
+            <Pencil size={10} />
+            {hasBudget ? `limit: ${fmtTok(budget)}` : 'set limit'}
+          </button>
+        )}
+      </div>
+
+      {/* Tokens used — large number */}
+      <div style={{ fontSize: 22, fontWeight: 300, color: isOver ? '#f87171' : color, lineHeight: 1.1, marginBottom: 6 }}>
+        {fmtTok(used)}
+        <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400, marginLeft: 4 }}>tokens</span>
+      </div>
+
+      {hasBudget ? (
+        <>
+          {/* Progress bar */}
+          <div style={{ height: 4, background: 'var(--border)', borderRadius: 3, marginBottom: 6, overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', width: `${pct}%`,
+              background: isOver ? '#f87171' : color,
+              borderRadius: 3, transition: 'width 0.5s ease',
+            }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+            <span style={{ color: 'var(--text-muted)' }}>{pct.toFixed(0)}% of {fmtTok(budget)}</span>
+            <span style={{ color: isOver ? '#f87171' : 'var(--green)', fontWeight: 500 }}>
+              {isOver ? `${fmtTok(used - budget)} over budget` : `${fmtTok(remaining)} left`}
+            </span>
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+          No limit set — click pencil to add one
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Token quota panel per connected model/source ─────────────────────────────
+function TokenQuotaPanel({ sourceStats, tokenBudget, onBudgetChange }) {
+  if (!sourceStats || !tokenBudget) return null;
+  const { claude, codex } = sourceStats;
+  const totalSess = claude.sessions + codex.sessions;
+  if (totalSess === 0) return null;
+
+  const anyBudget = Object.values(tokenBudget).some(b => b.week > 0 || b.month > 0);
+  // Show if multi-source OR if user has set any budget
+  if (!anyBudget && codex.sessions === 0) return null;
+
+  function handleSet(src, period, value) {
+    onBudgetChange({ ...tokenBudget, [src]: { ...tokenBudget[src], [period]: value } });
+  }
+
+  const sources = [
+    { key: 'claude', label: 'Claude', sigil: '◆', color: 'var(--accent)',          ...claude },
+    { key: 'codex',  label: 'Codex',  sigil: '⬡', color: 'oklch(0.65 0.18 260)',   ...codex },
+  ].filter(s => s.sessions > 0);
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <p style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase',
+        letterSpacing: 1, marginBottom: 10 }}>
+        Token Quota
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${sources.length}, 1fr)`, gap: 12 }}>
+        {sources.map(({ key, label, sigil, color, weekTokens, monthTokens, weekSessions, monthSessions }) => {
+          const budget = tokenBudget[key] || { week: 0, month: 0 };
+          return (
+            <div key={key} style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              padding: '14px 16px',
+              borderTop: `2px solid ${color}`,
+            }}>
+              {/* Source header */}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBottom: 12 }}>
+                <span style={{ fontSize: 14, fontWeight: 500, color }}>{sigil} {label}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {weekSessions} sessions this week · {monthSessions} this month
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <QuotaBand
+                  period="week" used={weekTokens} budget={budget.week}
+                  color={color} srcKey={key} onSetBudget={handleSet}
+                />
+                <QuotaBand
+                  period="month" used={monthTokens} budget={budget.month}
+                  color={color} srcKey={key} onSetBudget={handleSet}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Spend card ───────────────────────────────────────────────────────────────
 function SpendCard({ label, current, previous, sessions, tokens, highlight }) {
   const pct = previous > 0 ? ((current - previous) / previous) * 100 : null;
@@ -191,6 +369,9 @@ export default function Overview({
   toolData: rawToolData,
   costSummary,
   dateRange = 30,
+  sourceStats,
+  tokenBudget,
+  onBudgetChange,
 }) {
   const [source, setSource] = useState('both');
 
@@ -291,6 +472,15 @@ export default function Overview({
 
       {/* ── Source comparison (only when Codex data exists) ── */}
       {source === 'both' && <SourceComparisonPanel allSessions={allSessions} />}
+
+      {/* ── Token quota per source ── */}
+      {sourceStats && tokenBudget && onBudgetChange && (
+        <TokenQuotaPanel
+          sourceStats={sourceStats}
+          tokenBudget={tokenBudget}
+          onBudgetChange={onBudgetChange}
+        />
+      )}
 
       {/* ── Spend breakdown cards ── */}
       <div style={{ marginBottom: 24 }}>

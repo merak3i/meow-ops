@@ -87,6 +87,19 @@ export default function App() {
   const [noData,      setNoData]      = useState(false);
   const [reloadKey,   setReloadKey]   = useState(0);
 
+  // Token budgets — weekly and monthly limits per source (persisted in localStorage)
+  const [tokenBudget, setTokenBudget] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('meow-ops-token-budget')) ||
+        { claude: { week: 0, month: 0 }, codex: { week: 0, month: 0 } };
+    } catch { return { claude: { week: 0, month: 0 }, codex: { week: 0, month: 0 } }; }
+  });
+
+  const saveBudget = useCallback((next) => {
+    setTokenBudget(next);
+    localStorage.setItem('meow-ops-token-budget', JSON.stringify(next));
+  }, []);
+
   // Main data load
   useEffect(() => {
     let cancelled = false;
@@ -143,16 +156,29 @@ export default function App() {
   const modelData   = getModelBreakdown(sessions);
 
   // Source breakdown for sidebar + overview — computed from ALL sessions (no date filter)
+  // Also computes this-week and this-month token usage for budget tracking
   const sourceStats = useMemo(() => {
+    const now = new Date();
+    const day = now.getDay(); // 0=Sun
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+    weekStart.setHours(0, 0, 0, 0);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
     const acc = {
-      claude: { sessions: 0, cost: 0, tokens: 0 },
-      codex:  { sessions: 0, cost: 0, tokens: 0 },
+      claude: { sessions: 0, cost: 0, tokens: 0, weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0 },
+      codex:  { sessions: 0, cost: 0, tokens: 0, weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0 },
     };
     allSessions.forEach(s => {
       const src = s.source === 'codex' ? 'codex' : 'claude';
+      const tok = s.total_tokens || 0;
       acc[src].sessions++;
       acc[src].cost   += s.estimated_cost_usd || 0;
-      acc[src].tokens += s.total_tokens || 0;
+      acc[src].tokens += tok;
+
+      const d = new Date(s.started_at);
+      if (d >= weekStart)  { acc[src].weekTokens  += tok; acc[src].weekSessions++;  }
+      if (d >= monthStart) { acc[src].monthTokens += tok; acc[src].monthSessions++; }
     });
     return acc;
   }, [allSessions]);
@@ -171,6 +197,9 @@ export default function App() {
             toolData={toolData}
             costSummary={costSummary}
             dateRange={dateRange}
+            sourceStats={sourceStats}
+            tokenBudget={tokenBudget}
+            onBudgetChange={saveBudget}
           />
         );
       case 'sessions':
@@ -231,6 +260,9 @@ export default function App() {
             toolData={toolData}
             costSummary={costSummary}
             dateRange={dateRange}
+            sourceStats={sourceStats}
+            tokenBudget={tokenBudget}
+            onBudgetChange={saveBudget}
           />
         );
     }
@@ -239,7 +271,7 @@ export default function App() {
   return (
     <PasswordGate>
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} sourceStats={sourceStats} />
+      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} sourceStats={sourceStats} tokenBudget={tokenBudget} onBudgetChange={saveBudget} />
 
       <main style={{
         marginLeft: 'var(--sidebar-w)', flex: 1,

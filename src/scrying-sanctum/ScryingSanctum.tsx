@@ -41,8 +41,11 @@ export default function ScryingSanctum() {
   const canvasRef  = useRef<SVGGElement>(null);
 
   useEffect(() => {
-    const svg    = d3.select(svgRef.current!);
-    const canvas = d3.select(canvasRef.current!);
+    // Only bind D3 zoom once the SVG is mounted (after loading resolves)
+    if (!svgRef.current || !canvasRef.current) return;
+
+    const svg    = d3.select(svgRef.current);
+    const canvas = d3.select(canvasRef.current);
 
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.25, 4])
@@ -51,14 +54,15 @@ export default function ScryingSanctum() {
     svg.call(zoom);
 
     // Center the default view: nodes span x 100-940, center at x=520 y=250
-    const svgEl  = svgRef.current!;
-    const { width, height } = svgEl.getBoundingClientRect();
-    const tx = width / 2  - (CANVAS_W / 2);
+    const { width, height } = svgRef.current.getBoundingClientRect();
+    const tx = width  / 2 - (CANVAS_W / 2);
     const ty = height / 2 - (CANVAS_H / 2);
     svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty));
 
     return () => { svg.on('.zoom', null); };
-  }, []);
+  // Re-run when loading resolves so refs are populated
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
 
   // Map runestones → their edge
   const runestonesPerEdge = useCallback(

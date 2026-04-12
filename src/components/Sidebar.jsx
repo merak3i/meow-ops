@@ -205,12 +205,114 @@ function SyncButton({ onReload }) {
   );
 }
 
+// ── Token formatting helpers ──────────────────────────────────────────────────
+function fmtTok(n) {
+  if (!n) return '0';
+  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
+  return String(n);
+}
+
+function parseTok(str) {
+  const s = str.trim().toUpperCase();
+  if (s.endsWith('B')) return parseFloat(s) * 1e9;
+  if (s.endsWith('M')) return parseFloat(s) * 1e6;
+  if (s.endsWith('K')) return parseFloat(s) * 1e3;
+  return parseFloat(s) || 0;
+}
+
+// ── Token quota mini-row ──────────────────────────────────────────────────────
+function QuotaRow({ label, used, budget, color, srcKey, period, onSetBudget }) {
+  const [editing, setEditing] = useState(false);
+  const [draft,   setDraft]   = useState('');
+
+  function commit() {
+    const v = parseTok(draft);
+    if (v > 0) onSetBudget(srcKey, period, v);
+    setEditing(false);
+  }
+
+  const hasBudget = budget > 0;
+  const pct       = hasBudget ? Math.min(100, Math.round((used / budget) * 100)) : 0;
+  const remaining = hasBudget ? budget - used : 0;
+  const isOver    = hasBudget && used > budget;
+
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+        <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          {label}
+        </span>
+        {editing ? (
+          <div style={{ display: 'flex', gap: 3 }}>
+            <input
+              autoFocus
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
+              placeholder="e.g. 10B"
+              style={{
+                width: 56, fontSize: 9, background: 'var(--bg-card)', border: '1px solid var(--border)',
+                borderRadius: 3, color: 'var(--text-primary)', padding: '1px 4px', outline: 'none',
+              }}
+            />
+            <button onClick={commit} style={{ fontSize: 9, background: 'none', border: 'none',
+              color: 'var(--green)', cursor: 'pointer', padding: 0 }}>✓</button>
+            <button onClick={() => setEditing(false)} style={{ fontSize: 9, background: 'none', border: 'none',
+              color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>✕</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => { setDraft(hasBudget ? fmtTok(budget) : ''); setEditing(true); }}
+            style={{ fontSize: 9, background: 'none', border: 'none',
+              color: 'var(--text-muted)', cursor: 'pointer', padding: 0,
+              textDecoration: 'underline dotted', }}
+          >
+            {hasBudget ? `limit: ${fmtTok(budget)}` : 'set limit'}
+          </button>
+        )}
+      </div>
+
+      {hasBudget ? (
+        <>
+          <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 2 }}>
+            <div style={{
+              height: '100%', width: `${pct}%`,
+              background: isOver ? 'var(--red, #ff4a4a)' : color,
+              borderRadius: 2, transition: 'width 0.4s ease',
+            }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9 }}>
+            <span style={{ color: 'var(--text-muted)' }}>{fmtTok(used)} used</span>
+            <span style={{ color: isOver ? 'var(--red, #ff4a4a)' : 'var(--green)' }}>
+              {isOver ? `${fmtTok(used - budget)} over` : `${fmtTok(remaining)} left`}
+            </span>
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 9, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+          {fmtTok(used)} used this {label.toLowerCase().replace(' tokens', '')}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Source usage mini-panel ───────────────────────────────────────────────────
-function SourceUsagePanel({ sourceStats }) {
+function SourceUsagePanel({ sourceStats, tokenBudget, onBudgetChange }) {
   if (!sourceStats) return null;
   const { claude, codex } = sourceStats;
   const totalSess = claude.sessions + codex.sessions;
   if (totalSess === 0) return null;
+
+  function handleSetBudget(src, period, value) {
+    const next = {
+      ...tokenBudget,
+      [src]: { ...tokenBudget[src], [period]: value },
+    };
+    onBudgetChange(next);
+  }
 
   const rows = [
     { src: 'claude', label: '◆ Claude', color: 'var(--accent)', ...claude },
@@ -229,26 +331,36 @@ function SourceUsagePanel({ sourceStats }) {
         textTransform: 'uppercase', marginBottom: 8 }}>
         Source Usage
       </div>
-      {rows.map(({ src, label, color, sessions, cost, tokens }) => {
+      {rows.map(({ src, label, color, sessions, cost, weekTokens, monthTokens }) => {
         if (sessions === 0) return null;
         const pct = totalSess > 0 ? Math.round((sessions / totalSess) * 100) : 0;
+        const budget = tokenBudget?.[src] || { week: 0, month: 0 };
         return (
-          <div key={src} style={{ marginBottom: 8 }}>
+          <div key={src} style={{ marginBottom: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
               marginBottom: 3 }}>
               <span style={{ fontSize: 11, color, fontWeight: 500 }}>{label}</span>
               <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{pct}%</span>
             </div>
-            {/* Progress bar */}
+            {/* Session share bar */}
             <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 3 }}>
               <div style={{ height: '100%', width: `${pct}%`, background: color,
                 borderRadius: 2, transition: 'width 0.4s ease' }} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9,
-              color: 'var(--text-muted)' }}>
+              color: 'var(--text-muted)', marginBottom: 6 }}>
               <span>{sessions.toLocaleString()} sessions</span>
               <span style={{ color: 'var(--green)' }}>{formatCost(cost)}</span>
             </div>
+            {/* Token quota rows */}
+            <QuotaRow
+              label="Week tokens" used={weekTokens} budget={budget.week}
+              color={color} srcKey={src} period="week" onSetBudget={handleSetBudget}
+            />
+            <QuotaRow
+              label="Month tokens" used={monthTokens} budget={budget.month}
+              color={color} srcKey={src} period="month" onSetBudget={handleSetBudget}
+            />
           </div>
         );
       })}
@@ -256,7 +368,7 @@ function SourceUsagePanel({ sourceStats }) {
   );
 }
 
-export default function Sidebar({ activePage, onNavigate, onReload, sourceStats }) {
+export default function Sidebar({ activePage, onNavigate, onReload, sourceStats, tokenBudget, onBudgetChange }) {
   return (
     <aside
       style={{
@@ -311,7 +423,7 @@ export default function Sidebar({ activePage, onNavigate, onReload, sourceStats 
         })}
       </nav>
 
-      <SourceUsagePanel sourceStats={sourceStats} />
+      <SourceUsagePanel sourceStats={sourceStats} tokenBudget={tokenBudget} onBudgetChange={onBudgetChange} />
       {IS_PROD ? <RefreshButton onReload={onReload} /> : <SyncButton onReload={onReload} />}
 
       <div style={{ padding: '0 20px', color: 'var(--text-muted)', fontSize: 11 }}>

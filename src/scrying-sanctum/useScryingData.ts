@@ -148,7 +148,14 @@ export function useScryingData(): ScryingState & {
   async function loadFromSupabase() {
     if (!supabase) { startDemoMode(); return; }
 
-    const { data: { session } } = await supabase.auth.getSession();
+    // 2s timeout — fall back to demo mode when offline / unauthenticated
+    const sessionResult = await Promise.race([
+      supabase.auth.getSession(),
+      new Promise<{ data: { session: null } }>(resolve =>
+        setTimeout(() => resolve({ data: { session: null } }), 2000),
+      ),
+    ]);
+    const { data: { session } } = sessionResult;
     if (!session) { startDemoMode(); return; }
 
     const [pipelineRes, nodesRes, edgesRes] = await Promise.all([
