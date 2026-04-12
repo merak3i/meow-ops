@@ -149,7 +149,7 @@ export default function App() {
 
   // Fetch cached rate limit data (populated by sync/fetch-claude-limits.mjs)
   useEffect(() => {
-    fetch('/data/rate-limits.json')
+    fetch('/data/rate-limits.json', { cache: 'no-cache' })
       .then((r) => r.ok ? r.json() : null)
       .then((data) => { if (data) setRateLimits(data); })
       .catch(() => {});
@@ -160,7 +160,7 @@ export default function App() {
     setReloadKey((k) => k + 1);
     // Re-fetch rate limits so bars update after sync
     setTimeout(() => {
-      fetch('/data/rate-limits.json')
+      fetch('/data/rate-limits.json', { cache: 'no-cache' })
         .then((r) => r.ok ? r.json() : null)
         .then((data) => { if (data) setRateLimits(data); })
         .catch(() => {});
