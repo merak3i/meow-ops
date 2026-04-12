@@ -15,7 +15,9 @@ import LiveSessions from './pages/LiveSessions';
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const CompanionPageV2    = lazy(() => import('./companion-v2/CompanionPageV2'));
 const AgentVisualizer    = lazy(() => import('./pages/AgentVisualizer'));
-const ScryingSanctum     = lazy(() => import('./scrying-sanctum/ScryingSanctum'));
+// MMORPG unit-frame visualizer (uses local session data)
+const ScryingSanctum     = lazy(() => import('./pages/ScryingSanctum'));
+// D3/Realtime visualizer kept at './scrying-sanctum/ScryingSanctum' for future use
 import {
   fetchSessions,
   fetchAllSessions,
@@ -256,7 +258,7 @@ export default function App() {
       case 'sanctum':
         return (
           <Suspense fallback={<PageLoader />}>
-            <ScryingSanctum />
+            <ScryingSanctum sessions={allSessions} />
           </Suspense>
         );
       default:
