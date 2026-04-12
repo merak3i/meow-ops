@@ -12,7 +12,9 @@
     "gen:cats": "node scripts/generate-companion-assets.js --cats",
     "gen:rooms": "node scripts/generate-companion-assets.js --rooms",
     "gen:accessories": "node scripts/generate-companion-assets.js --accessories",
-    "gen:foods": "node scripts/generate-companion-assets.js --foods"
+    "gen:foods": "node scripts/generate-companion-assets.js --foods",
+    "menubar:build": "bash menubar/build.sh",
+    "menubar:open": "open ~/Applications/MeowOpsBar.app"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
