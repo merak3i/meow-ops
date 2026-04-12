@@ -15,6 +15,7 @@ import LiveSessions from './pages/LiveSessions';
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const CompanionPageV2    = lazy(() => import('./companion-v2/CompanionPageV2'));
 const AgentVisualizer    = lazy(() => import('./pages/AgentVisualizer'));
+const ScryingSanctum     = lazy(() => import('./pages/ScryingSanctum'));
 import {
   fetchSessions,
   fetchAllSessions,
@@ -30,7 +31,7 @@ import {
   hasNoData,
 } from './lib/queries';
 
-const AUTO_REFRESH_MS = 5 * 60 * 1000; // 5 minutes
+const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 // ─── Page loader ─────────────────────────────────────────────────────────────
 function PageLoader() {
@@ -85,6 +86,7 @@ export default function App() {
   const [loading,     setLoading]     = useState(true);
   const [noData,      setNoData]      = useState(false);
   const [reloadKey,   setReloadKey]   = useState(0);
+  const [rateLimits,  setRateLimits]  = useState(null);
 
   // Main data load
   useEffect(() => {
@@ -129,6 +131,14 @@ export default function App() {
       setReloadKey((k) => k + 1);
     }, AUTO_REFRESH_MS);
     return () => clearInterval(id);
+  }, []);
+
+  // Fetch cached rate limit data (populated by sync/fetch-claude-limits.mjs)
+  useEffect(() => {
+    fetch('/data/rate-limits.json')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setRateLimits(data); })
+      .catch(() => {});
   }, []);
 
   const reloadData = useCallback(() => {
@@ -199,6 +209,12 @@ export default function App() {
             <AgentVisualizer sessions={allSessions} />
           </Suspense>
         );
+      case 'sanctum':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <ScryingSanctum sessions={allSessions} />
+          </Suspense>
+        );
       default:
         return (
           <Overview
@@ -217,11 +233,11 @@ export default function App() {
   return (
     <PasswordGate>
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} />
+      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} allSessions={allSessions} rateLimits={rateLimits} />
 
       <main style={{ marginLeft: 'var(--sidebar-w)', flex: 1, padding: 32, maxWidth: 1280 }}>
         {page !== 'pomodoro' && page !== 'companion' && page !== 'live' &&
-         page !== 'agent-ops' && page !== 'analytics' && (
+         page !== 'agent-ops' && page !== 'analytics' && page !== 'sanctum' && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
             <DateFilter value={dateRange} onChange={setDateRange} />
           </div>
