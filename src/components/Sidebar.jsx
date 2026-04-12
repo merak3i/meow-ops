@@ -2,22 +2,24 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, List, FolderKanban, CalendarDays, Wrench, DollarSign,
-  Cat, Timer, Activity, RefreshCw, Check, AlertCircle, BarChart3, GitBranch,
+  Cat, Timer, Activity, RefreshCw, Check, AlertCircle, BarChart3, GitBranch, Eye,
 } from 'lucide-react';
+import { formatCost, formatTokens } from '../lib/format';
 import { triggerSync, getSyncStatus, invalidateRealSessions, IS_PROD } from '../lib/queries';
 
 const NAV = [
-  { id: 'overview',   label: 'Overview',      icon: LayoutDashboard },
-  { id: 'sessions',   label: 'Sessions',      icon: List },
-  { id: 'by-project', label: 'By Project',    icon: FolderKanban },
-  { id: 'by-day',     label: 'By Day',        icon: CalendarDays },
-  { id: 'by-action',  label: 'By Action',     icon: Wrench },
-  { id: 'cost',       label: 'Cost Tracker',  icon: DollarSign },
-  { id: 'analytics',  label: 'Analytics',     icon: BarChart3 },
-  { id: 'agent-ops',  label: 'Agent Ops',     icon: GitBranch },
-  { id: 'companion',  label: 'Companion',     icon: Cat },
-  { id: 'live',       label: 'Live Sessions', icon: Activity },
-  { id: 'pomodoro',   label: 'Focus Timer',   icon: Timer },
+  { id: 'overview',   label: 'Overview',        icon: LayoutDashboard },
+  { id: 'sessions',   label: 'Sessions',        icon: List },
+  { id: 'by-project', label: 'By Project',      icon: FolderKanban },
+  { id: 'by-day',     label: 'By Day',          icon: CalendarDays },
+  { id: 'by-action',  label: 'By Action',       icon: Wrench },
+  { id: 'cost',       label: 'Cost Tracker',    icon: DollarSign },
+  { id: 'analytics',  label: 'Analytics',       icon: BarChart3 },
+  { id: 'agent-ops',  label: 'Agent Ops',       icon: GitBranch },
+  { id: 'sanctum',    label: 'Scrying Sanctum', icon: Eye },
+  { id: 'companion',  label: 'Companion',       icon: Cat },
+  { id: 'live',       label: 'Live Sessions',   icon: Activity },
+  { id: 'pomodoro',   label: 'Focus Timer',     icon: Timer },
 ];
 
 function relativeTime(ms) {
@@ -203,7 +205,58 @@ function SyncButton({ onReload }) {
   );
 }
 
-export default function Sidebar({ activePage, onNavigate, onReload }) {
+// ── Source usage mini-panel ───────────────────────────────────────────────────
+function SourceUsagePanel({ sourceStats }) {
+  if (!sourceStats) return null;
+  const { claude, codex } = sourceStats;
+  const totalSess = claude.sessions + codex.sessions;
+  if (totalSess === 0) return null;
+
+  const rows = [
+    { src: 'claude', label: '◆ Claude', color: 'var(--accent)', ...claude },
+    { src: 'codex',  label: '⬡ Codex',  color: 'oklch(0.65 0.18 260)', ...codex },
+  ];
+
+  return (
+    <div style={{
+      margin: '0 16px 12px',
+      padding: '10px 12px',
+      background: 'var(--bg-page)',
+      border: '1px solid var(--border)',
+      borderRadius: 8,
+    }}>
+      <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em',
+        textTransform: 'uppercase', marginBottom: 8 }}>
+        Source Usage
+      </div>
+      {rows.map(({ src, label, color, sessions, cost, tokens }) => {
+        if (sessions === 0) return null;
+        const pct = totalSess > 0 ? Math.round((sessions / totalSess) * 100) : 0;
+        return (
+          <div key={src} style={{ marginBottom: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+              marginBottom: 3 }}>
+              <span style={{ fontSize: 11, color, fontWeight: 500 }}>{label}</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{pct}%</span>
+            </div>
+            {/* Progress bar */}
+            <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 3 }}>
+              <div style={{ height: '100%', width: `${pct}%`, background: color,
+                borderRadius: 2, transition: 'width 0.4s ease' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9,
+              color: 'var(--text-muted)' }}>
+              <span>{sessions.toLocaleString()} sessions</span>
+              <span style={{ color: 'var(--green)' }}>{formatCost(cost)}</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function Sidebar({ activePage, onNavigate, onReload, sourceStats }) {
   return (
     <aside
       style={{
@@ -258,6 +311,7 @@ export default function Sidebar({ activePage, onNavigate, onReload }) {
         })}
       </nav>
 
+      <SourceUsagePanel sourceStats={sourceStats} />
       {IS_PROD ? <RefreshButton onReload={onReload} /> : <SyncButton onReload={onReload} />}
 
       <div style={{ padding: '0 20px', color: 'var(--text-muted)', fontSize: 11 }}>

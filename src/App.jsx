@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { PasswordGate } from './components/PasswordGate';
 import Sidebar from './components/Sidebar';
 import DateFilter from './components/DateFilter';
@@ -15,6 +15,7 @@ import LiveSessions from './pages/LiveSessions';
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const CompanionPageV2    = lazy(() => import('./companion-v2/CompanionPageV2'));
 const AgentVisualizer    = lazy(() => import('./pages/AgentVisualizer'));
+const ScryingSanctum     = lazy(() => import('./scrying-sanctum/ScryingSanctum'));
 import {
   fetchSessions,
   fetchAllSessions,
@@ -141,6 +142,21 @@ export default function App() {
   const toolData    = getToolBreakdownFromSessions(sessions);
   const modelData   = getModelBreakdown(sessions);
 
+  // Source breakdown for sidebar + overview — computed from ALL sessions (no date filter)
+  const sourceStats = useMemo(() => {
+    const acc = {
+      claude: { sessions: 0, cost: 0, tokens: 0 },
+      codex:  { sessions: 0, cost: 0, tokens: 0 },
+    };
+    allSessions.forEach(s => {
+      const src = s.source === 'codex' ? 'codex' : 'claude';
+      acc[src].sessions++;
+      acc[src].cost   += s.estimated_cost_usd || 0;
+      acc[src].tokens += s.total_tokens || 0;
+    });
+    return acc;
+  }, [allSessions]);
+
   const renderPage = () => {
     if (noData) return <NoDataScreen />;
 
@@ -199,6 +215,12 @@ export default function App() {
             <AgentVisualizer sessions={allSessions} />
           </Suspense>
         );
+      case 'sanctum':
+        return (
+          <Suspense fallback={<PageLoader />}>
+            <ScryingSanctum />
+          </Suspense>
+        );
       default:
         return (
           <Overview
@@ -217,11 +239,16 @@ export default function App() {
   return (
     <PasswordGate>
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} />
+      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} sourceStats={sourceStats} />
 
-      <main style={{ marginLeft: 'var(--sidebar-w)', flex: 1, padding: 32, maxWidth: 1280 }}>
+      <main style={{
+        marginLeft: 'var(--sidebar-w)', flex: 1,
+        ...(page === 'sanctum'
+          ? { padding: 0, maxWidth: 'none', display: 'flex', flexDirection: 'column', height: '100vh' }
+          : { padding: 32, maxWidth: 1280 }),
+      }}>
         {page !== 'pomodoro' && page !== 'companion' && page !== 'live' &&
-         page !== 'agent-ops' && page !== 'analytics' && (
+         page !== 'agent-ops' && page !== 'analytics' && page !== 'sanctum' && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
             <DateFilter value={dateRange} onChange={setDateRange} />
           </div>

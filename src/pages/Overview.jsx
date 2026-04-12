@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus, SquareCode, Code2 } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import DailyChart from '../components/DailyChart';
 import ToolBreakdown from '../components/ToolBreakdown';
@@ -42,6 +42,93 @@ function SourceToggle({ value, onChange }) {
           {label}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ─── Source comparison panel ──────────────────────────────────────────────────
+function SourceComparisonPanel({ allSessions }) {
+  const stats = useMemo(() => {
+    const acc = {
+      claude: { sessions: 0, cost: 0, tokens: 0, ghosts: 0 },
+      codex:  { sessions: 0, cost: 0, tokens: 0, ghosts: 0 },
+    };
+    allSessions.forEach(s => {
+      const src = s.source === 'codex' ? 'codex' : 'claude';
+      acc[src].sessions++;
+      acc[src].cost   += s.estimated_cost_usd || 0;
+      acc[src].tokens += s.total_tokens || 0;
+      if (s.is_ghost) acc[src].ghosts++;
+    });
+    return acc;
+  }, [allSessions]);
+
+  const total = stats.claude.sessions + stats.codex.sessions;
+  if (total === 0 || stats.codex.sessions === 0) return null;
+
+  const rows = [
+    { key: 'claude', label: 'Claude',  sigil: '◆', color: 'var(--accent)',          icon: SquareCode },
+    { key: 'codex',  label: 'Codex',   sigil: '⬡', color: 'oklch(0.65 0.18 260)', icon: Code2      },
+  ];
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <p style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase',
+        letterSpacing: 1, marginBottom: 10 }}>
+        Source Breakdown
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {rows.map(({ key, label, sigil, color, icon: Icon }) => {
+          const s   = stats[key];
+          const pct = total > 0 ? (s.sessions / total) * 100 : 0;
+          const avgCost = s.sessions > 0 ? s.cost / s.sessions : 0;
+          const ghostRate = s.sessions > 0 ? (s.ghosts / s.sessions) * 100 : 0;
+          return (
+            <div key={key} style={{
+              background: 'var(--bg-card)',
+              border: `1px solid var(--border)`,
+              borderRadius: 10,
+              padding: '14px 16px',
+              borderTop: `2px solid ${color}`,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <Icon size={14} color={color} />
+                <span style={{ fontSize: 13, fontWeight: 500, color }}>
+                  {sigil} {label}
+                </span>
+                <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)' }}>
+                  {pct.toFixed(1)}% of sessions
+                </span>
+              </div>
+
+              {/* Share bar */}
+              <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 12 }}>
+                <div style={{ height: '100%', width: `${pct}%`, background: color,
+                  borderRadius: 2, transition: 'width 0.5s ease' }} />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+                {[
+                  { label: 'Sessions',  value: s.sessions.toLocaleString() },
+                  { label: 'Tokens',    value: formatTokens(s.tokens) },
+                  { label: 'Total Cost',value: formatCost(s.cost), accent: 'var(--green)' },
+                  { label: 'Avg/Session',value: formatCost(avgCost) },
+                  { label: 'Ghost Rate', value: `${ghostRate.toFixed(1)}%`,
+                    accent: ghostRate > 15 ? 'var(--red)' : 'var(--text-muted)' },
+                ].map(({ label: lbl, value, accent }) => (
+                  <div key={lbl}>
+                    <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase',
+                      letterSpacing: '0.08em', marginBottom: 2 }}>{lbl}</div>
+                    <div style={{ fontSize: 13, fontWeight: 300, color: accent ?? 'var(--text-primary)' }}>
+                      {value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -201,6 +288,9 @@ export default function Overview({
           color="var(--amber)"
         />
       </div>
+
+      {/* ── Source comparison (only when Codex data exists) ── */}
+      {source === 'both' && <SourceComparisonPanel allSessions={allSessions} />}
 
       {/* ── Spend breakdown cards ── */}
       <div style={{ marginBottom: 24 }}>
