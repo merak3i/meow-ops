@@ -1,6 +1,7 @@
 // Export real Claude Code session data to a static JSON file.
 // No Supabase needed — generates public/data/sessions.json for the dashboard.
 // Run: node sync/export-local.mjs
+// Run: node sync/export-local.mjs --push   (also commit + push to GitHub)
 
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
@@ -331,4 +332,24 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
   const SUMMARY_FILE = join(OUTPUT_DIR, 'cost-summary.json');
   writeFileSync(SUMMARY_FILE, JSON.stringify(summary, null, 2));
   console.log(`Wrote cost-summary.json — today $${summary.today.cost.toFixed(2)}, this week $${summary.thisWeek.cost.toFixed(2)}, this month $${summary.thisMonth.cost.toFixed(2)}, this year $${summary.thisYear.cost.toFixed(2)}`);
+}
+
+// ── Optional: commit + push to GitHub so Vercel serves fresh data ─────────────
+if (process.argv.includes('--push')) {
+  console.log('\n📤 Pushing to GitHub…');
+  const { execSync } = await import('node:child_process');
+  const root = join(import.meta.dirname, '..');
+  const now = new Date().toISOString();
+  try {
+    execSync('git add public/data/sessions.json public/data/cost-summary.json', { cwd: root, stdio: 'pipe' });
+    execSync(`git commit -m "chore: update session data (${now.slice(0, 10)})"`, { cwd: root, stdio: 'pipe' });
+    execSync('git push origin main', { cwd: root, stdio: 'pipe' });
+    console.log('✓  Pushed to GitHub — Vercel will redeploy automatically');
+  } catch (err) {
+    if (!err.message.includes('nothing to commit')) {
+      console.log(`⚠  Git push failed: ${err.message}`);
+    } else {
+      console.log('✓  No changes to push');
+    }
+  }
 }
