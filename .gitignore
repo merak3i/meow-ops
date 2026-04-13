@@ -13,12 +13,13 @@ dist-ssr
 .env.local
 .env.*.local
 
-# Local sync state and personal session data — never commit
+# Local sync state — never commit
 sync/.meow-ops-sync-state.json
 sync/auto-sync.log
-public/data/sessions.json
-public/data/
+public/data/*
 !public/data/rate-limits.json
+!public/data/sessions.json
+!public/data/cost-summary.json
 
 # Local session-history files (Pomodoro, etc.) live in the browser, not the repo
 *.history.json
