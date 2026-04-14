@@ -843,18 +843,90 @@ function FloatingParticles() {
   );
 }
 
+// ─── Arcane Weather (falling sparks + wind streaks) ─────────────────────────
+
+function ArcaneWeather() {
+  const sparkRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const streakRefs = useRef<(THREE.Mesh | null)[]>([]);
+
+  const sparks = useMemo(() => Array.from({ length: 20 }, (_, i) => ({
+    x: (Math.random() - 0.5) * 20,
+    z: (Math.random() - 0.5) * 20,
+    y: Math.random() * 6,
+    speed: 0.3 + Math.random() * 0.3,
+    phase: Math.random() * Math.PI * 2,
+    color: i % 3 === 0 ? '#8b5cf6' : '#c8a855',
+  })), []);
+
+  const streaks = useMemo(() => Array.from({ length: 8 }, () => ({
+    x: (Math.random() - 0.5) * 24,
+    y: 1.5 + Math.random() * 2.5,
+    z: (Math.random() - 0.5) * 20,
+    speed: 0.8 + Math.random() * 1.2,
+  })), []);
+
+  useFrame((state, delta) => {
+    const t = state.clock.elapsedTime;
+    sparks.forEach((s, i) => {
+      const mesh = sparkRefs.current[i];
+      if (!mesh) return;
+      s.y -= s.speed * delta;
+      if (s.y < 0) { s.y = 5 + Math.random() * 2; s.x = (Math.random() - 0.5) * 20; s.z = (Math.random() - 0.5) * 20; }
+      mesh.position.set(s.x + Math.sin(t + s.phase) * 0.3, s.y, s.z + Math.cos(t * 0.7 + s.phase) * 0.2);
+      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.25 + Math.sin(t * 3 + s.phase) * 0.15;
+    });
+    streaks.forEach((s, i) => {
+      const mesh = streakRefs.current[i];
+      if (!mesh) return;
+      s.x += s.speed * delta;
+      if (s.x > 12) s.x = -12;
+      mesh.position.set(s.x, s.y, s.z);
+    });
+  });
+
+  return (
+    <>
+      {sparks.map((s, i) => (
+        <mesh key={`sp${i}`} ref={(el) => { sparkRefs.current[i] = el; }}
+          position={[s.x, s.y, s.z]}>
+          <sphereGeometry args={[0.02, 4, 4]} />
+          <meshBasicMaterial color={s.color} transparent opacity={0.35} />
+        </mesh>
+      ))}
+      {streaks.map((s, i) => (
+        <mesh key={`st${i}`} ref={(el) => { streakRefs.current[i] = el; }}
+          position={[s.x, s.y, s.z]} rotation={[0, 0, 0]}>
+          <planeGeometry args={[2.5, 0.008]} />
+          <meshBasicMaterial color="#c8a855" transparent opacity={0.04} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
 function CrystalPillar({ position, color }: { position: [number, number, number]; color: string }) {
   const crystalRef = useRef<THREE.Mesh>(null);
   const beamRef = useRef<THREE.Mesh>(null);
+  const runeRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const RUNE_SPEEDS = [1.2, -0.9, 1.5];
+  const RUNE_PHASES = [0, Math.PI / 3, Math.PI];
+  const RUNE_HEIGHTS = [0.6, 1.0, 1.6];
+
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     if (crystalRef.current) crystalRef.current.rotation.y = t * 0.3;
-    // Light column undulation
     if (beamRef.current) {
       beamRef.current.scale.x = 0.8 + Math.sin(t * 1.5 + position[0]) * 0.2;
       beamRef.current.scale.z = 0.8 + Math.sin(t * 1.8 + position[2]) * 0.2;
       (beamRef.current.material as THREE.MeshBasicMaterial).opacity = 0.06 + Math.sin(t * 2 + position[0]) * 0.03;
     }
+    // Orbiting rune stones
+    runeRefs.current.forEach((ref, i) => {
+      if (!ref) return;
+      const angle = t * RUNE_SPEEDS[i]! + RUNE_PHASES[i]!;
+      ref.position.set(Math.cos(angle) * 0.5, RUNE_HEIGHTS[i]!, Math.sin(angle) * 0.5);
+      ref.rotation.y = t * 2;
+    });
   });
   return (
     <group position={position}>
@@ -869,11 +941,18 @@ function CrystalPillar({ position, color }: { position: [number, number, number]
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.5}
           transparent opacity={0.85} roughness={0.2} metalness={0.3} />
       </mesh>
-      {/* Light column — thin vertical beam rising from crystal */}
+      {/* Light column */}
       <mesh ref={beamRef} position={[0, 4, 0]}>
         <cylinderGeometry args={[0.08, 0.02, 6, 8]} />
         <meshBasicMaterial color={color} transparent opacity={0.07} side={THREE.DoubleSide} />
       </mesh>
+      {/* Orbiting rune stones */}
+      {[0, 1, 2].map((i) => (
+        <mesh key={i} ref={(el) => { runeRefs.current[i] = el; }}>
+          <octahedronGeometry args={[0.08, 0]} />
+          <meshBasicMaterial color={color} transparent opacity={0.5} />
+        </mesh>
+      ))}
       {/* Glow light */}
       <pointLight position={[0, 1.2, 0]} color={color} intensity={0.25} distance={5} />
     </group>
@@ -914,8 +993,13 @@ function Brazier({ position }: { position: [number, number, number] }) {
 
 function ArcaneFloor() {
   const runeRingRef = useRef<THREE.Group>(null);
+  const wardRingRef = useRef<THREE.Mesh>(null);
+  const wardRuneGroupRef = useRef<THREE.Group>(null);
   useFrame((state) => {
-    if (runeRingRef.current) runeRingRef.current.rotation.z = state.clock.elapsedTime * 0.08;
+    const t = state.clock.elapsedTime;
+    if (runeRingRef.current) runeRingRef.current.rotation.z = t * 0.08;
+    if (wardRingRef.current) (wardRingRef.current.material as THREE.MeshBasicMaterial).opacity = 0.18 + Math.sin(t * 0.8) * 0.07;
+    if (wardRuneGroupRef.current) wardRuneGroupRef.current.rotation.z = -t * 0.06;
   });
 
   const radials = useMemo(() => {
@@ -929,17 +1013,17 @@ function ArcaneFloor() {
     return lines;
   }, []);
 
-  // Generate hex tile grid positions within radius 12
+  // Generate hex tile grid positions within radius 12 — inner sanctum vs outer courtyard
   const hexTiles = useMemo(() => {
-    const tiles: { x: number; z: number; dark: boolean }[] = [];
-    const size = 1.1; // hex cell size
+    const tiles: { x: number; z: number; dark: boolean; inner: boolean }[] = [];
+    const size = 1.1;
     const h = size * Math.sqrt(3);
     for (let row = -12; row <= 12; row++) {
       for (let col = -12; col <= 12; col++) {
         const x = col * size * 1.5;
         const z = row * h + (col % 2 !== 0 ? h / 2 : 0);
-        if (x * x + z * z > 12 * 12) continue; // clip to circle
-        tiles.push({ x, z, dark: (row + col) % 2 === 0 });
+        if (x * x + z * z > 12 * 12) continue;
+        tiles.push({ x, z, dark: (row + col) % 2 === 0, inner: x * x + z * z < 5 * 5 });
       }
     }
     return tiles;
@@ -952,11 +1036,13 @@ function ArcaneFloor() {
         <circleGeometry args={[14, 64]} />
         <meshBasicMaterial color="#1a1428" />
       </mesh>
-      {/* Hex stone tile pattern — subtle alternating shades */}
+      {/* Hex stone tile pattern — inner sanctum warmer, outer courtyard cooler */}
       {hexTiles.map((tile, i) => (
         <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.048, tile.z]}>
           <circleGeometry args={[0.52, 6]} />
-          <meshBasicMaterial color={tile.dark ? '#1e1832' : '#221c3a'} />
+          <meshBasicMaterial color={tile.inner
+            ? (tile.dark ? '#251e3a' : '#2a2244')
+            : (tile.dark ? '#1e1832' : '#221c3a')} />
         </mesh>
       ))}
       {/* Hex tile gap lines — faint grid overlay */}
@@ -966,6 +1052,23 @@ function ArcaneFloor() {
           <meshBasicMaterial color="#0e0a18" transparent opacity={0.5} />
         </mesh>
       ))}
+      {/* Ward ring — boundary between inner sanctum and outer courtyard */}
+      <mesh ref={wardRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.038, 0]}>
+        <ringGeometry args={[4.9, 5.15, 64]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.2} />
+      </mesh>
+      {/* Ward rune markers — counter-rotating hex dots at radius 5 */}
+      <group ref={wardRuneGroupRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.036, 0]}>
+        {Array.from({ length: 8 }, (_, i) => {
+          const angle = (i / 8) * Math.PI * 2;
+          return (
+            <mesh key={i} position={[Math.cos(angle) * 5, Math.sin(angle) * 5, 0]}>
+              <circleGeometry args={[0.15, 6]} />
+              <meshBasicMaterial color="#c8a855" transparent opacity={0.4} />
+            </mesh>
+          );
+        })}
+      </group>
       {/* Outer edge ring */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
         <ringGeometry args={[11, 11.2, 64]} />
@@ -1016,6 +1119,10 @@ function CenterPortal() {
   const outerRef = useRef<THREE.Mesh>(null);
   const innerRef = useRef<THREE.Mesh>(null);
   const glowRef  = useRef<THREE.Mesh>(null);
+  const orbitalARef = useRef<THREE.Mesh>(null);
+  const orbitalBRef = useRef<THREE.Mesh>(null);
+  const equatorialRef = useRef<THREE.Mesh>(null);
+  const eyeRef = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -1024,24 +1131,297 @@ function CenterPortal() {
     if (glowRef.current) {
       (glowRef.current.material as THREE.MeshBasicMaterial).opacity = 0.15 + Math.sin(t * 1.5) * 0.08;
     }
+    // Astrolabe orbital rings
+    if (orbitalARef.current) orbitalARef.current.rotation.y = t * 0.4;
+    if (orbitalBRef.current) orbitalBRef.current.rotation.y = -t * 0.6;
+    if (equatorialRef.current) equatorialRef.current.rotation.y = t * 0.15;
+    if (eyeRef.current) eyeRef.current.scale.setScalar(1 + Math.sin(t * 2) * 0.15);
   });
 
   return (
-    <group rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
-      {/* Outer spinning ring */}
-      <mesh ref={outerRef}>
-        <ringGeometry args={[1.0, 1.15, 6]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.35} side={THREE.DoubleSide} />
+    <>
+      {/* Flat ground portal rings */}
+      <group rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
+        <mesh ref={outerRef}>
+          <ringGeometry args={[1.0, 1.15, 6]} />
+          <meshBasicMaterial color="#c8a855" transparent opacity={0.35} side={THREE.DoubleSide} />
+        </mesh>
+        <mesh ref={innerRef}>
+          <ringGeometry args={[0.55, 0.7, 4]} />
+          <meshBasicMaterial color="#8b5cf6" transparent opacity={0.3} side={THREE.DoubleSide} />
+        </mesh>
+        <mesh ref={glowRef}>
+          <circleGeometry args={[0.45, 16]} />
+          <meshBasicMaterial color="#c8a855" transparent opacity={0.18} />
+        </mesh>
+      </group>
+      {/* Astrolabe — tilted orbital rings above portal */}
+      <mesh ref={orbitalARef} position={[0, 0.6, 0]} rotation={[Math.PI / 3, 0, 0]}>
+        <torusGeometry args={[1.4, 0.03, 8, 32]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.3} />
       </mesh>
-      {/* Inner counter-rotating ring */}
-      <mesh ref={innerRef}>
-        <ringGeometry args={[0.55, 0.7, 4]} />
-        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.3} side={THREE.DoubleSide} />
+      <mesh ref={orbitalBRef} position={[0, 0.6, 0]} rotation={[Math.PI / 6, Math.PI / 4, 0]}>
+        <torusGeometry args={[1.0, 0.025, 8, 24]} />
+        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.25} />
       </mesh>
-      {/* Center glow pulse */}
-      <mesh ref={glowRef}>
-        <circleGeometry args={[0.45, 16]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.18} />
+      <mesh ref={equatorialRef} position={[0, 0.6, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[1.6, 0.02, 8, 32]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.15} />
+      </mesh>
+      {/* Center eye */}
+      <mesh ref={eyeRef} position={[0, 0.6, 0]}>
+        <sphereGeometry args={[0.2, 12, 12]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.5} />
+      </mesh>
+    </>
+  );
+}
+
+// ─── Buildings ───────────────────────────────────────────────────────────────
+
+function MageTower() {
+  const orbRef = useRef<THREE.Mesh>(null);
+  const windowRefs = useRef<(THREE.Mesh | null)[]>([]);
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (orbRef.current) {
+      orbRef.current.position.y = 4.8 + Math.sin(t * 1.2) * 0.15;
+      orbRef.current.rotation.y = t * 0.5;
+    }
+    windowRefs.current.forEach((ref) => {
+      if (ref) (ref.material as THREE.MeshBasicMaterial).opacity = 0.4 + Math.sin(t * 2) * 0.2;
+    });
+  });
+  return (
+    <group position={[7.5, 0, -7.5]}>
+      {/* Stone base ring */}
+      <mesh position={[0, 0.15, 0]}>
+        <cylinderGeometry args={[0.9, 0.95, 0.3, 8]} />
+        <meshBasicMaterial color="#2a2040" />
+      </mesh>
+      {/* Tower body */}
+      <mesh position={[0, 1.4, 0]}>
+        <cylinderGeometry args={[0.7, 0.8, 2.8, 8]} />
+        <meshBasicMaterial color="#1e1832" />
+      </mesh>
+      {/* Roof cone */}
+      <mesh position={[0, 3.4, 0]}>
+        <coneGeometry args={[0.85, 1.2, 8]} />
+        <meshBasicMaterial color="#3a1848" />
+      </mesh>
+      {/* Roof tip */}
+      <mesh position={[0, 4.1, 0]}>
+        <coneGeometry args={[0.15, 0.4, 4]} />
+        <meshBasicMaterial color="#8b5cf6" />
+      </mesh>
+      {/* Window slits */}
+      {[0, (Math.PI * 2) / 3, (Math.PI * 4) / 3].map((angle, i) => (
+        <mesh key={i} ref={(el) => { windowRefs.current[i] = el; }}
+          position={[Math.cos(angle) * 0.72, 2.0, Math.sin(angle) * 0.72]}
+          rotation={[0, -angle, 0]}>
+          <planeGeometry args={[0.1, 0.3]} />
+          <meshBasicMaterial color="#c8a855" transparent opacity={0.6} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+      {/* Floating arcane orb */}
+      <mesh ref={orbRef} position={[0, 4.8, 0]}>
+        <sphereGeometry args={[0.2, 8, 8]} />
+        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.7} />
+      </mesh>
+    </group>
+  );
+}
+
+function Armory() {
+  const flameRefs = useRef<(THREE.Mesh | null)[]>([]);
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    flameRefs.current.forEach((ref, i) => {
+      if (ref) ref.scale.y = 0.8 + Math.sin(t * 6 + i * 2) * 0.2;
+    });
+  });
+  return (
+    <group position={[-7.5, 0, 7.5]}>
+      {/* Building body */}
+      <mesh position={[0, 0.7, 0]}>
+        <boxGeometry args={[2.0, 1.4, 1.4]} />
+        <meshBasicMaterial color="#2a1e18" />
+      </mesh>
+      {/* Pyramid roof */}
+      <mesh position={[0, 1.8, 0]}>
+        <coneGeometry args={[1.2, 0.8, 4]} />
+        <meshBasicMaterial color="#3a2a18" />
+      </mesh>
+      {/* Door */}
+      <mesh position={[0, 0.4, 0.71]}>
+        <planeGeometry args={[0.4, 0.6]} />
+        <meshBasicMaterial color="#1a1008" />
+      </mesh>
+      {/* Weapon rack */}
+      <mesh position={[1.01, 0.6, 0]}>
+        <boxGeometry args={[0.05, 0.8, 0.6]} />
+        <meshBasicMaterial color="#4a3a2a" />
+      </mesh>
+      {/* Torch brackets + flames */}
+      {[-0.35, 0.35].map((xOff, i) => (
+        <group key={i} position={[xOff, 0, 0.71]}>
+          <mesh position={[0, 0.8, 0]}>
+            <boxGeometry args={[0.08, 0.3, 0.08]} />
+            <meshBasicMaterial color="#8b7a5e" />
+          </mesh>
+          <mesh ref={(el) => { flameRefs.current[i] = el; }} position={[0, 1.0, 0]}>
+            <sphereGeometry args={[0.06, 4, 4]} />
+            <meshBasicMaterial color="#ff8c22" transparent opacity={0.8} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+function SceneryProps() {
+  const crystalBallRef = useRef<THREE.Mesh>(null);
+  useFrame((state) => {
+    if (crystalBallRef.current) crystalBallRef.current.scale.setScalar(1 + Math.sin(state.clock.elapsedTime * 1.5) * 0.08);
+  });
+  return (
+    <>
+      {/* Crate cluster near Armory */}
+      <group position={[-6.0, 0, 8.5]}>
+        <mesh position={[0, 0.25, 0]}>
+          <boxGeometry args={[0.5, 0.5, 0.5]} />
+          <meshBasicMaterial color="#4a3820" />
+        </mesh>
+        <mesh position={[0, 0.65, 0]}>
+          <boxGeometry args={[0.4, 0.3, 0.4]} />
+          <meshBasicMaterial color="#3a2a18" />
+        </mesh>
+        <mesh position={[0.55, 0.2, 0]}>
+          <boxGeometry args={[0.6, 0.4, 0.3]} />
+          <meshBasicMaterial color="#4a3820" />
+        </mesh>
+        <mesh position={[-0.45, 0.25, 0]}>
+          <cylinderGeometry args={[0.2, 0.22, 0.5, 8]} />
+          <meshBasicMaterial color="#3a2a18" />
+        </mesh>
+      </group>
+      {/* Bookshelf near Mage Tower */}
+      <group position={[8.5, 0, -6.0]}>
+        <mesh position={[0, 0.5, 0]}>
+          <boxGeometry args={[0.8, 1.0, 0.25]} />
+          <meshBasicMaterial color="#2a1e18" />
+        </mesh>
+        {[
+          { y: 0.25, color: '#8b5cf6' },
+          { y: 0.50, color: '#c8a855' },
+          { y: 0.75, color: '#dc3545' },
+        ].map((row, i) => (
+          <mesh key={i} position={[0, row.y, 0.05]}>
+            <boxGeometry args={[0.7, 0.15, 0.18]} />
+            <meshBasicMaterial color={row.color} />
+          </mesh>
+        ))}
+        <mesh ref={crystalBallRef} position={[0, 1.1, 0]}>
+          <sphereGeometry args={[0.1, 8, 8]} />
+          <meshBasicMaterial color="#60a5fa" transparent opacity={0.6} />
+        </mesh>
+      </group>
+    </>
+  );
+}
+
+// ─── Perimeter Wall ─────────────────────────────────────────────────────────
+
+function PerimeterWall() {
+  const WALL_R = 11.5;
+  const SEGMENTS = 32;
+  const GATE_ANGLES = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]; // N, E, S, W
+  const GATE_WIDTH = 0.35; // radians to skip per gate
+
+  const walls = useMemo(() => {
+    const segs: { angle: number; skip: boolean }[] = [];
+    for (let i = 0; i < SEGMENTS; i++) {
+      const angle = (i / SEGMENTS) * Math.PI * 2;
+      const skip = GATE_ANGLES.some((ga) => Math.abs(((angle - ga + Math.PI) % (Math.PI * 2)) - Math.PI) < GATE_WIDTH);
+      segs.push({ angle, skip });
+    }
+    return segs;
+  }, []);
+
+  const gates = useMemo(() => GATE_ANGLES.map((ga) => {
+    const lAngle = ga - GATE_WIDTH;
+    const rAngle = ga + GATE_WIDTH;
+    return {
+      left: [Math.cos(lAngle) * WALL_R, 0.5, Math.sin(lAngle) * WALL_R] as [number, number, number],
+      right: [Math.cos(rAngle) * WALL_R, 0.5, Math.sin(rAngle) * WALL_R] as [number, number, number],
+      lintel: [Math.cos(ga) * WALL_R, 1.0, Math.sin(ga) * WALL_R] as [number, number, number],
+      angle: ga,
+    };
+  }), []);
+
+  return (
+    <>
+      {/* Wall segments */}
+      {walls.filter((w) => !w.skip).map((w, i) => (
+        <mesh key={i}
+          position={[Math.cos(w.angle) * WALL_R, 0.3, Math.sin(w.angle) * WALL_R]}
+          rotation={[0, -w.angle, 0]}>
+          <boxGeometry args={[1.5, 0.6, 0.35]} />
+          <meshBasicMaterial color="#2a2040" />
+        </mesh>
+      ))}
+      {/* Crenellations */}
+      {walls.filter((w) => !w.skip).map((w, i) => (
+        <mesh key={`c${i}`}
+          position={[Math.cos(w.angle) * WALL_R, 0.7, Math.sin(w.angle) * WALL_R]}
+          rotation={[0, -w.angle, 0]}>
+          <boxGeometry args={[0.3, 0.2, 0.35]} />
+          <meshBasicMaterial color="#241a38" />
+        </mesh>
+      ))}
+      {/* Gate pillars + lintels */}
+      {gates.map((g, i) => (
+        <group key={i}>
+          <mesh position={g.left} rotation={[0, -g.angle, 0]}>
+            <boxGeometry args={[0.4, 1.0, 0.4]} />
+            <meshBasicMaterial color="#2a2040" />
+          </mesh>
+          <mesh position={g.right} rotation={[0, -g.angle, 0]}>
+            <boxGeometry args={[0.4, 1.0, 0.4]} />
+            <meshBasicMaterial color="#2a2040" />
+          </mesh>
+          <mesh position={g.lintel} rotation={[0, -g.angle, 0]}>
+            <boxGeometry args={[1.8, 0.25, 0.4]} />
+            <meshBasicMaterial color="#241a38" />
+          </mesh>
+        </group>
+      ))}
+    </>
+  );
+}
+
+function ArcaneBanner({ position, color, phase }: { position: [number, number, number]; color: string; phase: number }) {
+  const fabricRef = useRef<THREE.Mesh>(null);
+  useFrame((state) => {
+    if (fabricRef.current) fabricRef.current.rotation.z = Math.sin(state.clock.elapsedTime * 0.8 + phase) * 0.05;
+  });
+  return (
+    <group position={position}>
+      <mesh position={[0, 1.25, 0]}>
+        <cylinderGeometry args={[0.04, 0.04, 2.5, 4]} />
+        <meshBasicMaterial color="#3a2a18" />
+      </mesh>
+      <mesh position={[0, 2.4, 0]}>
+        <boxGeometry args={[0.6, 0.04, 0.04]} />
+        <meshBasicMaterial color="#3a2a18" />
+      </mesh>
+      <mesh ref={fabricRef} position={[0, 1.6, 0]}>
+        <planeGeometry args={[0.5, 1.2]} />
+        <meshBasicMaterial color={color} transparent opacity={0.7} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[0, 1.0, 0]}>
+        <planeGeometry args={[0.5, 0.06]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.5} side={THREE.DoubleSide} />
       </mesh>
     </group>
   );
@@ -1073,6 +1453,17 @@ function PlazaEnvironment() {
         <Brazier key={i} position={pos} />
       ))}
       <FloatingParticles />
+      <ArcaneWeather />
+      {/* Arcane banners between pillars */}
+      <ArcaneBanner position={[4.5, 0, -7.2]} color="#8b5cf6" phase={0} />
+      <ArcaneBanner position={[-4.5, 0, -7.2]} color="#f59e0b" phase={1.2} />
+      <ArcaneBanner position={[7.2, 0, 4.5]} color="#34d399" phase={2.4} />
+      <ArcaneBanner position={[-7.2, 0, 4.5]} color="#a78bfa" phase={3.6} />
+      {/* Buildings */}
+      <MageTower />
+      <Armory />
+      <SceneryProps />
+      <PerimeterWall />
     </>
   );
 }
@@ -1103,6 +1494,15 @@ function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
     return moves.filter(m => m.trigger(pn.session));
   }, [catType, pn.session]);
 
+  // Cast bar — top tool + progress based on message count
+  const topTool = useMemo(() => {
+    const tools = pn.session.tools;
+    if (!tools) return null;
+    const entries = Object.entries(tools).sort((a, b) => b[1] - a[1]);
+    return entries[0]?.[0] ?? null;
+  }, [pn.session.tools]);
+  const castProgress = Math.min(100, (pn.session.message_count ?? 0) * 4);
+
   return (
     <Html center position={[0, 5.2, 0]} style={{ pointerEvents: 'none' }}>
       <div style={{
@@ -1110,7 +1510,7 @@ function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
         border: `1px solid ${selected ? '#63f7b3' : c.color}66`,
         borderRadius: 3, padding: '4px 6px 5px',
         fontFamily: 'monospace', userSelect: 'none',
-        boxShadow: selected ? `0 0 8px ${c.aura}44` : 'none',
+        boxShadow: selected ? `0 0 8px ${c.aura}44` : activeMoves.length > 0 ? `0 0 6px ${c.aura}33` : 'none',
       }}>
         <div style={{ fontSize: 7, color: c.color, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 1 }}>
           {pn.role}
@@ -1122,9 +1522,24 @@ function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
         <div style={{ height: 5, background: '#0a1a0a', borderRadius: 2, overflow: 'hidden', marginBottom: 2 }}>
           <div style={{ width: `${hp}%`, height: '100%', background: hpC, borderRadius: 2 }} />
         </div>
-        <div style={{ height: 3, background: '#050e1a', borderRadius: 2, overflow: 'hidden', marginBottom: 3 }}>
+        <div style={{ height: 3, background: '#050e1a', borderRadius: 2, overflow: 'hidden', marginBottom: 2 }}>
           <div style={{ width: `${mp}%`, height: '100%', background: c.color + 'cc', borderRadius: 2 }} />
         </div>
+        {/* Cast bar */}
+        {!pn.session.is_ghost && (
+          <div style={{ marginBottom: 3 }}>
+            <div style={{ fontSize: 6, color: '#c8a85566', marginBottom: 1 }}>
+              {topTool ? `Casting: ${topTool}` : 'Channeling...'}
+            </div>
+            <div style={{ height: 3, background: '#1a1408', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                width: `${castProgress}%`, height: '100%',
+                background: 'linear-gradient(90deg, #c8a855, #f5c518)',
+                borderRadius: 2,
+              }} />
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span style={{ fontSize: 8, color: '#c8a85588' }}>{formatGold(pn.session.estimated_cost_usd)}</span>
           <span style={{ fontSize: 8, color: '#c8a85588' }}>{formatDur(pn.session.duration_seconds)}</span>
