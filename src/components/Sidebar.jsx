@@ -4,7 +4,6 @@ import {
   LayoutDashboard, List, FolderKanban, CalendarDays, Wrench, DollarSign,
   Cat, Timer, RefreshCw, Check, AlertCircle, BarChart3, GitBranch, Swords,
 } from 'lucide-react';
-import { formatCost, formatTokens } from '../lib/format';
 import { triggerSync, getSyncStatus, invalidateRealSessions } from '../lib/queries';
 
 const NAV = [
@@ -169,105 +168,6 @@ function SyncButton({ onReload }) {
   );
 }
 
-// ── Token formatting helpers ──────────────────────────────────────────────────
-function fmtTok(n) {
-  if (!n) return '0';
-  if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
-  if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
-  return String(n);
-}
-
-function parseTok(str) {
-  const s = str.trim().toUpperCase();
-  if (s.endsWith('B')) return parseFloat(s) * 1e9;
-  if (s.endsWith('M')) return parseFloat(s) * 1e6;
-  if (s.endsWith('K')) return parseFloat(s) * 1e3;
-  return parseFloat(s) || 0;
-}
-
-// ── Token quota mini-row ──────────────────────────────────────────────────────
-// softMax: when no hard budget is set, use peer-period tokens as a soft reference
-// (week bar → softMax = monthTokens shows week as % of month;
-//  month bar → softMax = weekTokens * 4.3 shows month pacing)
-function QuotaRow({ label, used, budget, color, srcKey, period, onSetBudget, softMax }) {
-  const [editing, setEditing] = useState(false);
-  const [draft,   setDraft]   = useState('');
-
-  function commit() {
-    const v = parseTok(draft);
-    if (v > 0) onSetBudget(srcKey, period, v);
-    setEditing(false);
-  }
-
-  const hasBudget  = budget > 0;
-  const effectiveMax = hasBudget ? budget : (softMax > used ? softMax : 0);
-  const isSoft     = !hasBudget && effectiveMax > 0;
-  const pct        = effectiveMax > 0 ? Math.min(100, Math.round((used / effectiveMax) * 100)) : 0;
-  const remaining  = effectiveMax > 0 ? effectiveMax - used : 0;
-  const isOver     = hasBudget && used > budget;
-  const barColor   = isOver ? 'var(--red, #ff4a4a)' : isSoft ? `${color}88` : color;
-
-  return (
-    <div style={{ marginBottom: 6 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-        <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-          {label}
-        </span>
-        {editing ? (
-          <div style={{ display: 'flex', gap: 3 }}>
-            <input
-              autoFocus
-              value={draft}
-              onChange={e => setDraft(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
-              placeholder="e.g. 10B"
-              style={{
-                width: 56, fontSize: 9, background: 'var(--bg-card)', border: '1px solid var(--border)',
-                borderRadius: 3, color: 'var(--text-primary)', padding: '1px 4px', outline: 'none',
-              }}
-            />
-            <button onClick={commit} style={{ fontSize: 9, background: 'none', border: 'none',
-              color: 'var(--green)', cursor: 'pointer', padding: 0 }}>✓</button>
-            <button onClick={() => setEditing(false)} style={{ fontSize: 9, background: 'none', border: 'none',
-              color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}>✕</button>
-          </div>
-        ) : (
-          <button
-            onClick={() => { setDraft(hasBudget ? fmtTok(budget) : ''); setEditing(true); }}
-            style={{ fontSize: 9, background: 'none', border: 'none',
-              color: 'var(--text-muted)', cursor: 'pointer', padding: 0,
-              textDecoration: 'underline dotted', }}
-          >
-            {hasBudget ? `limit: ${fmtTok(budget)}` : 'set limit'}
-          </button>
-        )}
-      </div>
-
-      <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 2 }}>
-        <div style={{
-          height: '100%', width: `${pct}%`,
-          background: barColor,
-          borderRadius: 2, transition: 'width 0.4s ease',
-        }} />
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9 }}>
-        <span style={{ color: 'var(--text-muted)' }}>{fmtTok(used)} used</span>
-        {hasBudget && (
-          <span style={{ color: isOver ? 'var(--red, #ff4a4a)' : 'var(--green)' }}>
-            {isOver ? `${fmtTok(used - budget)} over` : `${fmtTok(remaining)} left`}
-          </span>
-        )}
-        {isSoft && period === 'week' && (
-          <span style={{ color: 'var(--text-muted)', fontSize: 8 }}>{pct}% of month</span>
-        )}
-        {isSoft && period === 'month' && (
-          <span style={{ color: 'var(--text-muted)', fontSize: 8 }}>~{fmtTok(effectiveMax)} est</span>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // ── Rate limit bar (shows remaining %) ───────────────────────────────────────
 function RateLimitBar({ label, usedPct, resetLabel }) {
@@ -303,27 +203,11 @@ function RateLimitBar({ label, usedPct, resetLabel }) {
   );
 }
 
-// ── Source usage mini-panel ───────────────────────────────────────────────────
-function SourceUsagePanel({ sourceStats, tokenBudget, onBudgetChange, rateLimits }) {
-  if (!sourceStats) return null;
-  const { claude, codex } = sourceStats;
-  const totalSess = claude.sessions + codex.sessions;
-  if (totalSess === 0) return null;
-
-  function handleSetBudget(src, period, value) {
-    const next = {
-      ...tokenBudget,
-      [src]: { ...tokenBudget[src], [period]: value },
-    };
-    onBudgetChange(next);
-  }
-
-  const rows = [
-    { src: 'claude', label: '◆ Claude', color: 'var(--accent)', ...claude },
-    { src: 'codex',  label: '⬡ Codex',  color: 'oklch(0.65 0.18 260)', ...codex },
-  ];
-
-  const rl = rateLimits?.claude;
+// ── Limits panel — only rate limit bars, no session/cost/quota data ──────────
+function LimitsPanel({ rateLimits }) {
+  const cl = rateLimits?.claude;
+  const cx = rateLimits?.codex;
+  if (!cl && !cx) return null;
 
   return (
     <div style={{
@@ -333,86 +217,45 @@ function SourceUsagePanel({ sourceStats, tokenBudget, onBudgetChange, rateLimits
       border: '1px solid var(--border)',
       borderRadius: 8,
     }}>
-      <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em',
-        textTransform: 'uppercase', marginBottom: 8 }}>
-        Source Usage
-      </div>
-      {rows.map(({ src, label, color, sessions, cost, weekTokens, monthTokens }) => {
-        if (sessions === 0) return null;
-        const pct = totalSess > 0 ? Math.round((sessions / totalSess) * 100) : 0;
-        const budget = tokenBudget?.[src] || { week: 0, month: 0 };
-        return (
-          <div key={src} style={{ marginBottom: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-              marginBottom: 3 }}>
-              <span style={{ fontSize: 11, color, fontWeight: 500 }}>{label}</span>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{pct}%</span>
-            </div>
-            {/* Session share bar */}
-            <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 3 }}>
-              <div style={{ height: '100%', width: `${pct}%`, background: color,
-                borderRadius: 2, transition: 'width 0.4s ease' }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 9,
-              color: 'var(--text-muted)', marginBottom: 6 }}>
-              <span>{sessions.toLocaleString()} sessions</span>
-              <span style={{ color: 'var(--green)' }}>{formatCost(cost)}</span>
-            </div>
-            {/* Token quota rows — softMax gives a bar even before a hard limit is set */}
-            <QuotaRow
-              label="Week tokens" used={weekTokens} budget={budget.week}
-              color={color} srcKey={src} period="week" onSetBudget={handleSetBudget}
-              softMax={monthTokens}
-            />
-            <QuotaRow
-              label="Month tokens" used={monthTokens} budget={budget.month}
-              color={color} srcKey={src} period="month" onSetBudget={handleSetBudget}
-              softMax={Math.max(weekTokens * 4.3, monthTokens * 1.05)}
-            />
-            {/* Per-source rate limit bars */}
-            {src === 'claude' && rl && (
-              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.08em',
-                  textTransform: 'uppercase', marginBottom: 5 }}>
-                  Claude.ai limits
-                </div>
-                {rl.session?.used_pct != null && (
-                  <RateLimitBar label="Session" usedPct={rl.session.used_pct}
-                    resetLabel={rl.session.resets_in_label ?? null} />
-                )}
-                {rl.weekly?.all_models_used_pct != null && (
-                  <RateLimitBar label="Weekly (all)" usedPct={rl.weekly.all_models_used_pct}
-                    resetLabel={rl.weekly.resets_label ?? null} />
-                )}
-                {rl.weekly?.sonnet_only_used_pct != null && (
-                  <RateLimitBar label="Weekly (Sonnet)" usedPct={rl.weekly.sonnet_only_used_pct}
-                    resetLabel={null} />
-                )}
-              </div>
-            )}
-            {src === 'codex' && rateLimits?.codex && (
-              <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.08em',
-                  textTransform: 'uppercase', marginBottom: 5 }}>
-                  Codex limits
-                </div>
-                {rateLimits.codex.weekly?.remaining_pct != null && (
-                  <RateLimitBar
-                    label="Weekly"
-                    usedPct={100 - rateLimits.codex.weekly.remaining_pct}
-                    resetLabel={rateLimits.codex.weekly.resets_label ?? null}
-                  />
-                )}
-              </div>
-            )}
+      {cl && (
+        <>
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em',
+            textTransform: 'uppercase', marginBottom: 6 }}>
+            Claude.ai limits
           </div>
-        );
-      })}
+          {cl.session?.used_pct != null && (
+            <RateLimitBar label="Session" usedPct={cl.session.used_pct}
+              resetLabel={cl.session.resets_in_label ?? null} />
+          )}
+          {cl.weekly?.all_models_used_pct != null && (
+            <RateLimitBar label="Weekly (all)" usedPct={cl.weekly.all_models_used_pct}
+              resetLabel={cl.weekly.resets_label ?? null} />
+          )}
+          {cl.weekly?.sonnet_only_used_pct != null && (
+            <RateLimitBar label="Weekly (Sonnet)" usedPct={cl.weekly.sonnet_only_used_pct}
+              resetLabel={null} />
+          )}
+        </>
+      )}
+      {cx?.weekly?.remaining_pct != null && (
+        <>
+          {cl && <div style={{ borderTop: '1px solid var(--border)', margin: '8px 0' }} />}
+          <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em',
+            textTransform: 'uppercase', marginBottom: 6 }}>
+            Codex limits
+          </div>
+          <RateLimitBar
+            label="Weekly"
+            usedPct={100 - cx.weekly.remaining_pct}
+            resetLabel={cx.weekly.resets_label ?? null}
+          />
+        </>
+      )}
     </div>
   );
 }
 
-export default function Sidebar({ activePage, onNavigate, onReload, sourceStats, tokenBudget, onBudgetChange, rateLimits }) {
+export default function Sidebar({ activePage, onNavigate, onReload, rateLimits }) {
   return (
     <aside
       style={{
@@ -484,7 +327,7 @@ export default function Sidebar({ activePage, onNavigate, onReload, sourceStats,
         })}
       </nav>
 
-      <SourceUsagePanel sourceStats={sourceStats} tokenBudget={tokenBudget} onBudgetChange={onBudgetChange} rateLimits={rateLimits} />
+      <LimitsPanel rateLimits={rateLimits} />
       <div style={{ flexShrink: 0 }}>
         <SyncButton onReload={onReload} />
       </div>
