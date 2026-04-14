@@ -24,8 +24,9 @@ swiftc \
     -o "$APP_BUNDLE/Contents/MacOS/$APP_NAME" \
     "$SCRIPT_DIR/MeowOpsBar.swift"
 
-# Copy plist
+# Copy plist + icon
 cp "$SCRIPT_DIR/Info.plist" "$APP_BUNDLE/Contents/Info.plist"
+[ -f "$SCRIPT_DIR/AppIcon.icns" ] && cp "$SCRIPT_DIR/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
 # Ad-hoc code sign (no Apple Developer account needed)
 codesign --force --deep --sign - "$APP_BUNDLE"
