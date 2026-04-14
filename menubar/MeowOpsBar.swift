@@ -276,7 +276,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             .first { FileManager.default.fileExists(atPath: $0) } ?? "/usr/bin/env node"
         let task = Process()
         task.executableURL = URL(fileURLWithPath: node.hasPrefix("/usr/bin/env") ? "/usr/bin/env" : node)
-        task.arguments     = node.hasPrefix("/usr/bin/env") ? ["node", "sync/export-local.mjs"] : ["sync/export-local.mjs"]
+        // --push commits + pushes to GitHub so Vercel picks up the latest data
+        task.arguments     = node.hasPrefix("/usr/bin/env")
+            ? ["node", "sync/export-local.mjs", "--push"]
+            : ["sync/export-local.mjs", "--push"]
         task.currentDirectoryURL = URL(fileURLWithPath: repoPath)
         task.terminationHandler = { [weak self] _ in DispatchQueue.main.async { self?.refresh() } }
         try? task.run()
