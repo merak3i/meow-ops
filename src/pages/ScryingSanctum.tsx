@@ -451,231 +451,205 @@ function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasT
   return result;
 }
 
-// ─── Pre-rendered 2D Environment Textures ─────────────────────────────────────
+// ─── Plaza Environment — ImageData texture + 3D props ────────────────────────
 
 let _plazaTex: THREE.CanvasTexture | null = null;
-let _treeTex: THREE.CanvasTexture | null = null;
-let _barrelTex: THREE.CanvasTexture | null = null;
-let _buildingTex: THREE.CanvasTexture | null = null;
 
 function buildPlazaTexture(): THREE.CanvasTexture {
   if (_plazaTex) return _plazaTex;
-  const S = 2048;
+  const S = 512;
   const canvas = document.createElement('canvas');
   canvas.width = S; canvas.height = S;
   const ctx = canvas.getContext('2d')!;
-  ctx.imageSmoothingEnabled = false;
-  const B = 4, G = S / B, C = G / 2; // block=4px, grid=512, center=256
+  const img = ctx.createImageData(S, S);
+  const d = img.data;
+  const cx = S / 2, cy = S / 2;
+  const plazaR = S * 0.30;
+  const pondR = S * 0.09;
+  const pondCx = S * 0.15, pondCy = S * 0.85;
+  const pathHW = S * 0.035;
 
-  function blk(bx: number, by: number, bw: number, bh: number, c: string) {
-    ctx.fillStyle = c;
-    ctx.fillRect(Math.floor(bx) * B, Math.floor(by) * B, Math.ceil(bw) * B, Math.ceil(bh) * B);
+  function hash(x: number, y: number): number {
+    let h = (x * 374761393 + y * 668265263) | 0;
+    h = Math.imul(h ^ (h >>> 13), 1274126177);
+    return (h ^ (h >>> 16)) >>> 0;
   }
-  function stoneAt(x: number, y: number): string {
-    const h = ((x * 7 + y * 13 + (x ^ y) * 3) >>> 0) % 8;
-    return ['#b8a888','#a89878','#c8b898','#b0a080','#baa890','#c0a880','#a89070','#b8a078'][h]!;
-  }
 
-  // 1. Green grass base
-  for (let y = 0; y < G; y++)
-    for (let x = 0; x < G; x++)
-      blk(x, y, 1, 1, ['#4a7a3a','#5a8a4a','#4a7a3a','#508040','#4a7838'][((x*3+y*7)>>>0)%5]!);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const i = (y * S + x) * 4;
+      const H = hash(x, y);
+      const n = (H % 100) / 100;
+      const dx = x - cx, dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const pdx = x - pondCx, pdy = y - pondCy;
+      const pondDist = Math.sqrt(pdx * pdx + pdy * pdy);
+      const onPathNS = Math.abs(dx) < pathHW && Math.abs(dy) > plazaR;
+      const onPathEW = Math.abs(dy) < pathHW && Math.abs(dx) > plazaR;
 
-  // 2. Dirt transition ring
-  const PH = 185;
-  for (let y = C - PH - 10; y < C + PH + 10; y++)
-    for (let x = C - PH - 10; x < C + PH + 10; x++) {
-      const dx = Math.abs(x - C), dy = Math.abs(y - C);
-      if (dx > PH - 15 && dy > PH - 15 && Math.sqrt((dx-(PH-15))**2+(dy-(PH-15))**2) > 15) continue;
-      if (dx > PH + 10 || dy > PH + 10) continue;
-      if (dx > PH - 4 || dy > PH - 4)
-        blk(x, y, 1, 1, ((x+y)%3===0) ? '#9a8060' : '#8a7050');
+      let r: number, g: number, b: number;
+
+      if (pondDist < pondR - 3) {
+        // Water — deep blue with shimmer
+        const wd = pondDist / pondR;
+        r = 40 + Math.floor(wd * 20 + n * 12);
+        g = 85 + Math.floor(wd * 25 + n * 15);
+        b = 150 + Math.floor(n * 30);
+      } else if (pondDist < pondR + 5) {
+        // Pond stone rim
+        const sv = Math.floor(n * 25) - 12;
+        r = 115 + sv; g = 95 + sv; b = 75 + sv;
+      } else if (dist < plazaR - 3) {
+        // Cobblestone plaza with stone pattern
+        const sx = ((x + 500) % 8), sy = ((y + 500) % 8);
+        const row = Math.floor((y + 500) / 8);
+        const ox = (row % 2) * 4;
+        const sx2 = ((x + 500 + ox) % 8);
+        if (sx2 === 0 || sy === 0) {
+          r = 105 + Math.floor(n * 10); g = 90 + Math.floor(n * 8); b = 72 + Math.floor(n * 6);
+        } else {
+          const sv = Math.floor(n * 28) - 14;
+          r = 178 + sv; g = 162 + sv; b = 132 + sv;
+        }
+      } else if (dist < plazaR + 5) {
+        // Plaza edge ring — darker stone border
+        const sv = Math.floor(n * 18) - 9;
+        r = 128 + sv; g = 108 + sv; b = 85 + sv;
+      } else if (onPathNS || onPathEW) {
+        // Dirt paths
+        const sv = Math.floor(n * 22) - 11;
+        r = 148 + sv; g = 122 + sv; b = 85 + sv;
+      } else {
+        // Lush grass — warm yellow-green with variation
+        const gv = Math.floor(n * 28) - 14;
+        // Subtle large-scale variation using low-freq hash
+        const lf = hash(Math.floor(x / 16), Math.floor(y / 16));
+        const lfv = ((lf % 20) - 10);
+        r = 68 + gv + lfv;
+        g = 125 + gv + lfv;
+        b = 48 + Math.floor(gv / 2);
+
+        // Scattered flowers on grass
+        if (dist > plazaR + 25 && pondDist > pondR + 15 && (H % 53) === 0) {
+          const fc = (H >>> 8) % 6;
+          if (fc === 0) { r = 235; g = 75; b = 55; }       // red poppy
+          else if (fc === 1) { r = 240; g = 210; b = 50; }  // yellow daisy
+          else if (fc === 2) { r = 225; g = 130; b = 185; } // pink
+          else if (fc === 3) { r = 170; g = 110; b = 225; } // purple
+          else if (fc === 4) { r = 255; g = 250; b = 210; } // white
+          else { r = 240; g = 180; b = 60; }                // orange
+        }
+
+        // Grass highlight streaks
+        if ((H % 19) === 0) { r += 15; g += 20; b += 5; }
+      }
+
+      d[i] = Math.max(0, Math.min(255, r));
+      d[i + 1] = Math.max(0, Math.min(255, g));
+      d[i + 2] = Math.max(0, Math.min(255, b));
+      d[i + 3] = 255;
     }
-
-  // 3. Cobblestone plaza
-  for (let y = C - PH; y < C + PH; y++)
-    for (let x = C - PH; x < C + PH; x++) {
-      const dx = Math.abs(x-C), dy = Math.abs(y-C);
-      if (dx > PH-15 && dy > PH-15 && Math.sqrt((dx-(PH-15))**2+(dy-(PH-15))**2) > 15) continue;
-      const tx = ((x-C+500)%9), ty = ((y-C+500)%9);
-      blk(x, y, 1, 1, (tx===0||ty===0) ? '#887060' : stoneAt(x, y));
-    }
-
-  // 4. Fountain
-  const FR = 28;
-  for (let y = C-FR-6; y <= C+FR+6; y++)
-    for (let x = C-FR-6; x <= C+FR+6; x++) {
-      const d = Math.sqrt((x-C)**2+(y-C)**2);
-      if (d < FR-4) blk(x, y, 1, 1, ((x+y)%4<2) ? '#4a8ab8' : '#5a9ac8');
-      else if (d < FR) blk(x, y, 1, 1, '#7a6a5a');
-      else if (d < FR+4) blk(x, y, 1, 1, '#8a7a6a');
-    }
-  for (let y = C-4; y <= C+4; y++)
-    for (let x = C-4; x <= C+4; x++)
-      if ((x-C)**2+(y-C)**2 < 25) blk(x, y, 1, 1, '#9a8a7a');
-
-  // 5. Dirt paths (N/S/E/W)
-  const PW = 10;
-  for (let y = 20; y < C-PH; y++)
-    for (let dx = -PW; dx <= PW; dx++)
-      blk(C+dx, y, 1, 1, Math.abs(dx)>PW-2 ? '#8a7050' : '#9a8060');
-  for (let y = C+PH; y < G-20; y++)
-    for (let dx = -PW; dx <= PW; dx++)
-      blk(C+dx, y, 1, 1, Math.abs(dx)>PW-2 ? '#8a7050' : '#9a8060');
-  for (let x = C+PH; x < G-20; x++)
-    for (let dy = -PW; dy <= PW; dy++)
-      blk(x, C+dy, 1, 1, Math.abs(dy)>PW-2 ? '#8a7050' : '#9a8060');
-  for (let x = 20; x < C-PH; x++)
-    for (let dy = -PW; dy <= PW; dy++)
-      blk(x, C+dy, 1, 1, Math.abs(dy)>PW-2 ? '#8a7050' : '#9a8060');
-
-  // 6. Flower patches on grass
-  for (const [fx,fy] of [[40,40],[80,50],[450,60],[470,440],[50,460],[100,420],[420,100],[460,200],[40,300],[60,180]]) {
-    blk(fx, fy, 2, 2, ['#e85040','#e8a040','#e8e040','#e060a0','#a060e0'][((fx+fy)>>>0)%5]!);
-    blk(fx+1, fy+1, 1, 1, '#ffffffaa');
   }
 
-  // 7. Tree shadows on ground
-  for (const [tx,tz] of [[-7,-7],[7,-7],[-7,7],[7,7],[-7,0],[7,0]]) {
-    const bx = C + Math.round(tx * (G/20)), by = C + Math.round(tz * (G/20));
-    ctx.fillStyle = 'rgba(0,0,0,0.12)';
-    ctx.beginPath(); ctx.ellipse(bx*B, by*B, 15*B, 10*B, 0, 0, Math.PI*2); ctx.fill();
-  }
-
+  ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
-  _plazaTex = tex; return tex;
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  _plazaTex = tex;
+  return tex;
 }
-
-function buildTreeTexture(): THREE.CanvasTexture {
-  if (_treeTex) return _treeTex;
-  const W = 128, H = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
-  ctx.imageSmoothingEnabled = false;
-
-  // Trunk
-  px(ctx, 50, 140, 28, 90, '#5a3e1e');
-  px(ctx, 54, 140, 20, 90, '#6b4e2e');
-  px(ctx, 58, 145, 10, 80, '#7a5e3e');
-  px(ctx, 42, 220, 44, 12, '#5a3e1e'); // root flare
-
-  // Canopy layers
-  for (const { cy, rx, ry, c } of [
-    { cy: 120, rx: 56, ry: 30, c: '#2a5a2a' },
-    { cy: 100, rx: 52, ry: 32, c: '#3a7a3a' },
-    { cy: 80,  rx: 48, ry: 30, c: '#4a8a4a' },
-    { cy: 65,  rx: 40, ry: 25, c: '#5a9a4a' },
-    { cy: 50,  rx: 30, ry: 20, c: '#6aaa5a' },
-  ]) { ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(64, cy, rx, ry, 0, 0, Math.PI*2); ctx.fill(); }
-
-  // Leaf highlights
-  for (const [lx,ly] of [[35,60],[85,70],[50,45],[75,55],[55,90],[80,95]]) px(ctx, lx, ly, 8, 6, '#7aba5a');
-  // Autumn accents
-  for (const [lx,ly] of [[30,80],[90,65],[40,100],[75,40]]) px(ctx, lx, ly, 6, 4, '#c8884a');
-
-  addOutline(ctx, W, H);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
-  _treeTex = tex; return tex;
-}
-
-function buildBarrelTexture(): THREE.CanvasTexture {
-  if (_barrelTex) return _barrelTex;
-  const W = 64, H = 80;
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
-  ctx.imageSmoothingEnabled = false;
-
-  px(ctx, 12, 8, 40, 60, '#7a5a3a');
-  px(ctx, 14, 10, 36, 56, '#8a6a4a');
-  px(ctx, 16, 12, 32, 52, '#7a5a3a');
-  px(ctx, 10, 18, 44, 4, '#6a6a7a'); px(ctx, 12, 19, 40, 2, '#8a8a9a');
-  px(ctx, 10, 40, 44, 4, '#6a6a7a'); px(ctx, 12, 41, 40, 2, '#8a8a9a');
-  px(ctx, 10, 58, 44, 4, '#6a6a7a');
-  ctx.fillStyle = '#6a4a2a'; ctx.beginPath(); ctx.ellipse(32, 10, 20, 8, 0, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle = '#5a3a1a'; ctx.beginPath(); ctx.ellipse(32, 10, 16, 5, 0, 0, Math.PI*2); ctx.fill();
-
-  addOutline(ctx, W, H);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
-  _barrelTex = tex; return tex;
-}
-
-function buildBuildingTexture(): THREE.CanvasTexture {
-  if (_buildingTex) return _buildingTex;
-  const W = 256, H = 256;
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
-  ctx.imageSmoothingEnabled = false;
-
-  // Stone wall
-  px(ctx, 0, 60, 256, 196, '#8a7a6a');
-  px(ctx, 4, 64, 248, 188, '#9a8a7a');
-  for (let row = 0; row < 12; row++) {
-    const y = 64 + row * 16, off = (row % 2) * 20;
-    for (let col = 0; col < 8; col++) { const x = off+col*32; px(ctx, x, y, 32, 1, '#7a6a5a'); px(ctx, x, y, 1, 16, '#7a6a5a'); }
-  }
-  // Roof
-  for (let y = 10; y <= 60; y++) {
-    const p = (y-10)/50, hw = 128*p+(1-p)*20, lx = 128-hw;
-    for (let x = Math.floor(lx); x < Math.ceil(128+hw); x++)
-      if (x >= 0 && x < 256) px(ctx, x, y, 1, 1, (y%8<4) ? '#c45a2a' : '#b44a1a');
-  }
-  px(ctx, 118, 10, 20, 4, '#d46a3a');
-  // Windows
-  for (const wx of [40, 170]) {
-    px(ctx, wx, 100, 44, 52, '#5a3e1e'); px(ctx, wx+4, 104, 36, 44, '#2a3040');
-    px(ctx, wx+20, 104, 4, 44, '#5a3e1e'); px(ctx, wx+4, 124, 36, 4, '#5a3e1e');
-    px(ctx, wx+6, 106, 12, 16, '#4a5a70');
-  }
-  // Door
-  px(ctx, 100, 168, 56, 88, '#5a3e1e'); px(ctx, 104, 172, 48, 80, '#6b4e2e');
-  px(ctx, 108, 176, 40, 72, '#7a5e3e'); px(ctx, 136, 208, 6, 6, '#c8a855');
-  // Awning
-  px(ctx, 30, 82, 196, 16, '#c45a2a'); px(ctx, 32, 84, 192, 12, '#b44a1a');
-  for (let i = 0; i < 8; i++) px(ctx, 34+i*24, 92, 10, 6, '#d46a3a');
-
-  addOutline(ctx, W, H);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
-  _buildingTex = tex; return tex;
-}
-
-// ─── Plaza Environment ────────────────────────────────────────────────────────
 
 function PlazaEnvironment() {
   const floorTex = useMemo(() => buildPlazaTexture(), []);
-  const treeTex  = useMemo(() => buildTreeTexture(), []);
-  const barrelTex = useMemo(() => buildBarrelTexture(), []);
-  const bldgTex  = useMemo(() => buildBuildingTexture(), []);
 
   return (
     <>
+      {/* Textured ground */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
-        <planeGeometry args={[20, 20]} />
+        <planeGeometry args={[22, 22]} />
         <meshBasicMaterial map={floorTex} />
       </mesh>
-      {[[-7,-7],[7,-7],[-7,7],[7,7],[-7,0],[7,0]].map(([x,z],i) => (
-        <sprite key={`tree${i}`} position={[x!, 2.5, z!]} scale={[3, 5, 1]}>
-          <spriteMaterial map={treeTex} transparent alphaTest={0.1} />
-        </sprite>
+
+      {/* Fountain rim */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
+        <ringGeometry args={[1.0, 1.5, 24]} />
+        <meshStandardMaterial color="#8a7a6a" roughness={0.8} />
+      </mesh>
+      {/* Fountain water */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <circleGeometry args={[1.0, 24]} />
+        <meshStandardMaterial color="#4a90c0" emissive="#2a6090" emissiveIntensity={0.3} />
+      </mesh>
+      {/* Fountain pillar */}
+      <mesh position={[0, 0.35, 0]}>
+        <cylinderGeometry args={[0.12, 0.18, 0.65, 8]} />
+        <meshStandardMaterial color="#9a8a7a" roughness={0.7} />
+      </mesh>
+
+      {/* Trees — trunk + layered canopy */}
+      {[[-7,-6],[7,-6],[-7,6],[7,6],[-8,0],[8,0]].map(([x,z],i) => (
+        <group key={`tree${i}`} position={[x!, 0, z!]}>
+          {/* Trunk */}
+          <mesh position={[0, 0.7, 0]}>
+            <cylinderGeometry args={[0.1, 0.18, 1.4, 6]} />
+            <meshStandardMaterial color="#5a3a1a" roughness={0.9} />
+          </mesh>
+          {/* Root flare */}
+          <mesh position={[0, 0.08, 0]}>
+            <cylinderGeometry args={[0.18, 0.3, 0.16, 6]} />
+            <meshStandardMaterial color="#4a3018" roughness={0.9} />
+          </mesh>
+          {/* Canopy layers — dark to light */}
+          <mesh position={[0, 1.4, 0]}>
+            <sphereGeometry args={[1.1, 8, 6]} />
+            <meshStandardMaterial color="#1a5a1a" roughness={0.85} />
+          </mesh>
+          <mesh position={[0, 1.8, 0]}>
+            <sphereGeometry args={[0.9, 8, 6]} />
+            <meshStandardMaterial color="#2a7a2a" roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 2.15, 0]}>
+            <sphereGeometry args={[0.6, 8, 6]} />
+            <meshStandardMaterial color="#3a9a3a" roughness={0.75} />
+          </mesh>
+          {/* Ground shadow */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.2, 0.005, 0.2]}>
+            <circleGeometry args={[1.2, 12]} />
+            <meshStandardMaterial color="#000" transparent opacity={0.18} />
+          </mesh>
+        </group>
       ))}
-      <sprite position={[0, 3, -9.5]} scale={[7, 7, 1]}>
-        <spriteMaterial map={bldgTex} transparent alphaTest={0.1} />
-      </sprite>
-      <sprite position={[-9.5, 3, 0]} scale={[7, 7, 1]}>
-        <spriteMaterial map={bldgTex} transparent alphaTest={0.1} />
-      </sprite>
-      {[[-4,-6],[5,-5],[-5,4],[4,6],[6,-2]].map(([x,z],i) => (
-        <sprite key={`brl${i}`} position={[x!, 0.5, z!]} scale={[0.8, 1.0, 1]}>
-          <spriteMaterial map={barrelTex} transparent alphaTest={0.1} />
-        </sprite>
+
+      {/* Stone boulders around pond area */}
+      {[[-2.5,7.5],[0.5,8],[-3,8.5],[-1,9]].map(([x,z],i) => (
+        <mesh key={`rock${i}`} position={[x!, 0.12, z!]}>
+          <sphereGeometry args={[0.2 + (i % 3) * 0.08, 6, 5]} />
+          <meshStandardMaterial color={i % 2 ? '#8a7a6a' : '#7a6a5a'} roughness={0.9} />
+        </mesh>
       ))}
-      <pointLight position={[0, 1, 0]} color="#5588ff" intensity={0.4} distance={5} />
+
+      {/* Barrel clusters */}
+      {[[-4,-5],[5,-4.5],[-4.5,4],[4.5,5]].map(([x,z],i) => (
+        <group key={`brl${i}`} position={[x!, 0, z!]}>
+          <mesh position={[0, 0.35, 0]}>
+            <cylinderGeometry args={[0.22, 0.25, 0.7, 8]} />
+            <meshStandardMaterial color="#7a5a3a" roughness={0.85} />
+          </mesh>
+          {/* Metal bands */}
+          <mesh position={[0, 0.2, 0]}>
+            <cylinderGeometry args={[0.26, 0.26, 0.04, 8]} />
+            <meshStandardMaterial color="#5a5a6a" roughness={0.4} metalness={0.3} />
+          </mesh>
+          <mesh position={[0, 0.5, 0]}>
+            <cylinderGeometry args={[0.24, 0.24, 0.04, 8]} />
+            <meshStandardMaterial color="#5a5a6a" roughness={0.4} metalness={0.3} />
+          </mesh>
+        </group>
+      ))}
+
+      {/* Warm lights */}
+      <pointLight position={[0, 1.5, 0]} color="#4488cc" intensity={0.3} distance={4} />
     </>
   );
 }
