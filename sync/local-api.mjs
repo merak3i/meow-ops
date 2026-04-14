@@ -24,6 +24,8 @@ function cors(res, origin) {
   res.setHeader('Access-Control-Allow-Origin',  origin || '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  // Required for Chrome Private Network Access (HTTPS page → http://localhost)
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
 }
 
 const server = createServer((req, res) => {

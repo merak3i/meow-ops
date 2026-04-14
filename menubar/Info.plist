@@ -24,5 +24,7 @@
     <string>13.0</string>
     <key>NSHumanReadableCopyright</key>
     <string>MIT License — Meow Creative Haus</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
 </dict>
 </plist>
