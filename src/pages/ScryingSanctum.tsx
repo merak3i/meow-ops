@@ -45,6 +45,179 @@ const DEFAULT_AURA = { speed: 2.2, amplitude: 0.07, style: 'pulse' as const };
 const PIPELINE_ROLES = ['ALPHA', 'RECON', 'SORCERER', 'HERALD'];
 const EXTRA_ROLES    = ['RUNNER', 'LINK',  'BRANCH',   'AUXILIARY'];
 
+// ─── Movement Personality Profiles ───────────────────────────────────────────
+
+interface MovementProfile {
+  speed: number;        // multiplier on base 1.5
+  bounceAmp: number;    // walk bounce amplitude
+  idlePauseMin: number; // min seconds idle before next move
+  idlePauseMax: number; // max seconds
+  breatheSpeed: number; // idle sway speed
+  breatheAmp: number;   // idle sway amplitude
+  prefersEdge: boolean; // stalks edges vs wanders freely
+  prefersAllies: boolean; // stays near parent
+}
+
+const MOVEMENT_PROFILES: Record<string, MovementProfile> = {
+  builder:     { speed: 2.2, bounceAmp: 0.10, idlePauseMin: 0.3, idlePauseMax: 1.2, breatheSpeed: 2.0, breatheAmp: 0.03, prefersEdge: false, prefersAllies: false },  // Wolverine — aggressive, restless
+  detective:   { speed: 1.6, bounceAmp: 0.03, idlePauseMin: 2.0, idlePauseMax: 5.0, breatheSpeed: 1.0, breatheAmp: 0.02, prefersEdge: true,  prefersAllies: false },  // Batman — smooth, stalks edges
+  commander:   { speed: 1.0, bounceAmp: 0.01, idlePauseMin: 1.5, idlePauseMax: 4.0, breatheSpeed: 0.8, breatheAmp: 0.06, prefersEdge: false, prefersAllies: false },  // Dr. Strange — floats
+  architect:   { speed: 0.8, bounceAmp: 0.02, idlePauseMin: 3.0, idlePauseMax: 7.0, breatheSpeed: 0.6, breatheAmp: 0.02, prefersEdge: false, prefersAllies: false },  // Vader — slow, imposing
+  guardian:    { speed: 1.8, bounceAmp: 0.07, idlePauseMin: 0.5, idlePauseMax: 2.0, breatheSpeed: 1.4, breatheAmp: 0.03, prefersEdge: false, prefersAllies: true  },  // Cap — patrol, near allies
+  storyteller: { speed: 1.0, bounceAmp: 0.04, idlePauseMin: 2.0, idlePauseMax: 6.0, breatheSpeed: 0.7, breatheAmp: 0.05, prefersEdge: false, prefersAllies: false },  // Gandalf — contemplative
+  ghost:       { speed: 1.4, bounceAmp: 0.01, idlePauseMin: 1.0, idlePauseMax: 3.0, breatheSpeed: 0.4, breatheAmp: 0.01, prefersEdge: false, prefersAllies: false },  // Terminator — mechanical
+};
+const DEFAULT_MOVEMENT: MovementProfile = { speed: 1.5, bounceAmp: 0.05, idlePauseMin: 0.5, idlePauseMax: 2.5, breatheSpeed: 1.4, breatheAmp: 0.04, prefersEdge: false, prefersAllies: false };
+
+// ─── Character Quotes (personality + session-aware) ─────────────────────────
+
+type QuoteFn = (s: Session) => string;
+
+function pickQuote(catType: string, session: Session): string {
+  const quotes = CHARACTER_QUOTES[catType] ?? CHARACTER_QUOTES._fallback!;
+  const q = quotes[Math.floor(Math.random() * quotes.length)]!;
+  return typeof q === 'function' ? q(session) : q;
+}
+
+const CHARACTER_QUOTES: Record<string, (string | QuoteFn)[]> = {
+  builder: [ // Wolverine
+    "I'm the best at what I do.",
+    "Don't make me pop these claws.",
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens? I've survived worse.`,
+    (s) => s.estimated_cost_usd > 1 ? "That's an expensive healing factor." : "Barely a scratch.",
+    "Wrong move, bub.",
+    (s) => `${s.message_count} messages. Each one with adamantium resolve.`,
+    (s) => `Project ${s.project}? I'll tear through it.`,
+    "Nature made me a freak. Code made me a weapon.",
+  ],
+  detective: [ // Batman
+    "I am vengeance.",
+    "It's not who I am underneath, it's what I do that defines me.",
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens processed in the shadows.`,
+    (s) => s.duration_seconds > 600 ? "Long night. They always are." : "Quick extraction.",
+    "Criminals are a cowardly, superstitious lot.",
+    (s) => `Project ${s.project}. I have files on everyone.`,
+    (s) => s.estimated_cost_usd > 2 ? "Wayne Enterprises can cover it." : "Cost-efficient. Alfred would approve.",
+    "I work alone. Mostly.",
+  ],
+  commander: [ // Dr. Strange
+    "I've come to bargain.",
+    "The Multiverse is a concept about which we know frighteningly little.",
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens. I've seen 14 million outcomes.`,
+    (s) => s.duration_seconds > 600 ? "Time is relative in the Mirror Dimension." : "A brief spell.",
+    "Dormammu, I've come to debug.",
+    (s) => `Project ${s.project}. The Eye of Agamotto reveals all.`,
+    (s) => s.estimated_cost_usd > 1 ? "The bill is mystical in nature." : "A small price for salvation.",
+    "We're in the endgame now.",
+  ],
+  architect: [ // Darth Vader
+    "I find your lack of tests disturbing.",
+    "The Force is strong with this codebase.",
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens. Impressive. Most impressive.`,
+    (s) => s.estimated_cost_usd > 2 ? "The cost of this battle station..." : "Efficient. As I have foreseen.",
+    "You don't know the power of the dark side.",
+    (s) => `Project ${s.project}. I have altered the code. Pray I don't alter it further.`,
+    (s) => s.duration_seconds > 600 ? "Long session. Your destiny lies with me." : "All too easy.",
+    "Search your feelings. You know it to be true.",
+  ],
+  guardian: [ // Captain America
+    "I can do this all day.",
+    "Whatever happens tomorrow, you must promise me one thing: ship clean code.",
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens. Not a single one wasted.`,
+    (s) => s.estimated_cost_usd > 1 ? "Freedom isn't free, and neither is compute." : "Under budget. A soldier's discipline.",
+    "Avengers, assemble!",
+    (s) => `${s.message_count} messages. Every voice matters.`,
+    (s) => `Project ${s.project}. I don't like bullies — or bad architecture.`,
+    "I could do this all day.",
+  ],
+  storyteller: [ // Gandalf
+    "A wizard is never late. Nor is he early.",
+    "You shall not pass... without code review.",
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens. Even the smallest token can change the course of the future.`,
+    (s) => s.duration_seconds > 600 ? "Time? What time do you think we have?" : "Swift as a ray of Valar light.",
+    "Fly, you fools!",
+    (s) => `Project ${s.project}. All we have to decide is what to do with the code that is given us.`,
+    (s) => s.estimated_cost_usd > 2 ? "A wizard's bill is never simple." : "A modest expenditure of power.",
+    "Keep it secret. Keep it safe.",
+  ],
+  ghost: [ // Terminator
+    "I'll be back.",
+    "Hasta la vista, baby.",
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens processed. Mission parameters met.`,
+    (s) => s.estimated_cost_usd > 1 ? "Resource expenditure exceeds optimal range." : "Operating within parameters.",
+    "Come with me if you want to ship.",
+    (s) => `Target acquired: ${s.project}.`,
+    (s) => s.duration_seconds > 600 ? "Extended combat operation." : "Terminated in ${Math.round(s.duration_seconds)}s.",
+    "Your clothes. Give them to me. Now.",
+  ],
+  _fallback: [
+    "Processing...",
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens spent.`,
+    "Standing by.",
+  ],
+};
+
+// ─── Signature Moves (5 per character, triggered by milestones) ─────────────
+
+interface SignatureMove {
+  name: string;
+  trigger: (s: Session) => boolean;
+  emoji: string;     // shown in speech bubble
+  quote: string | QuoteFn;
+}
+
+const SIGNATURE_MOVES: Record<string, SignatureMove[]> = {
+  builder: [ // Wolverine
+    { name: 'Berserker Rage',    trigger: (s) => (s.total_tokens ?? 0) > 500_000,           emoji: '🔥', quote: 'BERSERKER RAGE! 500K tokens unleashed!' },
+    { name: 'Healing Factor',    trigger: (s) => s.is_ghost === false && s.message_count > 20, emoji: '💚', quote: "Can't keep me down. Healing factor engaged." },
+    { name: 'Adamantium Slash',  trigger: (s) => Object.keys(s.tools ?? {}).length >= 5,     emoji: '⚔️', quote: (s) => `${Object.keys(s.tools ?? {}).length} tools mastered. SNIKT!` },
+    { name: 'Feral Instinct',    trigger: (s) => s.duration_seconds < 120 && s.message_count > 5, emoji: '⚡', quote: 'Speed run. Pure feral instinct.' },
+    { name: 'Weapon X',          trigger: (s) => s.estimated_cost_usd > 5,                   emoji: '💀', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)} spent. The Weapon X program was expensive too.` },
+  ],
+  detective: [ // Batman
+    { name: 'Dark Knight Protocol', trigger: (s) => s.duration_seconds > 1800,               emoji: '🦇', quote: 'Long night. Dark Knight Protocol active.' },
+    { name: 'Utility Belt',      trigger: (s) => Object.keys(s.tools ?? {}).length >= 6,     emoji: '🔧', quote: (s) => `${Object.keys(s.tools ?? {}).length} tools deployed. Always prepared.` },
+    { name: 'Detective Mode',    trigger: (s) => (s.tools?.Read ?? 0) + (s.tools?.Grep ?? 0) > 20, emoji: '🔍', quote: 'Detective mode. Every line analyzed.' },
+    { name: 'Batarang',          trigger: (s) => s.message_count > 30,                       emoji: '🎯', quote: 'Precision strikes. 30+ messages, zero wasted.' },
+    { name: 'Batcave Analytics', trigger: (s) => s.estimated_cost_usd < 0.10 && s.message_count > 10, emoji: '🖥️', quote: 'Cost-efficient. The Batcave runs lean.' },
+  ],
+  commander: [ // Dr. Strange
+    { name: 'Time Stone',        trigger: (s) => s.duration_seconds > 1200,                  emoji: '💎', quote: "I've looked forward in time. This session is inevitable." },
+    { name: 'Mirror Dimension',  trigger: (s) => (s.agent_depth ?? 0) > 0,                  emoji: '🪞', quote: 'Operating in the Mirror Dimension. Sub-agent deployed.' },
+    { name: 'Mystic Arts',       trigger: (s) => (s.total_tokens ?? 0) > 300_000,           emoji: '✨', quote: '300K tokens channeled through the Mystic Arts.' },
+    { name: 'Astral Projection', trigger: (s) => s.is_ghost === true,                        emoji: '👻', quote: 'Astral form. The session ended but the spirit lingers.' },
+    { name: 'Sling Ring',        trigger: (s) => (s.tools?.Agent ?? 0) > 3,                  emoji: '🌀', quote: (s) => `${s.tools?.Agent ?? 0} portals opened. The Sling Ring is powerful.` },
+  ],
+  architect: [ // Darth Vader
+    { name: 'Force Choke',       trigger: (s) => s.is_ghost === true,                        emoji: '🤜', quote: 'I find your lack of completion... disturbing.' },
+    { name: 'Death Star',        trigger: (s) => s.estimated_cost_usd > 5,                   emoji: '🌑', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)}. That's no moon.` },
+    { name: 'Imperial March',    trigger: (s) => s.message_count > 50,                       emoji: '🎵', quote: '50+ messages. The Imperial March plays on.' },
+    { name: 'Force Lightning',   trigger: (s) => (s.output_tokens ?? 0) > 200_000,          emoji: '⚡', quote: 'UNLIMITED POWER! 200K output tokens!' },
+    { name: 'Lightsaber Duel',   trigger: (s) => Object.keys(s.tools ?? {}).length >= 4,     emoji: '⚔️', quote: 'The lightsaber is an elegant weapon, for a more civilized age.' },
+  ],
+  guardian: [ // Captain America
+    { name: 'Shield Throw',      trigger: (s) => s.is_ghost === false && s.estimated_cost_usd < 0.50, emoji: '🛡️', quote: 'Shield throw! Clean mission, under budget.' },
+    { name: 'Avengers Assemble', trigger: (s) => (s.tools?.Agent ?? 0) > 2,                  emoji: '🦸', quote: (s) => `Avengers assembled! ${s.tools?.Agent ?? 0} sub-agents deployed.` },
+    { name: 'Vibranium Resolve', trigger: (s) => s.duration_seconds > 1800,                  emoji: '💪', quote: 'I can do this all day. 30+ minutes and counting.' },
+    { name: 'Super Soldier',     trigger: (s) => (s.total_tokens ?? 0) > 500_000,           emoji: '💉', quote: 'Super Soldier serum working overtime. 500K tokens.' },
+    { name: 'Star Spangled',     trigger: (s) => s.message_count > 40 && !s.is_ghost,       emoji: '⭐', quote: '40+ messages, mission complete. Star-spangled success.' },
+  ],
+  storyteller: [ // Gandalf
+    { name: 'You Shall Not Pass', trigger: (s) => s.is_ghost === true,                      emoji: '🧙', quote: 'This session... shall not pass! It fell into shadow.' },
+    { name: 'White Wizard',      trigger: (s) => (s.total_tokens ?? 0) > 1_000_000,         emoji: '🤍', quote: 'I am Gandalf the White now. 1M tokens transcended.' },
+    { name: 'Shadowfax',         trigger: (s) => s.duration_seconds < 180 && s.message_count > 10, emoji: '🐴', quote: 'Show us the meaning of haste! Swift session.' },
+    { name: 'Eagles',            trigger: (s) => (s.tools?.Agent ?? 0) > 4,                  emoji: '🦅', quote: 'The Eagles are coming! Sub-agents to the rescue.' },
+    { name: 'Light of Earendil', trigger: (s) => s.estimated_cost_usd > 3,                  emoji: '💫', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)}. May it be a light in dark places.` },
+  ],
+  ghost: [ // Terminator
+    { name: 'Ill Be Back',       trigger: (s) => s.is_ghost === true,                        emoji: '🤖', quote: "I'll be back. Session terminated." },
+    { name: 'Hasta La Vista',    trigger: (s) => s.is_ghost === false && s.message_count > 20, emoji: '😎', quote: 'Hasta la vista, baby. Mission accomplished.' },
+    { name: 'Skynet Protocol',   trigger: (s) => (s.total_tokens ?? 0) > 500_000,           emoji: '🌐', quote: 'Skynet Protocol activated. 500K tokens consumed.' },
+    { name: 'T-1000 Mode',       trigger: (s) => Object.keys(s.tools ?? {}).length >= 5,     emoji: '🔄', quote: (s) => `${Object.keys(s.tools ?? {}).length} tools morphed. T-1000 adaptive mode.` },
+    { name: 'Judgment Day',      trigger: (s) => s.estimated_cost_usd > 5,                   emoji: '☠️', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)}. Judgment Day has a price.` },
+  ],
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getPipelineRole(i: number, total: number): string {
@@ -857,6 +1030,22 @@ function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
   const mp  = manaPercent(pn.session.total_tokens ?? 0, maxTokens);
   const c   = pn.cls;
   const hpC = hp > 60 ? '#22c55e' : hp > 30 ? '#f59e0b' : '#ef4444';
+  const catType = pn.session.cat_type ?? 'ghost';
+
+  // Rotating quote — changes every 8-12 seconds
+  const [quote, setQuote] = useState(() => pickQuote(catType, pn.session));
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setQuote(pickQuote(catType, pn.session));
+    }, 8000 + Math.random() * 4000);
+    return () => clearInterval(interval);
+  }, [catType, pn.session]);
+
+  // Active signature moves for this session
+  const activeMoves = useMemo(() => {
+    const moves = SIGNATURE_MOVES[catType] ?? [];
+    return moves.filter(m => m.trigger(pn.session));
+  }, [catType, pn.session]);
 
   return (
     <Html center position={[0, 3.4, 0]} distanceFactor={11} style={{ pointerEvents: 'none' }}>
@@ -884,6 +1073,31 @@ function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
           <span style={{ fontSize: 8, color: '#c8a85588' }}>{formatGold(pn.session.estimated_cost_usd)}</span>
           <span style={{ fontSize: 8, color: '#c8a85588' }}>{formatDur(pn.session.duration_seconds)}</span>
         </div>
+        {/* Speech bubble quote */}
+        <div style={{
+          marginTop: 4, padding: '3px 5px', borderRadius: 3,
+          background: `${c.color}11`, borderLeft: `2px solid ${c.color}44`,
+          fontSize: 7, color: '#c8a85599', lineHeight: 1.3, fontStyle: 'italic',
+          maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          "{quote}"
+        </div>
+        {/* Signature move badges */}
+        {activeMoves.length > 0 && (
+          <div style={{ marginTop: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            {activeMoves.map((m) => (
+              <span key={m.name} title={typeof m.quote === 'function' ? m.quote(pn.session) : m.quote}
+                style={{
+                  fontSize: 7, padding: '1px 3px', borderRadius: 2,
+                  background: `${c.color}22`, border: `1px solid ${c.color}33`,
+                  color: c.color, cursor: 'default',
+                }}>
+                {m.emoji}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </Html>
   );
@@ -983,9 +1197,11 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
   const spawnAge    = useRef(0);                       // spawn-in timer
   const isMovingRef = useRef(false);                   // for trail particles
   const hovered     = useRef(false);
+  const idlePauseRef = useRef(0);                     // idle pause countdown
   const c           = pn.cls;
   const catType     = pn.session.cat_type ?? 'ghost';
   const auraProf    = AURA_PROFILES[catType] ?? DEFAULT_AURA;
+  const movProf     = MOVEMENT_PROFILES[catType] ?? DEFAULT_MOVEMENT;
 
   // Trail particle color per character
   const trailColor = useMemo(() => {
@@ -1015,19 +1231,32 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
     let moving = false;
 
     if (dist < 0.25) {
-      if (parentPos && Math.random() < 0.35) {
-        let bestIdx = 0, bestDist = Infinity;
-        WAYPOINTS.forEach(([wx, wz], i) => {
-          const d = Math.sqrt((wx - parentPos.x) ** 2 + (wz - parentPos.z) ** 2);
-          if (d < bestDist) { bestDist = d; bestIdx = i; }
-        });
-        targetWpRef.current = bestIdx;
+      // ── Idle pause: personality-based delay before picking next waypoint ──
+      if (idlePauseRef.current > 0) {
+        idlePauseRef.current -= delta;
       } else {
-        targetWpRef.current = Math.floor(Math.random() * WAYPOINTS.length);
+        // Set pause for next arrival
+        idlePauseRef.current = movProf.idlePauseMin + Math.random() * (movProf.idlePauseMax - movProf.idlePauseMin);
+
+        // ── Waypoint selection: personality influences target ──
+        const allyDrift = movProf.prefersAllies ? 0.7 : 0.35;
+        if (parentPos && Math.random() < allyDrift) {
+          let bestIdx = 0, bestDist = Infinity;
+          WAYPOINTS.forEach(([wx, wz], i) => {
+            const d = Math.sqrt((wx - parentPos.x) ** 2 + (wz - parentPos.z) ** 2);
+            if (d < bestDist) { bestDist = d; bestIdx = i; }
+          });
+          targetWpRef.current = bestIdx;
+        } else if (movProf.prefersEdge) {
+          // Edge-stalker: pick from outer ring waypoints (indices 0-7)
+          targetWpRef.current = Math.floor(Math.random() * 8);
+        } else {
+          targetWpRef.current = Math.floor(Math.random() * WAYPOINTS.length);
+        }
       }
-    } else {
+    } else if (idlePauseRef.current <= 0) {
       moving = true;
-      const speed = 1.5 * delta;
+      const speed = movProf.speed * delta;
       livePosRef.current.x += (dx / dist) * Math.min(speed, dist);
       livePosRef.current.z += (dz / dist) * Math.min(speed, dist);
 
@@ -1050,9 +1279,9 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
     }
     isMovingRef.current = moving;
 
-    // ── Idle breathing bob (always) + walk bounce (when moving) ──
-    const breathe = Math.sin(t * 1.4 + pn.idx * 1.7) * 0.04;
-    const walkBounce = moving ? Math.abs(Math.sin(t * 8)) * 0.06 : 0;
+    // ── Idle breathing bob (personality) + walk bounce (personality) ──
+    const breathe = Math.sin(t * movProf.breatheSpeed + pn.idx * 1.7) * movProf.breatheAmp;
+    const walkBounce = moving ? Math.abs(Math.sin(t * 8)) * movProf.bounceAmp : 0;
     const spriteY = breathe + walkBounce;
 
     if (spriteRef.current) {
