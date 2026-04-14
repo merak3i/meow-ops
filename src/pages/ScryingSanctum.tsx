@@ -20,18 +20,18 @@ interface ClassConfig {
 }
 
 const CLASS_MAP: Record<string, ClassConfig> = {
-  builder:     { color: '#f59e0b', emissive: '#7c3f00', label: 'WARRIOR',      aura: '#f59e0b' },
-  detective:   { color: '#34d399', emissive: '#004d2e', label: 'ROGUE',        aura: '#34d399' },
-  commander:   { color: '#60a5fa', emissive: '#003566', label: 'MAGE',         aura: '#60a5fa' },
-  architect:   { color: '#a78bfa', emissive: '#3b0078', label: 'WARLOCK',      aura: '#a78bfa' },
-  guardian:    { color: '#fbbf24', emissive: '#5c4000', label: 'PALADIN',      aura: '#fbbf24' },
-  storyteller: { color: '#e2e8f0', emissive: '#2a3040', label: 'PRIEST',       aura: '#e2e8f0' },
-  ghost:       { color: '#4ade80', emissive: '#00401a', label: 'DEATH KNIGHT', aura: '#4ade80' },
+  builder:     { color: '#f5c518', emissive: '#7c5a00', label: 'WOLVERINE',    aura: '#f5c518' },
+  detective:   { color: '#2a2a2a', emissive: '#0a0a0a', label: 'BATMAN',       aura: '#4a90d9' },
+  commander:   { color: '#dc3545', emissive: '#5a1520', label: 'DR. STRANGE',  aura: '#dc3545' },
+  architect:   { color: '#1a1a1a', emissive: '#0a0a0a', label: 'DARTH VADER',  aura: '#ff3333' },
+  guardian:    { color: '#2563eb', emissive: '#0a1a5a', label: 'CAPTAIN AMERICA', aura: '#2563eb' },
+  storyteller: { color: '#9ca3af', emissive: '#3a3a3a', label: 'GANDALF',      aura: '#e2e8f0' },
+  ghost:       { color: '#6b7280', emissive: '#1a1a1a', label: 'TERMINATOR',   aura: '#ef4444' },
 };
 const FALLBACK_CLASS: ClassConfig = { color: '#888', emissive: '#222', label: 'AGENT', aura: '#888' };
 
-const PIPELINE_ROLES = ['VANGUARD', 'SCOUT', 'ARCHMAGE', 'HERALD'];
-const EXTRA_ROLES    = ['RUNNER',   'LINK',  'BRANCH',   'AUXILIARY'];
+const PIPELINE_ROLES = ['ALPHA', 'RECON', 'SORCERER', 'HERALD'];
+const EXTRA_ROLES    = ['RUNNER', 'LINK',  'BRANCH',   'AUXILIARY'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -179,259 +179,398 @@ function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasT
     const lR = walking ? 116 : 120; // leg R Y
 
     switch (catType) {
-      case 'builder': { // WARRIOR — gold plate armor
-        // Helm
-        px(ctx, 48, 8,  32, 28, color);
-        px(ctx, 50, 10, 28, 24, '#d4880a');       // helm shadow
-        px(ctx, 44, 12, 4,  20, dark);            // visor L
-        px(ctx, 80, 12, 4,  20, dark);            // visor R
-        px(ctx, 56, 18, 16, 8,  '#ffffff33');     // helm highlight
-        // Face
-        px(ctx, 48, 36, 32, 24, '#f5c97b');
-        px(ctx, 50, 38, 28, 20, '#e5b96b');       // face shadow
-        px(ctx, 54, 42, 6,  5,  '#2a1a0a');       // eye L
-        px(ctx, 68, 42, 6,  5,  '#2a1a0a');       // eye R
-        px(ctx, 56, 44, 3,  2,  '#ffffff');        // eye L highlight
-        px(ctx, 70, 44, 3,  2,  '#ffffff');        // eye R highlight
-        // Shoulders (broad)
-        px(ctx, 28, 60, 72, 12, color);
-        px(ctx, 24, 64, 12, 8,  color);
-        px(ctx, 92, 64, 12, 8,  color);
-        px(ctx, 30, 62, 68, 4,  '#ffffff22');      // shoulder highlight
-        // Torso
-        px(ctx, 40, 72, 48, 44, color);
-        px(ctx, 42, 74, 44, 40, '#d4880a');        // torso shadow
-        px(ctx, 52, 78, 6,  6,  '#ffffff33');      // chest highlight
-        // Arms
-        px(ctx, 24, aL, 16, 36, color);            // arm L (shield)
-        px(ctx, 88, aR, 16, 36, color);            // arm R (sword)
-        // Sword (right)
-        px(ctx, 100, aR - 20, 4, 44, '#d0d0d0');
-        px(ctx, 96,  aR - 16, 12, 6,  '#d0d0d0'); // crossguard
-        px(ctx, 98,  aR - 18, 8,  4,  '#ffffff');  // blade highlight
-        // Shield (left)
-        px(ctx, 16, aL - 4, 16, 28, color);
-        px(ctx, 18, aL - 2, 12, 24, '#ffffff22');
-        px(ctx, 20, aL,     4,  4,  '#ffffff44');   // shield boss
-        // Legs
-        px(ctx, 44, 116, 20, 36, color);
-        px(ctx, 64, 116, 20, 36, '#d4880a');
-        // Feet
-        px(ctx, 40, lL + 30, 24, 8, dark);
-        px(ctx, 64, lR + 30, 24, 8, dark);
+      case 'builder': { // WOLVERINE — yellow/blue suit, mask points, adamantium claws
+        // Mask top — pointed ears/horns
+        px(ctx, 40, 0,  8, 16, color);             // left point
+        px(ctx, 80, 0,  8, 16, color);             // right point
+        px(ctx, 44, 8,  40, 24, color);            // mask body
+        px(ctx, 46, 10, 36, 20, '#d4a800');        // mask shadow
+        // Mask eye cutouts (black with fierce eyes)
+        px(ctx, 48, 16, 12, 10, '#1a1a1a');        // eye socket L
+        px(ctx, 68, 16, 12, 10, '#1a1a1a');        // eye socket R
+        px(ctx, 50, 18, 8,  6,  '#ffffff');         // eye L
+        px(ctx, 70, 18, 8,  6,  '#ffffff');         // eye R
+        px(ctx, 52, 19, 4,  4,  '#2a1a0a');        // pupil L
+        px(ctx, 72, 19, 4,  4,  '#2a1a0a');        // pupil R
+        // Jaw / chin
+        px(ctx, 50, 32, 28, 20, '#d4a47c');        // skin
+        px(ctx, 52, 34, 24, 16, '#c4946c');
+        px(ctx, 56, 44, 16, 4,  '#a07050');         // grimace
+        // Shoulders — broad, yellow
+        px(ctx, 24, 56, 80, 14, color);
+        px(ctx, 26, 58, 76, 4,  '#ffffff22');
+        // Torso — blue center stripe
+        px(ctx, 38, 70, 52, 44, '#1a3a8a');        // blue suit
+        px(ctx, 40, 72, 48, 40, '#152e6e');         // suit shadow
+        px(ctx, 54, 74, 20, 36, color);             // yellow center V
+        px(ctx, 56, 76, 16, 4,  '#ffffff22');        // highlight
+        // Arms — yellow
+        px(ctx, 20, aL, 18, 36, color);
+        px(ctx, 90, aR, 18, 36, color);
+        // CLAWS — left hand (3 blades)
+        px(ctx, 12, aL - 4,  3, 28, '#d0d8e0');
+        px(ctx, 17, aL - 6,  3, 30, '#d0d8e0');
+        px(ctx, 22, aL - 4,  3, 28, '#d0d8e0');
+        px(ctx, 13, aL - 2,  1, 24, '#ffffff');     // highlight
+        px(ctx, 18, aL - 4,  1, 26, '#ffffff');
+        px(ctx, 23, aL - 2,  1, 24, '#ffffff');
+        // CLAWS — right hand
+        px(ctx, 103, aR - 4, 3, 28, '#d0d8e0');
+        px(ctx, 108, aR - 6, 3, 30, '#d0d8e0');
+        px(ctx, 113, aR - 4, 3, 28, '#d0d8e0');
+        px(ctx, 104, aR - 2, 1, 24, '#ffffff');
+        px(ctx, 109, aR - 4, 1, 26, '#ffffff');
+        px(ctx, 114, aR - 2, 1, 24, '#ffffff');
+        // Belt
+        px(ctx, 40, 110, 48, 6, '#8b7a5e');
+        px(ctx, 58, 111, 12, 4, '#d4a800');          // buckle
+        // Legs — blue
+        px(ctx, 44, 116, 18, 36, '#1a3a8a');
+        px(ctx, 66, 116, 18, 36, '#152e6e');
+        // Boots — yellow
+        px(ctx, 40, lL + 26, 24, 12, color);
+        px(ctx, 64, lR + 26, 24, 12, color);
         break;
       }
-      case 'detective': { // ROGUE — teal, slim, dual daggers
-        // Hood
-        px(ctx, 52, 4,  24, 12, dark);
-        px(ctx, 48, 16, 32, 20, dark);
-        px(ctx, 50, 18, 28, 16, '#003322');        // hood shadow
-        // Face (partially shadowed)
-        px(ctx, 52, 36, 24, 24, '#c4956a');
-        px(ctx, 54, 38, 20, 20, '#b4856a');
-        px(ctx, 56, 42, 5,  4,  '#1a1a1a');       // eye L
-        px(ctx, 67, 42, 5,  4,  '#1a1a1a');       // eye R
-        px(ctx, 57, 43, 2,  2,  '#34d399');        // eye L glow
-        px(ctx, 68, 43, 2,  2,  '#34d399');        // eye R glow
-        // Slim shoulders
-        px(ctx, 36, 60, 56, 8, color);
-        px(ctx, 38, 62, 52, 4, '#24b382');         // shoulder shadow
-        // Torso (slim leather)
-        px(ctx, 44, 68, 40, 44, color);
-        px(ctx, 46, 70, 36, 40, '#24b382');
-        px(ctx, 50, 74, 28, 4,  dark);            // belt
-        // Arms
-        px(ctx, 28, aL, 12, 32, color);
-        px(ctx, 88, aR, 12, 32, color);
-        // Daggers
-        px(ctx, 24, aL - 16, 4, 36, '#d0d0d0');
-        px(ctx, 100, aR - 16, 4, 36, '#d0d0d0');
-        px(ctx, 24, aL - 18, 4, 4,  '#ffffff');   // blade tip L
-        px(ctx, 100, aR - 18, 4, 4, '#ffffff');   // blade tip R
-        // Legs
-        px(ctx, 46, 112, 16, 40, color);
-        px(ctx, 66, 112, 16, 40, '#24b382');
-        // Feet
-        px(ctx, 42, lL + 30, 20, 8, dark);
-        px(ctx, 66, lR + 30, 20, 8, dark);
-        break;
-      }
-      case 'commander': { // MAGE — blue, tall hat, staff
-        // Tall pointed hat
-        px(ctx, 56, 0,  16, 12, color);
-        px(ctx, 52, 12, 24, 8,  color);
-        px(ctx, 44, 20, 40, 16, color);
-        px(ctx, 58, 2,  12, 8,  '#7dc4ff');        // hat highlight
-        px(ctx, 46, 22, 36, 4,  '#3a7acc');        // hat brim shadow
-        // Face
-        px(ctx, 48, 36, 32, 24, '#d4a47c');
-        px(ctx, 50, 38, 28, 20, '#c4946c');
-        px(ctx, 54, 42, 5,  5,  '#1a2a5a');       // eye L
-        px(ctx, 69, 42, 5,  5,  '#1a2a5a');       // eye R
-        px(ctx, 55, 43, 2,  2,  '#60a5fa');        // eye L glow
-        px(ctx, 70, 43, 2,  2,  '#60a5fa');        // eye R glow
+      case 'detective': { // BATMAN — dark cowl with ears, cape, utility belt
+        // Cape behind (wide, dark)
+        px(ctx, 20, 52, 88, 96, '#0a0a14');
+        px(ctx, 12, 80, 104, 72, '#0a0a14');
+        // Cowl — pointed ears
+        px(ctx, 44, 0,  8, 20, '#1a1a2a');          // ear L
+        px(ctx, 76, 0,  8, 20, '#1a1a2a');          // ear R
+        px(ctx, 44, 8,  40, 28, '#1a1a2a');          // cowl body
+        px(ctx, 46, 10, 36, 24, '#101018');
+        // White eye slits (no pupils — it's Batman)
+        px(ctx, 50, 20, 10, 5, '#ffffff');
+        px(ctx, 68, 20, 10, 5, '#ffffff');
+        px(ctx, 51, 21, 8,  3, '#ddeeff');
+        px(ctx, 69, 21, 8,  3, '#ddeeff');
+        // Jaw (exposed chin)
+        px(ctx, 50, 36, 28, 16, '#d4a47c');
+        px(ctx, 52, 38, 24, 12, '#c4946c');
+        px(ctx, 58, 46, 12, 4, '#a07050');            // stern mouth
         // Shoulders
-        px(ctx, 40, 60, 48, 8, color);
-        // Flowing robe (wide at base)
-        px(ctx, 36, 68, 56, 52, color);
-        px(ctx, 28, 84, 72, 32, color);
-        px(ctx, 38, 70, 52, 48, '#3a7acc');        // robe shadow
-        px(ctx, 48, 74, 32, 8,  '#ffffff22');      // robe highlight
+        px(ctx, 30, 52, 68, 12, '#1a1a2a');
+        px(ctx, 32, 54, 64, 4,  '#2a2a3a');
+        // Torso — grey with bat symbol
+        px(ctx, 40, 64, 48, 44, '#2a2a3a');
+        px(ctx, 42, 66, 44, 40, '#222230');
+        // Bat emblem on chest (yellow oval + bat shape)
+        px(ctx, 50, 72, 28, 16, '#f5c518');           // yellow oval
+        px(ctx, 52, 74, 24, 12, '#f5c518');
+        px(ctx, 56, 74, 16, 4,  '#1a1a1a');           // bat wings
+        px(ctx, 52, 76, 24, 4,  '#1a1a1a');           // bat body
+        px(ctx, 60, 78, 8,  6,  '#1a1a1a');           // bat center
         // Arms
+        px(ctx, 24, aL, 16, 34, '#1a1a2a');
+        px(ctx, 88, aR, 16, 34, '#1a1a2a');
+        // Gauntlets — spiked
+        px(ctx, 22, aL + 20, 20, 14, '#2a2a3a');
+        px(ctx, 86, aR + 20, 20, 14, '#2a2a3a');
+        px(ctx, 18, aL + 22, 4, 8, '#3a3a4a');        // spike L
+        px(ctx, 106, aR + 22, 4, 8, '#3a3a4a');       // spike R
+        // Utility belt
+        px(ctx, 40, 108, 48, 6, '#d4a800');
+        px(ctx, 44, 109, 8,  4, '#8b7a5e');           // pouch L
+        px(ctx, 58, 109, 12, 4, '#d4a800');            // buckle
+        px(ctx, 76, 109, 8,  4, '#8b7a5e');           // pouch R
+        // Legs
+        px(ctx, 44, 114, 18, 38, '#1a1a2a');
+        px(ctx, 66, 114, 18, 38, '#1a1a2a');
+        // Boots
+        px(ctx, 40, lL + 28, 24, 10, '#101018');
+        px(ctx, 64, lR + 28, 24, 10, '#101018');
+        break;
+      }
+      case 'commander': { // DR. STRANGE — red Cloak of Levitation, Eye of Agamotto, mystic hands
+        // Hair (grey streaked temples)
+        px(ctx, 46, 4,  36, 12, '#1a1a2a');
+        px(ctx, 44, 8,  4,  8,  '#aaaaaa');           // grey temple L
+        px(ctx, 80, 8,  4,  8,  '#aaaaaa');           // grey temple R
+        // Face
+        px(ctx, 48, 16, 32, 32, '#d4a47c');
+        px(ctx, 50, 18, 28, 28, '#c4946c');
+        px(ctx, 54, 26, 6,  5,  '#2a3a2a');           // eye L
+        px(ctx, 68, 26, 6,  5,  '#2a3a2a');           // eye R
+        px(ctx, 55, 27, 3,  3,  '#44aaff');            // eye glow L
+        px(ctx, 69, 27, 3,  3,  '#44aaff');            // eye glow R
+        // Goatee
+        px(ctx, 58, 38, 12, 8,  '#2a1a0a');
+        px(ctx, 60, 40, 8,  8,  '#1a0a00');
+        // High collar (red cloak)
+        px(ctx, 36, 48, 56, 12, color);
+        px(ctx, 32, 50, 8,  16, color);                // collar L
+        px(ctx, 88, 50, 8,  16, color);                // collar R
+        px(ctx, 34, 50, 6,  14, '#ff4455');
+        px(ctx, 88, 50, 6,  14, '#ff4455');
+        // Cloak of Levitation (flowing behind)
+        px(ctx, 24, 56, 80, 8,  color);
+        px(ctx, 16, 64, 96, 80, color);
+        px(ctx, 18, 66, 92, 76, '#b82030');            // cloak shadow
+        // Tunic (blue inner)
+        px(ctx, 42, 60, 44, 52, '#1a3a6a');
+        px(ctx, 44, 62, 40, 48, '#152e5a');
+        // Eye of Agamotto (green amulet on chest)
+        ctx.fillStyle = '#22cc44';
+        ctx.beginPath(); ctx.arc(64, 72, 7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#44ff66';
+        ctx.beginPath(); ctx.arc(64, 72, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff88';
+        ctx.beginPath(); ctx.arc(63, 70, 2, 0, Math.PI * 2); ctx.fill();
+        // Arms
+        px(ctx, 24, aL, 16, 32, color);
+        px(ctx, 88, aR, 16, 32, color);
+        // Mystic spell circles on hands
+        ctx.strokeStyle = '#ffaa22cc'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(18, aL + 34, 10, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#ffaa2266'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(18, aL + 34, 6, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#ffaa22cc'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(110, aR + 34, 10, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = '#ffaa2266'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(110, aR + 34, 6, 0, Math.PI * 2); ctx.stroke();
+        // Legs
+        px(ctx, 46, 112, 16, 36, '#1a3a6a');
+        px(ctx, 66, 112, 16, 36, '#152e5a');
+        // Boots
+        px(ctx, 42, lL + 26, 22, 12, '#3a2a1a');
+        px(ctx, 64, lR + 26, 22, 12, '#3a2a1a');
+        break;
+      }
+      case 'architect': { // DARTH VADER — black helmet, red lightsaber, flowing cape
+        // Cape (behind, wide)
+        px(ctx, 16, 48, 96, 104, '#0a0a0a');
+        px(ctx, 10, 80, 108, 72, '#0a0a0a');
+        // Helmet — iconic dome shape
+        px(ctx, 42, 0,  44, 40, '#1a1a1a');
+        px(ctx, 44, 2,  40, 36, '#222222');
+        px(ctx, 46, 4,  36, 8,  '#333333');            // dome highlight
+        // Triangular eye sockets
+        px(ctx, 50, 18, 10, 6,  '#0a0a0a');           // eye socket L
+        px(ctx, 68, 18, 10, 6,  '#0a0a0a');           // eye socket R
+        px(ctx, 52, 19, 6,  4,  '#cc2222');            // red lens L
+        px(ctx, 70, 19, 6,  4,  '#cc2222');            // red lens R
+        // Mask mouth grille
+        px(ctx, 52, 28, 24, 10, '#0a0a0a');
+        px(ctx, 54, 30, 20, 2,  '#333333');            // grille line 1
+        px(ctx, 54, 33, 20, 2,  '#333333');            // grille line 2
+        px(ctx, 54, 36, 20, 2,  '#333333');            // grille line 3
+        // Chest panel (buttons & lights)
+        px(ctx, 48, 68, 32, 16, '#2a2a2a');
+        px(ctx, 52, 70, 6,  4,  '#ff3333');            // red button
+        px(ctx, 60, 70, 6,  4,  '#33ff33');            // green button
+        px(ctx, 68, 70, 6,  4,  '#3388ff');            // blue button
+        px(ctx, 52, 76, 24, 4,  '#444444');            // panel bottom
+        // Shoulders — armored
+        px(ctx, 28, 48, 72, 16, '#1a1a1a');
+        px(ctx, 30, 50, 68, 4,  '#2a2a2a');
+        // Torso
+        px(ctx, 40, 64, 48, 44, '#1a1a1a');
+        px(ctx, 42, 66, 44, 40, '#111111');
+        // Arms
+        px(ctx, 24, aL, 16, 34, '#1a1a1a');
+        px(ctx, 88, aR, 16, 34, '#1a1a1a');
+        // Lightsaber (right hand) — red blade
+        px(ctx, 100, aR - 4, 6, 12, '#888888');       // hilt
+        px(ctx, 101, aR - 40, 4, 36, '#ff2222');      // blade
+        px(ctx, 102, aR - 38, 2, 32, '#ff6666');      // blade core
+        // Red glow around blade
+        ctx.fillStyle = '#ff222244';
+        ctx.fillRect(99, aR - 40, 8, 36);
+        // Belt
+        px(ctx, 40, 108, 48, 6, '#2a2a2a');
+        px(ctx, 58, 109, 12, 4, '#444444');            // buckle
+        // Legs
+        px(ctx, 44, 114, 18, 38, '#1a1a1a');
+        px(ctx, 66, 114, 18, 38, '#111111');
+        // Boots
+        px(ctx, 40, lL + 28, 24, 10, '#0a0a0a');
+        px(ctx, 64, lR + 28, 24, 10, '#0a0a0a');
+        break;
+      }
+      case 'guardian': { // CAPTAIN AMERICA — blue suit, shield with star, helmet with A
+        // Helmet — blue with white A and wings
+        px(ctx, 44, 2,  40, 32, color);
+        px(ctx, 46, 4,  36, 28, '#1e4fc0');
+        px(ctx, 60, 4,  8, 16, '#ffffff');              // A shape top
+        px(ctx, 56, 12, 16, 4,  '#ffffff');             // A crossbar
+        // Wing accents
+        px(ctx, 40, 14, 8, 4, '#ffffff');               // wing L
+        px(ctx, 80, 14, 8, 4, '#ffffff');               // wing R
+        // Face
+        px(ctx, 50, 34, 28, 24, '#d4a47c');
+        px(ctx, 52, 36, 24, 20, '#c4946c');
+        px(ctx, 56, 40, 5,  5,  '#1a3a6a');            // eye L
+        px(ctx, 67, 40, 5,  5,  '#1a3a6a');            // eye R
+        px(ctx, 57, 41, 2,  2,  '#4488ff');             // eye L bright
+        px(ctx, 68, 41, 2,  2,  '#4488ff');             // eye R bright
+        // Jaw
+        px(ctx, 56, 50, 16, 4,  '#b08060');
+        // Shoulders
+        px(ctx, 28, 58, 72, 12, color);
+        px(ctx, 30, 60, 68, 4,  '#ffffff22');
+        // Torso — blue with white star + red/white stripes
+        px(ctx, 40, 70, 48, 40, color);
+        px(ctx, 42, 72, 44, 36, '#1e4fc0');
+        // Star on chest
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        const cx = 64, cy = 82;
+        for (let i = 0; i < 5; i++) {
+          const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+          const method = i === 0 ? 'moveTo' : 'lineTo';
+          ctx[method](cx + Math.cos(a) * 10, cy + Math.sin(a) * 10);
+          const a2 = a + Math.PI / 5;
+          ctx.lineTo(cx + Math.cos(a2) * 4, cy + Math.sin(a2) * 4);
+        }
+        ctx.closePath(); ctx.fill();
+        // Red/white stripe midriff
+        px(ctx, 42, 96, 44, 4, '#cc2222');
+        px(ctx, 42, 100, 44, 4, '#ffffff');
+        px(ctx, 42, 104, 44, 4, '#cc2222');
+        // Arms — blue with red gloves
+        px(ctx, 22, aL, 16, 34, color);
+        px(ctx, 90, aR, 16, 34, color);
+        px(ctx, 22, aL + 22, 16, 12, '#cc2222');       // glove L
+        px(ctx, 90, aR + 22, 16, 12, '#cc2222');       // glove R
+        // SHIELD (left arm) — concentric circles: red, white, blue, star
+        const sx = 14, sy = aL + 4;
+        ctx.fillStyle = '#cc2222';
+        ctx.beginPath(); ctx.arc(sx, sy, 16, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(sx, sy, 12, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#cc2222';
+        ctx.beginPath(); ctx.arc(sx, sy, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#2563eb';
+        ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2); ctx.fill();
+        // Tiny star on shield
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+          const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5;
+          const method = i === 0 ? 'moveTo' : 'lineTo';
+          ctx[method](sx + Math.cos(a) * 3, sy + Math.sin(a) * 3);
+          const a2 = a + Math.PI / 5;
+          ctx.lineTo(sx + Math.cos(a2) * 1.5, sy + Math.sin(a2) * 1.5);
+        }
+        ctx.closePath(); ctx.fill();
+        // Belt
+        px(ctx, 42, 108, 44, 5, '#8b4513');
+        px(ctx, 58, 109, 12, 3, '#d4a800');
+        // Legs — blue
+        px(ctx, 44, 113, 18, 38, color);
+        px(ctx, 66, 113, 18, 38, '#1e4fc0');
+        // Red boots
+        px(ctx, 40, lL + 26, 24, 12, '#cc2222');
+        px(ctx, 64, lR + 26, 24, 12, '#cc2222');
+        break;
+      }
+      case 'storyteller': { // GANDALF — grey robe, pointy hat, white beard, glowing staff
+        // Tall pointed hat
+        px(ctx, 58, 0,  12, 8,  '#6b7280');
+        px(ctx, 54, 8,  20, 8,  '#6b7280');
+        px(ctx, 48, 16, 32, 12, '#6b7280');
+        px(ctx, 42, 24, 44, 8,  '#7a838f');            // hat brim
+        px(ctx, 60, 2,  8,  6,  '#8a939f');            // hat highlight
+        // Face (old, wise)
+        px(ctx, 50, 32, 28, 24, '#e8d4b8');
+        px(ctx, 52, 34, 24, 20, '#d8c4a8');
+        px(ctx, 56, 38, 5,  4,  '#4a4a5a');            // eye L
+        px(ctx, 67, 38, 5,  4,  '#4a4a5a');            // eye R
+        px(ctx, 57, 39, 2,  2,  '#88ccff');             // eye gleam L
+        px(ctx, 68, 39, 2,  2,  '#88ccff');             // eye gleam R
+        // Bushy eyebrows
+        px(ctx, 54, 36, 8, 2, '#cccccc');
+        px(ctx, 66, 36, 8, 2, '#cccccc');
+        // Long white beard
+        px(ctx, 50, 48, 28, 8,  '#e8e8e8');
+        px(ctx, 48, 56, 32, 12, '#dddddd');
+        px(ctx, 52, 68, 24, 16, '#d0d0d0');
+        px(ctx, 56, 84, 16, 8,  '#cccccc');             // beard tip
+        px(ctx, 50, 50, 4,  6,  '#ffffff44');           // beard highlight
+        // Shoulders — grey
+        px(ctx, 36, 56, 56, 8, color);
+        // Flowing grey robes
+        px(ctx, 34, 64, 60, 56, color);
+        px(ctx, 28, 88, 72, 32, '#8a939f');
+        px(ctx, 36, 66, 56, 52, '#7a838f');
+        px(ctx, 44, 70, 40, 8,  '#ffffff11');           // robe highlight
+        // Arms — grey
         px(ctx, 24, aL, 12, 32, color);
         px(ctx, 92, aR, 12, 32, color);
-        // Staff (left)
-        px(ctx, 20, aL - 28, 6, 56, '#8b7a5e');
-        px(ctx, 16, aL - 32, 14, 10, color);       // staff crystal
-        px(ctx, 18, aL - 30, 10, 6,  '#7dc4ff');   // crystal glow
-        // Feet
-        px(ctx, 44, lL + 8, 20, 8, '#3a7acc');
-        px(ctx, 68, lR + 8, 20, 8, '#3a7acc');
+        // Staff (right hand) — tall wooden staff with glowing crystal
+        px(ctx, 98, aR - 40, 6, 72, '#8b7a5e');         // shaft
+        px(ctx, 96, aR - 44, 10, 8, '#8b7a5e');         // staff knot
+        // Glowing crystal at top
+        ctx.fillStyle = '#ffffff88';
+        ctx.beginPath(); ctx.arc(101, aR - 48, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#aaddff';
+        ctx.beginPath(); ctx.arc(101, aR - 48, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(100, aR - 50, 2, 0, Math.PI * 2); ctx.fill();
+        // Belt / rope
+        px(ctx, 40, 96, 48, 4, '#8b7a5e');
+        // Feet (hidden under robe)
+        px(ctx, 44, lL + 8, 20, 8, '#7a838f');
+        px(ctx, 68, lR + 8, 20, 8, '#7a838f');
         break;
       }
-      case 'architect': { // WARLOCK — purple cowl, grimoire
-        // Dark hood
-        px(ctx, 44, 0,  40, 40, dark);
-        px(ctx, 48, 8,  32, 32, '#2a0050');
-        // Face (shadowed, glowing eyes)
-        px(ctx, 52, 24, 24, 20, '#9070a0');
-        px(ctx, 54, 26, 20, 16, '#806090');
-        px(ctx, 56, 28, 6,  6,  color);           // eye L (bright glow)
-        px(ctx, 66, 28, 6,  6,  color);           // eye R (bright glow)
-        px(ctx, 57, 29, 4,  4,  '#ffffff88');      // eye L core
-        px(ctx, 67, 29, 4,  4,  '#ffffff88');      // eye R core
-        // Robe (asymmetric, dark)
-        px(ctx, 36, 48, 56, 64, dark);
-        px(ctx, 32, 68, 64, 40, dark);
-        px(ctx, 40, 50, 48, 58, color + '44');
-        // Grimoire (floating right)
-        px(ctx, 88, aR - 16, 24, 28, '#3b2060');
-        px(ctx, 90, aR - 14, 20, 24, color + '55');
-        px(ctx, 94, aR - 10, 12, 16, '#ffffff11');
-        // Arms
-        px(ctx, 84, aR, 8, 24, dark);
-        px(ctx, 28, aL, 8, 24, dark);
-        // Summoning circle
-        ctx.strokeStyle = color + 'aa'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(64, 144, 20, 0, Math.PI * 2); ctx.stroke();
-        ctx.strokeStyle = color + '66'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.arc(64, 144, 12, 0, Math.PI * 2); ctx.stroke();
-        // Legs
-        px(ctx, 48, 112, 16, 36, dark);
-        px(ctx, 64, 112, 16, 36, dark + 'aa');
-        break;
-      }
-      case 'guardian': { // PALADIN — radiant golden plate
-        // Holy glow behind head
-        ctx.fillStyle = color + '33';
-        ctx.beginPath(); ctx.arc(64, 24, 32, 0, Math.PI * 2); ctx.fill();
-        // Radiant helm
-        px(ctx, 44, 4,  40, 32, color);
-        px(ctx, 48, 8,  32, 24, '#ffffff66');       // bright highlight
-        px(ctx, 46, 6,  36, 4,  '#ffffff44');
-        // Face
-        px(ctx, 50, 36, 28, 24, '#f0c87a');
-        px(ctx, 52, 38, 24, 20, '#e0b86a');
-        px(ctx, 56, 42, 5,  5,  '#5a4010');        // eye L
-        px(ctx, 67, 42, 5,  5,  '#5a4010');        // eye R
-        px(ctx, 57, 43, 2,  2,  '#fbbf24');        // eye L glow
-        px(ctx, 68, 43, 2,  2,  '#fbbf24');        // eye R glow
-        // Broad shoulders
-        px(ctx, 24, 60, 80, 12, color);
-        px(ctx, 20, 64, 16, 12, color);
-        px(ctx, 92, 64, 16, 12, color);
-        px(ctx, 26, 62, 76, 4,  '#ffffff33');       // shoulder highlight
-        // Torso
-        px(ctx, 40, 72, 48, 44, color);
-        px(ctx, 44, 76, 40, 36, '#ffffff33');
-        // Hammer (right)
-        px(ctx, 92, aR, 8, 40, '#8b7a5e');         // handle
-        px(ctx, 84, aR - 8, 24, 12, color);        // hammer head
-        px(ctx, 86, aR - 6, 20, 4,  '#ffffff44');  // hammer highlight
-        // Shield arm (left)
-        px(ctx, 24, aL, 16, 36, color);
-        px(ctx, 20, aL - 4, 20, 36, '#ffffff22');
-        // Legs
-        px(ctx, 42, 116, 20, 36, color);
-        px(ctx, 66, 116, 20, 36, color);
-        px(ctx, 44, 118, 16, 32, '#ffffff22');
-        // Feet
-        px(ctx, 40, lL + 30, 24, 8, dark);
-        px(ctx, 64, lR + 30, 24, 8, dark);
-        break;
-      }
-      case 'storyteller': { // PRIEST — white robes, golden halo
-        // Halo arc
-        ctx.strokeStyle = '#ffd700cc'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(64, 12, 20, Math.PI, 0); ctx.stroke();
-        ctx.strokeStyle = '#ffffff66'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.arc(64, 12, 18, Math.PI, 0); ctx.stroke();
-        // Head
-        px(ctx, 48, 16, 32, 32, '#f5e8d5');
-        px(ctx, 50, 18, 28, 28, '#e8dcc8');
-        px(ctx, 54, 28, 5,  5,  '#4a3a2a');       // eye L
-        px(ctx, 69, 28, 5,  5,  '#4a3a2a');       // eye R
-        px(ctx, 55, 29, 2,  2,  '#ffffff');        // eye highlight
-        px(ctx, 70, 29, 2,  2,  '#ffffff');
-        // Shoulders
-        px(ctx, 40, 48, 48, 8, color);
-        // Flowing robes (wide, white)
-        px(ctx, 36, 56, 56, 60, color);
-        px(ctx, 32, 88, 64, 28, color);
-        px(ctx, 40, 60, 48, 52, '#ffffff44');       // inner highlight
-        // Arms
-        px(ctx, 24, aL, 12, 28, color);
-        px(ctx, 92, aR, 12, 28, color);
-        // Orb (right hand)
-        ctx.fillStyle = '#ffd70088';
-        ctx.beginPath(); ctx.arc(100, aR + 28, 8, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#ffffff44';
-        ctx.beginPath(); ctx.arc(98, aR + 26, 4, 0, Math.PI * 2); ctx.fill();
-        // Feet
-        px(ctx, 44, lL + 8, 20, 8, '#cccccc');
-        px(ctx, 68, lR + 8, 20, 8, '#cccccc');
-        break;
-      }
-      default: { // DEATH KNIGHT — cracked dark plate, green rune glow
-        // Cracked helm
-        px(ctx, 44, 4,  40, 32, dark);
-        px(ctx, 48, 8,  32, 24, dark + 'cc');
-        // Cracks (green glow)
-        ctx.strokeStyle = color + '88'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.moveTo(56, 8); ctx.lineTo(60, 28); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(72, 12); ctx.lineTo(68, 32); ctx.stroke();
-        // Glowing eyes
-        px(ctx, 54, 20, 8, 6, color);
-        px(ctx, 66, 20, 8, 6, color);
-        px(ctx, 56, 21, 4, 4, '#ffffff88');         // eye core L
-        px(ctx, 68, 21, 4, 4, '#ffffff88');         // eye core R
-        // Undead face
-        px(ctx, 50, 36, 28, 24, '#3a4a3a');
-        px(ctx, 52, 38, 24, 20, '#2a3a2a');
-        // Heavy dark plate
-        px(ctx, 28, 60, 72, 16, dark);
-        px(ctx, 40, 76, 48, 40, dark);
-        px(ctx, 42, 78, 44, 36, '#1a2a1a');
-        // Rune sword (two-handed)
-        px(ctx, 88, aR - 28, 6, 68, '#8090a0');
-        px(ctx, 80, aR - 20, 20, 8,  '#8090a0');   // crossguard
-        px(ctx, 90, aR - 26, 2, 40, '#ffffff44');   // blade highlight
-        // Rune glow on blade
-        px(ctx, 89, aR - 16, 4, 4, color);
-        px(ctx, 89, aR - 6,  4, 4, color);
-        px(ctx, 89, aR + 4,  4, 4, color);
-        // Arms (both gripping sword)
-        px(ctx, 72, aR, 16, 28, dark);
-        px(ctx, 28, aL, 12, 32, dark);
-        // Ghostly mist at feet (subtle, no big blobs)
-        ctx.fillStyle = color + '22';
-        ctx.beginPath(); ctx.ellipse(64, 156, 24, 8, 0, 0, Math.PI * 2); ctx.fill();
-        // Legs
-        px(ctx, 44, 116, 20, 36, dark);
-        px(ctx, 64, 116, 20, 36, dark + 'aa');
-        // Feet
-        px(ctx, 40, lL + 30, 24, 8, '#304030');
-        px(ctx, 64, lR + 30, 24, 8, '#304030');
+      default: { // TERMINATOR T-800 — half-metal skull, red eye, leather jacket
+        // Hair (dark, messy)
+        px(ctx, 44, 2,  40, 12, '#2a2018');
+        px(ctx, 42, 6,  44, 8,  '#1a1008');
+        // Head — left half flesh, right half metal endoskeleton
+        px(ctx, 44, 14, 20, 28, '#d4a47c');             // flesh side L
+        px(ctx, 64, 14, 20, 28, '#8090a0');             // metal side R
+        px(ctx, 46, 16, 16, 24, '#c4946c');             // flesh shadow
+        px(ctx, 66, 16, 16, 24, '#6a7a8a');             // metal shadow
+        // Left eye (human, dark)
+        px(ctx, 50, 22, 6,  5,  '#2a2a2a');
+        px(ctx, 51, 23, 4,  3,  '#4a3a2a');
+        // Right eye (RED glowing terminator eye)
+        px(ctx, 72, 22, 6,  5,  '#ff0000');
+        px(ctx, 73, 23, 4,  3,  '#ff4444');
+        px(ctx, 74, 24, 2,  1,  '#ffffff');              // eye highlight
+        // Metal jaw exposed on right
+        px(ctx, 66, 34, 16, 8,  '#607080');
+        px(ctx, 68, 36, 12, 4,  '#8090a0');              // teeth
+        // Human jaw left
+        px(ctx, 46, 34, 18, 8,  '#c4946c');
+        // Torn skin edge (jagged line between flesh/metal)
+        px(ctx, 62, 14, 4, 28, '#8a3030');               // wound edge
+        px(ctx, 63, 16, 2, 24, '#aa4040');
+        // Black leather jacket
+        px(ctx, 28, 48, 72, 16, '#1a1a1a');              // shoulders
+        px(ctx, 30, 50, 68, 4,  '#2a2a2a');              // highlight
+        px(ctx, 40, 64, 48, 44, '#1a1a1a');              // torso
+        px(ctx, 42, 66, 44, 40, '#111111');
+        // Jacket collar (popped)
+        px(ctx, 34, 44, 12, 12, '#1a1a1a');
+        px(ctx, 82, 44, 12, 12, '#1a1a1a');
+        // Chest — dark T-shirt underneath
+        px(ctx, 48, 68, 32, 12, '#0a0a0a');
+        // Arms — leather
+        px(ctx, 22, aL, 16, 36, '#1a1a1a');
+        px(ctx, 90, aR, 16, 36, '#1a1a1a');
+        // Exposed metal hand (right)
+        px(ctx, 90, aR + 28, 16, 8, '#8090a0');
+        px(ctx, 92, aR + 30, 12, 4, '#a0b0c0');          // fingers
+        // Shotgun (left hand)
+        px(ctx, 14, aL - 8, 8, 40, '#4a4a4a');           // barrel
+        px(ctx, 12, aL + 24, 12, 12, '#3a3a3a');         // stock
+        px(ctx, 15, aL - 6, 2, 36, '#666666');           // barrel highlight
+        // Belt
+        px(ctx, 40, 108, 48, 6, '#2a2a2a');
+        px(ctx, 56, 109, 16, 4, '#888888');               // buckle
+        // Leather pants
+        px(ctx, 44, 114, 18, 38, '#1a1a1a');
+        px(ctx, 66, 114, 18, 38, '#111111');
+        // Boots — heavy combat
+        px(ctx, 40, lL + 28, 24, 10, '#0a0a0a');
+        px(ctx, 64, lR + 28, 24, 10, '#0a0a0a');
+        px(ctx, 42, lL + 30, 20, 4,  '#2a2a2a');         // boot detail
+        px(ctx, 66, lR + 30, 20, 4,  '#2a2a2a');
         break;
       }
     }
