@@ -5,7 +5,7 @@ import {
   Cat, Timer, RefreshCw, Check, AlertCircle, BarChart3, GitBranch, Swords,
 } from 'lucide-react';
 import { formatCost, formatTokens } from '../lib/format';
-import { triggerSync, getSyncStatus, invalidateRealSessions, IS_PROD } from '../lib/queries';
+import { triggerSync, getSyncStatus, invalidateRealSessions } from '../lib/queries';
 
 const NAV = [
   { id: 'overview',   label: 'Overview',        icon: LayoutDashboard },
@@ -486,7 +486,7 @@ export default function Sidebar({ activePage, onNavigate, onReload, sourceStats,
 
       <SourceUsagePanel sourceStats={sourceStats} tokenBudget={tokenBudget} onBudgetChange={onBudgetChange} rateLimits={rateLimits} />
       <div style={{ flexShrink: 0 }}>
-        {IS_PROD ? <RefreshButton onReload={onReload} /> : <SyncButton onReload={onReload} />}
+        <SyncButton onReload={onReload} />
       </div>
 
       {/* Footer */}
