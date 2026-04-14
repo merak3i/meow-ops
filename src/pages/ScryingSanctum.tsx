@@ -4,7 +4,7 @@
 import { useRef, useState, useMemo, useEffect, Suspense, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Html, OrbitControls } from '@react-three/drei';
-import { EffectComposer, Bloom } from '@react-three/postprocessing';
+// EffectComposer/Bloom removed — was breaking WebGL render pipeline on Apple GPU
 import * as THREE from 'three';
 import type { Session } from '@/types/session';
 import { getSessionRunGroups } from '@/lib/agent-tree';
@@ -506,10 +506,10 @@ function buildPlazaTexture(): THREE.CanvasTexture {
         const ox = (row % 2) * 4;
         const sx2 = ((x + 500 + ox) % 8);
         if (sx2 === 0 || sy === 0) {
-          r = 105 + Math.floor(n * 10); g = 90 + Math.floor(n * 8); b = 72 + Math.floor(n * 6);
+          r = 90 + Math.floor(n * 10); g = 75 + Math.floor(n * 8); b = 58 + Math.floor(n * 6);
         } else {
           const sv = Math.floor(n * 28) - 14;
-          r = 178 + sv; g = 162 + sv; b = 132 + sv;
+          r = 190 + sv; g = 170 + sv; b = 135 + sv;
         }
       } else if (dist < plazaR + 5) {
         // Plaza edge ring — darker stone border
@@ -998,9 +998,7 @@ function Scene({ group, selectedId, onSelect }: {
       <OrbitControls target={center} enableDamping dampingFactor={0.06}
         minZoom={30} maxZoom={180} maxPolarAngle={Math.PI / 2.4} minPolarAngle={Math.PI / 8} />
 
-      <EffectComposer>
-        <Bloom intensity={0.6} luminanceThreshold={0.85} luminanceSmoothing={0.4} mipmapBlur />
-      </EffectComposer>
+      {/* Bloom disabled — was breaking WebGL render pipeline */}
     </>
   );
 }
@@ -1147,7 +1145,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
       <div style={{ flex: 1, minHeight: 520, position: 'relative' }}>
         <Canvas
           orthographic
-          camera={{ position: [14, 14, 14], zoom: 70, up: [0, 1, 0], near: 0.1, far: 500 }}
+          camera={{ position: [14, 14, 14], zoom: 48, up: [0, 1, 0], near: 0.1, far: 500 }}
           shadows
           gl={{ antialias: false, alpha: false }}
           style={{ background: 'radial-gradient(ellipse at 30% 20%, #1a3020 0%, #0e1a10 50%, #060e08 100%)' }}
