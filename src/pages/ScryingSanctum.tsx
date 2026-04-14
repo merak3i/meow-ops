@@ -30,6 +30,18 @@ const CLASS_MAP: Record<string, ClassConfig> = {
 };
 const FALLBACK_CLASS: ClassConfig = { color: '#888', emissive: '#222', label: 'AGENT', aura: '#888' };
 
+// Per-character aura animation profiles
+const AURA_PROFILES: Record<string, { speed: number; amplitude: number; style: 'pulse' | 'flicker' | 'breathe' }> = {
+  builder:     { speed: 3.8,  amplitude: 0.14, style: 'pulse' },    // Wolverine — aggressive, fast
+  detective:   { speed: 1.8,  amplitude: 0.08, style: 'breathe' },  // Batman — calm, steady
+  commander:   { speed: 2.5,  amplitude: 0.12, style: 'pulse' },    // Dr. Strange — mystic rhythm
+  architect:   { speed: 1.2,  amplitude: 0.06, style: 'breathe' },  // Vader — slow, menacing
+  guardian:    { speed: 2.0,  amplitude: 0.10, style: 'pulse' },    // Cap — steady, reliable
+  storyteller: { speed: 1.0,  amplitude: 0.10, style: 'breathe' },  // Gandalf — slow, ethereal
+  ghost:       { speed: 6.0,  amplitude: 0.18, style: 'flicker' },  // Terminator — electronic glitch
+};
+const DEFAULT_AURA = { speed: 2.2, amplitude: 0.07, style: 'pulse' as const };
+
 const PIPELINE_ROLES = ['ALPHA', 'RECON', 'SORCERER', 'HERALD'];
 const EXTRA_ROLES    = ['RUNNER', 'LINK',  'BRANCH',   'AUXILIARY'];
 
@@ -633,9 +645,17 @@ function FloatingParticles() {
 }
 
 function CrystalPillar({ position, color }: { position: [number, number, number]; color: string }) {
-  const ref = useRef<THREE.Mesh>(null);
+  const crystalRef = useRef<THREE.Mesh>(null);
+  const beamRef = useRef<THREE.Mesh>(null);
   useFrame((state) => {
-    if (ref.current) ref.current.rotation.y = state.clock.elapsedTime * 0.3;
+    const t = state.clock.elapsedTime;
+    if (crystalRef.current) crystalRef.current.rotation.y = t * 0.3;
+    // Light column undulation
+    if (beamRef.current) {
+      beamRef.current.scale.x = 0.8 + Math.sin(t * 1.5 + position[0]) * 0.2;
+      beamRef.current.scale.z = 0.8 + Math.sin(t * 1.8 + position[2]) * 0.2;
+      (beamRef.current.material as THREE.MeshBasicMaterial).opacity = 0.06 + Math.sin(t * 2 + position[0]) * 0.03;
+    }
   });
   return (
     <group position={position}>
@@ -645,10 +665,15 @@ function CrystalPillar({ position, color }: { position: [number, number, number]
         <meshStandardMaterial color="#2a2040" roughness={0.9} />
       </mesh>
       {/* Crystal */}
-      <mesh ref={ref} position={[0, 1.2, 0]}>
+      <mesh ref={crystalRef} position={[0, 1.2, 0]}>
         <octahedronGeometry args={[0.4, 0]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.5}
           transparent opacity={0.85} roughness={0.2} metalness={0.3} />
+      </mesh>
+      {/* Light column — thin vertical beam rising from crystal */}
+      <mesh ref={beamRef} position={[0, 4, 0]}>
+        <cylinderGeometry args={[0.08, 0.02, 6, 8]} />
+        <meshBasicMaterial color={color} transparent opacity={0.07} side={THREE.DoubleSide} />
       </mesh>
       {/* Glow light */}
       <pointLight position={[0, 1.2, 0]} color={color} intensity={0.25} distance={5} />
@@ -758,6 +783,41 @@ function ArcaneFloor() {
   );
 }
 
+function CenterPortal() {
+  const outerRef = useRef<THREE.Mesh>(null);
+  const innerRef = useRef<THREE.Mesh>(null);
+  const glowRef  = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (outerRef.current) outerRef.current.rotation.z = t * 0.2;
+    if (innerRef.current) innerRef.current.rotation.z = -t * 0.35;
+    if (glowRef.current) {
+      (glowRef.current.material as THREE.MeshBasicMaterial).opacity = 0.15 + Math.sin(t * 1.5) * 0.08;
+    }
+  });
+
+  return (
+    <group rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
+      {/* Outer spinning ring */}
+      <mesh ref={outerRef}>
+        <ringGeometry args={[1.0, 1.15, 6]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.35} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Inner counter-rotating ring */}
+      <mesh ref={innerRef}>
+        <ringGeometry args={[0.55, 0.7, 4]} />
+        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.3} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Center glow pulse */}
+      <mesh ref={glowRef}>
+        <circleGeometry args={[0.45, 16]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.18} />
+      </mesh>
+    </group>
+  );
+}
+
 function PlazaEnvironment() {
   const pillarPositions: { pos: [number, number, number]; color: string }[] = [
     { pos: [0, 0, -9], color: '#8b5cf6' },   // N — purple
@@ -776,6 +836,7 @@ function PlazaEnvironment() {
   return (
     <>
       <ArcaneFloor />
+      <CenterPortal />
       {pillarPositions.map((p, i) => (
         <CrystalPillar key={i} position={p.pos} color={p.color} />
       ))}
@@ -828,6 +889,78 @@ function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
   );
 }
 
+// ─── Selection Pulse Rings ───────────────────────────────────────────────────
+
+function SelectionPulseRings({ color }: { color: string }) {
+  const ring1 = useRef<THREE.Mesh>(null);
+  const ring2 = useRef<THREE.Mesh>(null);
+  const ring3 = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    [ring1, ring2, ring3].forEach((ref, i) => {
+      if (!ref.current) return;
+      const phase = (t * 1.5 + i * 0.7) % 2;
+      const s = 0.85 + phase * 0.4;
+      ref.current.scale.setScalar(s);
+      (ref.current.material as THREE.MeshStandardMaterial).opacity = Math.max(0, 0.6 - phase * 0.35);
+    });
+  });
+
+  return (
+    <>
+      {[ring1, ring2, ring3].map((ref, i) => (
+        <mesh key={i} ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02 + i * 0.002, 0]}>
+          <ringGeometry args={[0.85, 0.95, 32]} />
+          <meshStandardMaterial color={color} emissive={color} emissiveIntensity={2}
+            transparent opacity={0.6} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+// ─── Character Trail Particles ───────────────────────────────────────────────
+
+function CharacterTrail({ color, isMoving }: { color: string; isMoving: React.MutableRefObject<boolean> }) {
+  const TRAIL_COUNT = 5;
+  const refs = useRef<(THREE.Mesh | null)[]>([]);
+  const ages = useRef(Array.from({ length: TRAIL_COUNT }, () => 99));
+
+  useFrame((_, delta) => {
+    ages.current.forEach((age, i) => {
+      const mesh = refs.current[i];
+      if (!mesh) return;
+      ages.current[i] += delta;
+      if (isMoving.current && ages.current[i] > 0.12 * (i + 1)) {
+        // Spawn at origin (parent group position)
+        mesh.position.set(
+          (Math.random() - 0.5) * 0.6,
+          0.2 + Math.random() * 0.8,
+          (Math.random() - 0.5) * 0.6,
+        );
+        ages.current[i] = 0;
+      }
+      const life = ages.current[i];
+      const fade = Math.max(0, 1 - life * 2.5);
+      mesh.position.y += delta * 0.5;
+      mesh.scale.setScalar(fade * 0.6);
+      (mesh.material as THREE.MeshBasicMaterial).opacity = fade * 0.7;
+    });
+  });
+
+  return (
+    <>
+      {Array.from({ length: TRAIL_COUNT }, (_, i) => (
+        <mesh key={i} ref={(el) => { refs.current[i] = el; }}>
+          <sphereGeometry args={[0.06, 4, 4]} />
+          <meshBasicMaterial color={color} transparent opacity={0} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
 // ─── WoW Champion Node ────────────────────────────────────────────────────────
 
 function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdate, parentPos }: {
@@ -842,26 +975,47 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
   const groupRef    = useRef<THREE.Group>(null);
   const spriteRef   = useRef<THREE.Sprite>(null);
   const ringRef     = useRef<THREE.Mesh>(null);
+  const shadowRef   = useRef<THREE.Mesh>(null);
   const livePosRef  = useRef(new THREE.Vector3(pn.pos[0], 0, pn.pos[2]));
   const targetWpRef = useRef(Math.floor(Math.random() * WAYPOINTS.length));
   const frameRef    = useRef(0);
-  const frameTimer  = useRef(Math.random() * 0.22); // stagger so not all sync
+  const frameTimer  = useRef(Math.random() * 0.22);
+  const spawnAge    = useRef(0);                       // spawn-in timer
+  const isMovingRef = useRef(false);                   // for trail particles
+  const hovered     = useRef(false);
   const c           = pn.cls;
+  const catType     = pn.session.cat_type ?? 'ghost';
+  const auraProf    = AURA_PROFILES[catType] ?? DEFAULT_AURA;
 
-  const textures = useMemo(() => buildClassTexture(pn.session.cat_type ?? 'ghost'), [pn.session.cat_type]);
+  // Trail particle color per character
+  const trailColor = useMemo(() => {
+    const map: Record<string, string> = {
+      builder: '#f5c518', detective: '#4a90d9', commander: '#ffaa22',
+      architect: '#ff3333', guardian: '#ffffff', storyteller: '#aaddff', ghost: '#888888',
+    };
+    return map[catType] ?? c.aura;
+  }, [catType, c.aura]);
+
+  const textures = useMemo(() => buildClassTexture(catType), [catType]);
 
   useFrame((state, delta) => {
     if (!groupRef.current) return;
     const t = state.clock.getElapsedTime();
+    spawnAge.current += delta;
 
+    // ── Spawn-in: scale from 0 + fade ──
+    const spawnProgress = Math.min(spawnAge.current / 0.6, 1);
+    const spawnEase = 1 - Math.pow(1 - spawnProgress, 3); // ease-out cubic
+
+    // ── Movement ──
     const wp   = WAYPOINTS[targetWpRef.current]!;
     const dx   = wp[0] - livePosRef.current.x;
     const dz   = wp[1] - livePosRef.current.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
+    let moving = false;
 
     if (dist < 0.25) {
       if (parentPos && Math.random() < 0.35) {
-        // Drift toward parent's nearest waypoint
         let bestIdx = 0, bestDist = Infinity;
         WAYPOINTS.forEach(([wx, wz], i) => {
           const d = Math.sqrt((wx - parentPos.x) ** 2 + (wz - parentPos.z) ** 2);
@@ -872,11 +1026,18 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         targetWpRef.current = Math.floor(Math.random() * WAYPOINTS.length);
       }
     } else {
+      moving = true;
       const speed = 1.5 * delta;
       livePosRef.current.x += (dx / dist) * Math.min(speed, dist);
       livePosRef.current.z += (dz / dist) * Math.min(speed, dist);
-      groupRef.current.rotation.y = Math.atan2(dx, dz);
 
+      // ── Sprite facing: flip X based on direction instead of rotating group ──
+      if (spriteRef.current) {
+        const faceDir = dx > 0 ? 1 : -1;
+        spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
+      }
+
+      // ── Walk cycle with bounce ──
       frameTimer.current += delta;
       if (frameTimer.current > 0.22) {
         frameTimer.current = 0;
@@ -887,13 +1048,49 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         }
       }
     }
+    isMovingRef.current = moving;
+
+    // ── Idle breathing bob (always) + walk bounce (when moving) ──
+    const breathe = Math.sin(t * 1.4 + pn.idx * 1.7) * 0.04;
+    const walkBounce = moving ? Math.abs(Math.sin(t * 8)) * 0.06 : 0;
+    const spriteY = breathe + walkBounce;
+
+    if (spriteRef.current) {
+      spriteRef.current.position.y = 2.25 + spriteY;
+      // Spawn-in scale
+      const baseScale = 3.0 * spawnEase;
+      const hoverBoost = hovered.current ? 1.08 : 1.0;
+      spriteRef.current.scale.y = 4.5 * spawnEase * hoverBoost;
+      const dir = spriteRef.current.scale.x > 0 ? 1 : -1;
+      spriteRef.current.scale.x = baseScale * hoverBoost * dir;
+      // Spawn-in opacity
+      (spriteRef.current.material as THREE.SpriteMaterial).opacity = spawnEase;
+    }
+
+    // ── Shadow scales with bounce ──
+    if (shadowRef.current) {
+      const shadowScale = 0.35 * (1 - walkBounce * 1.5) * spawnEase;
+      shadowRef.current.scale.setScalar(shadowScale / 0.35);
+    }
 
     groupRef.current.position.copy(livePosRef.current);
     onPosUpdate(pn.session.session_id, livePosRef.current.clone());
 
+    // ── Aura ring animation (per-character profile) ──
     if (ringRef.current) {
-      const s = 1 + Math.sin(t * 2.2 + pn.idx) * 0.07;
-      ringRef.current.scale.setScalar(s);
+      let auraPulse: number;
+      if (auraProf.style === 'flicker') {
+        // Terminator: electronic glitch
+        auraPulse = 1 + (Math.sin(t * auraProf.speed) * Math.sin(t * 13.7) > 0.3 ? auraProf.amplitude : -auraProf.amplitude * 0.5);
+      } else if (auraProf.style === 'breathe') {
+        // Slow sine wave
+        auraPulse = 1 + Math.sin(t * auraProf.speed + pn.idx) * auraProf.amplitude;
+      } else {
+        // Sharp pulse
+        auraPulse = 1 + Math.abs(Math.sin(t * auraProf.speed + pn.idx)) * auraProf.amplitude;
+      }
+      ringRef.current.scale.setScalar(auraPulse * spawnEase);
+      (ringRef.current.material as THREE.MeshStandardMaterial).opacity = 0.35 + auraPulse * 0.1;
     }
   });
 
@@ -906,26 +1103,25 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
           transparent opacity={0.4} side={THREE.DoubleSide} />
       </mesh>
       {/* Shadow */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]}>
+      <mesh ref={shadowRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]}>
         <circleGeometry args={[0.35, 12]} />
         <meshStandardMaterial color="#000" transparent opacity={0.25} />
       </mesh>
       {/* Pixel sprite */}
-      <sprite ref={spriteRef} scale={[3.0, 4.5, 1]}>
+      <sprite ref={spriteRef} scale={[3.0, 4.5, 1]} position={[0, 2.25, 0]}>
         <spriteMaterial map={textures[0]} transparent alphaTest={0.1} />
       </sprite>
-      {/* Invisible click hitbox */}
-      <mesh visible={false} onClick={(e) => { e.stopPropagation(); onClick(); }}>
+      {/* Hover + click hitbox */}
+      <mesh visible={false}
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        onPointerOver={() => { hovered.current = true; document.body.style.cursor = 'pointer'; }}
+        onPointerOut={() => { hovered.current = false; document.body.style.cursor = 'default'; }}>
         <boxGeometry args={[2.0, 3.4, 2.0]} />
       </mesh>
-      {/* Selection ring */}
-      {selected && (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-          <ringGeometry args={[0.85, 1.0, 32]} />
-          <meshStandardMaterial color="#63f7b3" emissive="#63f7b3" emissiveIntensity={2}
-            transparent opacity={0.7} side={THREE.DoubleSide} />
-        </mesh>
-      )}
+      {/* Selection pulse rings */}
+      {selected && <SelectionPulseRings color={c.aura} />}
+      {/* Trail particles */}
+      <CharacterTrail color={trailColor} isMoving={isMovingRef} />
       <WoWNameplate pn={pn} maxCost={maxCost} maxTokens={maxTokens} selected={selected} />
     </group>
   );
@@ -944,12 +1140,14 @@ function DynamicLeyLine({ childId, parentId, color, livePosMap }: {
   const lineObj  = useMemo(() => new THREE.Line(lineGeo, lineMat), [lineGeo, lineMat]);
   const stone1Ref = useRef<THREE.Mesh>(null);
   const stone2Ref = useRef<THREE.Mesh>(null);
+  const stone3Ref = useRef<THREE.Mesh>(null); // energy wave orb
   const t1 = useRef(0);
   const t2 = useRef(0.5);
+  const waveT = useRef(0);
 
   useEffect(() => () => { lineGeo.dispose(); lineMat.dispose(); }, [lineGeo, lineMat]);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const from = livePosMap.current.get(parentId);
     const to   = livePosMap.current.get(childId);
     if (!from || !to) return;
@@ -963,10 +1161,24 @@ function DynamicLeyLine({ childId, parentId, color, livePosMap }: {
     );
     lineGeo.setFromPoints(curve.getPoints(24));
 
+    // Existing runestones
     t1.current = (t1.current + delta * 0.38) % 1;
     t2.current = (t2.current + delta * 0.38) % 1;
     if (stone1Ref.current) stone1Ref.current.position.copy(curve.getPoint(t1.current));
     if (stone2Ref.current) stone2Ref.current.position.copy(curve.getPoint(t2.current));
+
+    // Energy wave — faster, larger orb that pulses along the line
+    waveT.current = (waveT.current + delta * 0.8) % 1;
+    if (stone3Ref.current) {
+      stone3Ref.current.position.copy(curve.getPoint(waveT.current));
+      const pulse = 0.08 + Math.sin(waveT.current * Math.PI) * 0.08; // grows in middle, shrinks at ends
+      stone3Ref.current.scale.setScalar(pulse / 0.08);
+      (stone3Ref.current.material as THREE.MeshStandardMaterial).opacity = 0.3 + Math.sin(waveT.current * Math.PI) * 0.5;
+    }
+
+    // Opacity ripple on the line itself
+    const wave = 0.5 + Math.sin(state.clock.elapsedTime * 3 + waveT.current * 6) * 0.25;
+    lineMat.opacity = wave;
   });
 
   return (
@@ -980,6 +1192,12 @@ function DynamicLeyLine({ childId, parentId, color, livePosMap }: {
         <sphereGeometry args={[0.09, 8, 8]} />
         <meshStandardMaterial color={color} emissive={color} emissiveIntensity={4} />
       </mesh>
+      {/* Energy wave orb */}
+      <mesh ref={stone3Ref}>
+        <sphereGeometry args={[0.14, 8, 8]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={6}
+          transparent opacity={0.5} />
+      </mesh>
     </>
   );
 }
@@ -989,6 +1207,9 @@ function DynamicLeyLine({ childId, parentId, color, livePosMap }: {
 function WoWTooltipOverlay({ session, cls, name, role, onClose }: {
   session: Session; cls: ClassConfig; name: string; role: string; onClose: () => void;
 }) {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
+
   const tools = session.tools
     ? Object.entries(session.tools).sort((a, b) => b[1] - a[1]).slice(0, 6)
     : [];
@@ -1003,6 +1224,9 @@ function WoWTooltipOverlay({ session, cls, name, role, onClose }: {
       borderRadius: 2,
       boxShadow: '0 4px 32px rgba(0,0,0,.9)',
       fontFamily: 'monospace',
+      transform: visible ? 'translateX(0)' : 'translateX(20px)',
+      opacity: visible ? 1 : 0,
+      transition: 'transform 0.3s ease-out, opacity 0.3s ease-out',
     }}>
       <div style={{
         padding: '8px 12px 6px',
