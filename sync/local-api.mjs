@@ -9,16 +9,33 @@
 //   node sync/local-api.mjs           # export + push (default)
 //   node sync/local-api.mjs --no-push # export only, skip git push
 
-import { createServer } from 'node:http';
-import { spawn }        from 'node:child_process';
-import { statSync }     from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { createServer }   from 'node:http';
+import { spawn, execFileSync } from 'node:child_process';
+import { statSync, existsSync } from 'node:fs';
+import { join, dirname }  from 'node:path';
+import { fileURLToPath }  from 'node:url';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT  = join(__dir, '..');
 const PORT  = 7337;
 const NO_PUSH = process.argv.includes('--no-push');
+
+// launchd doesn't inherit shell PATH — resolve node's full path explicitly
+function resolveNode() {
+  const candidates = [
+    process.execPath,                  // the node that's running THIS script
+    '/opt/homebrew/bin/node',
+    '/usr/local/bin/node',
+    '/usr/bin/node',
+  ];
+  for (const p of candidates) {
+    if (p && existsSync(p)) return p;
+  }
+  // last resort: ask the shell
+  try { return execFileSync('/usr/bin/env', ['which', 'node'], { encoding: 'utf8' }).trim(); } catch {}
+  return 'node';
+}
+const NODE = resolveNode();
 
 function cors(res, origin) {
   res.setHeader('Access-Control-Allow-Origin',  origin || '*');
@@ -51,7 +68,7 @@ const server = createServer((req, res) => {
   if (path === '/sync' && req.method === 'POST') {
     console.log(`\n[${new Date().toLocaleTimeString()}] Sync triggered from browser`);
     const args = NO_PUSH ? [] : ['--push'];
-    const child = spawn('node', [join(ROOT, 'sync', 'export-local.mjs'), ...args], {
+    const child = spawn(NODE, [join(ROOT, 'sync', 'export-local.mjs'), ...args], {
       cwd: ROOT,
       env: { ...process.env },
     });
