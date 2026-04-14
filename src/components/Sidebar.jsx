@@ -204,21 +204,23 @@ function SyncButton({ onReload }) {
               >x</button>
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-secondary, #a0a0b0)', lineHeight: 1.5, marginBottom: 12 }}>
-              Sync reads session data from your machine and pushes it to the cloud. Run this in your terminal:
+              Sync reads session data from your machine and pushes it to the cloud. Open a terminal and run:
             </div>
             <div
-              onClick={() => { navigator.clipboard.writeText('node sync/local-api.mjs'); }}
+              onClick={() => { navigator.clipboard.writeText('cd ~/repos/meow-ops && node sync/local-api.mjs'); }}
               style={{
                 padding: '10px 12px', borderRadius: 8,
                 background: 'rgba(0,0,0,.4)', border: '1px solid var(--border)',
-                fontFamily: 'monospace', fontSize: 12, color: 'var(--green, #63f7b3)',
+                fontFamily: 'monospace', fontSize: 11, color: 'var(--green, #63f7b3)',
                 cursor: 'pointer', userSelect: 'all',
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                lineHeight: 1.6,
               }}
               title="Click to copy"
             >
-              <span>node sync/local-api.mjs</span>
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 8 }}>click to copy</span>
+              <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>$</div>
+              <div>cd ~/repos/meow-ops</div>
+              <div>node sync/local-api.mjs</div>
+              <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 6, textAlign: 'right' }}>click to copy</div>
             </div>
             <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.4 }}>
               Keep it running while you use the dashboard. Then hit Sync again.
