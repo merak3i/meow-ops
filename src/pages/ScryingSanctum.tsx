@@ -1,4 +1,4 @@
-// ScryingSanctum.tsx — WoW MMORPG Dalaran Plaza agent pipeline visualizer
+// ScryingSanctum.tsx — Dalaran Plaza agent pipeline visualizer
 // Pixel-art sprite characters roam a Dalaran plaza · WoW nameplates · Dynamic ley lines
 
 import { useRef, useState, useMemo, useEffect, Suspense, useCallback } from 'react';
@@ -778,18 +778,40 @@ function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasT
 // ─── Arcane Sanctum Environment ──────────────────────────────────────────────
 
 function FloatingParticles() {
-  const count = 40;
+  const count = 55; // 40 floating + 15 ground motes
   const refs = useRef<(THREE.Mesh | null)[]>([]);
-  const data = useMemo(() => Array.from({ length: count }, (_, i) => ({
-    radius: 2 + Math.random() * 9,
-    speed: 0.15 + Math.random() * 0.3,
-    phase: Math.random() * Math.PI * 2,
-    y: 0.5 + Math.random() * 4,
-    yOsc: 0.3 + Math.random() * 0.8,
-    ySpeed: 0.4 + Math.random() * 0.6,
-    size: 0.04 + Math.random() * 0.06,
-    color: i % 3 === 0 ? '#c8a855' : i % 3 === 1 ? '#8b5cf6' : '#60a5fa',
-  })), []);
+  const data = useMemo(() => {
+    const particles = [];
+    // 40 floating particles (original)
+    for (let i = 0; i < 40; i++) {
+      particles.push({
+        radius: 2 + Math.random() * 9,
+        speed: 0.15 + Math.random() * 0.3,
+        phase: Math.random() * Math.PI * 2,
+        baseY: 0.5 + Math.random() * 4,
+        yOsc: 0.3 + Math.random() * 0.8,
+        ySpeed: 0.4 + Math.random() * 0.6,
+        size: 0.04 + Math.random() * 0.06,
+        color: i % 3 === 0 ? '#c8a855' : i % 3 === 1 ? '#8b5cf6' : '#60a5fa',
+        ground: false,
+      });
+    }
+    // 15 ground-level dust motes — very small, slow, dim
+    for (let i = 0; i < 15; i++) {
+      particles.push({
+        radius: 1.5 + Math.random() * 8,
+        speed: 0.04 + Math.random() * 0.08,
+        phase: Math.random() * Math.PI * 2,
+        baseY: 0.05 + Math.random() * 0.25,
+        yOsc: 0.05 + Math.random() * 0.1,
+        ySpeed: 0.2 + Math.random() * 0.3,
+        size: 0.02 + Math.random() * 0.03,
+        color: '#c8a855',
+        ground: true,
+      });
+    }
+    return particles;
+  }, []);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -797,11 +819,15 @@ function FloatingParticles() {
       const mesh = refs.current[i];
       if (!mesh) return;
       const angle = d.phase + t * d.speed;
+      const y = d.baseY + Math.sin(t * d.ySpeed + d.phase) * d.yOsc;
       mesh.position.set(
         Math.cos(angle) * d.radius,
-        d.y + Math.sin(t * d.ySpeed + d.phase) * d.yOsc,
+        y,
         Math.sin(angle) * d.radius,
       );
+      // Depth variation: lower = dimmer, higher = brighter
+      const heightFade = d.ground ? 0.25 : (0.35 + Math.min(0.65, y / 4));
+      (mesh.material as THREE.MeshBasicMaterial).opacity = heightFade;
     });
   });
 
@@ -809,8 +835,8 @@ function FloatingParticles() {
     <>
       {data.map((d, i) => (
         <mesh key={i} ref={(el) => { refs.current[i] = el; }}>
-          <sphereGeometry args={[d.size, 6, 6]} />
-          <meshBasicMaterial color={d.color} transparent opacity={0.7} />
+          <sphereGeometry args={[d.size, d.ground ? 4 : 6, d.ground ? 4 : 6]} />
+          <meshBasicMaterial color={d.color} transparent opacity={0.5} />
         </mesh>
       ))}
     </>
@@ -903,6 +929,22 @@ function ArcaneFloor() {
     return lines;
   }, []);
 
+  // Generate hex tile grid positions within radius 12
+  const hexTiles = useMemo(() => {
+    const tiles: { x: number; z: number; dark: boolean }[] = [];
+    const size = 1.1; // hex cell size
+    const h = size * Math.sqrt(3);
+    for (let row = -12; row <= 12; row++) {
+      for (let col = -12; col <= 12; col++) {
+        const x = col * size * 1.5;
+        const z = row * h + (col % 2 !== 0 ? h / 2 : 0);
+        if (x * x + z * z > 12 * 12) continue; // clip to circle
+        tiles.push({ x, z, dark: (row + col) % 2 === 0 });
+      }
+    }
+    return tiles;
+  }, []);
+
   return (
     <>
       {/* Main dark ground */}
@@ -910,6 +952,20 @@ function ArcaneFloor() {
         <circleGeometry args={[14, 64]} />
         <meshBasicMaterial color="#1a1428" />
       </mesh>
+      {/* Hex stone tile pattern — subtle alternating shades */}
+      {hexTiles.map((tile, i) => (
+        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.048, tile.z]}>
+          <circleGeometry args={[0.52, 6]} />
+          <meshBasicMaterial color={tile.dark ? '#1e1832' : '#221c3a'} />
+        </mesh>
+      ))}
+      {/* Hex tile gap lines — faint grid overlay */}
+      {hexTiles.map((tile, i) => (
+        <mesh key={`r${i}`} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.046, tile.z]}>
+          <ringGeometry args={[0.50, 0.54, 6]} />
+          <meshBasicMaterial color="#0e0a18" transparent opacity={0.5} />
+        </mesh>
+      ))}
       {/* Outer edge ring */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
         <ringGeometry args={[11, 11.2, 64]} />
@@ -1048,7 +1104,7 @@ function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
   }, [catType, pn.session]);
 
   return (
-    <Html center position={[0, 5.2, 0]} sprite transform style={{ pointerEvents: 'none' }}>
+    <Html center position={[0, 5.2, 0]} style={{ pointerEvents: 'none' }}>
       <div style={{
         minWidth: 120, background: 'rgba(0,0,0,.72)',
         border: `1px solid ${selected ? '#63f7b3' : c.color}66`,
@@ -1175,9 +1231,58 @@ function CharacterTrail({ color, isMoving }: { color: string; isMoving: React.Mu
   );
 }
 
+// ─── Footstep Dust Puffs ─────────────────────────────────────────────────────
+
+function FootstepDust({ isMoving }: { isMoving: React.MutableRefObject<boolean> }) {
+  const DUST_COUNT = 6;
+  const refs = useRef<(THREE.Mesh | null)[]>([]);
+  const ages = useRef(Array.from({ length: DUST_COUNT }, () => 99));
+  const nextSpawn = useRef(0);
+
+  useFrame((_, delta) => {
+    nextSpawn.current -= delta;
+    ages.current.forEach((age, i) => {
+      const mesh = refs.current[i];
+      if (!mesh) return;
+      ages.current[i] += delta;
+
+      // Spawn new puff at ground level when moving
+      if (isMoving.current && nextSpawn.current <= 0 && ages.current[i] > 0.6) {
+        mesh.position.set(
+          (Math.random() - 0.5) * 0.5,
+          0.05,
+          (Math.random() - 0.5) * 0.5,
+        );
+        mesh.scale.setScalar(0.5);
+        ages.current[i] = 0;
+        nextSpawn.current = 0.12; // stagger spawns
+      }
+
+      const life = ages.current[i];
+      const fade = Math.max(0, 1 - life * 1.8);
+      // Rise slowly, expand, fade
+      mesh.position.y += delta * 0.25;
+      const expand = 0.5 + life * 1.5;
+      mesh.scale.setScalar(expand);
+      (mesh.material as THREE.MeshBasicMaterial).opacity = fade * 0.35;
+    });
+  });
+
+  return (
+    <>
+      {Array.from({ length: DUST_COUNT }, (_, i) => (
+        <mesh key={i} ref={(el) => { refs.current[i] = el; }}>
+          <sphereGeometry args={[0.04, 4, 4]} />
+          <meshBasicMaterial color="#a89878" transparent opacity={0} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
 // ─── WoW Champion Node ────────────────────────────────────────────────────────
 
-function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdate, parentPos }: {
+function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdate, parentPos, livePosMap }: {
   pn:          PositionedNode;
   maxCost:     number;
   maxTokens:   number;
@@ -1185,6 +1290,7 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
   onClick:     () => void;
   onPosUpdate: (id: string, pos: THREE.Vector3) => void;
   parentPos:   THREE.Vector3 | null;
+  livePosMap:  React.MutableRefObject<Map<string, THREE.Vector3>>;
 }) {
   const groupRef    = useRef<THREE.Group>(null);
   const spriteRef   = useRef<THREE.Sprite>(null);
@@ -1198,6 +1304,7 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
   const isMovingRef = useRef(false);                   // for trail particles
   const hovered     = useRef(false);
   const idlePauseRef = useRef(0);                     // idle pause countdown
+  const velocityRef  = useRef(0);                     // smooth velocity ramp
   const c           = pn.cls;
   const catType     = pn.session.cat_type ?? 'ghost';
   const auraProf    = AURA_PROFILES[catType] ?? DEFAULT_AURA;
@@ -1231,11 +1338,13 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
     let moving = false;
 
     if (dist < 0.25) {
+      // ── Arrived: decelerate to zero ──
+      velocityRef.current = Math.max(0, velocityRef.current - delta * movProf.speed * 6);
+
       // ── Idle pause: personality-based delay before picking next waypoint ──
       if (idlePauseRef.current > 0) {
         idlePauseRef.current -= delta;
       } else {
-        // Set pause for next arrival
         idlePauseRef.current = movProf.idlePauseMin + Math.random() * (movProf.idlePauseMax - movProf.idlePauseMin);
 
         // ── Waypoint selection: personality influences target ──
@@ -1248,7 +1357,6 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
           });
           targetWpRef.current = bestIdx;
         } else if (movProf.prefersEdge) {
-          // Edge-stalker: pick from outer ring waypoints (indices 0-7)
           targetWpRef.current = Math.floor(Math.random() * 8);
         } else {
           targetWpRef.current = Math.floor(Math.random() * WAYPOINTS.length);
@@ -1256,7 +1364,11 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
       }
     } else if (idlePauseRef.current <= 0) {
       moving = true;
-      const speed = movProf.speed * delta;
+      // ── Smooth velocity: ease-in ramp + ease-out near waypoint ──
+      const maxSpeed = movProf.speed;
+      const easeOut = Math.min(1, dist / 0.6);   // slow down in last 0.6 units
+      velocityRef.current = Math.min(maxSpeed, velocityRef.current + delta * maxSpeed * 5) * easeOut;
+      const speed = velocityRef.current * delta;
       livePosRef.current.x += (dx / dist) * Math.min(speed, dist);
       livePosRef.current.z += (dz / dist) * Math.min(speed, dist);
 
@@ -1278,6 +1390,20 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
       }
     }
     isMovingRef.current = moving;
+
+    // ── Collision avoidance: gentle repulsion from nearby characters ──
+    const myId = pn.session.session_id;
+    livePosMap.current.forEach((otherPos, otherId) => {
+      if (otherId === myId) return;
+      const rx = livePosRef.current.x - otherPos.x;
+      const rz = livePosRef.current.z - otherPos.z;
+      const rd = Math.sqrt(rx * rx + rz * rz);
+      if (rd > 0.01 && rd < 1.8) {
+        const force = (1.8 - rd) * 0.4 * delta;
+        livePosRef.current.x += (rx / rd) * force;
+        livePosRef.current.z += (rz / rd) * force;
+      }
+    });
 
     // ── Idle breathing bob (personality) + walk bounce (personality) ──
     const breathe = Math.sin(t * movProf.breatheSpeed + pn.idx * 1.7) * movProf.breatheAmp;
@@ -1351,9 +1477,31 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
       {selected && <SelectionPulseRings color={c.aura} />}
       {/* Trail particles */}
       <CharacterTrail color={trailColor} isMoving={isMovingRef} />
+      <FootstepDust isMoving={isMovingRef} />
       <WoWNameplate pn={pn} maxCost={maxCost} maxTokens={maxTokens} selected={selected} />
     </group>
   );
+}
+
+// ─── Camera Controller (smooth follow on selection) ─────────────────────────
+
+function CameraController({ controlsRef, selectedPos, center }: {
+  controlsRef: React.RefObject<any>;
+  selectedPos: THREE.Vector3 | null;
+  center: THREE.Vector3;
+}) {
+  const targetRef = useRef(center.clone());
+
+  useFrame(() => {
+    const desired = selectedPos ?? center;
+    targetRef.current.lerp(desired, 0.04);
+    if (controlsRef.current) {
+      controlsRef.current.target.copy(targetRef.current);
+      controlsRef.current.update();
+    }
+  });
+
+  return null;
 }
 
 // ─── Dynamic Ley Line ─────────────────────────────────────────────────────────
@@ -1515,16 +1663,96 @@ function WoWTooltipOverlay({ session, cls, name, role, onClose }: {
   );
 }
 
+// ─── Minimap Overlay ─────────────────────────────────────────────────────────
+
+function Minimap({ livePosMap, nodes, selectedId }: {
+  livePosMap: React.MutableRefObject<Map<string, THREE.Vector3>>;
+  nodes: PositionedNode[];
+  selectedId: string | null;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const SIZE = 110;
+  const WORLD_R = 13; // world radius to show
+
+  useEffect(() => {
+    let raf: number;
+    const draw = () => {
+      const ctx = canvasRef.current?.getContext('2d');
+      if (!ctx) { raf = requestAnimationFrame(draw); return; }
+      ctx.clearRect(0, 0, SIZE, SIZE);
+
+      // Background
+      ctx.fillStyle = 'rgba(4,2,16,0.75)';
+      ctx.beginPath();
+      ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Border ring
+      ctx.strokeStyle = '#c8a85533';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 2, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Floor circle hint
+      ctx.strokeStyle = '#c8a85518';
+      ctx.beginPath();
+      ctx.arc(SIZE / 2, SIZE / 2, (11 / WORLD_R) * (SIZE / 2 - 4), 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Draw character dots
+      nodes.forEach((pn) => {
+        const pos = livePosMap.current.get(pn.session.session_id);
+        if (!pos) return;
+        // Isometric projection to 2D: use x and z
+        const mx = SIZE / 2 + (pos.x / WORLD_R) * (SIZE / 2 - 6);
+        const my = SIZE / 2 + (pos.z / WORLD_R) * (SIZE / 2 - 6);
+        const isSel = pn.session.session_id === selectedId;
+        const r = isSel ? 3.5 : 2.5;
+
+        ctx.fillStyle = pn.cls.color;
+        ctx.globalAlpha = isSel ? 1.0 : 0.7;
+        ctx.beginPath();
+        ctx.arc(mx, my, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (isSel) {
+          ctx.strokeStyle = '#63f7b3';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(mx, my, 5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      });
+
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [livePosMap, nodes, selectedId]);
+
+  return (
+    <canvas ref={canvasRef} width={SIZE} height={SIZE} style={{
+      position: 'absolute', bottom: 12, right: 12, zIndex: 10,
+      width: SIZE, height: SIZE, borderRadius: '50%',
+      border: '1px solid #c8a85522', pointerEvents: 'none',
+    }} />
+  );
+}
+
 // ─── Full 3D Scene ────────────────────────────────────────────────────────────
 
-function Scene({ group, selectedId, onSelect }: {
+function Scene({ group, selectedId, onSelect, livePosMapOut }: {
   group: SessionRunGroup; selectedId: string | null; onSelect: (id: string | null) => void;
+  livePosMapOut: React.MutableRefObject<Map<string, THREE.Vector3>>;
 }) {
   const nodes     = useMemo(() => layoutNodes(group.roots), [group]);
   const maxCost   = useMemo(() => Math.max(...nodes.map((n) => n.session.estimated_cost_usd), 0.001), [nodes]);
   const maxTokens = useMemo(() => Math.max(...nodes.map((n) => n.session.total_tokens ?? 0), 1), [nodes]);
 
-  const livePosMap = useRef(new Map<string, THREE.Vector3>());
+  const livePosMap = livePosMapOut;
+  const controlsRef = useRef<any>(null);
   const handlePosUpdate = useCallback((id: string, pos: THREE.Vector3) => {
     livePosMap.current.set(id, pos);
   }, []);
@@ -1552,11 +1780,21 @@ function Scene({ group, selectedId, onSelect }: {
     return new THREE.Vector3((Math.min(...xs) + Math.max(...xs)) / 2, 0, (Math.min(...zs) + Math.max(...zs)) / 2);
   }, [nodes]);
 
+  // Session-reactive ambient: compute aggregate intensity from total cost
+  const totalCost = useMemo(() => nodes.reduce((s, n) => s + n.session.estimated_cost_usd, 0), [nodes]);
+  // Scale: $0 → dim, $5+ → vibrant. Clamp 0..1
+  const intensity = Math.min(1, totalCost / 5);
+  const ambientInt = 0.25 + intensity * 0.2;    // 0.25 → 0.45
+  const pointInt   = 0.4 + intensity * 0.5;     // 0.4 → 0.9
+  // Warmer hue as cost increases
+  const ambientColor = intensity > 0.5 ? '#4a2870' : '#3a2060';
+  const pointColor   = intensity > 0.7 ? '#e8b830' : '#c8a855';
+
   return (
     <>
-      <ambientLight intensity={0.35} color="#3a2060" />
+      <ambientLight intensity={ambientInt} color={ambientColor} />
       <directionalLight position={[10, 20, 10]} intensity={1.0} color="#fff8e8" />
-      <pointLight position={[0, 8, 0]} intensity={0.6} color="#c8a855" distance={30} />
+      <pointLight position={[0, 8, 0]} intensity={pointInt} color={pointColor} distance={30} />
 
       <Suspense fallback={null}>
         <PlazaEnvironment />
@@ -1577,13 +1815,18 @@ function Scene({ group, selectedId, onSelect }: {
           onClick={() => onSelect(selectedId === pn.session.session_id ? null : pn.session.session_id)}
           onPosUpdate={handlePosUpdate}
           parentPos={pn.session.parent_session_id ? (livePosMap.current.get(pn.session.parent_session_id) ?? null) : null}
+          livePosMap={livePosMap}
         />
       ))}
 
-      <OrbitControls target={center} enableDamping dampingFactor={0.06}
+      <OrbitControls ref={controlsRef} target={center} enableDamping dampingFactor={0.06}
         minZoom={30} maxZoom={180} maxPolarAngle={Math.PI / 2.4} minPolarAngle={Math.PI / 8} />
 
-      {/* Bloom disabled — was breaking WebGL render pipeline */}
+      <CameraController
+        controlsRef={controlsRef}
+        selectedPos={selectedId ? (livePosMap.current.get(selectedId) ?? null) : null}
+        center={center}
+      />
     </>
   );
 }
@@ -1613,6 +1856,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
   const [runIdx,  setRunIdx]  = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
   const [syncing,  setSyncing]  = useState(false);
+  const livePosMap = useRef(new Map<string, THREE.Vector3>());
 
   const groups = useMemo(() => getSessionRunGroups(sessions), [sessions]);
   const group  = groups[runIdx] ?? null;
@@ -1728,6 +1972,11 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
       {/* WebGL Canvas */}
       <div style={{ flex: 1, minHeight: 520, position: 'relative' }}>
+        {/* Cinematic vignette */}
+        <div style={{
+          position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
+          background: 'radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(4,2,12,.45) 80%, rgba(2,1,6,.85) 100%)',
+        }} />
         <Canvas
           orthographic
           camera={{ position: [12, 16, 12], zoom: 38, up: [0, 1, 0], near: 0.1, far: 500 }}
@@ -1736,9 +1985,12 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
         >
           <color attach="background" args={['#0a0618']} />
           <Suspense fallback={null}>
-            {group && <Scene group={group} selectedId={selected} onSelect={setSelected} />}
+            {group && <Scene group={group} selectedId={selected} onSelect={setSelected} livePosMapOut={livePosMap} />}
           </Suspense>
         </Canvas>
+
+        {/* Minimap */}
+        {group && <Minimap livePosMap={livePosMap} nodes={flatNodes} selectedId={selected} />}
 
         {selectedNode && (
           <WoWTooltipOverlay

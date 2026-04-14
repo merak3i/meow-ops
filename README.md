@@ -67,7 +67,7 @@ Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, and *
 | **Overview** | Sessions, tokens, cost, healthy/ghost ratio, daily chart, tool distribution, spend by period |
 | **Sessions** | Sortable table with cat-type classification per session |
 | **Agent Ops** | Wall-clock Gantt timeline of parent + subagent runs, efficiency index, drill-down panel |
-| **Scrying Sanctum** | WoW × MMORPG pipeline visualizer — unit frames, ley lines, boss bars |
+| **Scrying Sanctum** | 3D agent pipeline visualizer — unit frames, ley lines, pixel-art sprites |
 | **By Project** | Horizontal bar breakdown per project |
 | **By Day** | Area chart of token usage and session counts over time |
 | **By Action** | Which tools your agents actually reach for |
@@ -449,7 +449,7 @@ meow-ops/
 │   ├── pages/
 │   │   ├── AgentVisualizer.tsx  Gantt timeline, ghost flagging, drill-down
 │   │   ├── AgentDetailPanel.tsx Slide-in session detail panel
-│   │   ├── ScryingSanctum.tsx   WoW × MMORPG pipeline visualizer
+│   │   ├── ScryingSanctum.tsx   3D agent pipeline visualizer
 │   │   └── ...                  Overview, Sessions, ByDay, ByProject, etc.
 │   ├── scrying-sanctum/         Agent pipeline visualizer (D3 + Supabase Realtime)
 │   │   ├── ScryingSanctum.tsx   Main page — D3 zoom canvas, legend, loot box

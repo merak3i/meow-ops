@@ -383,7 +383,7 @@ export default function Sidebar({ activePage, onNavigate, onReload, rateLimits }
                   border: '1px solid #c8a85533', borderRadius: 2,
                   padding: '1px 5px',
                 }}>
-                  MMORPG
+                  SANCTUM
                 </span>
               )}
             </button>
