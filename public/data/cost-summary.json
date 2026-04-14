@@ -1,14 +1,14 @@
 {
-  "exportedAt": "2026-04-14T11:51:05.692Z",
+  "exportedAt": "2026-04-14T12:54:46.319Z",
   "today": {
-    "cost": 46.589042000000006,
-    "tokens": 105490919,
-    "sessions": 14
+    "cost": 80.892753,
+    "tokens": 171277752,
+    "sessions": 21
   },
   "thisWeek": {
-    "cost": 46.665477,
-    "tokens": 105531226,
-    "sessions": 15
+    "cost": 80.969188,
+    "tokens": 171318059,
+    "sessions": 22
   },
   "lastWeek": {
     "cost": 0,
@@ -16,9 +16,9 @@
     "sessions": 0
   },
   "thisMonth": {
-    "cost": 46.665477,
-    "tokens": 105531226,
-    "sessions": 15
+    "cost": 80.969188,
+    "tokens": 171318059,
+    "sessions": 22
   },
   "lastMonth": {
     "cost": 0,
@@ -26,9 +26,9 @@
     "sessions": 0
   },
   "thisYear": {
-    "cost": 46.665477,
-    "tokens": 105531226,
-    "sessions": 15
+    "cost": 80.969188,
+    "tokens": 171318059,
+    "sessions": 22
   },
   "lastYear": {
     "cost": 0,
@@ -36,15 +36,15 @@
     "sessions": 0
   },
   "allTime": {
-    "cost": 46.665477,
-    "sessions": 15,
-    "tokens": 105531226
+    "cost": 80.969188,
+    "sessions": 22,
+    "tokens": 171318059
   },
   "bySource": {
     "claude": {
-      "cost": 46.665477,
-      "tokens": 105531226,
-      "sessions": 15
+      "cost": 80.969188,
+      "tokens": 171318059,
+      "sessions": 22
     }
   },
   "daily_summary": [
@@ -62,15 +62,15 @@
     },
     {
       "date": "2026-04-14",
-      "session_count": 14,
-      "total_input_tokens": 57046,
-      "total_output_tokens": 348944,
-      "total_cache_creation": 4443730,
-      "total_cache_read": 100641199,
-      "total_tokens": 105490919,
-      "estimated_cost_usd": 46.589042000000006,
+      "session_count": 21,
+      "total_input_tokens": 88522,
+      "total_output_tokens": 598995,
+      "total_cache_creation": 8868971,
+      "total_cache_read": 161721264,
+      "total_tokens": 171277752,
+      "estimated_cost_usd": 80.892753,
       "active_projects": 5,
-      "ghost_count": 2
+      "ghost_count": 3
     }
   ]
 }
