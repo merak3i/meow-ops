@@ -1,14 +1,14 @@
 {
-  "exportedAt": "2026-04-14T13:19:40.459Z",
+  "exportedAt": "2026-04-14T13:50:17.342Z",
   "today": {
-    "cost": 91.45283800000001,
-    "tokens": 195652347,
-    "sessions": 21
+    "cost": 187.11219899999998,
+    "tokens": 251024554,
+    "sessions": 24
   },
   "thisWeek": {
-    "cost": 91.52927300000002,
-    "tokens": 195692654,
-    "sessions": 22
+    "cost": 187.18863399999998,
+    "tokens": 251064861,
+    "sessions": 25
   },
   "lastWeek": {
     "cost": 0,
@@ -16,9 +16,9 @@
     "sessions": 0
   },
   "thisMonth": {
-    "cost": 91.52927300000002,
-    "tokens": 195692654,
-    "sessions": 22
+    "cost": 187.18863399999998,
+    "tokens": 251064861,
+    "sessions": 25
   },
   "lastMonth": {
     "cost": 0,
@@ -26,9 +26,9 @@
     "sessions": 0
   },
   "thisYear": {
-    "cost": 91.52927300000002,
-    "tokens": 195692654,
-    "sessions": 22
+    "cost": 187.18863399999998,
+    "tokens": 251064861,
+    "sessions": 25
   },
   "lastYear": {
     "cost": 0,
@@ -36,15 +36,15 @@
     "sessions": 0
   },
   "allTime": {
-    "cost": 91.52927300000002,
-    "sessions": 22,
-    "tokens": 195692654
+    "cost": 187.18863399999998,
+    "sessions": 25,
+    "tokens": 251064861
   },
   "bySource": {
     "claude": {
-      "cost": 91.52927300000002,
-      "tokens": 195692654,
-      "sessions": 22
+      "cost": 187.18863399999998,
+      "tokens": 251064861,
+      "sessions": 25
     }
   },
   "daily_summary": [
@@ -62,15 +62,15 @@
     },
     {
       "date": "2026-04-14",
-      "session_count": 21,
-      "total_input_tokens": 88790,
-      "total_output_tokens": 668920,
-      "total_cache_creation": 9512184,
-      "total_cache_read": 185382453,
-      "total_tokens": 195652347,
-      "estimated_cost_usd": 91.45283800000001,
+      "session_count": 24,
+      "total_input_tokens": 90786,
+      "total_output_tokens": 826590,
+      "total_cache_creation": 10618867,
+      "total_cache_read": 239488311,
+      "total_tokens": 251024554,
+      "estimated_cost_usd": 187.11219899999998,
       "active_projects": 5,
-      "ghost_count": 3
+      "ghost_count": 4
     }
   ]
 }
