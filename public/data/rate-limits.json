@@ -1,15 +1,15 @@
 {
   "_note": "Auto-populated by sync/fetch-claude-limits.mjs. Run that script to refresh.",
-  "_updated": "2026-04-13T00:00:00+05:30",
+  "_updated": "2026-04-14T12:04:44.613Z",
   "claude": {
     "session": {
-      "used_pct": 18,
-      "resets_in_label": "3 hr 26 min",
+      "used_pct": 47,
+      "resets_in_label": "9 min",
       "resets_at": null
     },
     "weekly": {
-      "all_models_used_pct": 83,
-      "sonnet_only_used_pct": 56,
+      "all_models_used_pct": 91,
+      "sonnet_only_used_pct": 68,
       "resets_label": "Tue 7:30 PM"
     },
     "extra_usage": {
