@@ -107,10 +107,21 @@ function SyncButton({ onReload }) {
       setTimeout(() => setStatus('idle'), 2000);
     } else {
       setStatus('error');
-      setErrorMsg(result.error || result.stderr || 'Sync failed');
-      setTimeout(() => setStatus('idle'), 3000);
+      const isLocalServerDown = (result.error || '').includes('Local sync server')
+        || (result.error || '').includes('fetch')
+        || (result.error || '').includes('Failed')
+        || (result.stderr || '').includes('spawn');
+      setErrorMsg(isLocalServerDown ? '__local_server__' : (result.error || result.stderr || 'Sync failed'));
+      setTimeout(() => setStatus('idle'), 8000);
     }
   };
+
+  const [showPopup, setShowPopup] = useState(false);
+  const isLocalError = errorMsg === '__local_server__';
+
+  useEffect(() => {
+    if (status === 'error' && isLocalError) setShowPopup(true);
+  }, [status, isLocalError]);
 
   const Icon = status === 'success' ? Check : status === 'error' ? AlertCircle : RefreshCw;
   const accent =
@@ -131,7 +142,7 @@ function SyncButton({ onReload }) {
         }}
         onMouseEnter={(e) => { if (status === 'idle') e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
         onMouseLeave={(e) => { if (status === 'idle') e.currentTarget.style.borderColor = 'var(--border)'; }}
-        title={errorMsg || `Last sync: ${relativeTime(lastSync)}`}
+        title={isLocalError ? 'Local sync server not running' : errorMsg || `Last sync: ${relativeTime(lastSync)}`}
       >
         <motion.span
           animate={status === 'syncing' ? { rotate: 360 } : { rotate: 0 }}
@@ -141,14 +152,14 @@ function SyncButton({ onReload }) {
           <Icon size={14} />
         </motion.span>
         <span style={{ flex: 1 }}>
-          {status === 'syncing' ? 'Syncing…' : status === 'success' ? 'Synced' : status === 'error' ? 'Failed' : 'Sync sessions'}
+          {status === 'syncing' ? 'Syncing…' : status === 'success' ? 'Synced' : status === 'error' ? (isLocalError ? 'Server offline' : 'Failed') : 'Sync sessions'}
         </span>
         {status === 'idle' && lastSync && (
           <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{relativeTime(lastSync)}</span>
         )}
       </button>
       <AnimatePresence>
-        {status === 'error' && errorMsg && (
+        {status === 'error' && errorMsg && !isLocalError && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -161,6 +172,57 @@ function SyncButton({ onReload }) {
             }}
           >
             {errorMsg.slice(0, 60)}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Local sync server popup */}
+      <AnimatePresence>
+        {showPopup && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            style={{
+              position: 'fixed', bottom: 80, left: 16, zIndex: 999,
+              width: 320, padding: '16px 18px',
+              background: 'var(--bg-card, #1a1a2e)', border: '1px solid var(--border)',
+              borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,.5)',
+              fontFamily: 'inherit',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary, #e8e8e8)' }}>
+                Local sync server needed
+              </div>
+              <button
+                onClick={() => setShowPopup(false)}
+                style={{
+                  background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
+                  fontSize: 16, lineHeight: 1, padding: '0 2px',
+                }}
+              >x</button>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-secondary, #a0a0b0)', lineHeight: 1.5, marginBottom: 12 }}>
+              Sync reads session data from your machine and pushes it to the cloud. Run this in your terminal:
+            </div>
+            <div
+              onClick={() => { navigator.clipboard.writeText('node sync/local-api.mjs'); }}
+              style={{
+                padding: '10px 12px', borderRadius: 8,
+                background: 'rgba(0,0,0,.4)', border: '1px solid var(--border)',
+                fontFamily: 'monospace', fontSize: 12, color: 'var(--green, #63f7b3)',
+                cursor: 'pointer', userSelect: 'all',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}
+              title="Click to copy"
+            >
+              <span>node sync/local-api.mjs</span>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 8 }}>click to copy</span>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.4 }}>
+              Keep it running while you use the dashboard. Then hit Sync again.
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
