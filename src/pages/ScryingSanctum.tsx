@@ -451,210 +451,31 @@ function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasT
   return result;
 }
 
-// ─── Plaza Environment — ImageData texture + 3D props ────────────────────────
-
-let _plazaTex: THREE.CanvasTexture | null = null;
-
-function buildPlazaTexture(): THREE.CanvasTexture {
-  if (_plazaTex) return _plazaTex;
-  const S = 512;
-  const canvas = document.createElement('canvas');
-  canvas.width = S; canvas.height = S;
-  const ctx = canvas.getContext('2d')!;
-  const img = ctx.createImageData(S, S);
-  const d = img.data;
-  const cx = S / 2, cy = S / 2;
-  const plazaR = S * 0.30;
-  const pondR = S * 0.09;
-  const pondCx = S * 0.15, pondCy = S * 0.85;
-  const pathHW = S * 0.035;
-
-  function hash(x: number, y: number): number {
-    let h = (x * 374761393 + y * 668265263) | 0;
-    h = Math.imul(h ^ (h >>> 13), 1274126177);
-    return (h ^ (h >>> 16)) >>> 0;
-  }
-
-  for (let y = 0; y < S; y++) {
-    for (let x = 0; x < S; x++) {
-      const i = (y * S + x) * 4;
-      const H = hash(x, y);
-      const n = (H % 100) / 100;
-      const dx = x - cx, dy = y - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const pdx = x - pondCx, pdy = y - pondCy;
-      const pondDist = Math.sqrt(pdx * pdx + pdy * pdy);
-      const onPathNS = Math.abs(dx) < pathHW && Math.abs(dy) > plazaR;
-      const onPathEW = Math.abs(dy) < pathHW && Math.abs(dx) > plazaR;
-
-      let r: number, g: number, b: number;
-
-      if (pondDist < pondR - 3) {
-        // Water — deep blue with shimmer
-        const wd = pondDist / pondR;
-        r = 40 + Math.floor(wd * 20 + n * 12);
-        g = 85 + Math.floor(wd * 25 + n * 15);
-        b = 150 + Math.floor(n * 30);
-      } else if (pondDist < pondR + 5) {
-        // Pond stone rim
-        const sv = Math.floor(n * 25) - 12;
-        r = 115 + sv; g = 95 + sv; b = 75 + sv;
-      } else if (dist < plazaR - 3) {
-        // Cobblestone plaza with stone pattern
-        const sx = ((x + 500) % 8), sy = ((y + 500) % 8);
-        const row = Math.floor((y + 500) / 8);
-        const ox = (row % 2) * 4;
-        const sx2 = ((x + 500 + ox) % 8);
-        if (sx2 === 0 || sy === 0) {
-          r = 90 + Math.floor(n * 10); g = 75 + Math.floor(n * 8); b = 58 + Math.floor(n * 6);
-        } else {
-          const sv = Math.floor(n * 28) - 14;
-          r = 190 + sv; g = 170 + sv; b = 135 + sv;
-        }
-      } else if (dist < plazaR + 5) {
-        // Plaza edge ring — darker stone border
-        const sv = Math.floor(n * 18) - 9;
-        r = 128 + sv; g = 108 + sv; b = 85 + sv;
-      } else if (onPathNS || onPathEW) {
-        // Dirt paths
-        const sv = Math.floor(n * 22) - 11;
-        r = 148 + sv; g = 122 + sv; b = 85 + sv;
-      } else {
-        // Lush grass — warm yellow-green with variation
-        const gv = Math.floor(n * 28) - 14;
-        // Subtle large-scale variation using low-freq hash
-        const lf = hash(Math.floor(x / 16), Math.floor(y / 16));
-        const lfv = ((lf % 20) - 10);
-        r = 68 + gv + lfv;
-        g = 125 + gv + lfv;
-        b = 48 + Math.floor(gv / 2);
-
-        // Scattered flowers on grass
-        if (dist > plazaR + 25 && pondDist > pondR + 15 && (H % 53) === 0) {
-          const fc = (H >>> 8) % 6;
-          if (fc === 0) { r = 235; g = 75; b = 55; }       // red poppy
-          else if (fc === 1) { r = 240; g = 210; b = 50; }  // yellow daisy
-          else if (fc === 2) { r = 225; g = 130; b = 185; } // pink
-          else if (fc === 3) { r = 170; g = 110; b = 225; } // purple
-          else if (fc === 4) { r = 255; g = 250; b = 210; } // white
-          else { r = 240; g = 180; b = 60; }                // orange
-        }
-
-        // Grass highlight streaks
-        if ((H % 19) === 0) { r += 15; g += 20; b += 5; }
-      }
-
-      d[i] = Math.max(0, Math.min(255, r));
-      d[i + 1] = Math.max(0, Math.min(255, g));
-      d[i + 2] = Math.max(0, Math.min(255, b));
-      d[i + 3] = 255;
-    }
-  }
-
-  ctx.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  _plazaTex = tex;
-  return tex;
-}
+// ─── Simple Ground ───────────────────────────────────────────────────────────
 
 function PlazaEnvironment() {
-  const floorTex = useMemo(() => buildPlazaTexture(), []);
-
   return (
     <>
-      {/* Textured ground */}
+      {/* Dark ground — characters pop against this */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
-        <planeGeometry args={[22, 22]} />
-        <meshBasicMaterial map={floorTex} />
+        <circleGeometry args={[12, 48]} />
+        <meshBasicMaterial color="#1a1428" />
       </mesh>
-
-      {/* Fountain rim */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
-        <ringGeometry args={[1.5, 2.2, 24]} />
-        <meshStandardMaterial color="#a08a70" roughness={0.7} />
+      {/* Subtle inner ring */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
+        <ringGeometry args={[5, 5.15, 48]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.25} />
       </mesh>
-      {/* Fountain water */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-        <circleGeometry args={[1.5, 24]} />
-        <meshStandardMaterial color="#4a90c8" emissive="#2a70b0" emissiveIntensity={0.4} />
+      {/* Outer ring */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
+        <ringGeometry args={[8, 8.15, 48]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.15} />
       </mesh>
-      {/* Fountain base */}
-      <mesh position={[0, 0.15, 0]}>
-        <cylinderGeometry args={[2.2, 2.3, 0.3, 24]} />
-        <meshStandardMaterial color="#8a7a6a" roughness={0.8} />
+      {/* Center rune glow */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}>
+        <circleGeometry args={[0.8, 24]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.3} />
       </mesh>
-      {/* Fountain pillar */}
-      <mesh position={[0, 0.7, 0]}>
-        <cylinderGeometry args={[0.15, 0.22, 1.1, 8]} />
-        <meshStandardMaterial color="#b0a090" roughness={0.6} />
-      </mesh>
-
-      {/* Trees — trunk + layered canopy */}
-      {[[-7,-6],[7,-6],[-7,6],[7,6],[-8,0],[8,0]].map(([x,z],i) => (
-        <group key={`tree${i}`} position={[x!, 0, z!]}>
-          {/* Trunk */}
-          <mesh position={[0, 1.0, 0]}>
-            <cylinderGeometry args={[0.15, 0.25, 2.0, 6]} />
-            <meshStandardMaterial color="#6a4a2a" roughness={0.9} />
-          </mesh>
-          {/* Root flare */}
-          <mesh position={[0, 0.1, 0]}>
-            <cylinderGeometry args={[0.25, 0.4, 0.2, 6]} />
-            <meshStandardMaterial color="#5a3a1a" roughness={0.9} />
-          </mesh>
-          {/* Canopy layers — dark to light, bigger */}
-          <mesh position={[0, 2.2, 0]}>
-            <sphereGeometry args={[1.8, 10, 8]} />
-            <meshStandardMaterial color="#2a6a1a" roughness={0.8} />
-          </mesh>
-          <mesh position={[0, 2.8, 0]}>
-            <sphereGeometry args={[1.4, 10, 8]} />
-            <meshStandardMaterial color="#3a8a2a" roughness={0.75} />
-          </mesh>
-          <mesh position={[0, 3.2, 0]}>
-            <sphereGeometry args={[0.9, 8, 6]} />
-            <meshStandardMaterial color="#4aaa3a" roughness={0.7} />
-          </mesh>
-          {/* Ground shadow */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.3, 0.005, 0.3]}>
-            <circleGeometry args={[1.8, 12]} />
-            <meshStandardMaterial color="#000" transparent opacity={0.2} />
-          </mesh>
-        </group>
-      ))}
-
-      {/* Stone boulders around pond area */}
-      {[[-2.5,7.5],[0.5,8],[-3,8.5],[-1,9]].map(([x,z],i) => (
-        <mesh key={`rock${i}`} position={[x!, 0.12, z!]}>
-          <sphereGeometry args={[0.2 + (i % 3) * 0.08, 6, 5]} />
-          <meshStandardMaterial color={i % 2 ? '#8a7a6a' : '#7a6a5a'} roughness={0.9} />
-        </mesh>
-      ))}
-
-      {/* Barrel clusters */}
-      {[[-4,-5],[5,-4.5],[-4.5,4],[4.5,5]].map(([x,z],i) => (
-        <group key={`brl${i}`} position={[x!, 0, z!]}>
-          <mesh position={[0, 0.35, 0]}>
-            <cylinderGeometry args={[0.22, 0.25, 0.7, 8]} />
-            <meshStandardMaterial color="#7a5a3a" roughness={0.85} />
-          </mesh>
-          {/* Metal bands */}
-          <mesh position={[0, 0.2, 0]}>
-            <cylinderGeometry args={[0.26, 0.26, 0.04, 8]} />
-            <meshStandardMaterial color="#5a5a6a" roughness={0.4} metalness={0.3} />
-          </mesh>
-          <mesh position={[0, 0.5, 0]}>
-            <cylinderGeometry args={[0.24, 0.24, 0.04, 8]} />
-            <meshStandardMaterial color="#5a5a6a" roughness={0.4} metalness={0.3} />
-          </mesh>
-        </group>
-      ))}
-
-      {/* Warm lights */}
-      <pointLight position={[0, 1.5, 0]} color="#4488cc" intensity={0.3} distance={4} />
     </>
   );
 }
@@ -973,10 +794,9 @@ function Scene({ group, selectedId, onSelect }: {
 
   return (
     <>
-      <ambientLight intensity={0.8} color="#fff0d0" />
-      <directionalLight position={[10, 20, 10]} intensity={1.5} color="#fff8e0" />
-      <directionalLight position={[-8, 5, -8]} intensity={0.4} color="#aaccff" />
-      <pointLight position={[0, 6, 0]} intensity={0.8} color="#ffd080" distance={40} />
+      <ambientLight intensity={0.4} color="#c8a855" />
+      <directionalLight position={[10, 20, 10]} intensity={0.8} color="#fff8e8" />
+      <pointLight position={[0, 6, 0]} intensity={0.5} color="#c8a855" distance={25} />
 
       <Suspense fallback={null}>
         <PlazaEnvironment />
@@ -1060,7 +880,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
   return (
     <div style={{
-      minHeight: 'calc(100vh - 80px)', background: '#0a1a0e',
+      minHeight: 'calc(100vh - 80px)', background: '#050310',
       borderRadius: 12, overflow: 'hidden', position: 'relative',
       display: 'flex', flexDirection: 'column',
     }}>
@@ -1069,14 +889,14 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
         padding: '12px 20px 10px', borderBottom: '1px solid rgba(200,168,85,.12)',
         display: 'flex', alignItems: 'center', gap: 14,
         zIndex: 10, position: 'relative',
-        background: 'rgba(6,14,8,.85)', backdropFilter: 'blur(8px)',
+        background: 'rgba(4,2,12,.85)', backdropFilter: 'blur(8px)',
       }}>
         <div>
           <div style={{ fontSize: 8.5, color: '#c8a85555', letterSpacing: 3, textTransform: 'uppercase' }}>
             Scrying Sanctum
           </div>
-          <div style={{ fontSize: 16, color: '#e8d5a3', fontWeight: 300, letterSpacing: 1.5, fontFamily: 'monospace' }}>
-            {group?.project ?? '—'}
+          <div style={{ fontSize: 11, color: '#c8a85566', fontFamily: 'monospace' }}>
+            Agent Visualizer
           </div>
         </div>
 
@@ -1153,7 +973,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
           camera={{ position: [12, 16, 12], zoom: 38, up: [0, 1, 0], near: 0.1, far: 500 }}
           shadows
           gl={{ antialias: false, alpha: false }}
-          style={{ background: 'radial-gradient(ellipse at 30% 20%, #1a3020 0%, #0e1a10 50%, #060e08 100%)' }}
+          style={{ background: 'radial-gradient(ellipse at 30% 20%, #1a1430 0%, #0c0818 50%, #050310 100%)' }}
           onClick={(e) => { if (e.target === e.currentTarget) setSelected(null); }}
         >
           <Suspense fallback={null}>
