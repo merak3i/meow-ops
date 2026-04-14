@@ -1048,7 +1048,7 @@ function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
   }, [catType, pn.session]);
 
   return (
-    <Html center position={[0, 3.4, 0]} distanceFactor={11} style={{ pointerEvents: 'none' }}>
+    <Html center position={[0, 5.2, 0]} sprite transform style={{ pointerEvents: 'none' }}>
       <div style={{
         minWidth: 120, background: 'rgba(0,0,0,.72)',
         border: `1px solid ${selected ? '#63f7b3' : c.color}66`,
@@ -1555,7 +1555,7 @@ function Scene({ group, selectedId, onSelect }: {
   return (
     <>
       <ambientLight intensity={0.35} color="#3a2060" />
-      <directionalLight position={[10, 20, 10]} intensity={1.0} color="#fff8e8" castShadow />
+      <directionalLight position={[10, 20, 10]} intensity={1.0} color="#fff8e8" />
       <pointLight position={[0, 8, 0]} intensity={0.6} color="#c8a855" distance={30} />
 
       <Suspense fallback={null}>
@@ -1731,11 +1731,10 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
         <Canvas
           orthographic
           camera={{ position: [12, 16, 12], zoom: 38, up: [0, 1, 0], near: 0.1, far: 500 }}
-          shadows
           gl={{ antialias: false, alpha: false }}
-          style={{ background: 'radial-gradient(ellipse at 30% 20%, #2a1548 0%, #140c28 50%, #0a0618 100%)' }}
           onClick={(e) => { if (e.target === e.currentTarget) setSelected(null); }}
         >
+          <color attach="background" args={['#0a0618']} />
           <Suspense fallback={null}>
             {group && <Scene group={group} selectedId={selected} onSelect={setSelected} />}
           </Suspense>
