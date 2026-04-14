@@ -14,7 +14,7 @@ import Pomodoro from './pages/Pomodoro';
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const CompanionPageV2    = lazy(() => import('./companion-v2/CompanionPageV2'));
 const AgentVisualizer    = lazy(() => import('./pages/AgentVisualizer'));
-// MMORPG unit-frame visualizer (uses local session data)
+// Scrying Sanctum visualizer (uses local session data)
 const ScryingSanctum     = lazy(() => import('./pages/ScryingSanctum'));
 // D3/Realtime visualizer kept at './scrying-sanctum/ScryingSanctum' for future use
 import {
