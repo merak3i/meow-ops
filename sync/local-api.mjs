@@ -11,7 +11,7 @@
 
 import { createServer }   from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
-import { statSync, existsSync } from 'node:fs';
+import { statSync, existsSync, readFileSync } from 'node:fs';
 import { join, dirname }  from 'node:path';
 import { fileURLToPath }  from 'node:url';
 
@@ -60,6 +60,22 @@ const server = createServer((req, res) => {
       res.end(JSON.stringify({ ok: true, mtime: st.mtimeMs, size: st.size }));
     } catch {
       res.end(JSON.stringify({ ok: false, error: 'No data file yet' }));
+    }
+    return;
+  }
+
+  // ── GET /data/sessions.json or /data/cost-summary.json ────────────────────
+  // Serve local files directly so the browser gets instant fresh data
+  // without waiting for Vercel to redeploy after a push.
+  if (req.method === 'GET' && (path === '/data/sessions.json' || path === '/data/cost-summary.json')) {
+    const filename = path === '/data/sessions.json' ? 'sessions.json' : 'cost-summary.json';
+    const filePath = join(ROOT, 'public', 'data', filename);
+    try {
+      const data = readFileSync(filePath, 'utf8');
+      res.end(data);
+    } catch {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: 'File not found — run a sync first' }));
     }
     return;
   }

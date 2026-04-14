@@ -31,20 +31,29 @@ async function loadRealSessions() {
   if (REAL_SESSIONS) return REAL_SESSIONS;
   if (REAL_SESSIONS_PROMISE) return REAL_SESSIONS_PROMISE;
 
-  const url = (IS_PROD && REMOTE_SESSIONS_URL)
-    ? REMOTE_SESSIONS_URL + '?t=' + Date.now()
-    : '/data/sessions.json?t=' + Date.now();
+  // In prod, try local API first (instant, no Vercel redeploy lag).
+  // Fall back to Vercel-served file if local server isn't running.
+  const urls = IS_PROD
+    ? [
+        `http://localhost:7337/data/sessions.json`,
+        REMOTE_SESSIONS_URL ? REMOTE_SESSIONS_URL + '?t=' + Date.now() : '/data/sessions.json?t=' + Date.now(),
+      ]
+    : ['/data/sessions.json?t=' + Date.now()];
 
-  REAL_SESSIONS_PROMISE = fetch(url)
-    .then((r) => (r.ok ? r.json() : null))
-    .then((data) => {
-      if (data && Array.isArray(data) && data.length > 0) {
-        REAL_SESSIONS = data;
-        return data;
-      }
-      return null;
-    })
-    .catch(() => null);
+  REAL_SESSIONS_PROMISE = (async () => {
+    for (const url of urls) {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) continue;
+        const data = await r.json();
+        if (Array.isArray(data) && data.length > 0) {
+          REAL_SESSIONS = data;
+          return data;
+        }
+      } catch { /* try next */ }
+    }
+    return null;
+  })();
   return REAL_SESSIONS_PROMISE;
 }
 
@@ -55,16 +64,22 @@ export function invalidateRealSessions() {
 
 // ─── Cost summary (covers ALL sessions, no cap) ───────────────────────────────
 export async function fetchCostSummary() {
-  try {
-    const url = REMOTE_COST_SUMMARY_URL
-      ? REMOTE_COST_SUMMARY_URL + '?t=' + Date.now()
-      : '/data/cost-summary.json?t=' + Date.now();
-    const r = await fetch(url);
-    if (!r.ok) return null;
-    return await r.json();
-  } catch {
-    return null;
+  const urls = IS_PROD
+    ? [
+        'http://localhost:7337/data/cost-summary.json',
+        REMOTE_COST_SUMMARY_URL
+          ? REMOTE_COST_SUMMARY_URL + '?t=' + Date.now()
+          : '/data/cost-summary.json?t=' + Date.now(),
+      ]
+    : ['/data/cost-summary.json?t=' + Date.now()];
+
+  for (const url of urls) {
+    try {
+      const r = await fetch(url);
+      if (r.ok) return await r.json();
+    } catch { /* try next */ }
   }
+  return null;
 }
 
 // ─── Sync trigger ─────────────────────────────────────────────────────────────
