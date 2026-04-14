@@ -67,21 +67,33 @@ export async function fetchCostSummary() {
   }
 }
 
-// ─── Sync trigger (dev only) ──────────────────────────────────────────────────
+// ─── Sync trigger ─────────────────────────────────────────────────────────────
+// Dev:  Vite plugin handles POST /api/sync locally.
+// Prod: Browser calls http://localhost:7337 — runs on the user's machine,
+//       not on Vercel — so it can read ~/.claude/projects/ and push to GitHub.
+const LOCAL_API = 'http://localhost:7337';
+
 export async function triggerSync() {
+  const url = IS_PROD ? `${LOCAL_API}/sync` : '/api/sync';
   try {
-    const r = await fetch('/api/sync', { method: 'POST' });
+    const r = await fetch(url, { method: 'POST' });
     const result = await r.json();
     if (result.ok) invalidateRealSessions();
     return result;
   } catch (err) {
-    return { ok: false, error: err.message };
+    return {
+      ok: false,
+      error: IS_PROD
+        ? 'Local sync server not running.\nStart it with: node sync/local-api.mjs'
+        : err.message,
+    };
   }
 }
 
 export async function getSyncStatus() {
+  const url = IS_PROD ? `${LOCAL_API}/sync/status` : '/api/sync/status';
   try {
-    const r = await fetch('/api/sync/status');
+    const r = await fetch(url);
     return await r.json();
   } catch {
     return { ok: false };
