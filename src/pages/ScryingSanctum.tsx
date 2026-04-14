@@ -139,6 +139,23 @@ function px(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: n
   ctx.fillRect(x, y, w, h);
 }
 
+/** Auto-outline: expand silhouette by 1px in 4 directions, fill dark, then redraw original on top */
+function addOutline(ctx: CanvasRenderingContext2D, W: number, H: number) {
+  const src = ctx.getImageData(0, 0, W, H);
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  const t = tmp.getContext('2d')!;
+  for (const off of [[-2,0],[2,0],[0,-2],[0,2],[-1,-1],[1,-1],[-1,1],[1,1]] as const) {
+    t.drawImage(ctx.canvas, off[0], off[1]);
+  }
+  t.globalCompositeOperation = 'source-in';
+  t.fillStyle = '#0a0515';
+  t.fillRect(0, 0, W, H);
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(tmp, 0, 0);
+  ctx.putImageData(src, 0, 0);
+}
+
 function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasTexture] {
   const cached = TEXTURE_CACHE.get(catType);
   if (cached) return cached;
@@ -146,7 +163,7 @@ function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasT
   const cls   = CLASS_MAP[catType] ?? FALLBACK_CLASS;
   const color = cls.color;
   const dark  = cls.emissive || '#111';
-  const W = 64, H = 96;
+  const W = 128, H = 192;
 
   function drawFrame(walking: boolean): THREE.CanvasTexture {
     const canvas = document.createElement('canvas');
@@ -154,153 +171,279 @@ function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasT
     canvas.height = H;
     const ctx = canvas.getContext('2d')!;
     ctx.clearRect(0, 0, W, H);
+    ctx.imageSmoothingEnabled = false;
 
-    const armLY = walking ? 36 : 34;
-    const armRY = walking ? 38 : 34;
-    const legLY = walking ? 62 : 60;
-    const legRY = walking ? 58 : 60;
+    const aL = walking ? 72 : 68;   // arm L Y
+    const aR = walking ? 76 : 68;   // arm R Y
+    const lL = walking ? 124 : 120; // leg L Y
+    const lR = walking ? 116 : 120; // leg R Y
 
     switch (catType) {
-      case 'builder': { // WARRIOR — gold plate
-        px(ctx, 24, 4,  16, 14, color);           // helm
-        px(ctx, 22, 6,  2,  10, dark);            // visor L
-        px(ctx, 40, 6,  2,  10, dark);            // visor R
-        px(ctx, 24, 18, 16, 12, '#f5c97b');       // face
-        px(ctx, 14, 30, 36, 6,  color);           // shoulders
-        px(ctx, 12, 32, 6,  4,  color);
-        px(ctx, 46, 32, 6,  4,  color);
-        px(ctx, 20, 36, 24, 22, color);           // torso
-        px(ctx, 12, armLY, 8, 18, color);         // arm L
-        px(ctx, 44, armRY, 8, 18, color);         // arm R
-        px(ctx, 50, armRY - 10, 2, 22, '#c0c0c0'); // sword
-        px(ctx, 48, armRY - 8,  6, 3,  '#c0c0c0');
-        px(ctx, 8,  armLY - 2,  8, 14, color);   // shield
-        px(ctx, 9,  armLY - 1,  6, 12, '#ffffff44');
-        px(ctx, 22, 58, 10, 18, color);           // legs
-        px(ctx, 32, 58, 10, 18, dark);
-        px(ctx, 20, legLY, 12, 4, dark);
-        px(ctx, 32, legRY, 12, 4, dark);
+      case 'builder': { // WARRIOR — gold plate armor
+        // Helm
+        px(ctx, 48, 8,  32, 28, color);
+        px(ctx, 50, 10, 28, 24, '#d4880a');       // helm shadow
+        px(ctx, 44, 12, 4,  20, dark);            // visor L
+        px(ctx, 80, 12, 4,  20, dark);            // visor R
+        px(ctx, 56, 18, 16, 8,  '#ffffff33');     // helm highlight
+        // Face
+        px(ctx, 48, 36, 32, 24, '#f5c97b');
+        px(ctx, 50, 38, 28, 20, '#e5b96b');       // face shadow
+        px(ctx, 54, 42, 6,  5,  '#2a1a0a');       // eye L
+        px(ctx, 68, 42, 6,  5,  '#2a1a0a');       // eye R
+        px(ctx, 56, 44, 3,  2,  '#ffffff');        // eye L highlight
+        px(ctx, 70, 44, 3,  2,  '#ffffff');        // eye R highlight
+        // Shoulders (broad)
+        px(ctx, 28, 60, 72, 12, color);
+        px(ctx, 24, 64, 12, 8,  color);
+        px(ctx, 92, 64, 12, 8,  color);
+        px(ctx, 30, 62, 68, 4,  '#ffffff22');      // shoulder highlight
+        // Torso
+        px(ctx, 40, 72, 48, 44, color);
+        px(ctx, 42, 74, 44, 40, '#d4880a');        // torso shadow
+        px(ctx, 52, 78, 6,  6,  '#ffffff33');      // chest highlight
+        // Arms
+        px(ctx, 24, aL, 16, 36, color);            // arm L (shield)
+        px(ctx, 88, aR, 16, 36, color);            // arm R (sword)
+        // Sword (right)
+        px(ctx, 100, aR - 20, 4, 44, '#d0d0d0');
+        px(ctx, 96,  aR - 16, 12, 6,  '#d0d0d0'); // crossguard
+        px(ctx, 98,  aR - 18, 8,  4,  '#ffffff');  // blade highlight
+        // Shield (left)
+        px(ctx, 16, aL - 4, 16, 28, color);
+        px(ctx, 18, aL - 2, 12, 24, '#ffffff22');
+        px(ctx, 20, aL,     4,  4,  '#ffffff44');   // shield boss
+        // Legs
+        px(ctx, 44, 116, 20, 36, color);
+        px(ctx, 64, 116, 20, 36, '#d4880a');
+        // Feet
+        px(ctx, 40, lL + 30, 24, 8, dark);
+        px(ctx, 64, lR + 30, 24, 8, dark);
         break;
       }
-      case 'detective': { // ROGUE — teal
-        px(ctx, 26, 2,  12, 6,  dark);            // hood
-        px(ctx, 24, 8,  16, 10, dark);
-        px(ctx, 26, 18, 12, 12, '#c4956a');       // face
-        px(ctx, 18, 30, 28, 4,  color);           // shoulders
-        px(ctx, 22, 34, 20, 22, color);           // torso
-        px(ctx, 14, armLY, 6, 16, color);         // arm L
-        px(ctx, 44, armRY, 6, 16, color);         // arm R
-        px(ctx, 12, armLY - 8, 2, 18, '#c0c0c0'); // dagger L
-        px(ctx, 50, armRY - 8, 2, 18, '#c0c0c0'); // dagger R
-        px(ctx, 23, 56, 8, 20, color);            // legs
-        px(ctx, 33, 56, 8, 20, dark);
-        px(ctx, 21, legLY, 10, 4, dark);
-        px(ctx, 33, legRY, 10, 4, dark);
+      case 'detective': { // ROGUE — teal, slim, dual daggers
+        // Hood
+        px(ctx, 52, 4,  24, 12, dark);
+        px(ctx, 48, 16, 32, 20, dark);
+        px(ctx, 50, 18, 28, 16, '#003322');        // hood shadow
+        // Face (partially shadowed)
+        px(ctx, 52, 36, 24, 24, '#c4956a');
+        px(ctx, 54, 38, 20, 20, '#b4856a');
+        px(ctx, 56, 42, 5,  4,  '#1a1a1a');       // eye L
+        px(ctx, 67, 42, 5,  4,  '#1a1a1a');       // eye R
+        px(ctx, 57, 43, 2,  2,  '#34d399');        // eye L glow
+        px(ctx, 68, 43, 2,  2,  '#34d399');        // eye R glow
+        // Slim shoulders
+        px(ctx, 36, 60, 56, 8, color);
+        px(ctx, 38, 62, 52, 4, '#24b382');         // shoulder shadow
+        // Torso (slim leather)
+        px(ctx, 44, 68, 40, 44, color);
+        px(ctx, 46, 70, 36, 40, '#24b382');
+        px(ctx, 50, 74, 28, 4,  dark);            // belt
+        // Arms
+        px(ctx, 28, aL, 12, 32, color);
+        px(ctx, 88, aR, 12, 32, color);
+        // Daggers
+        px(ctx, 24, aL - 16, 4, 36, '#d0d0d0');
+        px(ctx, 100, aR - 16, 4, 36, '#d0d0d0');
+        px(ctx, 24, aL - 18, 4, 4,  '#ffffff');   // blade tip L
+        px(ctx, 100, aR - 18, 4, 4, '#ffffff');   // blade tip R
+        // Legs
+        px(ctx, 46, 112, 16, 40, color);
+        px(ctx, 66, 112, 16, 40, '#24b382');
+        // Feet
+        px(ctx, 42, lL + 30, 20, 8, dark);
+        px(ctx, 66, lR + 30, 20, 8, dark);
         break;
       }
-      case 'commander': { // MAGE — blue, tall hat
-        px(ctx, 28, 0,  8,  6,  color);           // hat tip
-        px(ctx, 26, 6,  12, 4,  color);
-        px(ctx, 22, 10, 20, 8,  color);           // hat brim
-        px(ctx, 24, 18, 16, 12, '#d4a47c');       // face
-        px(ctx, 20, 30, 24, 4,  color);           // shoulders
-        px(ctx, 18, 34, 28, 26, color);           // robe (wide)
-        px(ctx, 14, 42, 36, 16, color);
-        px(ctx, 12, armLY, 6, 16, color);         // arm L
-        px(ctx, 46, armRY, 6, 16, color);         // arm R
-        px(ctx, 10, armLY - 14, 3, 28, '#8b7a5e'); // staff
-        px(ctx, 8,  armLY - 16, 7,  5,  color);
-        ctx.fillStyle = color + '88';
-        ctx.beginPath(); ctx.arc(11, armLY - 14, 5, 0, Math.PI * 2); ctx.fill();
-        px(ctx, 22, legLY + 4, 10, 4, dark);
-        px(ctx, 34, legRY + 4, 10, 4, dark);
+      case 'commander': { // MAGE — blue, tall hat, staff
+        // Tall pointed hat
+        px(ctx, 56, 0,  16, 12, color);
+        px(ctx, 52, 12, 24, 8,  color);
+        px(ctx, 44, 20, 40, 16, color);
+        px(ctx, 58, 2,  12, 8,  '#7dc4ff');        // hat highlight
+        px(ctx, 46, 22, 36, 4,  '#3a7acc');        // hat brim shadow
+        // Face
+        px(ctx, 48, 36, 32, 24, '#d4a47c');
+        px(ctx, 50, 38, 28, 20, '#c4946c');
+        px(ctx, 54, 42, 5,  5,  '#1a2a5a');       // eye L
+        px(ctx, 69, 42, 5,  5,  '#1a2a5a');       // eye R
+        px(ctx, 55, 43, 2,  2,  '#60a5fa');        // eye L glow
+        px(ctx, 70, 43, 2,  2,  '#60a5fa');        // eye R glow
+        // Shoulders
+        px(ctx, 40, 60, 48, 8, color);
+        // Flowing robe (wide at base)
+        px(ctx, 36, 68, 56, 52, color);
+        px(ctx, 28, 84, 72, 32, color);
+        px(ctx, 38, 70, 52, 48, '#3a7acc');        // robe shadow
+        px(ctx, 48, 74, 32, 8,  '#ffffff22');      // robe highlight
+        // Arms
+        px(ctx, 24, aL, 12, 32, color);
+        px(ctx, 92, aR, 12, 32, color);
+        // Staff (left)
+        px(ctx, 20, aL - 28, 6, 56, '#8b7a5e');
+        px(ctx, 16, aL - 32, 14, 10, color);       // staff crystal
+        px(ctx, 18, aL - 30, 10, 6,  '#7dc4ff');   // crystal glow
+        // Feet
+        px(ctx, 44, lL + 8, 20, 8, '#3a7acc');
+        px(ctx, 68, lR + 8, 20, 8, '#3a7acc');
         break;
       }
-      case 'architect': { // WARLOCK — purple cowl
-        px(ctx, 22, 0,  20, 20, dark);            // hood
-        px(ctx, 24, 4,  16, 16, dark);
-        px(ctx, 26, 12, 12, 10, '#9070a0');       // face
-        px(ctx, 28, 14, 3,  3,  color);           // eye L
-        px(ctx, 33, 14, 3,  3,  color);           // eye R
-        px(ctx, 18, 24, 28, 32, dark);            // robe
-        px(ctx, 16, 34, 32, 20, dark);
-        px(ctx, 44, armRY - 8,  12, 14, '#3b2060'); // grimoire
-        px(ctx, 45, armRY - 7,  10, 12, color + '55');
-        px(ctx, 42, armRY,      4,  12, dark);    // arm R
-        px(ctx, 14, armLY,      4,  12, dark);    // arm L
-        ctx.strokeStyle = color + 'aa'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.arc(32, 72, 10, 0, Math.PI * 2); ctx.stroke();
-        ctx.beginPath(); ctx.arc(32, 72, 6,  0, Math.PI * 2); ctx.stroke();
-        px(ctx, 24, 56, 8, 18, dark);
-        px(ctx, 32, 56, 8, 18, dark + 'aa');
-        break;
-      }
-      case 'guardian': { // PALADIN — radiant plate
-        ctx.fillStyle = color + '33';
-        ctx.beginPath(); ctx.arc(32, 12, 16, 0, Math.PI * 2); ctx.fill(); // halo glow
-        px(ctx, 22, 2,  20, 16, color);           // helm
-        px(ctx, 24, 4,  16, 12, '#ffffff88');
-        px(ctx, 25, 18, 14, 12, '#f0c87a');       // face
-        px(ctx, 12, 30, 40, 6,  color);           // shoulders
-        px(ctx, 10, 32, 8,  6,  color);
-        px(ctx, 46, 32, 8,  6,  color);
-        px(ctx, 20, 36, 24, 22, color);           // torso
-        px(ctx, 22, 38, 20, 18, '#ffffff44');
-        px(ctx, 46, armRY, 4, 20, '#8b7a5e');     // hammer handle
-        px(ctx, 42, armRY - 4, 12, 6, color);    // hammer head
-        px(ctx, 12, armLY, 8,  18, color);        // shield arm
-        px(ctx, 10, armLY - 2, 10, 18, '#ffffff33');
-        px(ctx, 21, 58, 10, 18, color);
-        px(ctx, 33, 58, 10, 18, color);
-        px(ctx, 20, legLY, 12, 4, dark);
-        px(ctx, 32, legRY, 12, 4, dark);
-        break;
-      }
-      case 'storyteller': { // PRIEST — white robes, halo
-        ctx.strokeStyle = color + 'cc'; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(32, 6, 10, Math.PI, 0); ctx.stroke(); // halo
-        px(ctx, 24, 8,  16, 16, '#f5e8d5');       // head
-        px(ctx, 20, 24, 24, 4,  color);           // shoulders
-        px(ctx, 18, 28, 28, 30, color);           // robe
-        px(ctx, 16, 44, 32, 14, color);
-        px(ctx, 20, 30, 24, 26, '#ffffff44');
-        px(ctx, 12, armLY, 6, 14, color);         // arm L
-        px(ctx, 46, armRY, 6, 14, color);         // arm R
-        ctx.fillStyle = color + 'cc';
-        ctx.beginPath(); ctx.arc(50, armRY + 14, 4, 0, Math.PI * 2); ctx.fill(); // orb
-        ctx.strokeStyle = '#ffffff88'; ctx.lineWidth = 1; ctx.stroke();
-        px(ctx, 22, legLY + 4, 10, 4, '#cccccc');
-        px(ctx, 34, legRY + 4, 10, 4, '#cccccc');
-        break;
-      }
-      default: { // DEATH KNIGHT — cracked dark plate, green mist
-        px(ctx, 22, 2,  20, 16, dark);            // helm
-        px(ctx, 24, 4,  16, 12, dark + 'cc');
+      case 'architect': { // WARLOCK — purple cowl, grimoire
+        // Dark hood
+        px(ctx, 44, 0,  40, 40, dark);
+        px(ctx, 48, 8,  32, 32, '#2a0050');
+        // Face (shadowed, glowing eyes)
+        px(ctx, 52, 24, 24, 20, '#9070a0');
+        px(ctx, 54, 26, 20, 16, '#806090');
+        px(ctx, 56, 28, 6,  6,  color);           // eye L (bright glow)
+        px(ctx, 66, 28, 6,  6,  color);           // eye R (bright glow)
+        px(ctx, 57, 29, 4,  4,  '#ffffff88');      // eye L core
+        px(ctx, 67, 29, 4,  4,  '#ffffff88');      // eye R core
+        // Robe (asymmetric, dark)
+        px(ctx, 36, 48, 56, 64, dark);
+        px(ctx, 32, 68, 64, 40, dark);
+        px(ctx, 40, 50, 48, 58, color + '44');
+        // Grimoire (floating right)
+        px(ctx, 88, aR - 16, 24, 28, '#3b2060');
+        px(ctx, 90, aR - 14, 20, 24, color + '55');
+        px(ctx, 94, aR - 10, 12, 16, '#ffffff11');
+        // Arms
+        px(ctx, 84, aR, 8, 24, dark);
+        px(ctx, 28, aL, 8, 24, dark);
+        // Summoning circle
+        ctx.strokeStyle = color + 'aa'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(64, 144, 20, 0, Math.PI * 2); ctx.stroke();
         ctx.strokeStyle = color + '66'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(28, 4); ctx.lineTo(30, 14); ctx.stroke(); // cracks
-        ctx.beginPath(); ctx.moveTo(36, 6); ctx.lineTo(34, 16); ctx.stroke();
-        px(ctx, 27, 10, 4, 3, color);             // eyes
-        px(ctx, 33, 10, 4, 3, color);
-        px(ctx, 25, 18, 14, 12, '#3a4a3a');       // face
-        px(ctx, 14, 30, 36, 8, dark);             // shoulders
-        px(ctx, 20, 38, 24, 20, dark);            // torso
-        px(ctx, 44, armRY - 14, 3, 34, '#8090a0'); // rune sword
-        px(ctx, 40, armRY - 10, 10, 4, '#8090a0');
-        px(ctx, 36, armRY,  8, 14, dark);         // arms on sword
-        px(ctx, 14, armLY,  6, 16, dark);
-        ctx.fillStyle = color + '44';
-        ctx.beginPath(); ctx.ellipse(32, 76, 16, 6, 0, 0, Math.PI * 2); ctx.fill(); // mist
+        ctx.beginPath(); ctx.arc(64, 144, 12, 0, Math.PI * 2); ctx.stroke();
+        // Legs
+        px(ctx, 48, 112, 16, 36, dark);
+        px(ctx, 64, 112, 16, 36, dark + 'aa');
+        break;
+      }
+      case 'guardian': { // PALADIN — radiant golden plate
+        // Holy glow behind head
+        ctx.fillStyle = color + '33';
+        ctx.beginPath(); ctx.arc(64, 24, 32, 0, Math.PI * 2); ctx.fill();
+        // Radiant helm
+        px(ctx, 44, 4,  40, 32, color);
+        px(ctx, 48, 8,  32, 24, '#ffffff66');       // bright highlight
+        px(ctx, 46, 6,  36, 4,  '#ffffff44');
+        // Face
+        px(ctx, 50, 36, 28, 24, '#f0c87a');
+        px(ctx, 52, 38, 24, 20, '#e0b86a');
+        px(ctx, 56, 42, 5,  5,  '#5a4010');        // eye L
+        px(ctx, 67, 42, 5,  5,  '#5a4010');        // eye R
+        px(ctx, 57, 43, 2,  2,  '#fbbf24');        // eye L glow
+        px(ctx, 68, 43, 2,  2,  '#fbbf24');        // eye R glow
+        // Broad shoulders
+        px(ctx, 24, 60, 80, 12, color);
+        px(ctx, 20, 64, 16, 12, color);
+        px(ctx, 92, 64, 16, 12, color);
+        px(ctx, 26, 62, 76, 4,  '#ffffff33');       // shoulder highlight
+        // Torso
+        px(ctx, 40, 72, 48, 44, color);
+        px(ctx, 44, 76, 40, 36, '#ffffff33');
+        // Hammer (right)
+        px(ctx, 92, aR, 8, 40, '#8b7a5e');         // handle
+        px(ctx, 84, aR - 8, 24, 12, color);        // hammer head
+        px(ctx, 86, aR - 6, 20, 4,  '#ffffff44');  // hammer highlight
+        // Shield arm (left)
+        px(ctx, 24, aL, 16, 36, color);
+        px(ctx, 20, aL - 4, 20, 36, '#ffffff22');
+        // Legs
+        px(ctx, 42, 116, 20, 36, color);
+        px(ctx, 66, 116, 20, 36, color);
+        px(ctx, 44, 118, 16, 32, '#ffffff22');
+        // Feet
+        px(ctx, 40, lL + 30, 24, 8, dark);
+        px(ctx, 64, lR + 30, 24, 8, dark);
+        break;
+      }
+      case 'storyteller': { // PRIEST — white robes, golden halo
+        // Halo arc
+        ctx.strokeStyle = '#ffd700cc'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(64, 12, 20, Math.PI, 0); ctx.stroke();
+        ctx.strokeStyle = '#ffffff66'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(64, 12, 18, Math.PI, 0); ctx.stroke();
+        // Head
+        px(ctx, 48, 16, 32, 32, '#f5e8d5');
+        px(ctx, 50, 18, 28, 28, '#e8dcc8');
+        px(ctx, 54, 28, 5,  5,  '#4a3a2a');       // eye L
+        px(ctx, 69, 28, 5,  5,  '#4a3a2a');       // eye R
+        px(ctx, 55, 29, 2,  2,  '#ffffff');        // eye highlight
+        px(ctx, 70, 29, 2,  2,  '#ffffff');
+        // Shoulders
+        px(ctx, 40, 48, 48, 8, color);
+        // Flowing robes (wide, white)
+        px(ctx, 36, 56, 56, 60, color);
+        px(ctx, 32, 88, 64, 28, color);
+        px(ctx, 40, 60, 48, 52, '#ffffff44');       // inner highlight
+        // Arms
+        px(ctx, 24, aL, 12, 28, color);
+        px(ctx, 92, aR, 12, 28, color);
+        // Orb (right hand)
+        ctx.fillStyle = '#ffd70088';
+        ctx.beginPath(); ctx.arc(100, aR + 28, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffffff44';
+        ctx.beginPath(); ctx.arc(98, aR + 26, 4, 0, Math.PI * 2); ctx.fill();
+        // Feet
+        px(ctx, 44, lL + 8, 20, 8, '#cccccc');
+        px(ctx, 68, lR + 8, 20, 8, '#cccccc');
+        break;
+      }
+      default: { // DEATH KNIGHT — cracked dark plate, green rune glow
+        // Cracked helm
+        px(ctx, 44, 4,  40, 32, dark);
+        px(ctx, 48, 8,  32, 24, dark + 'cc');
+        // Cracks (green glow)
+        ctx.strokeStyle = color + '88'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(56, 8); ctx.lineTo(60, 28); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(72, 12); ctx.lineTo(68, 32); ctx.stroke();
+        // Glowing eyes
+        px(ctx, 54, 20, 8, 6, color);
+        px(ctx, 66, 20, 8, 6, color);
+        px(ctx, 56, 21, 4, 4, '#ffffff88');         // eye core L
+        px(ctx, 68, 21, 4, 4, '#ffffff88');         // eye core R
+        // Undead face
+        px(ctx, 50, 36, 28, 24, '#3a4a3a');
+        px(ctx, 52, 38, 24, 20, '#2a3a2a');
+        // Heavy dark plate
+        px(ctx, 28, 60, 72, 16, dark);
+        px(ctx, 40, 76, 48, 40, dark);
+        px(ctx, 42, 78, 44, 36, '#1a2a1a');
+        // Rune sword (two-handed)
+        px(ctx, 88, aR - 28, 6, 68, '#8090a0');
+        px(ctx, 80, aR - 20, 20, 8,  '#8090a0');   // crossguard
+        px(ctx, 90, aR - 26, 2, 40, '#ffffff44');   // blade highlight
+        // Rune glow on blade
+        px(ctx, 89, aR - 16, 4, 4, color);
+        px(ctx, 89, aR - 6,  4, 4, color);
+        px(ctx, 89, aR + 4,  4, 4, color);
+        // Arms (both gripping sword)
+        px(ctx, 72, aR, 16, 28, dark);
+        px(ctx, 28, aL, 12, 32, dark);
+        // Ghostly mist at feet (subtle, no big blobs)
         ctx.fillStyle = color + '22';
-        ctx.beginPath(); ctx.ellipse(32, 74, 20, 8, 0, 0, Math.PI * 2); ctx.fill();
-        px(ctx, 22, 58, 10, 18, dark);
-        px(ctx, 32, 58, 10, 18, dark + 'aa');
-        px(ctx, 20, legLY, 12, 4, '#304030');
-        px(ctx, 32, legRY, 12, 4, '#304030');
+        ctx.beginPath(); ctx.ellipse(64, 156, 24, 8, 0, 0, Math.PI * 2); ctx.fill();
+        // Legs
+        px(ctx, 44, 116, 20, 36, dark);
+        px(ctx, 64, 116, 20, 36, dark + 'aa');
+        // Feet
+        px(ctx, 40, lL + 30, 24, 8, '#304030');
+        px(ctx, 64, lR + 30, 24, 8, '#304030');
         break;
       }
     }
 
-    return new THREE.CanvasTexture(canvas);
+    // Auto-outline for crisp visibility
+    addOutline(ctx, W, H);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.generateMipmaps = false;
+    return tex;
   }
 
   const result: [THREE.CanvasTexture, THREE.CanvasTexture] = [drawFrame(false), drawFrame(true)];
@@ -321,7 +464,7 @@ function DalaranFountain() {
     <group>
       <mesh position={[0, 0.2, 0]}>
         <cylinderGeometry args={[1.2, 1.4, 0.4, 20]} />
-        <meshStandardMaterial color="#1a1128" roughness={0.8} />
+        <meshStandardMaterial color="#2d2245" roughness={0.8} />
       </mesh>
       <mesh ref={waterRef} position={[0, 0.42, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[0.9, 24]} />
@@ -376,14 +519,14 @@ function DalaranPlaza() {
       {tiles.map(([x, z]) => (
         <mesh key={`t${x}_${z}`} position={[x * 1.02, -0.06, z * 1.02]} receiveShadow>
           <boxGeometry args={[0.94, 0.08, 0.94]} />
-          <meshStandardMaterial color={((x + z) & 1) === 0 ? '#1a1128' : '#161020'} roughness={0.9} metalness={0.05} />
+          <meshStandardMaterial color={((x + z) & 1) === 0 ? '#2d2245' : '#241c38'} roughness={0.9} metalness={0.05} />
         </mesh>
       ))}
       {/* Border walls */}
-      <mesh position={[0, 0.06, -8.65]}><boxGeometry args={[18, 0.24, 0.3]} /><meshStandardMaterial color="#120820" /></mesh>
-      <mesh position={[0, 0.06,  8.65]}><boxGeometry args={[18, 0.24, 0.3]} /><meshStandardMaterial color="#120820" /></mesh>
-      <mesh position={[-8.65, 0.06, 0]}><boxGeometry args={[0.3, 0.24, 18]} /><meshStandardMaterial color="#120820" /></mesh>
-      <mesh position={[ 8.65, 0.06, 0]}><boxGeometry args={[0.3, 0.24, 18]} /><meshStandardMaterial color="#120820" /></mesh>
+      <mesh position={[0, 0.06, -8.65]}><boxGeometry args={[18, 0.24, 0.3]} /><meshStandardMaterial color="#1e1535" /></mesh>
+      <mesh position={[0, 0.06,  8.65]}><boxGeometry args={[18, 0.24, 0.3]} /><meshStandardMaterial color="#1e1535" /></mesh>
+      <mesh position={[-8.65, 0.06, 0]}><boxGeometry args={[0.3, 0.24, 18]} /><meshStandardMaterial color="#1e1535" /></mesh>
+      <mesh position={[ 8.65, 0.06, 0]}><boxGeometry args={[0.3, 0.24, 18]} /><meshStandardMaterial color="#1e1535" /></mesh>
       <DalaranFountain />
       <DalaranPillar x={-7} z={-7} />
       <DalaranPillar x={ 7} z={-7} />
@@ -408,7 +551,7 @@ function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
   const hpC = hp > 60 ? '#22c55e' : hp > 30 ? '#f59e0b' : '#ef4444';
 
   return (
-    <Html center position={[0, 2.6, 0]} distanceFactor={11} style={{ pointerEvents: 'none' }}>
+    <Html center position={[0, 3.4, 0]} distanceFactor={11} style={{ pointerEvents: 'none' }}>
       <div style={{
         minWidth: 120, background: 'rgba(0,0,0,.72)',
         border: `1px solid ${selected ? '#63f7b3' : c.color}66`,
@@ -511,7 +654,7 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
     <group ref={groupRef} position={pn.pos}>
       {/* Floor aura */}
       <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
-        <ringGeometry args={[0.55, 0.75, 32]} />
+        <ringGeometry args={[0.8, 1.05, 32]} />
         <meshStandardMaterial color={c.aura} emissive={c.aura} emissiveIntensity={0.5}
           transparent opacity={0.4} side={THREE.DoubleSide} />
       </mesh>
@@ -521,12 +664,12 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         <meshStandardMaterial color="#000" transparent opacity={0.25} />
       </mesh>
       {/* Pixel sprite */}
-      <sprite ref={spriteRef} scale={[1.4, 2.1, 1]}>
-        <spriteMaterial map={textures[0]} transparent alphaTest={0.05} />
+      <sprite ref={spriteRef} scale={[2.2, 3.3, 1]}>
+        <spriteMaterial map={textures[0]} transparent alphaTest={0.1} />
       </sprite>
       {/* Invisible click hitbox */}
       <mesh visible={false} onClick={(e) => { e.stopPropagation(); onClick(); }}>
-        <boxGeometry args={[1.2, 2.2, 1.2]} />
+        <boxGeometry args={[2.0, 3.4, 2.0]} />
       </mesh>
       {/* Selection ring */}
       {selected && (
@@ -711,10 +854,9 @@ function Scene({ group, selectedId, onSelect }: {
 
   return (
     <>
-      <fog attach="fog" args={['#120820', 20, 42]} />
-      <ambientLight intensity={0.18} color="#2a1040" />
-      <directionalLight position={[10, 20, 10]} intensity={0.7} color="#fff8e8" castShadow />
-      <directionalLight position={[-8, 5, -8]} intensity={0.25} color="#4040ff" />
+      <ambientLight intensity={0.35} color="#3a2060" />
+      <directionalLight position={[10, 20, 10]} intensity={1.0} color="#fff8e8" castShadow />
+      <directionalLight position={[-8, 5, -8]} intensity={0.3} color="#4040ff" />
       <pointLight position={[0, 6, 0]} intensity={0.8} color="#c8a855" distance={30} />
 
       <Suspense fallback={null}>
@@ -743,7 +885,7 @@ function Scene({ group, selectedId, onSelect }: {
         minZoom={30} maxZoom={180} maxPolarAngle={Math.PI / 2.4} minPolarAngle={Math.PI / 8} />
 
       <EffectComposer>
-        <Bloom intensity={1.2} luminanceThreshold={0.3} luminanceSmoothing={0.7} mipmapBlur />
+        <Bloom intensity={0.6} luminanceThreshold={0.85} luminanceSmoothing={0.4} mipmapBlur />
       </EffectComposer>
     </>
   );
@@ -893,8 +1035,8 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
           orthographic
           camera={{ position: [14, 14, 14], zoom: 70, up: [0, 1, 0], near: 0.1, far: 500 }}
           shadows
-          gl={{ antialias: true, alpha: false }}
-          style={{ background: 'radial-gradient(ellipse at 30% 20%, #160828 0%, #07040f 50%, #030208 100%)' }}
+          gl={{ antialias: false, alpha: false }}
+          style={{ background: 'radial-gradient(ellipse at 30% 20%, #2a1548 0%, #140c28 50%, #0a0618 100%)' }}
           onClick={(e) => { if (e.target === e.currentTarget) setSelected(null); }}
         >
           <Suspense fallback={null}>
