@@ -451,31 +451,199 @@ function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasT
   return result;
 }
 
-// ─── Simple Ground ───────────────────────────────────────────────────────────
+// ─── Arcane Sanctum Environment ──────────────────────────────────────────────
 
-function PlazaEnvironment() {
+function FloatingParticles() {
+  const count = 40;
+  const refs = useRef<(THREE.Mesh | null)[]>([]);
+  const data = useMemo(() => Array.from({ length: count }, (_, i) => ({
+    radius: 2 + Math.random() * 9,
+    speed: 0.15 + Math.random() * 0.3,
+    phase: Math.random() * Math.PI * 2,
+    y: 0.5 + Math.random() * 4,
+    yOsc: 0.3 + Math.random() * 0.8,
+    ySpeed: 0.4 + Math.random() * 0.6,
+    size: 0.04 + Math.random() * 0.06,
+    color: i % 3 === 0 ? '#c8a855' : i % 3 === 1 ? '#8b5cf6' : '#60a5fa',
+  })), []);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    data.forEach((d, i) => {
+      const mesh = refs.current[i];
+      if (!mesh) return;
+      const angle = d.phase + t * d.speed;
+      mesh.position.set(
+        Math.cos(angle) * d.radius,
+        d.y + Math.sin(t * d.ySpeed + d.phase) * d.yOsc,
+        Math.sin(angle) * d.radius,
+      );
+    });
+  });
+
   return (
     <>
-      {/* Dark ground — characters pop against this */}
+      {data.map((d, i) => (
+        <mesh key={i} ref={(el) => { refs.current[i] = el; }}>
+          <sphereGeometry args={[d.size, 6, 6]} />
+          <meshBasicMaterial color={d.color} transparent opacity={0.7} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+function CrystalPillar({ position, color }: { position: [number, number, number]; color: string }) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame((state) => {
+    if (ref.current) ref.current.rotation.y = state.clock.elapsedTime * 0.3;
+  });
+  return (
+    <group position={position}>
+      {/* Stone base */}
+      <mesh position={[0, 0.3, 0]}>
+        <cylinderGeometry args={[0.35, 0.45, 0.6, 6]} />
+        <meshStandardMaterial color="#2a2040" roughness={0.9} />
+      </mesh>
+      {/* Crystal */}
+      <mesh ref={ref} position={[0, 1.2, 0]}>
+        <octahedronGeometry args={[0.4, 0]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.5}
+          transparent opacity={0.85} roughness={0.2} metalness={0.3} />
+      </mesh>
+      {/* Glow light */}
+      <pointLight position={[0, 1.2, 0]} color={color} intensity={0.25} distance={5} />
+    </group>
+  );
+}
+
+function Brazier({ position }: { position: [number, number, number] }) {
+  const flameRef = useRef<THREE.Mesh>(null);
+  useFrame((state) => {
+    if (flameRef.current) {
+      const t = state.clock.elapsedTime;
+      flameRef.current.scale.y = 0.8 + Math.sin(t * 5 + position[0]) * 0.2;
+      flameRef.current.scale.x = 0.8 + Math.sin(t * 4.3 + position[2]) * 0.15;
+    }
+  });
+  return (
+    <group position={position}>
+      {/* Bowl */}
+      <mesh position={[0, 0.4, 0]}>
+        <cylinderGeometry args={[0.3, 0.2, 0.5, 8]} />
+        <meshStandardMaterial color="#3a2a18" roughness={0.8} metalness={0.4} />
+      </mesh>
+      {/* Stand */}
+      <mesh position={[0, 0.1, 0]}>
+        <cylinderGeometry args={[0.08, 0.15, 0.2, 6]} />
+        <meshStandardMaterial color="#2a1e10" roughness={0.9} />
+      </mesh>
+      {/* Flame */}
+      <mesh ref={flameRef} position={[0, 0.8, 0]}>
+        <sphereGeometry args={[0.18, 8, 6]} />
+        <meshBasicMaterial color="#ff8c22" transparent opacity={0.9} />
+      </mesh>
+      {/* Warm light */}
+      <pointLight position={[0, 0.9, 0]} color="#ff8c22" intensity={0.3} distance={5} />
+    </group>
+  );
+}
+
+function ArcaneFloor() {
+  const runeRingRef = useRef<THREE.Group>(null);
+  useFrame((state) => {
+    if (runeRingRef.current) runeRingRef.current.rotation.z = state.clock.elapsedTime * 0.08;
+  });
+
+  const radials = useMemo(() => {
+    const lines: { angle: number; inner: number; outer: number }[] = [];
+    for (let i = 0; i < 12; i++) {
+      lines.push({ angle: (i / 12) * Math.PI * 2, inner: 1.5, outer: 5 });
+    }
+    for (let i = 0; i < 24; i++) {
+      lines.push({ angle: (i / 24) * Math.PI * 2, inner: 5.3, outer: 8 });
+    }
+    return lines;
+  }, []);
+
+  return (
+    <>
+      {/* Main dark ground */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
-        <circleGeometry args={[12, 48]} />
+        <circleGeometry args={[14, 64]} />
         <meshBasicMaterial color="#1a1428" />
       </mesh>
-      {/* Subtle inner ring */}
+      {/* Outer edge ring */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
-        <ringGeometry args={[5, 5.15, 48]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.25} />
+        <ringGeometry args={[11, 11.2, 64]} />
+        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.2} />
       </mesh>
-      {/* Outer ring */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
-        <ringGeometry args={[8, 8.15, 48]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.15} />
-      </mesh>
-      {/* Center rune glow */}
+      {/* Concentric arcane rings */}
+      {[1.5, 3, 5, 8].map((r, i) => (
+        <mesh key={r} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04 + i * 0.002, 0]}>
+          <ringGeometry args={[r - 0.06, r + 0.06, 64]} />
+          <meshBasicMaterial color="#c8a855" transparent opacity={0.15 + i * 0.04} />
+        </mesh>
+      ))}
+      {/* Center glow */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}>
-        <circleGeometry args={[0.8, 24]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.3} />
+        <circleGeometry args={[1.2, 32]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.2} />
       </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.025, 0]}>
+        <circleGeometry args={[0.5, 24]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.4} />
+      </mesh>
+      {/* Rotating rune segments */}
+      <group ref={runeRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.035, 0]}>
+        {radials.map((r, i) => {
+          const cx = Math.cos(r.angle);
+          const cy = Math.sin(r.angle);
+          const midR = (r.inner + r.outer) / 2;
+          const len = r.outer - r.inner;
+          return (
+            <mesh key={i} position={[cx * midR, cy * midR, 0]}
+              rotation={[0, 0, r.angle + Math.PI / 2]}>
+              <planeGeometry args={[0.04, len]} />
+              <meshBasicMaterial color="#c8a855" transparent opacity={0.18} side={THREE.DoubleSide} />
+            </mesh>
+          );
+        })}
+      </group>
+      {/* Ground fog disc */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <circleGeometry args={[10, 48]} />
+        <meshBasicMaterial color="#2a1848" transparent opacity={0.08} />
+      </mesh>
+    </>
+  );
+}
+
+function PlazaEnvironment() {
+  const pillarPositions: { pos: [number, number, number]; color: string }[] = [
+    { pos: [0, 0, -9], color: '#8b5cf6' },   // N — purple
+    { pos: [9, 0, 0], color: '#60a5fa' },     // E — blue
+    { pos: [0, 0, 9], color: '#34d399' },     // S — green
+    { pos: [-9, 0, 0], color: '#f59e0b' },    // W — gold
+    { pos: [6.4, 0, -6.4], color: '#c084fc' }, // NE — light purple
+    { pos: [-6.4, 0, 6.4], color: '#a78bfa' }, // SW — violet
+  ];
+
+  const brazierPositions: [number, number, number][] = [
+    [4.5, 0, -4.5], [-4.5, 0, -4.5],
+    [4.5, 0, 4.5], [-4.5, 0, 4.5],
+  ];
+
+  return (
+    <>
+      <ArcaneFloor />
+      {pillarPositions.map((p, i) => (
+        <CrystalPillar key={i} position={p.pos} color={p.color} />
+      ))}
+      {brazierPositions.map((pos, i) => (
+        <Brazier key={i} position={pos} />
+      ))}
+      <FloatingParticles />
     </>
   );
 }
@@ -633,7 +801,7 @@ function DynamicLeyLine({ childId, parentId, color, livePosMap }: {
   livePosMap: React.MutableRefObject<Map<string, THREE.Vector3>>;
 }) {
   const lineGeo  = useMemo(() => new THREE.BufferGeometry(), []);
-  const lineMat  = useMemo(() => new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.55 }), [color]);
+  const lineMat  = useMemo(() => new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.75, linewidth: 2 }), [color]);
   const lineObj  = useMemo(() => new THREE.Line(lineGeo, lineMat), [lineGeo, lineMat]);
   const stone1Ref = useRef<THREE.Mesh>(null);
   const stone2Ref = useRef<THREE.Mesh>(null);
@@ -794,9 +962,9 @@ function Scene({ group, selectedId, onSelect }: {
 
   return (
     <>
-      <ambientLight intensity={0.4} color="#c8a855" />
-      <directionalLight position={[10, 20, 10]} intensity={0.8} color="#fff8e8" />
-      <pointLight position={[0, 6, 0]} intensity={0.5} color="#c8a855" distance={25} />
+      <ambientLight intensity={0.35} color="#3a2060" />
+      <directionalLight position={[10, 20, 10]} intensity={1.0} color="#fff8e8" castShadow />
+      <pointLight position={[0, 8, 0]} intensity={0.6} color="#c8a855" distance={30} />
 
       <Suspense fallback={null}>
         <PlazaEnvironment />
@@ -973,7 +1141,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
           camera={{ position: [12, 16, 12], zoom: 38, up: [0, 1, 0], near: 0.1, far: 500 }}
           shadows
           gl={{ antialias: false, alpha: false }}
-          style={{ background: 'radial-gradient(ellipse at 30% 20%, #1a1430 0%, #0c0818 50%, #050310 100%)' }}
+          style={{ background: 'radial-gradient(ellipse at 30% 20%, #2a1548 0%, #140c28 50%, #0a0618 100%)' }}
           onClick={(e) => { if (e.target === e.currentTarget) setSelected(null); }}
         >
           <Suspense fallback={null}>
