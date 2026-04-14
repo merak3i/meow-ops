@@ -572,51 +572,56 @@ function PlazaEnvironment() {
       </mesh>
 
       {/* Fountain rim */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-        <ringGeometry args={[1.0, 1.5, 24]} />
-        <meshStandardMaterial color="#8a7a6a" roughness={0.8} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.06, 0]}>
+        <ringGeometry args={[1.5, 2.2, 24]} />
+        <meshStandardMaterial color="#a08a70" roughness={0.7} />
       </mesh>
       {/* Fountain water */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <circleGeometry args={[1.0, 24]} />
-        <meshStandardMaterial color="#4a90c0" emissive="#2a6090" emissiveIntensity={0.3} />
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
+        <circleGeometry args={[1.5, 24]} />
+        <meshStandardMaterial color="#4a90c8" emissive="#2a70b0" emissiveIntensity={0.4} />
+      </mesh>
+      {/* Fountain base */}
+      <mesh position={[0, 0.15, 0]}>
+        <cylinderGeometry args={[2.2, 2.3, 0.3, 24]} />
+        <meshStandardMaterial color="#8a7a6a" roughness={0.8} />
       </mesh>
       {/* Fountain pillar */}
-      <mesh position={[0, 0.35, 0]}>
-        <cylinderGeometry args={[0.12, 0.18, 0.65, 8]} />
-        <meshStandardMaterial color="#9a8a7a" roughness={0.7} />
+      <mesh position={[0, 0.7, 0]}>
+        <cylinderGeometry args={[0.15, 0.22, 1.1, 8]} />
+        <meshStandardMaterial color="#b0a090" roughness={0.6} />
       </mesh>
 
       {/* Trees — trunk + layered canopy */}
       {[[-7,-6],[7,-6],[-7,6],[7,6],[-8,0],[8,0]].map(([x,z],i) => (
         <group key={`tree${i}`} position={[x!, 0, z!]}>
           {/* Trunk */}
-          <mesh position={[0, 0.7, 0]}>
-            <cylinderGeometry args={[0.1, 0.18, 1.4, 6]} />
-            <meshStandardMaterial color="#5a3a1a" roughness={0.9} />
+          <mesh position={[0, 1.0, 0]}>
+            <cylinderGeometry args={[0.15, 0.25, 2.0, 6]} />
+            <meshStandardMaterial color="#6a4a2a" roughness={0.9} />
           </mesh>
           {/* Root flare */}
-          <mesh position={[0, 0.08, 0]}>
-            <cylinderGeometry args={[0.18, 0.3, 0.16, 6]} />
-            <meshStandardMaterial color="#4a3018" roughness={0.9} />
+          <mesh position={[0, 0.1, 0]}>
+            <cylinderGeometry args={[0.25, 0.4, 0.2, 6]} />
+            <meshStandardMaterial color="#5a3a1a" roughness={0.9} />
           </mesh>
-          {/* Canopy layers — dark to light */}
-          <mesh position={[0, 1.4, 0]}>
-            <sphereGeometry args={[1.1, 8, 6]} />
-            <meshStandardMaterial color="#1a5a1a" roughness={0.85} />
+          {/* Canopy layers — dark to light, bigger */}
+          <mesh position={[0, 2.2, 0]}>
+            <sphereGeometry args={[1.8, 10, 8]} />
+            <meshStandardMaterial color="#2a6a1a" roughness={0.8} />
           </mesh>
-          <mesh position={[0, 1.8, 0]}>
+          <mesh position={[0, 2.8, 0]}>
+            <sphereGeometry args={[1.4, 10, 8]} />
+            <meshStandardMaterial color="#3a8a2a" roughness={0.75} />
+          </mesh>
+          <mesh position={[0, 3.2, 0]}>
             <sphereGeometry args={[0.9, 8, 6]} />
-            <meshStandardMaterial color="#2a7a2a" roughness={0.8} />
-          </mesh>
-          <mesh position={[0, 2.15, 0]}>
-            <sphereGeometry args={[0.6, 8, 6]} />
-            <meshStandardMaterial color="#3a9a3a" roughness={0.75} />
+            <meshStandardMaterial color="#4aaa3a" roughness={0.7} />
           </mesh>
           {/* Ground shadow */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.2, 0.005, 0.2]}>
-            <circleGeometry args={[1.2, 12]} />
-            <meshStandardMaterial color="#000" transparent opacity={0.18} />
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.3, 0.005, 0.3]}>
+            <circleGeometry args={[1.8, 12]} />
+            <meshStandardMaterial color="#000" transparent opacity={0.2} />
           </mesh>
         </group>
       ))}
@@ -778,7 +783,7 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         <meshStandardMaterial color="#000" transparent opacity={0.25} />
       </mesh>
       {/* Pixel sprite */}
-      <sprite ref={spriteRef} scale={[2.2, 3.3, 1]}>
+      <sprite ref={spriteRef} scale={[3.0, 4.5, 1]}>
         <spriteMaterial map={textures[0]} transparent alphaTest={0.1} />
       </sprite>
       {/* Invisible click hitbox */}
@@ -968,10 +973,10 @@ function Scene({ group, selectedId, onSelect }: {
 
   return (
     <>
-      <ambientLight intensity={0.5} color="#fff0d0" />
-      <directionalLight position={[10, 20, 10]} intensity={1.2} color="#fff8e0" castShadow />
-      <directionalLight position={[-8, 5, -8]} intensity={0.2} color="#88aaff" />
-      <pointLight position={[0, 6, 0]} intensity={0.6} color="#ffd080" distance={30} />
+      <ambientLight intensity={0.8} color="#fff0d0" />
+      <directionalLight position={[10, 20, 10]} intensity={1.5} color="#fff8e0" />
+      <directionalLight position={[-8, 5, -8]} intensity={0.4} color="#aaccff" />
+      <pointLight position={[0, 6, 0]} intensity={0.8} color="#ffd080" distance={40} />
 
       <Suspense fallback={null}>
         <PlazaEnvironment />
@@ -1145,7 +1150,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
       <div style={{ flex: 1, minHeight: 520, position: 'relative' }}>
         <Canvas
           orthographic
-          camera={{ position: [14, 14, 14], zoom: 48, up: [0, 1, 0], near: 0.1, far: 500 }}
+          camera={{ position: [12, 16, 12], zoom: 38, up: [0, 1, 0], near: 0.1, far: 500 }}
           shadows
           gl={{ antialias: false, alpha: false }}
           style={{ background: 'radial-gradient(ellipse at 30% 20%, #1a3020 0%, #0e1a10 50%, #060e08 100%)' }}
