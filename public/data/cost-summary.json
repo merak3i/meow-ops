@@ -1,14 +1,14 @@
 {
-  "exportedAt": "2026-04-15T06:31:29.840Z",
+  "exportedAt": "2026-04-15T10:17:22.610Z",
   "today": {
-    "cost": 215.20532200000002,
-    "tokens": 306999358,
-    "sessions": 14
+    "cost": 254.23334300000002,
+    "tokens": 383007676,
+    "sessions": 15
   },
   "thisWeek": {
-    "cost": 448.973211,
-    "tokens": 519418196,
-    "sessions": 37
+    "cost": 488.0012320000001,
+    "tokens": 595426514,
+    "sessions": 38
   },
   "lastWeek": {
     "cost": 0,
@@ -16,9 +16,9 @@
     "sessions": 0
   },
   "thisMonth": {
-    "cost": 448.973211,
-    "tokens": 519418196,
-    "sessions": 37
+    "cost": 488.0012320000001,
+    "tokens": 595426514,
+    "sessions": 38
   },
   "lastMonth": {
     "cost": 0,
@@ -26,9 +26,9 @@
     "sessions": 0
   },
   "thisYear": {
-    "cost": 448.973211,
-    "tokens": 519418196,
-    "sessions": 37
+    "cost": 488.0012320000001,
+    "tokens": 595426514,
+    "sessions": 38
   },
   "lastYear": {
     "cost": 0,
@@ -36,15 +36,15 @@
     "sessions": 0
   },
   "allTime": {
-    "cost": 448.973211,
-    "sessions": 37,
-    "tokens": 519418196
+    "cost": 488.0012320000001,
+    "sessions": 38,
+    "tokens": 595426514
   },
   "bySource": {
     "claude": {
-      "cost": 448.973211,
-      "tokens": 519418196,
-      "sessions": 37
+      "cost": 488.0012320000001,
+      "tokens": 595426514,
+      "sessions": 38
     }
   },
   "daily_summary": [
@@ -74,13 +74,13 @@
     },
     {
       "date": "2026-04-15",
-      "session_count": 14,
-      "total_input_tokens": 14753,
-      "total_output_tokens": 1031937,
-      "total_cache_creation": 11693985,
-      "total_cache_read": 294258683,
-      "total_tokens": 306999358,
-      "estimated_cost_usd": 215.20532200000002,
+      "session_count": 15,
+      "total_input_tokens": 35246,
+      "total_output_tokens": 1537820,
+      "total_cache_creation": 14802858,
+      "total_cache_read": 366631752,
+      "total_tokens": 383007676,
+      "estimated_cost_usd": 254.23334300000002,
       "active_projects": 3,
       "ghost_count": 1
     }
