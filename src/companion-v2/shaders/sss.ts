@@ -89,15 +89,18 @@ export const sssFragmentShader = /* glsl */ `
 export function defaultSSSUniforms() {
   return {
     uAlbedoColor:     { value: [0.7, 0.6, 0.5] },   // warm grey fallback
-    uLightDir:        { value: [0.4, 0.8, 0.5] },
-    uLightColor:      { value: [1.0, 0.95, 0.85] },
+    // normalised scene key-light position [2.5, 4.5, 3] → [0.42, 0.76, 0.50]
+    uLightDir:        { value: [0.42, 0.76, 0.50] },
+    uLightColor:      { value: [1.0, 0.97, 0.88] },
     uSubsurfaceColor: { value: [0.9, 0.4, 0.3] },   // warm skin pink
     uCamPos:          { value: [0, 0, 5] },
-    uWrapFactor:      { value: 0.5 },
-    uDistortion:      { value: 0.3 },
+    uWrapFactor:      { value: 0.60 },
+    uDistortion:      { value: 0.25 },
     uPower:           { value: 8.0 },
-    uScale:           { value: 1.5 },
-    uAmbientStr:      { value: 0.22 },
-    uAmbientColor:    { value: [0.4, 0.45, 0.6] },  // cool sky ambient
+    // reduced from 1.5 — was creating a blown-out white scatter streak at silhouette
+    uScale:           { value: 0.40 },
+    // raised from 0.22 — pairs with the fur ambient fix
+    uAmbientStr:      { value: 0.42 },
+    uAmbientColor:    { value: [0.50, 0.52, 0.65] },
   };
 }

@@ -1,14 +1,35 @@
 // ScryingSanctum.tsx — Dalaran Plaza agent pipeline visualizer
 // Pixel-art sprite characters roam a Dalaran plaza · WoW nameplates · Dynamic ley lines
 
-import { useRef, useState, useMemo, useEffect, Suspense, useCallback } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { useRef, useState, useMemo, useEffect, Suspense, useCallback, Component, createContext, useContext, type ReactNode } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Html, OrbitControls } from '@react-three/drei';
 // EffectComposer/Bloom removed — was breaking WebGL render pipeline on Apple GPU
 import * as THREE from 'three';
 import type { Session } from '@/types/session';
 import { getSessionRunGroups } from '@/lib/agent-tree';
 import type { AgentTreeNode, SessionRunGroup } from '@/lib/agent-tree';
+
+// ─── Perf / Reduced-motion context ───────────────────────────────────────────
+
+type PerfLevel = 'low' | 'normal' | 'ornate';
+const PerfContext = createContext<PerfLevel>('normal');
+function usePerfLevel(): PerfLevel { return useContext(PerfContext); }
+
+// ─── Scene Error Boundary ─────────────────────────────────────────────────────
+
+class SceneErrorBoundary extends Component<
+  { children: ReactNode; onError: (err: Error) => void },
+  { hasError: boolean }
+> {
+  override state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  override componentDidCatch(err: Error) { this.props.onError(err); }
+  override render() {
+    if (this.state.hasError) return null; // Scene crashed → keep Canvas alive, show DOM warning
+    return this.props.children;
+  }
+}
 
 // ─── Class config ─────────────────────────────────────────────────────────────
 
@@ -339,6 +360,23 @@ function addOutline(ctx: CanvasRenderingContext2D, W: number, H: number) {
   ctx.clearRect(0, 0, W, H);
   ctx.drawImage(tmp, 0, 0);
   ctx.putImageData(src, 0, 0);
+}
+
+// Soft radial falloff used as the shadow alphaMap — shared across all champions.
+let SHADOW_TEXTURE: THREE.CanvasTexture | null = null;
+function getShadowTexture(): THREE.CanvasTexture {
+  if (SHADOW_TEXTURE) return SHADOW_TEXTURE;
+  const c = document.createElement('canvas');
+  c.width = 128; c.height = 128;
+  const ctx = c.getContext('2d')!;
+  const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0.00, 'rgba(0,0,0,1)');
+  grad.addColorStop(0.55, 'rgba(0,0,0,0.55)');
+  grad.addColorStop(1.00, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 128, 128);
+  SHADOW_TEXTURE = new THREE.CanvasTexture(c);
+  return SHADOW_TEXTURE;
 }
 
 function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasTexture] {
@@ -778,6 +816,7 @@ function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasT
 // ─── Arcane Sanctum Environment ──────────────────────────────────────────────
 
 function FloatingParticles() {
+  const perf  = usePerfLevel();
   const count = 55; // 40 floating + 15 ground motes
   const refs = useRef<(THREE.Mesh | null)[]>([]);
   const data = useMemo(() => {
@@ -814,6 +853,7 @@ function FloatingParticles() {
   }, []);
 
   useFrame((state) => {
+    if (perf === 'low') return;
     const t = state.clock.elapsedTime;
     data.forEach((d, i) => {
       const mesh = refs.current[i];
@@ -831,6 +871,7 @@ function FloatingParticles() {
     });
   });
 
+  if (perf === 'low') return null;
   return (
     <>
       {data.map((d, i) => (
@@ -846,6 +887,7 @@ function FloatingParticles() {
 // ─── Arcane Weather (falling sparks + wind streaks) ─────────────────────────
 
 function ArcaneWeather() {
+  const perf      = usePerfLevel();
   const sparkRefs = useRef<(THREE.Mesh | null)[]>([]);
   const streakRefs = useRef<(THREE.Mesh | null)[]>([]);
 
@@ -866,6 +908,7 @@ function ArcaneWeather() {
   })), []);
 
   useFrame((state, delta) => {
+    if (perf === 'low') return;
     const t = state.clock.elapsedTime;
     sparks.forEach((s, i) => {
       const mesh = sparkRefs.current[i];
@@ -884,6 +927,7 @@ function ArcaneWeather() {
     });
   });
 
+  if (perf === 'low') return null;
   return (
     <>
       {sparks.map((s, i) => (
@@ -1262,6 +1306,7 @@ function MageTower() {
 }
 
 function Armory() {
+  const perf      = usePerfLevel();
   const flameRefs = useRef<(THREE.Mesh | null)[]>([]);
   const smokeRefs = useRef<(THREE.Mesh | null)[]>([]);
   const smokeState = useRef([0, 0.3, 0.6].map((p) => ({ y: 2.4 + p, opacity: 0.3 })));
@@ -1271,17 +1316,19 @@ function Armory() {
     flameRefs.current.forEach((ref, i) => {
       if (ref) ref.scale.y = 0.8 + Math.sin(t * 6 + i * 2) * 0.2;
     });
-    // Smoke rising from chimney
-    smokeState.current.forEach((s, i) => {
-      const ref = smokeRefs.current[i];
-      if (!ref) return;
-      s.y += delta * 0.4;
-      s.opacity = Math.max(0, 0.3 - (s.y - 2.4) * 0.15);
-      if (s.y > 3.8) { s.y = 2.4; s.opacity = 0.3; }
-      ref.position.y = s.y;
-      ref.scale.setScalar(0.5 + (s.y - 2.4) * 0.6);
-      (ref.material as THREE.MeshBasicMaterial).opacity = s.opacity;
-    });
+    // Smoke rising from chimney — skipped in low perf mode
+    if (perf !== 'low') {
+      smokeState.current.forEach((s, i) => {
+        const ref = smokeRefs.current[i];
+        if (!ref) return;
+        s.y += delta * 0.4;
+        s.opacity = Math.max(0, 0.3 - (s.y - 2.4) * 0.15);
+        if (s.y > 3.8) { s.y = 2.4; s.opacity = 0.3; }
+        ref.position.y = s.y;
+        ref.scale.setScalar(0.5 + (s.y - 2.4) * 0.6);
+        (ref.material as THREE.MeshBasicMaterial).opacity = s.opacity;
+      });
+    }
   });
   return (
     <group position={[-7.5, 0, 7.5]}>
@@ -1304,8 +1351,8 @@ function Armory() {
         <boxGeometry args={[0.32, 0.06, 0.32]} />
         <meshBasicMaterial color="#1a1008" />
       </mesh>
-      {/* Smoke particles */}
-      {[0, 1, 2].map((i) => (
+      {/* Smoke particles — skipped in low perf mode */}
+      {perf !== 'low' && [0, 1, 2].map((i) => (
         <mesh key={`sm${i}`} ref={(el) => { smokeRefs.current[i] = el; }}
           position={[0.6, 2.4 + i * 0.3, -0.3]}>
           <sphereGeometry args={[0.06, 4, 4]} />
@@ -1559,6 +1606,7 @@ const TREE_VARIANTS: Record<string, { canopyA: string; canopyB: string; crystal:
 };
 
 function ArcaneCrystalTree({ position, variant }: { position: [number, number, number]; variant: string }) {
+  const perf = usePerfLevel();
   const v = TREE_VARIANTS[variant] ?? TREE_VARIANTS.purple!;
   const crystalRef = useRef<THREE.Mesh>(null);
   const shimmerRefs = useRef<(THREE.Mesh | null)[]>([]);
@@ -1571,14 +1619,16 @@ function ArcaneCrystalTree({ position, variant }: { position: [number, number, n
     canopyRefs.current.forEach((ref) => {
       if (ref) ref.rotation.y = Math.sin(t * 0.4 + phase) * 0.03;
     });
-    shimmerRefs.current.forEach((ref, i) => {
-      if (!ref) return;
-      const speed = [1.2, -0.8, 1.5][i]!;
-      const h = [1.8, 2.3, 2.8][i]!;
-      const angle = t * speed + i * 2.1 + phase;
-      ref.position.set(Math.cos(angle) * 0.5, h, Math.sin(angle) * 0.5);
-      (ref.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3 + i * 1.5) * 0.15;
-    });
+    if (perf !== 'low') {
+      shimmerRefs.current.forEach((ref, i) => {
+        if (!ref) return;
+        const speed = [1.2, -0.8, 1.5][i]!;
+        const h = [1.8, 2.3, 2.8][i]!;
+        const angle = t * speed + i * 2.1 + phase;
+        ref.position.set(Math.cos(angle) * 0.5, h, Math.sin(angle) * 0.5);
+        (ref.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3 + i * 1.5) * 0.15;
+      });
+    }
   });
 
   return (
@@ -1613,8 +1663,8 @@ function ArcaneCrystalTree({ position, variant }: { position: [number, number, n
         <octahedronGeometry args={[0.15, 0]} />
         <meshBasicMaterial color={v.crystal} transparent opacity={0.7} />
       </mesh>
-      {/* Shimmer particles */}
-      {[0, 1, 2].map((i) => (
+      {/* Shimmer particles — skipped in low perf mode */}
+      {perf !== 'low' && [0, 1, 2].map((i) => (
         <mesh key={i} ref={(el) => { shimmerRefs.current[i] = el; }}>
           <sphereGeometry args={[0.04, 4, 4]} />
           <meshBasicMaterial color={v.crystal} transparent opacity={0.4} />
@@ -1735,9 +1785,10 @@ function ScatteredDetailProps() {
 // ─── Arcane Fountain ────────────────────────────────────────────────────────
 
 function ArcaneFountain() {
-  const waterRef = useRef<THREE.Mesh>(null);
+  const perf      = usePerfLevel();
+  const waterRef  = useRef<THREE.Mesh>(null);
   const crystalRef = useRef<THREE.Mesh>(null);
-  const jetRef = useRef<THREE.Mesh>(null);
+  const jetRef    = useRef<THREE.Mesh>(null);
   const splashRefs = useRef<(THREE.Mesh | null)[]>([]);
   const rippleRef = useRef<THREE.Mesh>(null);
 
@@ -1749,16 +1800,18 @@ function ArcaneFountain() {
       crystalRef.current.position.y = 1.1 + Math.sin(t * 1.0) * 0.05;
     }
     if (jetRef.current) jetRef.current.scale.y = 0.8 + Math.sin(t * 3) * 0.2;
-    splashRefs.current.forEach((ref, i) => {
-      if (!ref) return;
-      ref.position.y = 0.28 + Math.abs(Math.sin(t * 2.5 + i * 1.5)) * 0.15;
-      (ref.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.abs(Math.sin(t * 2.5 + i * 1.5)) * 0.3;
-    });
-    if (rippleRef.current) {
-      const cycle = (t * 0.5) % 1;
-      const s = 1 + cycle;
-      rippleRef.current.scale.setScalar(s);
-      (rippleRef.current.material as THREE.MeshBasicMaterial).opacity = 0.2 * (1 - cycle);
+    if (perf !== 'low') {
+      splashRefs.current.forEach((ref, i) => {
+        if (!ref) return;
+        ref.position.y = 0.28 + Math.abs(Math.sin(t * 2.5 + i * 1.5)) * 0.15;
+        (ref.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.abs(Math.sin(t * 2.5 + i * 1.5)) * 0.3;
+      });
+      if (rippleRef.current) {
+        const cycle = (t * 0.5) % 1;
+        const s = 1 + cycle;
+        rippleRef.current.scale.setScalar(s);
+        (rippleRef.current.material as THREE.MeshBasicMaterial).opacity = 0.2 * (1 - cycle);
+      }
     }
   });
 
@@ -1784,11 +1837,13 @@ function ArcaneFountain() {
         <circleGeometry args={[0.75, 12]} />
         <meshBasicMaterial color="#1a3050" transparent opacity={0.4} />
       </mesh>
-      {/* Ripple ring */}
-      <mesh ref={rippleRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.26, 0]}>
-        <ringGeometry args={[0.3, 0.35, 12]} />
-        <meshBasicMaterial color="#60a5fa" transparent opacity={0.15} />
-      </mesh>
+      {/* Ripple ring — skipped in low perf mode */}
+      {perf !== 'low' && (
+        <mesh ref={rippleRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.26, 0]}>
+          <ringGeometry args={[0.3, 0.35, 12]} />
+          <meshBasicMaterial color="#60a5fa" transparent opacity={0.15} />
+        </mesh>
+      )}
       {/* Central column */}
       <mesh position={[0, 0.6, 0]}>
         <cylinderGeometry args={[0.08, 0.12, 0.8, 6]} />
@@ -1804,8 +1859,8 @@ function ArcaneFountain() {
         <octahedronGeometry args={[0.12, 0]} />
         <meshBasicMaterial color="#60a5fa" transparent opacity={0.7} />
       </mesh>
-      {/* Splash particles */}
-      {[0, 1, 2, 3].map((i) => (
+      {/* Splash particles — skipped in low perf mode */}
+      {perf !== 'low' && [0, 1, 2, 3].map((i) => (
         <mesh key={i} ref={(el) => { splashRefs.current[i] = el; }}
           position={[Math.cos(i * Math.PI / 2) * 0.6, 0.3, Math.sin(i * Math.PI / 2) * 0.6]}>
           <sphereGeometry args={[0.03, 4, 4]} />
@@ -1932,7 +1987,7 @@ function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
   const castProgress = Math.min(100, (pn.session.message_count ?? 0) * 4);
 
   return (
-    <Html center position={[0, 5.2, 0]} style={{ pointerEvents: 'none' }}>
+    <Html center position={[0, 3.8, 0]} style={{ pointerEvents: 'none' }}>
       <div style={{
         minWidth: 120, background: 'rgba(0,0,0,.72)',
         border: `1px solid ${selected ? '#63f7b3' : c.color}66`,
@@ -2125,20 +2180,23 @@ function FootstepDust({ isMoving }: { isMoving: React.MutableRefObject<boolean> 
 
 // ─── WoW Champion Node ────────────────────────────────────────────────────────
 
-function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdate, parentPos, livePosMap }: {
-  pn:          PositionedNode;
-  maxCost:     number;
-  maxTokens:   number;
-  selected:    boolean;
-  onClick:     () => void;
-  onPosUpdate: (id: string, pos: THREE.Vector3) => void;
-  parentPos:   THREE.Vector3 | null;
-  livePosMap:  React.MutableRefObject<Map<string, THREE.Vector3>>;
+function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdate, parentPos, livePosMap, controlsRef, isDraggingRef }: {
+  pn:            PositionedNode;
+  maxCost:       number;
+  maxTokens:     number;
+  selected:      boolean;
+  onClick:       () => void;
+  onPosUpdate:   (id: string, pos: THREE.Vector3) => void;
+  parentPos:     THREE.Vector3 | null;
+  livePosMap:    React.MutableRefObject<Map<string, THREE.Vector3>>;
+  controlsRef:   React.RefObject<any>;
+  isDraggingRef: React.MutableRefObject<boolean>;
 }) {
   const groupRef    = useRef<THREE.Group>(null);
   const spriteRef   = useRef<THREE.Sprite>(null);
   const ringRef     = useRef<THREE.Mesh>(null);
   const shadowRef   = useRef<THREE.Mesh>(null);
+  const dropRingRef = useRef<THREE.Mesh>(null);
   const livePosRef  = useRef(new THREE.Vector3(pn.pos[0], 0, pn.pos[2]));
   const targetWpRef = useRef(Math.floor(Math.random() * WAYPOINTS.length));
   const frameRef    = useRef(0);
@@ -2148,6 +2206,13 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
   const hovered     = useRef(false);
   const idlePauseRef = useRef(0);                     // idle pause countdown
   const velocityRef  = useRef(0);                     // smooth velocity ramp
+  const dragActive  = useRef(false);                   // true while cursor-dragging
+  const dragLift    = useRef(0);                       // 0→1 lift animation
+  const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const wasDragged  = useRef(false);
+  // Kept in sync each render so closure-based event handlers always see current value
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   const c           = pn.cls;
   const catType     = pn.session.cat_type ?? 'ghost';
   const auraProf    = AURA_PROFILES[catType] ?? DEFAULT_AURA;
@@ -2164,6 +2229,67 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
 
   const textures = useMemo(() => buildClassTexture(catType), [catType]);
 
+  // Camera + gl needed for world-space raycasting during drag
+  const { camera, gl } = useThree();
+
+  // Window-level pointer handlers — one set per mounted character, uses refs throughout
+  useEffect(() => {
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const raycaster   = new THREE.Raycaster();
+    const intersect   = new THREE.Vector3();
+
+    const onMove = (e: PointerEvent) => {
+      if (!pointerDownRef.current) return;
+      // Activate drag after 8 px threshold, only when this character is selected
+      if (!dragActive.current && selectedRef.current) {
+        const ddx = e.clientX - pointerDownRef.current.x;
+        const ddy = e.clientY - pointerDownRef.current.y;
+        if (ddx * ddx + ddy * ddy > 64) {          // 8 px²
+          dragActive.current    = true;
+          wasDragged.current    = true;
+          isDraggingRef.current = true;
+          if (controlsRef.current) controlsRef.current.enabled = false;
+          document.body.style.cursor = 'grabbing';
+          idlePauseRef.current = 999;               // freeze autonomous movement
+          velocityRef.current  = 0;
+        }
+      }
+      if (!dragActive.current) return;
+      const rect = gl.domElement.getBoundingClientRect();
+      const nx   = ((e.clientX - rect.left) / rect.width)  *  2 - 1;
+      const ny   = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+      raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
+      if (raycaster.ray.intersectPlane(groundPlane, intersect)) {
+        livePosRef.current.x = Math.max(-11, Math.min(11, intersect.x));
+        livePosRef.current.z = Math.max(-11, Math.min(11, intersect.z));
+      }
+    };
+
+    const onUp = () => {
+      pointerDownRef.current = null;
+      if (!dragActive.current) return;
+      dragActive.current    = false;
+      isDraggingRef.current = false;
+      if (controlsRef.current) controlsRef.current.enabled = true;
+      document.body.style.cursor = hovered.current ? 'grab' : 'default';
+      idlePauseRef.current  = 1.5;                  // brief pause, then resume wandering
+      targetWpRef.current   = Math.floor(Math.random() * WAYPOINTS.length);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup',   onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup',   onUp);
+      // Clean up if unmounting mid-drag
+      if (dragActive.current) {
+        dragActive.current    = false;
+        isDraggingRef.current = false;
+        if (controlsRef.current) controlsRef.current.enabled = true;
+      }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps — all values accessed via stable refs
+
   useFrame((state, delta) => {
     if (!groupRef.current) return;
     const t = state.clock.getElapsedTime();
@@ -2173,106 +2299,124 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
     const spawnProgress = Math.min(spawnAge.current / 0.6, 1);
     const spawnEase = 1 - Math.pow(1 - spawnProgress, 3); // ease-out cubic
 
-    // ── Movement ──
-    const wp   = WAYPOINTS[targetWpRef.current]!;
-    const dx   = wp[0] - livePosRef.current.x;
-    const dz   = wp[1] - livePosRef.current.z;
-    const dist = Math.sqrt(dx * dx + dz * dz);
+    // ── Drag lift: smooth 0 → 1 when grabbed, back to 0 on release ──
+    const liftTarget = dragActive.current ? 1 : 0;
+    dragLift.current += (liftTarget - dragLift.current) * Math.min(1, delta * 10);
+    const liftY = dragLift.current * 0.8;           // max 0.8 world units
+
+    // ── Movement (cursor owns position while dragging) ──
     let moving = false;
+    if (!dragActive.current) {
+      const wp   = WAYPOINTS[targetWpRef.current]!;
+      const dx   = wp[0] - livePosRef.current.x;
+      const dz   = wp[1] - livePosRef.current.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
 
-    if (dist < 0.25) {
-      // ── Arrived: decelerate to zero ──
-      velocityRef.current = Math.max(0, velocityRef.current - delta * movProf.speed * 6);
+      if (dist < 0.25) {
+        // ── Arrived: decelerate to zero ──
+        velocityRef.current = Math.max(0, velocityRef.current - delta * movProf.speed * 6);
 
-      // ── Idle pause: personality-based delay before picking next waypoint ──
-      if (idlePauseRef.current > 0) {
-        idlePauseRef.current -= delta;
-      } else {
-        idlePauseRef.current = movProf.idlePauseMin + Math.random() * (movProf.idlePauseMax - movProf.idlePauseMin);
-
-        // ── Waypoint selection: personality influences target ──
-        const allyDrift = movProf.prefersAllies ? 0.7 : 0.35;
-        if (parentPos && Math.random() < allyDrift) {
-          let bestIdx = 0, bestDist = Infinity;
-          WAYPOINTS.forEach(([wx, wz], i) => {
-            const d = Math.sqrt((wx - parentPos.x) ** 2 + (wz - parentPos.z) ** 2);
-            if (d < bestDist) { bestDist = d; bestIdx = i; }
-          });
-          targetWpRef.current = bestIdx;
-        } else if (movProf.prefersEdge) {
-          targetWpRef.current = Math.floor(Math.random() * 8);
+        // ── Idle pause: personality-based delay before picking next waypoint ──
+        if (idlePauseRef.current > 0) {
+          idlePauseRef.current -= delta;
         } else {
-          targetWpRef.current = Math.floor(Math.random() * WAYPOINTS.length);
+          idlePauseRef.current = movProf.idlePauseMin + Math.random() * (movProf.idlePauseMax - movProf.idlePauseMin);
+
+          // ── Waypoint selection: personality influences target ──
+          const allyDrift = movProf.prefersAllies ? 0.7 : 0.35;
+          if (parentPos && Math.random() < allyDrift) {
+            let bestIdx = 0, bestDist = Infinity;
+            WAYPOINTS.forEach(([wx, wz], i) => {
+              const d = Math.sqrt((wx - parentPos.x) ** 2 + (wz - parentPos.z) ** 2);
+              if (d < bestDist) { bestDist = d; bestIdx = i; }
+            });
+            targetWpRef.current = bestIdx;
+          } else if (movProf.prefersEdge) {
+            targetWpRef.current = Math.floor(Math.random() * 8);
+          } else {
+            targetWpRef.current = Math.floor(Math.random() * WAYPOINTS.length);
+          }
         }
-      }
-    } else if (idlePauseRef.current <= 0) {
-      moving = true;
-      // ── Smooth velocity: ease-in ramp + ease-out near waypoint ──
-      const maxSpeed = movProf.speed;
-      const easeOut = Math.min(1, dist / 0.6);   // slow down in last 0.6 units
-      velocityRef.current = Math.min(maxSpeed, velocityRef.current + delta * maxSpeed * 5) * easeOut;
-      const speed = velocityRef.current * delta;
-      livePosRef.current.x += (dx / dist) * Math.min(speed, dist);
-      livePosRef.current.z += (dz / dist) * Math.min(speed, dist);
+      } else if (idlePauseRef.current <= 0) {
+        moving = true;
+        // ── Smooth velocity: ease-in ramp + ease-out near waypoint ──
+        const maxSpeed = movProf.speed;
+        const easeOut = Math.min(1, dist / 0.6);
+        velocityRef.current = Math.min(maxSpeed, velocityRef.current + delta * maxSpeed * 5) * easeOut;
+        const speed = velocityRef.current * delta;
+        livePosRef.current.x += (dx / dist) * Math.min(speed, dist);
+        livePosRef.current.z += (dz / dist) * Math.min(speed, dist);
 
-      // ── Sprite facing: flip X based on direction instead of rotating group ──
-      if (spriteRef.current) {
-        const faceDir = dx > 0 ? 1 : -1;
-        spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
-      }
-
-      // ── Walk cycle with bounce ──
-      frameTimer.current += delta;
-      if (frameTimer.current > 0.22) {
-        frameTimer.current = 0;
-        frameRef.current ^= 1;
+        // ── Sprite facing: flip X based on direction ──
         if (spriteRef.current) {
-          (spriteRef.current.material as THREE.SpriteMaterial).map = textures[frameRef.current]!;
-          (spriteRef.current.material as THREE.SpriteMaterial).needsUpdate = true;
+          const faceDir = dx > 0 ? 1 : -1;
+          spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
+        }
+
+        // ── Walk cycle with bounce ──
+        frameTimer.current += delta;
+        if (frameTimer.current > 0.22) {
+          frameTimer.current = 0;
+          frameRef.current ^= 1;
+          if (spriteRef.current) {
+            (spriteRef.current.material as THREE.SpriteMaterial).map = textures[frameRef.current]!;
+            (spriteRef.current.material as THREE.SpriteMaterial).needsUpdate = true;
+          }
         }
       }
+
+      // ── Collision avoidance: gentle repulsion (skipped while dragging) ──
+      const myId = pn.session.session_id;
+      livePosMap.current.forEach((otherPos, otherId) => {
+        if (otherId === myId) return;
+        const rx = livePosRef.current.x - otherPos.x;
+        const rz = livePosRef.current.z - otherPos.z;
+        const rd = Math.sqrt(rx * rx + rz * rz);
+        if (rd > 0.01 && rd < 1.8) {
+          const force = (1.8 - rd) * 0.4 * delta;
+          livePosRef.current.x += (rx / rd) * force;
+          livePosRef.current.z += (rz / rd) * force;
+        }
+      });
     }
     isMovingRef.current = moving;
 
-    // ── Collision avoidance: gentle repulsion from nearby characters ──
-    const myId = pn.session.session_id;
-    livePosMap.current.forEach((otherPos, otherId) => {
-      if (otherId === myId) return;
-      const rx = livePosRef.current.x - otherPos.x;
-      const rz = livePosRef.current.z - otherPos.z;
-      const rd = Math.sqrt(rx * rx + rz * rz);
-      if (rd > 0.01 && rd < 1.8) {
-        const force = (1.8 - rd) * 0.4 * delta;
-        livePosRef.current.x += (rx / rd) * force;
-        livePosRef.current.z += (rz / rd) * force;
-      }
-    });
-
-    // ── Idle breathing bob (personality) + walk bounce (personality) ──
-    const breathe = Math.sin(t * movProf.breatheSpeed + pn.idx * 1.7) * movProf.breatheAmp;
-    const walkBounce = moving ? Math.abs(Math.sin(t * 8)) * movProf.bounceAmp : 0;
-    const spriteY = breathe + walkBounce;
+    // ── Idle breathing bob + walk bounce + selection float ──
+    const breathe     = Math.sin(t * movProf.breatheSpeed + pn.idx * 1.7) * movProf.breatheAmp;
+    const walkBounce  = moving ? Math.abs(Math.sin(t * 8)) * movProf.bounceAmp : 0;
+    // Selected characters float slightly higher so they pop above the crowd
+    const selectFloat = selected && !dragActive.current ? Math.sin(t * 1.5 + pn.idx) * 0.06 : 0;
+    const spriteY     = breathe + walkBounce + selectFloat;
 
     if (spriteRef.current) {
-      spriteRef.current.position.y = 2.25 + spriteY;
-      // Spawn-in scale
-      const baseScale = 3.0 * spawnEase;
+      spriteRef.current.position.y = 1.5 + spriteY + liftY;
+      const baseScale  = 2.0 * spawnEase;
       const hoverBoost = hovered.current ? 1.08 : 1.0;
-      spriteRef.current.scale.y = 4.5 * spawnEase * hoverBoost;
+      const dragBoost  = 1 + dragLift.current * 0.06;
+      spriteRef.current.scale.y = 3.0 * spawnEase * hoverBoost * dragBoost;
       const dir = spriteRef.current.scale.x > 0 ? 1 : -1;
-      spriteRef.current.scale.x = baseScale * hoverBoost * dir;
-      // Spawn-in opacity
+      spriteRef.current.scale.x = baseScale * hoverBoost * dragBoost * dir;
       (spriteRef.current.material as THREE.SpriteMaterial).opacity = spawnEase;
     }
 
-    // ── Shadow scales with bounce ──
+    // ── Shadow: shrinks + fades as character lifts ──
     if (shadowRef.current) {
-      const shadowScale = 0.35 * (1 - walkBounce * 1.5) * spawnEase;
+      const liftShrink  = 1 - dragLift.current * 0.55;
+      const shadowScale = 0.35 * (1 - walkBounce * 1.5) * spawnEase * liftShrink;
       shadowRef.current.scale.setScalar(shadowScale / 0.35);
+      (shadowRef.current.material as THREE.MeshBasicMaterial).opacity = 0.55 * liftShrink;
     }
 
     groupRef.current.position.copy(livePosRef.current);
     onPosUpdate(pn.session.session_id, livePosRef.current.clone());
+
+    // ── Drop-zone ring: pulses teal while character is in the air ──
+    if (dropRingRef.current) {
+      const ringAlpha = dragLift.current * (0.25 + Math.sin(t * 5) * 0.08);
+      dropRingRef.current.visible = ringAlpha > 0.01;
+      (dropRingRef.current.material as THREE.MeshBasicMaterial).opacity = ringAlpha;
+      dropRingRef.current.scale.setScalar(1 + dragLift.current * 0.25 + Math.sin(t * 3) * 0.04);
+    }
 
     // ── Aura ring animation (per-character profile) ──
     if (ringRef.current) {
@@ -2287,8 +2431,10 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         // Sharp pulse
         auraPulse = 1 + Math.abs(Math.sin(t * auraProf.speed + pn.idx)) * auraProf.amplitude;
       }
-      ringRef.current.scale.setScalar(auraPulse * spawnEase);
-      (ringRef.current.material as THREE.MeshStandardMaterial).opacity = 0.35 + auraPulse * 0.1;
+      // Drag: aura expands and brightens while held
+      const dragMult = 1 + dragLift.current * 0.5;
+      ringRef.current.scale.setScalar(auraPulse * spawnEase * dragMult);
+      (ringRef.current.material as THREE.MeshStandardMaterial).opacity = (0.35 + auraPulse * 0.1) * (1 + dragLift.current * 0.4);
     }
   });
 
@@ -2300,21 +2446,43 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         <meshStandardMaterial color={c.aura} emissive={c.aura} emissiveIntensity={0.5}
           transparent opacity={0.4} side={THREE.DoubleSide} />
       </mesh>
-      {/* Shadow */}
+      {/* Drop-zone ring — pulses teal when character is being cursor-dragged */}
+      <mesh ref={dropRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.015, 0]} visible={false}>
+        <ringGeometry args={[0.9, 1.1, 32]} />
+        <meshBasicMaterial color="#63f7b3" transparent opacity={0} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Shadow — radial-gradient alphaMap so the edge fades instead of a hard disc. */}
       <mesh ref={shadowRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]}>
-        <circleGeometry args={[0.35, 12]} />
-        <meshStandardMaterial color="#000" transparent opacity={0.25} />
+        <circleGeometry args={[0.55, 24]} />
+        <meshBasicMaterial color="#000" transparent opacity={0.55}
+          alphaMap={getShadowTexture()} depthWrite={false} />
       </mesh>
       {/* Pixel sprite */}
-      <sprite ref={spriteRef} scale={[3.0, 4.5, 1]} position={[0, 2.25, 0]}>
+      <sprite ref={spriteRef} scale={[2.0, 3.0, 1]} position={[0, 1.5, 0]}>
         <spriteMaterial map={textures[0]} transparent alphaTest={0.1} />
       </sprite>
-      {/* Hover + click hitbox */}
+      {/* Hover + click + drag hitbox
+          - Unselected: click selects the character
+          - Selected:   pointerDown → drag threshold → moves with cursor; click without drag deselects */}
       <mesh visible={false}
-        onClick={(e) => { e.stopPropagation(); onClick(); }}
-        onPointerOver={() => { hovered.current = true; document.body.style.cursor = 'pointer'; }}
-        onPointerOut={() => { hovered.current = false; document.body.style.cursor = 'default'; }}>
-        <boxGeometry args={[2.0, 3.4, 2.0]} />
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          pointerDownRef.current = { x: e.nativeEvent.clientX, y: e.nativeEvent.clientY };
+          wasDragged.current = false;
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!wasDragged.current) onClick();   // deselect or first-select
+        }}
+        onPointerOver={() => {
+          hovered.current = true;
+          document.body.style.cursor = selected ? 'grab' : 'pointer';
+        }}
+        onPointerOut={() => {
+          hovered.current = false;
+          if (!dragActive.current) document.body.style.cursor = 'default';
+        }}>
+        <boxGeometry args={[1.4, 2.5, 1.4]} />
       </mesh>
       {/* Selection pulse rings */}
       {selected && <SelectionPulseRings color={c.aura} />}
@@ -2584,6 +2752,51 @@ function Minimap({ livePosMap, nodes, selectedId }: {
   );
 }
 
+// ─── Perf Stats Reader (inside Canvas) ───────────────────────────────────────
+
+export interface PerfStats { fps: number; ms: number; calls: number; triangles: number; geometries: number; }
+
+function PerfReader({ statsRef }: { statsRef: React.MutableRefObject<PerfStats> }) {
+  const { gl } = useThree();
+  const fpsBuffer = useRef<number[]>([]);
+
+  useFrame((_, delta) => {
+    if (delta <= 0) return;
+    fpsBuffer.current.push(1 / delta);
+    if (fpsBuffer.current.length > 30) fpsBuffer.current.shift();
+    const avg = fpsBuffer.current.reduce((a, b) => a + b, 0) / fpsBuffer.current.length;
+    statsRef.current = {
+      fps:        Math.round(avg),
+      ms:         Math.round(delta * 1000 * 10) / 10,
+      calls:      gl.info.render.calls,
+      triangles:  gl.info.render.triangles,
+      geometries: gl.info.memory.geometries,
+    };
+  });
+
+  return null;
+}
+
+// Listen for WebGL context loss, prevent browser default (which kills the renderer permanently),
+// and notify the outer component so it can show a warning badge.
+function WebGLContextWatcher({ onContextLost, onContextRestored }: {
+  onContextLost: () => void;
+  onContextRestored: () => void;
+}) {
+  const { gl } = useThree();
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const handleLost = (e: Event) => { e.preventDefault(); onContextLost(); };
+    canvas.addEventListener('webglcontextlost', handleLost);
+    canvas.addEventListener('webglcontextrestored', onContextRestored);
+    return () => {
+      canvas.removeEventListener('webglcontextlost', handleLost);
+      canvas.removeEventListener('webglcontextrestored', onContextRestored);
+    };
+  }, [gl, onContextLost, onContextRestored]);
+  return null;
+}
+
 // ─── Full 3D Scene ────────────────────────────────────────────────────────────
 
 function Scene({ group, selectedId, onSelect, livePosMapOut }: {
@@ -2594,8 +2807,9 @@ function Scene({ group, selectedId, onSelect, livePosMapOut }: {
   const maxCost   = useMemo(() => Math.max(...nodes.map((n) => n.session.estimated_cost_usd), 0.001), [nodes]);
   const maxTokens = useMemo(() => Math.max(...nodes.map((n) => n.session.total_tokens ?? 0), 1), [nodes]);
 
-  const livePosMap = livePosMapOut;
-  const controlsRef = useRef<any>(null);
+  const livePosMap   = livePosMapOut;
+  const controlsRef  = useRef<any>(null);
+  const isDraggingRef = useRef(false);         // shared flag: any character being dragged
   const handlePosUpdate = useCallback((id: string, pos: THREE.Vector3) => {
     livePosMap.current.set(id, pos);
   }, []);
@@ -2635,6 +2849,8 @@ function Scene({ group, selectedId, onSelect, livePosMapOut }: {
 
   return (
     <>
+      {/* Exponential-ish distance fog — desaturates far-plaza nodes so foreground reads cleanly. */}
+      <fog attach="fog" args={['#1a1438', 20, 48]} />
       <ambientLight intensity={ambientInt} color={ambientColor} />
       <directionalLight position={[10, 20, 10]} intensity={1.0} color="#fff8e8" />
       <pointLight position={[0, 8, 0]} intensity={pointInt} color={pointColor} distance={30} />
@@ -2659,6 +2875,8 @@ function Scene({ group, selectedId, onSelect, livePosMapOut }: {
           onPosUpdate={handlePosUpdate}
           parentPos={pn.session.parent_session_id ? (livePosMap.current.get(pn.session.parent_session_id) ?? null) : null}
           livePosMap={livePosMap}
+          controlsRef={controlsRef}
+          isDraggingRef={isDraggingRef}
         />
       ))}
 
@@ -2695,15 +2913,29 @@ function EmptyState() {
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
+const PERF_LEVELS: PerfLevel[] = ['low', 'normal', 'ornate'];
+const PERF_LABELS: Record<PerfLevel, string> = { low: 'LOW', normal: 'NORMAL', ornate: 'ORNATE' };
+
 export default function ScryingSanctum({ sessions, onReload }: { sessions: Session[]; onReload?: () => void }) {
-  const [runIdx,  setRunIdx]  = useState(0);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [syncing,  setSyncing]  = useState(false);
-  const livePosMap = useRef(new Map<string, THREE.Vector3>());
+  const [runIdx,    setRunIdx]    = useState(0);
+  const [selected,  setSelected]  = useState<string | null>(null);
+  const [syncing,   setSyncing]   = useState(false);
+  const [hudVisible, setHudVisible] = useState(false);
+  const [hudStats,  setHudStats]  = useState<PerfStats>({ fps: 0, ms: 0, calls: 0, triangles: 0, geometries: 0 });
+  const [errorCount, setErrorCount] = useState(0);
+  const [contextLost, setContextLost] = useState(false);
+  const [perfLevel, setPerfLevel] = useState<PerfLevel>(() =>
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 'low' : 'normal',
+  );
+
+  const livePosMap  = useRef(new Map<string, THREE.Vector3>());
+  const perfStatsRef = useRef<PerfStats>({ fps: 0, ms: 0, calls: 0, triangles: 0, geometries: 0 });
 
   const groups = useMemo(() => getSessionRunGroups(sessions), [sessions]);
   const group  = groups[runIdx] ?? null;
 
+  // Auto-reset run index when session data changes
   const prevGroupsLen = useRef(groups.length);
   useEffect(() => {
     if (prevGroupsLen.current !== groups.length) {
@@ -2713,6 +2945,33 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
     }
   }, [groups.length]);
 
+  // ` / ~ key toggles HUD
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === '`' || e.key === '~') setHudVisible(v => !v);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
+  // Poll perf stats at 5 fps while HUD is open (avoids re-renders when closed)
+  useEffect(() => {
+    if (!hudVisible) return;
+    const id = setInterval(() => setHudStats({ ...perfStatsRef.current }), 200);
+    return () => clearInterval(id);
+  }, [hudVisible]);
+
+  const handleSceneError = useCallback((err: Error) => {
+    setErrorCount(c => c + 1);
+    console.error('[ScryingSanctum] Scene error caught:', err);
+  }, []);
+  const handleContextLost     = useCallback(() => setContextLost(true),  []);
+  const handleContextRestored = useCallback(() => setContextLost(false), []);
+
+  const cyclePerf = useCallback(() => {
+    setPerfLevel(cur => PERF_LEVELS[(PERF_LEVELS.indexOf(cur) + 1) % PERF_LEVELS.length]!);
+  }, []);
+
   async function handleSync() {
     if (syncing) return;
     setSyncing(true);
@@ -2720,131 +2979,197 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
     catch { /* ignore in prod */ } finally { setSyncing(false); }
   }
 
-  const flatNodes = useMemo(() => group ? layoutNodes(group.roots) : [], [group]);
+  const flatNodes    = useMemo(() => group ? layoutNodes(group.roots) : [], [group]);
   const selectedNode = flatNodes.find((n) => n.session.session_id === selected) ?? null;
 
   if (groups.length === 0) return <EmptyState />;
 
   return (
-    <div style={{
-      minHeight: 'calc(100vh - 80px)', background: '#050310',
-      borderRadius: 12, overflow: 'hidden', position: 'relative',
-      display: 'flex', flexDirection: 'column',
-    }}>
-      {/* Header */}
+    <PerfContext.Provider value={perfLevel}>
       <div style={{
-        padding: '12px 20px 10px', borderBottom: '1px solid rgba(200,168,85,.12)',
-        display: 'flex', alignItems: 'center', gap: 14,
-        zIndex: 10, position: 'relative',
-        background: 'rgba(4,2,12,.85)', backdropFilter: 'blur(8px)',
+        minHeight: 'calc(100vh - 80px)', background: '#050310',
+        borderRadius: 12, overflow: 'hidden', position: 'relative',
+        display: 'flex', flexDirection: 'column',
       }}>
-        <div>
-          <div style={{ fontSize: 8.5, color: '#c8a85555', letterSpacing: 3, textTransform: 'uppercase' }}>
-            Scrying Sanctum
-          </div>
-          <div style={{ fontSize: 11, color: '#c8a85566', fontFamily: 'monospace' }}>
-            Agent Visualizer
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
-          <span style={{ fontSize: 9, color: '#64748b', fontFamily: 'monospace' }}>
-            {flatNodes.length} agent{flatNodes.length !== 1 ? 's' : ''}
-          </span>
-          <span style={{ fontSize: 9, color: '#c8a855', fontFamily: 'monospace' }}>
-            {formatGold(group?.totalCost ?? 0)}
-          </span>
-          <select value={runIdx} onChange={(e) => { setRunIdx(+e.target.value); setSelected(null); }}
-            style={{
-              background: 'rgba(0,0,0,.7)', border: '1px solid #c8a85533',
-              borderRadius: 4, color: '#e8d5a3', fontSize: 11,
-              padding: '5px 10px', fontFamily: 'monospace', cursor: 'pointer',
-            }}>
-            {groups.slice(0, 40).map((g, i) => (
-              <option key={i} value={i}>
-                {g.project} — {formatGold(g.totalCost)} · {g.roots.length} root{g.roots.length !== 1 ? 's' : ''}
-              </option>
-            ))}
-          </select>
-          <button onClick={handleSync} disabled={syncing} title="Sync latest sessions"
-            style={{
-              background: 'rgba(0,0,0,.6)', border: '1px solid #c8a85533',
-              borderRadius: 4, color: syncing ? '#c8a85566' : '#c8a855',
-              fontSize: 10, padding: '4px 10px', fontFamily: 'monospace',
-              cursor: syncing ? 'wait' : 'pointer', letterSpacing: 1,
-            }}>
-            {syncing ? '⟳ SYNCING…' : '⟳ SYNC'}
-          </button>
-          <div style={{
-            fontSize: 8.5, letterSpacing: 2, padding: '3px 10px',
-            border: '1px solid #63f7b355', borderRadius: 2,
-            color: '#63f7b3', background: 'rgba(99,247,179,.07)',
-            fontFamily: 'monospace', textTransform: 'uppercase',
-          }}>ACTIVE</div>
-        </div>
-      </div>
-
-      {/* Legend */}
-      <div style={{
-        position: 'absolute', top: 60, left: 16, zIndex: 10,
-        display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none',
-      }}>
-        {Object.values(CLASS_MAP).map((cfg) => (
-          <div key={cfg.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontSize: 8, color: cfg.color, opacity: 0.7 }}>◆</span>
-            <span style={{ fontSize: 7.5, color: '#c8a85555', letterSpacing: 1.2, fontFamily: 'monospace' }}>
-              {cfg.label}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Controls hint */}
-      <div style={{
-        position: 'absolute', top: 60,
-        right: selectedNode ? 268 : 16,
-        zIndex: 10, pointerEvents: 'none', fontFamily: 'monospace',
-        transition: 'right 0.2s ease',
-      }}>
-        {['SCROLL · ZOOM', 'DRAG  · PAN', 'CLICK · SELECT'].map((hint) => (
-          <div key={hint} style={{ fontSize: 7.5, color: '#c8a85533', letterSpacing: 1.5, textAlign: 'right', marginBottom: 2 }}>
-            {hint}
-          </div>
-        ))}
-      </div>
-
-      {/* WebGL Canvas */}
-      <div style={{ flex: 1, minHeight: 520, position: 'relative' }}>
-        {/* Cinematic vignette */}
+        {/* Header */}
         <div style={{
-          position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
-          background: 'radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(4,2,12,.45) 80%, rgba(2,1,6,.85) 100%)',
-        }} />
-        <Canvas
-          orthographic
-          camera={{ position: [12, 16, 12], zoom: 38, up: [0, 1, 0], near: 0.1, far: 500 }}
-          gl={{ antialias: false, alpha: false }}
-          onClick={(e) => { if (e.target === e.currentTarget) setSelected(null); }}
-        >
-          <color attach="background" args={['#0a0618']} />
-          <Suspense fallback={null}>
-            {group && <Scene group={group} selectedId={selected} onSelect={setSelected} livePosMapOut={livePosMap} />}
-          </Suspense>
-        </Canvas>
+          padding: '12px 20px 10px', borderBottom: '1px solid rgba(200,168,85,.12)',
+          display: 'flex', alignItems: 'center', gap: 14,
+          zIndex: 10, position: 'relative',
+          background: 'rgba(4,2,12,.85)', backdropFilter: 'blur(8px)',
+        }}>
+          <div>
+            <div style={{ fontSize: 8.5, color: '#c8a85555', letterSpacing: 3, textTransform: 'uppercase' }}>
+              Scrying Sanctum
+            </div>
+            <div style={{ fontSize: 11, color: '#c8a85566', fontFamily: 'monospace' }}>
+              Agent Visualizer
+            </div>
+          </div>
 
-        {/* Minimap */}
-        {group && <Minimap livePosMap={livePosMap} nodes={flatNodes} selectedId={selected} />}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
+            <span style={{ fontSize: 9, color: '#64748b', fontFamily: 'monospace' }}>
+              {flatNodes.length} agent{flatNodes.length !== 1 ? 's' : ''}
+            </span>
+            <span style={{ fontSize: 9, color: '#c8a855', fontFamily: 'monospace' }}>
+              {formatGold(group?.totalCost ?? 0)}
+            </span>
+            <select value={runIdx} onChange={(e) => { setRunIdx(+e.target.value); setSelected(null); }}
+              style={{
+                background: 'rgba(0,0,0,.7)', border: '1px solid #c8a85533',
+                borderRadius: 4, color: '#e8d5a3', fontSize: 11,
+                padding: '5px 10px', fontFamily: 'monospace', cursor: 'pointer',
+              }}>
+              {groups.slice(0, 40).map((g, i) => (
+                <option key={i} value={i}>
+                  {g.project} — {formatGold(g.totalCost)} · {g.roots.length} root{g.roots.length !== 1 ? 's' : ''}
+                </option>
+              ))}
+            </select>
+            <button onClick={handleSync} disabled={syncing} title="Sync latest sessions"
+              style={{
+                background: 'rgba(0,0,0,.6)', border: '1px solid #c8a85533',
+                borderRadius: 4, color: syncing ? '#c8a85566' : '#c8a855',
+                fontSize: 10, padding: '4px 10px', fontFamily: 'monospace',
+                cursor: syncing ? 'wait' : 'pointer', letterSpacing: 1,
+              }}>
+              {syncing ? '⟳ SYNCING…' : '⟳ SYNC'}
+            </button>
+            {/* Perf preset cycling button */}
+            <button onClick={cyclePerf} title="Cycle performance preset (Low / Normal / Ornate)"
+              style={{
+                background: 'rgba(0,0,0,.6)', border: `1px solid ${perfLevel === 'low' ? '#f59e0b55' : perfLevel === 'ornate' ? '#8b5cf655' : '#c8a85533'}`,
+                borderRadius: 4,
+                color: perfLevel === 'low' ? '#f59e0b' : perfLevel === 'ornate' ? '#a78bfa' : '#c8a85599',
+                fontSize: 10, padding: '4px 10px', fontFamily: 'monospace',
+                cursor: 'pointer', letterSpacing: 1,
+              }}>
+              ⚡ {PERF_LABELS[perfLevel]}
+            </button>
+            <div style={{
+              fontSize: 8.5, letterSpacing: 2, padding: '3px 10px',
+              border: '1px solid #63f7b355', borderRadius: 2,
+              color: '#63f7b3', background: 'rgba(99,247,179,.07)',
+              fontFamily: 'monospace', textTransform: 'uppercase',
+            }}>ACTIVE</div>
+          </div>
+        </div>
 
-        {selectedNode && (
-          <WoWTooltipOverlay
-            session={selectedNode.session}
-            cls={selectedNode.cls}
-            name={selectedNode.name}
-            role={selectedNode.role}
-            onClose={() => setSelected(null)}
-          />
-        )}
+        {/* Legend */}
+        <div style={{
+          position: 'absolute', top: 60, left: 16, zIndex: 10,
+          display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none',
+        }}>
+          {Object.values(CLASS_MAP).map((cfg) => (
+            <div key={cfg.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ fontSize: 8, color: cfg.color, opacity: 0.7 }}>◆</span>
+              <span style={{ fontSize: 7.5, color: '#c8a85555', letterSpacing: 1.2, fontFamily: 'monospace' }}>
+                {cfg.label}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* Controls hint */}
+        <div style={{
+          position: 'absolute', top: 60,
+          right: selectedNode ? 268 : 16,
+          zIndex: 10, pointerEvents: 'none', fontFamily: 'monospace',
+          transition: 'right 0.2s ease',
+        }}>
+          {['SCROLL · ZOOM', 'DRAG  · PAN', 'CLICK · SELECT', '` · HUD'].map((hint) => (
+            <div key={hint} style={{ fontSize: 7.5, color: '#c8a85533', letterSpacing: 1.5, textAlign: 'right', marginBottom: 2 }}>
+              {hint}
+            </div>
+          ))}
+        </div>
+
+        {/* WebGL Canvas */}
+        <div style={{ flex: 1, minHeight: 520, position: 'relative' }}>
+          {/* Cinematic vignette */}
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
+            background: 'radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(4,2,12,.45) 80%, rgba(2,1,6,.85) 100%)',
+          }} />
+
+          <Canvas
+            orthographic
+            camera={{ position: [12, 16, 12], zoom: 38, up: [0, 1, 0], near: 0.1, far: 500 }}
+            gl={{ antialias: false, alpha: false }}
+            onClick={(e) => { if (e.target === e.currentTarget) setSelected(null); }}
+          >
+            <color attach="background" args={['#0a0618']} />
+            <PerfReader statsRef={perfStatsRef} />
+            <WebGLContextWatcher onContextLost={handleContextLost} onContextRestored={handleContextRestored} />
+            <Suspense fallback={null}>
+              <SceneErrorBoundary onError={handleSceneError}>
+                {group && <Scene group={group} selectedId={selected} onSelect={setSelected} livePosMapOut={livePosMap} />}
+              </SceneErrorBoundary>
+            </Suspense>
+          </Canvas>
+
+          {/* Minimap */}
+          {group && <Minimap livePosMap={livePosMap} nodes={flatNodes} selectedId={selected} />}
+
+          {selectedNode && (
+            <WoWTooltipOverlay
+              session={selectedNode.session}
+              cls={selectedNode.cls}
+              name={selectedNode.name}
+              role={selectedNode.role}
+              onClose={() => setSelected(null)}
+            />
+          )}
+
+          {/* ── Perf HUD overlay (` key) ────────────────────────────────────── */}
+          {hudVisible && (
+            <div style={{
+              position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 30, fontFamily: 'monospace', fontSize: 10,
+              background: 'rgba(4,2,12,.88)', border: '1px solid #c8a85544',
+              borderRadius: 4, padding: '8px 14px', pointerEvents: 'none',
+              minWidth: 220,
+            }}>
+              <div style={{ fontSize: 8, color: '#c8a85566', letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 }}>
+                PERF HUD &nbsp;·&nbsp; ` to close
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 18px' }}>
+                {[
+                  { label: 'FPS',  value: String(hudStats.fps),                          color: hudStats.fps < 30 ? '#ef4444' : hudStats.fps < 50 ? '#f59e0b' : '#22c55e' },
+                  { label: 'MS',   value: `${hudStats.ms}`,                              color: '#c8a855' },
+                  { label: 'DRAW', value: String(hudStats.calls),                        color: hudStats.calls > 500 ? '#f59e0b' : '#c8a85599' },
+                  { label: 'TRIS', value: hudStats.triangles > 999 ? `${(hudStats.triangles / 1000).toFixed(1)}k` : String(hudStats.triangles), color: '#c8a85599' },
+                  { label: 'GEO',  value: String(hudStats.geometries),                   color: '#c8a85599' },
+                  { label: 'ERR',  value: String(errorCount),                            color: errorCount > 0 ? '#ef4444' : '#c8a85533' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ color: '#c8a85555' }}>{label}</span>
+                    <span style={{ color }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 6, paddingTop: 5, borderTop: '1px solid #c8a85522', fontSize: 8, color: '#c8a85555' }}>
+                PRESET: <span style={{ color: perfLevel === 'low' ? '#f59e0b' : perfLevel === 'ornate' ? '#a78bfa' : '#c8a855' }}>
+                  {PERF_LABELS[perfLevel]}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ── Error / context-lost warning badge ──────────────────────────── */}
+          {(errorCount > 0 || contextLost) && (
+            <div style={{
+              position: 'absolute', bottom: 130, right: 12, zIndex: 30,
+              fontFamily: 'monospace', fontSize: 9,
+              background: 'rgba(239,68,68,.12)', border: '1px solid #ef444455',
+              borderRadius: 3, padding: '4px 10px', color: '#ef4444',
+              pointerEvents: 'none',
+            }}>
+              {contextLost ? '⚠ WebGL context lost' : `⚠ ${errorCount} scene error${errorCount > 1 ? 's' : ''} — reload if stuck`}
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </PerfContext.Provider>
   );
 }

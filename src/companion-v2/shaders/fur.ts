@@ -161,22 +161,25 @@ export function defaultFurUniforms() {
   return {
     uTime:         { value: 0 },
     uFurLength:    { value: 0.12 },
-    uFurGravity:   { value: 0.15 },
+    uFurGravity:   { value: 0.12 },
     uFatigue:      { value: 0.0 },
     uShellIndex:   { value: 0 },
     uShellCount:   { value: 32 },
     uWindDir:      { value: [0.3, 0, 0.7] },
     uWindStrength:  { value: 0.02 },
-    uBaseColor:    { value: [0.18, 0.14, 0.12] },
-    uTipColor:     { value: [0.55, 0.48, 0.40] },
-    uLightDir:     { value: [0.4, 0.8, 0.5] },
-    uLightColor:   { value: [1.0, 0.95, 0.85] },
-    uAmbient:      { value: [0.12, 0.12, 0.14] },
+    uBaseColor:    { value: [0.55, 0.45, 0.32] },
+    uTipColor:     { value: [0.72, 0.60, 0.44] },
+    // normalised scene key-light position [2.5, 4.5, 3] → [0.42, 0.76, 0.50]
+    uLightDir:     { value: [0.42, 0.76, 0.50] },
+    uLightColor:   { value: [1.0, 0.97, 0.88] },
+    // raised from 0.12 — was making the whole cat nearly black in shadows
+    uAmbient:      { value: [0.38, 0.38, 0.42] },
     uCamPos:       { value: [0, 0, 5] },
     uSpecPower1:   { value: 80 },
     uSpecPower2:   { value: 20 },
     uSpecShift:    { value: 0.1 },
-    uSpecStrength: { value: 0.6 },
+    // reduced from 0.6 — was creating a blown-out white specular blob
+    uSpecStrength: { value: 0.18 },
     uStripeScale:  { value: 0 },
     uPatternType:  { value: 0 },
   };

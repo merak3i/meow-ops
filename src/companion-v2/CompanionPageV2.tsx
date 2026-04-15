@@ -284,9 +284,35 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
     exportCatCard(viewportRef.current, game.cat, profile, game.trait);
   }, [game.cat, game.trait, profile]);
 
-  const currentState = actorRef.value as CompanionState;
+  const machineState = actorRef.value as CompanionState;
   const ctx          = actorRef.context;
   const morph        = profile.morph_weights;
+
+  // Dev-only state cycler — press [ / ] to walk through every CompanionState so
+  // you can eyeball each pose. Press \ to clear the override.
+  const STATE_CYCLE: CompanionState[] = ['active', 'idle', 'focus', 'concerned', 'fatigue', 'neglected'];
+  const [debugState, setDebugState] = useState<CompanionState | null>(null);
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (e.key === '[' || e.key === ']') {
+        setDebugState((prev) => {
+          const i = prev ? STATE_CYCLE.indexOf(prev) : -1;
+          const dir = e.key === ']' ? 1 : -1;
+          const next = (i + dir + STATE_CYCLE.length) % STATE_CYCLE.length;
+          return STATE_CYCLE[next] ?? null;
+        });
+      } else if (e.key === '\\') {
+        setDebugState(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const currentState: CompanionState = debugState ?? machineState;
 
   // Fuse analytics morphs with game state morphs
   const fusedFatigue = game.cat
@@ -415,6 +441,11 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
           }}>
             <span style={{ fontSize: 16 }}>{stateEmoji(currentState)}</span>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{stateLabel(currentState)}</span>
+            {debugState && (
+              <span style={{ fontSize: 10, color: '#f5c518', letterSpacing: 1, marginLeft: 4 }}>
+                DBG [ ]
+              </span>
+            )}
           </div>
 
           {/* Memory marks legend — bottom right */}
