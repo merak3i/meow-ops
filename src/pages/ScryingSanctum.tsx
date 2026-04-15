@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import type { Session } from '@/types/session';
 import { getSessionRunGroups } from '@/lib/agent-tree';
 import type { AgentTreeNode, SessionRunGroup } from '@/lib/agent-tree';
+import { formatRelativeTime, ageMinutes } from '@/lib/format-time';
 
 // ─── Perf / Reduced-motion context ───────────────────────────────────────────
 
@@ -1984,8 +1985,9 @@ function PlazaEnvironment() {
 
 // ─── WoW Nameplate ────────────────────────────────────────────────────────────
 
-function WoWNameplate({ pn, maxCost, selected }: {
+function WoWNameplate({ pn, maxCost, selected, nowEpoch, possessed }: {
   pn: PositionedNode; maxCost: number; maxTokens: number; selected: boolean;
+  nowEpoch: number; possessed: boolean;
 }) {
   const hp  = hpPercent(pn.session.estimated_cost_usd, maxCost);
   const c   = pn.cls;
@@ -2003,15 +2005,21 @@ function WoWNameplate({ pn, maxCost, selected }: {
     ? `${(tokens / 1_000_000).toFixed(1)}M`
     : tokens >= 1_000 ? `${Math.round(tokens / 1_000)}k` : `${tokens}`;
   const running = !pn.session.is_ghost;
+  // Last-active chip: ended_at for completed sessions, started_at+duration as fallback
+  const lastActiveIso = pn.session.ended_at
+    ?? (pn.session.started_at
+      ? new Date(new Date(pn.session.started_at).getTime() + (pn.session.duration_seconds ?? 0) * 1000).toISOString()
+      : null);
+  const recency = running ? 'live' : formatRelativeTime(lastActiveIso, nowEpoch);
 
   return (
     <Html center position={[0, 3.8, 0]} style={{ pointerEvents: 'none' }}>
       <div style={{
         width: 140, background: 'rgba(8,6,14,.88)',
-        border: `1px solid ${selected ? '#63f7b3' : c.color}99`,
+        border: `1px solid ${possessed ? '#f59e0b' : selected ? '#63f7b3' : c.color}99`,
         borderRadius: 3, padding: '4px 7px 5px',
         fontFamily: 'monospace', userSelect: 'none',
-        boxShadow: selected ? `0 0 10px ${c.aura}66` : 'none',
+        boxShadow: possessed ? '0 0 14px #f59e0b99' : selected ? `0 0 10px ${c.aura}66` : 'none',
       }}>
         {/* Name + status dot */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
@@ -2045,6 +2053,15 @@ function WoWNameplate({ pn, maxCost, selected }: {
         }}>
           <span>{tokensShort} tok</span>
           <span>{formatDur(pn.session.duration_seconds)}</span>
+        </div>
+
+        {/* Recency chip — "● live" for running, "Xm ago" for completed */}
+        <div style={{
+          display: 'flex', justifyContent: 'flex-end', marginTop: 2,
+          fontSize: 9, fontVariantNumeric: 'tabular-nums',
+          color: running ? '#4ade8099' : '#d4a96a99',
+        }}>
+          <span>{running ? '● live' : recency}</span>
         </div>
 
         {/* Signature badges — only when something notable fires */}
@@ -2187,17 +2204,22 @@ function FootstepDust({ isMoving }: { isMoving: React.MutableRefObject<boolean> 
 
 // ─── WoW Champion Node ────────────────────────────────────────────────────────
 
-function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdate, parentPos, livePosMap, controlsRef, isDraggingRef }: {
-  pn:            PositionedNode;
-  maxCost:       number;
-  maxTokens:     number;
-  selected:      boolean;
-  onClick:       () => void;
-  onPosUpdate:   (id: string, pos: THREE.Vector3) => void;
-  parentPos:     THREE.Vector3 | null;
-  livePosMap:    React.MutableRefObject<Map<string, THREE.Vector3>>;
-  controlsRef:   React.RefObject<any>;
-  isDraggingRef: React.MutableRefObject<boolean>;
+function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdate, parentPos, livePosMap, controlsRef, isDraggingRef, nowEpoch, possessed, moveInputRef, cursorGroundRef, moveOrdersRef }: {
+  pn:              PositionedNode;
+  maxCost:         number;
+  maxTokens:       number;
+  selected:        boolean;
+  onClick:         () => void;
+  onPosUpdate:     (id: string, pos: THREE.Vector3) => void;
+  parentPos:       THREE.Vector3 | null;
+  livePosMap:      React.MutableRefObject<Map<string, THREE.Vector3>>;
+  controlsRef:     React.RefObject<any>;
+  isDraggingRef:   React.MutableRefObject<boolean>;
+  nowEpoch:        number;
+  possessed:       boolean;
+  moveInputRef:    React.MutableRefObject<{ x: number; z: number }>;
+  cursorGroundRef: React.MutableRefObject<THREE.Vector3>;
+  moveOrdersRef:   React.MutableRefObject<Map<string, THREE.Vector3 | null>>;
 }) {
   const groupRef    = useRef<THREE.Group>(null);
   const spriteRef   = useRef<THREE.Sprite>(null);
@@ -2226,6 +2248,17 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
   const movProf     = MOVEMENT_PROFILES[catType] ?? DEFAULT_MOVEMENT;
 
   // Trail particle color per character
+  // Activity recency: 1.0 = fresh, 0.0 = cold (>60 min since ended_at)
+  const recencyBoost = useMemo(() => {
+    if (!pn.session.is_ghost) return 1.0; // running = freshest
+    const iso = pn.session.ended_at
+      ?? (pn.session.started_at
+        ? new Date(new Date(pn.session.started_at).getTime() + (pn.session.duration_seconds ?? 0) * 1000).toISOString()
+        : null);
+    const mins = ageMinutes(iso, nowEpoch);
+    return Math.max(0, Math.min(1, 1 - mins / 60));
+  }, [pn.session.is_ghost, pn.session.ended_at, pn.session.started_at, pn.session.duration_seconds, nowEpoch]);
+
   const trailColor = useMemo(() => {
     const map: Record<string, string> = {
       builder: '#f5c518', detective: '#4a90d9', commander: '#ffaa22',
@@ -2311,9 +2344,72 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
     dragLift.current += (liftTarget - dragLift.current) * Math.min(1, delta * 10);
     const liftY = dragLift.current * 0.8;           // max 0.8 world units
 
-    // ── Movement (cursor owns position while dragging) ──
+    // ── Possession: WASD drive + cursor facing + ground-order walk ──
     let moving = false;
-    if (!dragActive.current) {
+    if (possessed) {
+      const mi = moveInputRef.current;
+      const magSq = mi.x * mi.x + mi.z * mi.z;
+      if (magSq > 0.01) {
+        // WASD input — drive directly
+        const mag   = Math.sqrt(magSq);
+        const speed = movProf.speed * 1.2;
+        velocityRef.current = Math.min(speed, velocityRef.current + delta * speed * 5);
+        livePosRef.current.x += (mi.x / mag) * velocityRef.current * delta;
+        livePosRef.current.z += (mi.z / mag) * velocityRef.current * delta;
+        moving = true;
+        if (spriteRef.current) {
+          const faceDir = mi.x > 0 ? 1 : mi.x < 0 ? -1 : (spriteRef.current.scale.x > 0 ? 1 : -1);
+          spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
+        }
+      } else {
+        // No WASD — check for one-shot move order
+        const order = moveOrdersRef.current.get(pn.session.session_id);
+        if (order) {
+          const dx = order.x - livePosRef.current.x;
+          const dz = order.z - livePosRef.current.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist < 0.25) {
+            moveOrdersRef.current.set(pn.session.session_id, null);
+            velocityRef.current = 0;
+          } else {
+            const speed = movProf.speed * 1.2;
+            const easeOut = Math.min(1, dist / 0.6);
+            velocityRef.current = Math.min(speed, velocityRef.current + delta * speed * 5) * easeOut;
+            const step = velocityRef.current * delta;
+            livePosRef.current.x += (dx / dist) * Math.min(step, dist);
+            livePosRef.current.z += (dz / dist) * Math.min(step, dist);
+            moving = true;
+            if (spriteRef.current) {
+              const faceDir = dx > 0 ? 1 : -1;
+              spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
+            }
+          }
+        } else {
+          velocityRef.current = Math.max(0, velocityRef.current - delta * 4);
+          // Face cursor when idle
+          if (spriteRef.current) {
+            const cx = cursorGroundRef.current.x - livePosRef.current.x;
+            const faceDir = cx > 0 ? 1 : cx < 0 ? -1 : (spriteRef.current.scale.x > 0 ? 1 : -1);
+            spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
+          }
+        }
+      }
+      // Clamp to plaza bounds
+      livePosRef.current.x = Math.max(-10.5, Math.min(10.5, livePosRef.current.x));
+      livePosRef.current.z = Math.max(-10.5, Math.min(10.5, livePosRef.current.z));
+      // Walk cycle
+      if (moving) {
+        frameTimer.current += delta;
+        if (frameTimer.current > 0.22) {
+          frameTimer.current = 0;
+          frameRef.current ^= 1;
+          if (spriteRef.current) {
+            (spriteRef.current.material as THREE.SpriteMaterial).map = textures[frameRef.current]!;
+            (spriteRef.current.material as THREE.SpriteMaterial).needsUpdate = true;
+          }
+        }
+      }
+    } else if (!dragActive.current) {
       const wp   = WAYPOINTS[targetWpRef.current]!;
       const dx   = wp[0] - livePosRef.current.x;
       const dz   = wp[1] - livePosRef.current.z;
@@ -2403,7 +2499,9 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
       spriteRef.current.scale.y = 3.0 * spawnEase * hoverBoost * dragBoost;
       const dir = spriteRef.current.scale.x > 0 ? 1 : -1;
       spriteRef.current.scale.x = baseScale * hoverBoost * dragBoost * dir;
-      (spriteRef.current.material as THREE.SpriteMaterial).opacity = spawnEase;
+      // Recency decay: older sessions fade toward ghost-alpha, never below 0.4
+      const recencyAlpha = 0.4 + 0.6 * recencyBoost;
+      (spriteRef.current.material as THREE.SpriteMaterial).opacity = spawnEase * recencyAlpha;
     }
 
     // ── Shadow: shrinks + fades as character lifts ──
@@ -2441,7 +2539,9 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
       // Drag: aura expands and brightens while held
       const dragMult = 1 + dragLift.current * 0.5;
       ringRef.current.scale.setScalar(auraPulse * spawnEase * dragMult);
-      (ringRef.current.material as THREE.MeshStandardMaterial).opacity = (0.35 + auraPulse * 0.1) * (1 + dragLift.current * 0.4);
+      const auraRecency = 0.4 + 0.6 * recencyBoost;
+      (ringRef.current.material as THREE.MeshStandardMaterial).opacity =
+        (0.35 + auraPulse * 0.1) * (1 + dragLift.current * 0.4) * auraRecency;
     }
   });
 
@@ -2496,7 +2596,8 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
       {/* Trail particles */}
       <CharacterTrail color={trailColor} isMoving={isMovingRef} />
       <FootstepDust isMoving={isMovingRef} />
-      <WoWNameplate pn={pn} maxCost={maxCost} maxTokens={maxTokens} selected={selected} />
+      <WoWNameplate pn={pn} maxCost={maxCost} maxTokens={maxTokens} selected={selected}
+        nowEpoch={nowEpoch} possessed={possessed} />
     </group>
   );
 }
@@ -2627,6 +2728,207 @@ function DynamicLeyLine({ childId, parentId, color, parentColor, livePosMap }: {
           />
         </mesh>
       ))}
+    </>
+  );
+}
+
+// ─── Cursor Tracker (raycasts mouse into the scene for possession facing) ───
+
+function CursorTracker({ cursorGroundRef }: {
+  cursorGroundRef: React.MutableRefObject<THREE.Vector3>;
+}) {
+  const { camera, gl } = useThree();
+  useEffect(() => {
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const raycaster   = new THREE.Raycaster();
+    const hit         = new THREE.Vector3();
+    const onMove = (e: PointerEvent) => {
+      const rect = gl.domElement.getBoundingClientRect();
+      const nx = ((e.clientX - rect.left) / rect.width)  *  2 - 1;
+      const ny = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+      raycaster.setFromCamera(new THREE.Vector2(nx, ny), camera);
+      if (raycaster.ray.intersectPlane(groundPlane, hit)) {
+        cursorGroundRef.current.copy(hit);
+      }
+    };
+    window.addEventListener('pointermove', onMove);
+    return () => window.removeEventListener('pointermove', onMove);
+  }, [camera, gl, cursorGroundRef]);
+  return null;
+}
+
+// ─── Claude Sun & Compute Rays ───────────────────────────────────────────────
+//
+// A radiant golden orb positioned above the plaza, emitting animated "compute
+// rays" — curved bezier particle streams from the sun down to each agent.
+// Evokes Claude as the central source of intelligence bathing the field.
+
+const SUN_POSITION = new THREE.Vector3(-4, 8, -4);
+
+function ClaudeSun() {
+  const coreRef  = useRef<THREE.Mesh>(null);
+  const haloRef  = useRef<THREE.Mesh>(null);
+  const halo2Ref = useRef<THREE.Mesh>(null);
+  const raysRef  = useRef<THREE.Group>(null);
+
+  const rayGeom = useMemo(() => new THREE.PlaneGeometry(0.6, 6), []);
+  const rayMats = useMemo(
+    () => Array.from({ length: 12 }, () => new THREE.MeshBasicMaterial({
+      color: '#ffcb6a', transparent: true, opacity: 0.18,
+      side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    })),
+    [],
+  );
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (coreRef.current) {
+      const pulse = 1 + Math.sin(t * 0.6) * 0.04;
+      coreRef.current.scale.setScalar(pulse);
+    }
+    if (haloRef.current) {
+      (haloRef.current.material as THREE.MeshBasicMaterial).opacity = 0.30 + Math.sin(t * 0.5) * 0.05;
+    }
+    if (halo2Ref.current) {
+      halo2Ref.current.rotation.z = t * 0.05;
+      (halo2Ref.current.material as THREE.MeshBasicMaterial).opacity = 0.14 + Math.sin(t * 0.8) * 0.04;
+    }
+    if (raysRef.current) {
+      raysRef.current.rotation.y = t * 0.08;
+      raysRef.current.children.forEach((child, i) => {
+        const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        mat.opacity = 0.12 + Math.abs(Math.sin(t * 0.9 + i * 0.7)) * 0.14;
+      });
+    }
+  });
+
+  return (
+    <group position={SUN_POSITION.toArray()}>
+      {/* Core orb */}
+      <mesh ref={coreRef}>
+        <sphereGeometry args={[1.2, 24, 24]} />
+        <meshBasicMaterial color="#ffd97a" transparent opacity={0.95} fog={false} />
+      </mesh>
+      {/* Inner hot core */}
+      <mesh>
+        <sphereGeometry args={[0.75, 16, 16]} />
+        <meshBasicMaterial color="#fff4c4" transparent opacity={1} fog={false} />
+      </mesh>
+      {/* Soft halo */}
+      <mesh ref={haloRef}>
+        <sphereGeometry args={[1.8, 24, 24]} />
+        <meshBasicMaterial color="#ffb84a" transparent opacity={0.30}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+      {/* Outer corona */}
+      <mesh ref={halo2Ref}>
+        <sphereGeometry args={[2.6, 24, 24]} />
+        <meshBasicMaterial color="#f59e0b" transparent opacity={0.14}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+      {/* Radiating ray planes (crossed billboards) */}
+      <group ref={raysRef}>
+        {Array.from({ length: 12 }, (_, i) => {
+          const a = (i / 12) * Math.PI * 2;
+          return (
+            <mesh key={i} rotation={[0, a, 0]} geometry={rayGeom} material={rayMats[i]!} />
+          );
+        })}
+      </group>
+    </group>
+  );
+}
+
+// Curved compute ray from the sun to a single agent — four particles flowing
+// sun → agent, intensified by cost (brighter rays for pricier sessions).
+function ComputeRay({ sessionId, color, livePosMap }: {
+  sessionId: string;
+  color: string;
+  livePosMap: React.MutableRefObject<Map<string, THREE.Vector3>>;
+}) {
+  const SEG = 20;
+  const ORB_COUNT = 4;
+
+  const sunC   = useMemo(() => new THREE.Color('#ffcb6a'), []);
+  const agentC = useMemo(() => new THREE.Color(color), [color]);
+
+  const lineGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array((SEG + 1) * 3), 3));
+    const colors = new Float32Array((SEG + 1) * 3);
+    for (let i = 0; i <= SEG; i++) {
+      const t = i / SEG;
+      const c = new THREE.Color().lerpColors(sunC, agentC, t);
+      colors[i * 3]     = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return g;
+  }, [sunC, agentC]);
+
+  const lineMat = useMemo(
+    () => new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.35 }),
+    [],
+  );
+  const lineObj = useMemo(() => new THREE.Line(lineGeo, lineMat), [lineGeo, lineMat]);
+  const orbRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const phase   = useRef(Math.random());
+
+  useEffect(() => () => { lineGeo.dispose(); lineMat.dispose(); }, [lineGeo, lineMat]);
+
+  useFrame((state, delta) => {
+    const to = livePosMap.current.get(sessionId);
+    if (!to) return;
+    const from = SUN_POSITION;
+    // Arc peaks between sun and agent
+    const mid = new THREE.Vector3(
+      (from.x + to.x) / 2,
+      Math.max(from.y, to.y + 1.5) + 1.5,
+      (from.z + to.z) / 2,
+    );
+    const curve = new THREE.QuadraticBezierCurve3(
+      from.clone(),
+      mid,
+      to.clone().setY(to.y + 1.5),
+    );
+
+    const posAttr = lineGeo.getAttribute('position') as THREE.BufferAttribute;
+    const pts = curve.getPoints(SEG);
+    for (let i = 0; i <= SEG; i++) {
+      const p = pts[i]!;
+      posAttr.setXYZ(i, p.x, p.y, p.z);
+    }
+    posAttr.needsUpdate = true;
+
+    // Flowing sun → agent
+    phase.current = (phase.current + delta * 0.55) % 1;
+    for (let i = 0; i < ORB_COUNT; i++) {
+      const ref = orbRefs.current[i];
+      if (!ref) continue;
+      const t = (phase.current + i / ORB_COUNT) % 1;
+      ref.position.copy(curve.getPoint(t));
+      const breath = Math.sin(t * Math.PI);
+      ref.scale.setScalar(0.6 + breath * 0.4);
+      const mat = ref.material as THREE.MeshStandardMaterial;
+      mat.opacity = 0.35 + breath * 0.45;
+    }
+    lineMat.opacity = 0.22 + Math.sin(state.clock.elapsedTime * 1.4 + phase.current * 6) * 0.10;
+  });
+
+  return (
+    <>
+      <primitive object={lineObj} />
+      {Array.from({ length: ORB_COUNT }, (_, i) => {
+        const tC = new THREE.Color().lerpColors(sunC, agentC, i / (ORB_COUNT - 1));
+        return (
+          <mesh key={i} ref={(el) => { orbRefs.current[i] = el; }}>
+            <sphereGeometry args={[0.07, 6, 6]} />
+            <meshStandardMaterial color={tC} emissive={tC} emissiveIntensity={4}
+              transparent opacity={0.7} />
+          </mesh>
+        );
+      })}
     </>
   );
 }
@@ -2896,9 +3198,14 @@ function WebGLContextWatcher({ onContextLost, onContextRestored }: {
 
 // ─── Full 3D Scene ────────────────────────────────────────────────────────────
 
-function Scene({ group, selectedId, onSelect, livePosMapOut }: {
+function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessedId, moveInputRef, cursorGroundRef, moveOrdersRef }: {
   group: SessionRunGroup; selectedId: string | null; onSelect: (id: string | null) => void;
-  livePosMapOut: React.MutableRefObject<Map<string, THREE.Vector3>>;
+  livePosMapOut:   React.MutableRefObject<Map<string, THREE.Vector3>>;
+  nowEpoch:        number;
+  possessedId:     string | null;
+  moveInputRef:    React.MutableRefObject<{ x: number; z: number }>;
+  cursorGroundRef: React.MutableRefObject<THREE.Vector3>;
+  moveOrdersRef:   React.MutableRefObject<Map<string, THREE.Vector3 | null>>;
 }) {
   const nodes     = useMemo(() => layoutNodes(group.roots), [group]);
   const maxCost   = useMemo(() => Math.max(...nodes.map((n) => n.session.estimated_cost_usd), 0.001), [nodes]);
@@ -2980,7 +3287,33 @@ function Scene({ group, selectedId, onSelect, livePosMapOut }: {
           livePosMap={livePosMap}
           controlsRef={controlsRef}
           isDraggingRef={isDraggingRef}
+          nowEpoch={nowEpoch}
+          possessed={possessedId === pn.session.session_id}
+          moveInputRef={moveInputRef}
+          cursorGroundRef={cursorGroundRef}
+          moveOrdersRef={moveOrdersRef}
         />
+      ))}
+
+      {/* Cursor tracker — raycasts mouse against ground each frame for facing + orders */}
+      <CursorTracker cursorGroundRef={cursorGroundRef} />
+
+      {/* Ground-click receiver — issues move orders for the possessed agent */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}
+        onClick={(e) => {
+          if (!possessedId) return;
+          e.stopPropagation();
+          moveOrdersRef.current.set(possessedId, e.point.clone());
+        }}>
+        <circleGeometry args={[12, 48]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
+      {/* Claude sun — sends compute rays to every agent */}
+      <ClaudeSun />
+      {nodes.map((pn) => (
+        <ComputeRay key={`ray-${pn.session.session_id}`} sessionId={pn.session.session_id}
+          color={pn.cls.color} livePosMap={livePosMap} />
       ))}
 
       <OrbitControls ref={controlsRef} target={center} enableDamping dampingFactor={0.06}
@@ -3034,6 +3367,78 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
   const livePosMap  = useRef(new Map<string, THREE.Vector3>());
   const perfStatsRef = useRef<PerfStats>({ fps: 0, ms: 0, calls: 0, triangles: 0, geometries: 0 });
+
+  // Shared "now" clock for recency chips + decay — ticks every 30s
+  const [nowEpoch, setNowEpoch] = useState(() => Date.now());
+  useEffect(() => {
+    const iv = setInterval(() => setNowEpoch(Date.now()), 30_000);
+    return () => clearInterval(iv);
+  }, []);
+
+  // ── Possession (WASD drive + cursor facing + ground-click move) ─────────────
+  const [possessedId, setPossessedId] = useState<string | null>(null);
+  const moveInputRef    = useRef<{ x: number; z: number }>({ x: 0, z: 0 });
+  const cursorGroundRef = useRef(new THREE.Vector3(0, 0, 0));
+  const moveOrdersRef   = useRef(new Map<string, THREE.Vector3 | null>());
+  const [possessionHint, setPossessionHint] = useState(true);
+
+  // Coarse-pointer (touch) devices: no possession (stuck-key risk)
+  const isCoarsePointer = typeof window !== 'undefined'
+    && window.matchMedia('(pointer: coarse)').matches;
+
+  useEffect(() => {
+    if (!possessedId) {
+      moveInputRef.current.x = 0;
+      moveInputRef.current.z = 0;
+      return;
+    }
+    setPossessionHint(true);
+    const keys = { w: false, a: false, s: false, d: false };
+    const updateVec = () => {
+      let x = 0, z = 0;
+      if (keys.a) x -= 1;
+      if (keys.d) x += 1;
+      if (keys.w) z -= 1;
+      if (keys.s) z += 1;
+      moveInputRef.current.x = x;
+      moveInputRef.current.z = z;
+    };
+    const isTypingTarget = (el: EventTarget | null) => {
+      const t = el as HTMLElement | null;
+      if (!t) return false;
+      const tag = t.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable;
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      if (e.key === 'Escape') { setPossessedId(null); return; }
+      const k = e.key.toLowerCase();
+      if (k === 'w' || e.key === 'ArrowUp')    { keys.w = true; e.preventDefault(); }
+      if (k === 'a' || e.key === 'ArrowLeft')  { keys.a = true; e.preventDefault(); }
+      if (k === 's' || e.key === 'ArrowDown')  { keys.s = true; e.preventDefault(); }
+      if (k === 'd' || e.key === 'ArrowRight') { keys.d = true; e.preventDefault(); }
+      updateVec();
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (k === 'w' || e.key === 'ArrowUp')    keys.w = false;
+      if (k === 'a' || e.key === 'ArrowLeft')  keys.a = false;
+      if (k === 's' || e.key === 'ArrowDown')  keys.s = false;
+      if (k === 'd' || e.key === 'ArrowRight') keys.d = false;
+      updateVec();
+    };
+    const onContext = (e: MouseEvent) => { e.preventDefault(); setPossessedId(null); };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup',   onKeyUp);
+    window.addEventListener('contextmenu', onContext);
+    const hideT = setTimeout(() => setPossessionHint(false), 5000);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup',   onKeyUp);
+      window.removeEventListener('contextmenu', onContext);
+      clearTimeout(hideT);
+    };
+  }, [possessedId]);
 
   const groups = useMemo(() => getSessionRunGroups(sessions), [sessions]);
   const group  = groups[runIdx] ?? null;
@@ -3206,10 +3611,46 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
             <WebGLContextWatcher onContextLost={handleContextLost} onContextRestored={handleContextRestored} />
             <Suspense fallback={null}>
               <SceneErrorBoundary onError={handleSceneError}>
-                {group && <Scene group={group} selectedId={selected} onSelect={setSelected} livePosMapOut={livePosMap} />}
+                {group && <Scene
+                  group={group}
+                  selectedId={selected}
+                  onSelect={(id) => {
+                    setSelected(id);
+                    // Auto-possess on select (skip ghosts & touch devices)
+                    if (id && !isCoarsePointer) {
+                      const sess = flatNodes.find((n) => n.session.session_id === id);
+                      if (sess && !sess.session.is_ghost) setPossessedId(id);
+                      else setPossessedId(null);
+                    } else {
+                      setPossessedId(null);
+                    }
+                  }}
+                  livePosMapOut={livePosMap}
+                  nowEpoch={nowEpoch}
+                  possessedId={possessedId}
+                  moveInputRef={moveInputRef}
+                  cursorGroundRef={cursorGroundRef}
+                  moveOrdersRef={moveOrdersRef}
+                />}
               </SceneErrorBoundary>
             </Suspense>
           </Canvas>
+
+          {/* Possession HUD — top-center chip while driving an agent */}
+          {possessedId && possessionHint && (
+            <div style={{
+              position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 25, fontFamily: 'monospace', fontSize: 10,
+              background: 'rgba(10,6,18,.92)', border: '1px solid #f59e0b88',
+              borderRadius: 3, padding: '5px 12px', pointerEvents: 'none',
+              color: '#f5c86a', letterSpacing: 1.2, boxShadow: '0 0 14px #f59e0b33',
+            }}>
+              ◆ POSSESSING {flatNodes.find(n => n.session.session_id === possessedId)?.name ?? '—'}
+              &nbsp;·&nbsp; <span style={{ color: '#e4d4a8' }}>WASD</span> move
+              &nbsp;·&nbsp; <span style={{ color: '#e4d4a8' }}>CLICK</span> ground
+              &nbsp;·&nbsp; <span style={{ color: '#e4d4a8' }}>ESC</span> release
+            </div>
+          )}
 
           {/* Minimap */}
           {group && <Minimap livePosMap={livePosMap} nodes={flatNodes} selectedId={selected} />}
