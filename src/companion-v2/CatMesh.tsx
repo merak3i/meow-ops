@@ -92,24 +92,44 @@ const MARK_CONFIG: Record<string, MarkConfig> = {
   'crown-mark':    { position: [0,     0.62, 0.08],   rotation: [-0.25, 0, 0],   size: [0.14, 0.08], color: '#06B6D4' },
 };
 
+// Per-mark gentle shimmer so memory markings read as alive, not decals.
+// Each mark gets an independent phase so the coat never pulses in unison.
+function MemoryMark({ cfg, phase, speed }: {
+  cfg: MarkConfig; phase: number; speed: number;
+}) {
+  const matRef = useRef<THREE.MeshBasicMaterial>(null);
+  useFrame((state) => {
+    const m = matRef.current;
+    if (!m) return;
+    m.opacity = 0.68 + Math.sin(state.clock.elapsedTime * speed + phase) * 0.14;
+  });
+  return (
+    <mesh position={cfg.position} rotation={cfg.rotation}>
+      <planeGeometry args={cfg.size} />
+      <meshBasicMaterial
+        ref={matRef}
+        color={cfg.color}
+        transparent
+        opacity={0.72}
+        depthWrite={false}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
+}
+
 function MemoryMarkings({ marks }: { marks: MemoryMark[] }) {
   return (
     <>
-      {marks.map((m) => {
+      {marks.map((m, i) => {
         const cfg = MARK_CONFIG[m.type];
         if (!cfg) return null;
-        return (
-          <mesh key={m.type} position={cfg.position} rotation={cfg.rotation}>
-            <planeGeometry args={cfg.size} />
-            <meshBasicMaterial
-              color={cfg.color}
-              transparent
-              opacity={0.72}
-              depthWrite={false}
-              side={THREE.DoubleSide}
-            />
-          </mesh>
-        );
+        // Deterministic phase/speed per mark type so the same mark always
+        // breathes the same way across reloads (no jarring resets)
+        const seed = m.type.charCodeAt(0) + m.type.charCodeAt(m.type.length - 1);
+        const phase = (seed % 100) / 100 * Math.PI * 2;
+        const speed = 0.7 + ((seed + i) % 7) * 0.13;
+        return <MemoryMark key={m.type} cfg={cfg} phase={phase} speed={speed} />;
       })}
     </>
   );

@@ -94,6 +94,12 @@ const DEFAULT_MOVEMENT: MovementProfile = { speed: 1.5, bounceAmp: 0.05, idlePau
 
 type QuoteFn = (s: Session) => string;
 
+function pickQuote(catType: string, session: Session): string {
+  const quotes = CHARACTER_QUOTES[catType] ?? CHARACTER_QUOTES._fallback!;
+  const q = quotes[Math.floor(Math.random() * quotes.length)]!;
+  return typeof q === 'function' ? q(session) : q;
+}
+
 const CHARACTER_QUOTES: Record<string, (string | QuoteFn)[]> = {
   builder: [ // Wolverine
     "I'm the best at what I do.",
@@ -823,6 +829,8 @@ function FloatingParticles() {
         size: 0.04 + Math.random() * 0.06,
         color: i % 3 === 0 ? '#c8a855' : i % 3 === 1 ? '#8b5cf6' : '#60a5fa',
         ground: false,
+        flickerSpeed: 1.4 + Math.random() * 2.8,
+        flickerPhase: Math.random() * Math.PI * 2,
       });
     }
     // 15 ground-level dust motes — very small, slow, dim
@@ -837,6 +845,8 @@ function FloatingParticles() {
         size: 0.02 + Math.random() * 0.03,
         color: '#c8a855',
         ground: true,
+        flickerSpeed: 0.8 + Math.random() * 1.2,
+        flickerPhase: Math.random() * Math.PI * 2,
       });
     }
     return particles;
@@ -855,9 +865,10 @@ function FloatingParticles() {
         y,
         Math.sin(angle) * d.radius,
       );
-      // Depth variation: lower = dimmer, higher = brighter
+      // Depth variation: lower = dimmer, higher = brighter; plus per-firefly flicker
       const heightFade = d.ground ? 0.25 : (0.35 + Math.min(0.65, y / 4));
-      (mesh.material as THREE.MeshBasicMaterial).opacity = heightFade;
+      const flicker    = 0.75 + Math.sin(t * d.flickerSpeed + d.flickerPhase) * 0.25;
+      (mesh.material as THREE.MeshBasicMaterial).opacity = heightFade * flicker;
     });
   });
 
@@ -1213,18 +1224,38 @@ function CenterPortal() {
 
 // ─── Buildings ───────────────────────────────────────────────────────────────
 
+// Windows get desynchronized phase + speed offsets so the tower feels inhabited
+// rather than blinking in unison. Each window picks once from a handful of
+// styles: steady warm, slow breathe, quick flicker (candle), or dark.
+const WINDOW_STYLES = [
+  { base: 0.55, amp: 0.15, speed: 1.2,  color: '#f0b858' },  // warm, slow breathe
+  { base: 0.70, amp: 0.08, speed: 0.8,  color: '#ffc870' },  // brighter, calmer
+  { base: 0.35, amp: 0.30, speed: 3.4,  color: '#f0a040' },  // candle flicker
+  { base: 0.08, amp: 0.04, speed: 0.6,  color: '#6a5a40' },  // mostly dark
+];
+
 function MageTower() {
   const orbRef = useRef<THREE.Mesh>(null);
   const windowRefs = useRef<(THREE.Mesh | null)[]>([]);
   const flagRef = useRef<THREE.Mesh>(null);
+  const windowStyles = useMemo(
+    () => Array.from({ length: 3 }, (_, i) => {
+      const s = WINDOW_STYLES[i % WINDOW_STYLES.length]!;
+      return { ...s, phase: Math.random() * Math.PI * 2 };
+    }),
+    [],
+  );
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     if (orbRef.current) {
       orbRef.current.position.y = 4.8 + Math.sin(t * 1.2) * 0.15;
       orbRef.current.rotation.y = t * 0.5;
     }
-    windowRefs.current.forEach((ref) => {
-      if (ref) (ref.material as THREE.MeshBasicMaterial).opacity = 0.4 + Math.sin(t * 2) * 0.2;
+    windowRefs.current.forEach((ref, i) => {
+      if (!ref) return;
+      const s = windowStyles[i];
+      if (!s) return;
+      (ref.material as THREE.MeshBasicMaterial).opacity = Math.max(0, s.base + Math.sin(t * s.speed + s.phase) * s.amp);
     });
     if (flagRef.current) flagRef.current.rotation.z = Math.sin(t * 1.2) * 0.08;
   });
@@ -1277,15 +1308,18 @@ function MageTower() {
         <boxGeometry args={[0.5, 0.06, 0.2]} />
         <meshBasicMaterial color="#2a2040" />
       </mesh>
-      {/* Window slits */}
-      {[0, (Math.PI * 2) / 3, (Math.PI * 4) / 3].map((angle, i) => (
-        <mesh key={i} ref={(el) => { windowRefs.current[i] = el; }}
-          position={[Math.cos(angle) * 0.72, 2.0, Math.sin(angle) * 0.72]}
-          rotation={[0, -angle, 0]}>
-          <planeGeometry args={[0.1, 0.3]} />
-          <meshBasicMaterial color="#c8a855" transparent opacity={0.6} side={THREE.DoubleSide} />
-        </mesh>
-      ))}
+      {/* Window slits — each randomizes style/phase via windowStyles */}
+      {[0, (Math.PI * 2) / 3, (Math.PI * 4) / 3].map((angle, i) => {
+        const s = windowStyles[i]!;
+        return (
+          <mesh key={i} ref={(el) => { windowRefs.current[i] = el; }}
+            position={[Math.cos(angle) * 0.72, 2.0, Math.sin(angle) * 0.72]}
+            rotation={[0, -angle, 0]}>
+            <planeGeometry args={[0.1, 0.3]} />
+            <meshBasicMaterial color={s.color} transparent opacity={s.base} side={THREE.DoubleSide} />
+          </mesh>
+        );
+      })}
       {/* Floating arcane orb */}
       <mesh ref={orbRef} position={[0, 4.8, 0]}>
         <sphereGeometry args={[0.2, 8, 8]} />
@@ -1299,13 +1333,20 @@ function Armory() {
   const perf      = usePerfLevel();
   const flameRefs = useRef<(THREE.Mesh | null)[]>([]);
   const smokeRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const windowRef = useRef<THREE.Mesh>(null);
   const smokeState = useRef([0, 0.3, 0.6].map((p) => ({ y: 2.4 + p, opacity: 0.3 })));
+  const windowPhase = useMemo(() => Math.random() * Math.PI * 2, []);
 
   useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
     flameRefs.current.forEach((ref, i) => {
       if (ref) ref.scale.y = 0.8 + Math.sin(t * 6 + i * 2) * 0.2;
     });
+    // Forge-fire lit window — faster flicker to mimic active forge
+    if (windowRef.current) {
+      const mat = windowRef.current.material as THREE.MeshBasicMaterial;
+      mat.opacity = Math.max(0.15, 0.55 + Math.sin(t * 4.5 + windowPhase) * 0.25 + Math.sin(t * 11 + windowPhase) * 0.08);
+    }
     // Smoke rising from chimney — skipped in low perf mode
     if (perf !== 'low') {
       smokeState.current.forEach((s, i) => {
@@ -1359,10 +1400,10 @@ function Armory() {
         <boxGeometry args={[0.6, 0.06, 0.2]} />
         <meshBasicMaterial color="#3a2a18" />
       </mesh>
-      {/* Side window */}
-      <mesh position={[1.01, 0.85, 0]}>
+      {/* Side window — lit from forge fire inside */}
+      <mesh ref={windowRef} position={[1.01, 0.85, 0]}>
         <planeGeometry args={[0.2, 0.15]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.3} side={THREE.DoubleSide} />
+        <meshBasicMaterial color="#ff9540" transparent opacity={0.6} side={THREE.DoubleSide} />
       </mesh>
       {/* Weapon rack */}
       <mesh position={[1.01, 0.6, 0.35]}>
@@ -2483,21 +2524,54 @@ function CameraController({ controlsRef, selectedPos, center }: {
 
 // ─── Dynamic Ley Line ─────────────────────────────────────────────────────────
 
-function DynamicLeyLine({ childId, parentId, color, livePosMap }: {
-  childId:    string;
-  parentId:   string;
-  color:      string;
-  livePosMap: React.MutableRefObject<Map<string, THREE.Vector3>>;
+// Flowing ley line: parent → child particle stream. Vertex-colored gradient
+// along the arc so the line reads its direction; 6 orbs flow parent-to-child
+// in a staggered convoy, each tinted by its position along the gradient.
+function DynamicLeyLine({ childId, parentId, color, parentColor, livePosMap }: {
+  childId:     string;
+  parentId:    string;
+  color:       string;
+  parentColor: string;
+  livePosMap:  React.MutableRefObject<Map<string, THREE.Vector3>>;
 }) {
-  const lineGeo  = useMemo(() => new THREE.BufferGeometry(), []);
-  const lineMat  = useMemo(() => new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.75, linewidth: 2 }), [color]);
-  const lineObj  = useMemo(() => new THREE.Line(lineGeo, lineMat), [lineGeo, lineMat]);
-  const stone1Ref = useRef<THREE.Mesh>(null);
-  const stone2Ref = useRef<THREE.Mesh>(null);
-  const stone3Ref = useRef<THREE.Mesh>(null); // energy wave orb
-  const t1 = useRef(0);
-  const t2 = useRef(0.5);
-  const waveT = useRef(0);
+  const SEG = 32;
+  const ORB_COUNT = 6;
+
+  const parentC = useMemo(() => new THREE.Color(parentColor), [parentColor]);
+  const childC  = useMemo(() => new THREE.Color(color), [color]);
+
+  // Gradient line (vertex colors go parent → child along the arc)
+  const lineGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array((SEG + 1) * 3), 3));
+    const colors = new Float32Array((SEG + 1) * 3);
+    for (let i = 0; i <= SEG; i++) {
+      const t = i / SEG;
+      const c = new THREE.Color().lerpColors(parentC, childC, t);
+      colors[i * 3]     = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    return g;
+  }, [parentC, childC]);
+
+  const lineMat = useMemo(
+    () => new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.8, linewidth: 2 }),
+    [],
+  );
+  const lineObj = useMemo(() => new THREE.Line(lineGeo, lineMat), [lineGeo, lineMat]);
+
+  // Convoy of flowing orbs, phases staggered evenly along 0..1
+  const orbRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const orbColors = useMemo(
+    () => Array.from({ length: ORB_COUNT }, (_, i) => {
+      const t = i / (ORB_COUNT - 1);
+      return new THREE.Color().lerpColors(parentC, childC, t);
+    }),
+    [parentC, childC],
+  );
+  const phase = useRef(0);
 
   useEffect(() => () => { lineGeo.dispose(); lineMat.dispose(); }, [lineGeo, lineMat]);
 
@@ -2513,45 +2587,46 @@ function DynamicLeyLine({ childId, parentId, color, livePosMap }: {
       mid,
       to.clone().setY(to.y + 1.2),
     );
-    lineGeo.setFromPoints(curve.getPoints(24));
 
-    // Existing runestones
-    t1.current = (t1.current + delta * 0.38) % 1;
-    t2.current = (t2.current + delta * 0.38) % 1;
-    if (stone1Ref.current) stone1Ref.current.position.copy(curve.getPoint(t1.current));
-    if (stone2Ref.current) stone2Ref.current.position.copy(curve.getPoint(t2.current));
+    // Update line geometry positions only — colors stay constant
+    const posAttr = lineGeo.getAttribute('position') as THREE.BufferAttribute;
+    const pts = curve.getPoints(SEG);
+    for (let i = 0; i <= SEG; i++) {
+      const p = pts[i]!;
+      posAttr.setXYZ(i, p.x, p.y, p.z);
+    }
+    posAttr.needsUpdate = true;
 
-    // Energy wave — faster, larger orb that pulses along the line
-    waveT.current = (waveT.current + delta * 0.8) % 1;
-    if (stone3Ref.current) {
-      stone3Ref.current.position.copy(curve.getPoint(waveT.current));
-      const pulse = 0.08 + Math.sin(waveT.current * Math.PI) * 0.08; // grows in middle, shrinks at ends
-      stone3Ref.current.scale.setScalar(pulse / 0.08);
-      (stone3Ref.current.material as THREE.MeshStandardMaterial).opacity = 0.3 + Math.sin(waveT.current * Math.PI) * 0.5;
+    // Convoy flows parent → child
+    phase.current = (phase.current + delta * 0.42) % 1;
+    for (let i = 0; i < ORB_COUNT; i++) {
+      const ref = orbRefs.current[i];
+      if (!ref) continue;
+      const t = (phase.current + i / ORB_COUNT) % 1;
+      ref.position.copy(curve.getPoint(t));
+      // Breathe: brighter in the middle of the arc, softer at endpoints
+      const breath = Math.sin(t * Math.PI);
+      ref.scale.setScalar(0.75 + breath * 0.45);
+      const mat = ref.material as THREE.MeshStandardMaterial;
+      mat.opacity = 0.55 + breath * 0.40;
     }
 
-    // Opacity ripple on the line itself
-    const wave = 0.5 + Math.sin(state.clock.elapsedTime * 3 + waveT.current * 6) * 0.25;
-    lineMat.opacity = wave;
+    // Line opacity pulses faintly with a travelling wave
+    lineMat.opacity = 0.55 + Math.sin(state.clock.elapsedTime * 2.5) * 0.15;
   });
 
   return (
     <>
       <primitive object={lineObj} />
-      <mesh ref={stone1Ref}>
-        <sphereGeometry args={[0.09, 8, 8]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={4} />
-      </mesh>
-      <mesh ref={stone2Ref}>
-        <sphereGeometry args={[0.09, 8, 8]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={4} />
-      </mesh>
-      {/* Energy wave orb */}
-      <mesh ref={stone3Ref}>
-        <sphereGeometry args={[0.14, 8, 8]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={6}
-          transparent opacity={0.5} />
-      </mesh>
+      {orbColors.map((c, i) => (
+        <mesh key={i} ref={(el) => { orbRefs.current[i] = el; }}>
+          <sphereGeometry args={[0.09, 8, 8]} />
+          <meshStandardMaterial
+            color={c} emissive={c} emissiveIntensity={5}
+            transparent opacity={0.7}
+          />
+        </mesh>
+      ))}
     </>
   );
 }
@@ -2564,46 +2639,62 @@ function WoWTooltipOverlay({ session, cls, name, role, onClose }: {
   const [visible, setVisible] = useState(false);
   useEffect(() => { requestAnimationFrame(() => setVisible(true)); }, []);
 
+  const catType = session.cat_type ?? 'ghost';
+
+  // Rotating flavor quote — lives here now (was removed from nameplate)
+  const [quote, setQuote] = useState(() => pickQuote(catType, session));
+  useEffect(() => {
+    const iv = setInterval(() => setQuote(pickQuote(catType, session)), 9000);
+    return () => clearInterval(iv);
+  }, [catType, session]);
+
   const tools = session.tools
     ? Object.entries(session.tools).sort((a, b) => b[1] - a[1]).slice(0, 6)
     : [];
 
+  const activeMoves = useMemo(() => {
+    const moves = SIGNATURE_MOVES[catType] ?? [];
+    return moves.filter(m => m.trigger(session));
+  }, [catType, session]);
+
   return (
     <div style={{
       position: 'absolute', top: 20, right: 16, zIndex: 40,
-      minWidth: 240, maxWidth: 300,
-      background: '#040210',
-      border: '2px solid #c8a855',
+      minWidth: 260, maxWidth: 320,
+      background: 'linear-gradient(180deg, #0a0818 0%, #040210 100%)',
+      border: `2px solid ${cls.color}`,
       outline: '1px solid #8B6914',
-      borderRadius: 2,
-      boxShadow: '0 4px 32px rgba(0,0,0,.9)',
+      borderRadius: 3,
+      boxShadow: `0 4px 32px rgba(0,0,0,.9), inset 0 0 20px ${cls.aura}12`,
       fontFamily: 'monospace',
       transform: visible ? 'translateX(0)' : 'translateX(20px)',
       opacity: visible ? 1 : 0,
       transition: 'transform 0.3s ease-out, opacity 0.3s ease-out',
     }}>
+      {/* Header */}
       <div style={{
-        padding: '8px 12px 6px',
-        borderBottom: '1px solid #c8a85544',
+        padding: '9px 12px 7px',
+        borderBottom: `1px solid ${cls.color}44`,
         display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
       }}>
         <div>
-          <div style={{ fontSize: 13, color: cls.color, fontWeight: 700,
+          <div style={{ fontSize: 14, color: cls.color, fontWeight: 700,
             textShadow: `0 0 8px ${cls.aura}`, letterSpacing: 0.5 }}>
             {name}
           </div>
           <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 2, letterSpacing: 1 }}>
-            {role} — {session.model}
+            {role} · {cls.label} · {session.model}
           </div>
         </div>
         <button onClick={onClose} style={{
-          background: 'none', border: '1px solid #c8a85544',
-          color: '#c8a855', borderRadius: 2, padding: '1px 6px',
-          cursor: 'pointer', fontSize: 9, marginLeft: 8, flexShrink: 0,
+          background: 'none', border: `1px solid ${cls.color}66`,
+          color: cls.color, borderRadius: 2, padding: '1px 6px',
+          cursor: 'pointer', fontSize: 10, marginLeft: 8, flexShrink: 0,
         }}>✕</button>
       </div>
 
-      <div style={{ padding: '8px 12px 6px', borderBottom: '1px solid #c8a85522' }}>
+      {/* Stats */}
+      <div style={{ padding: '8px 12px 6px', borderBottom: `1px solid ${cls.color}22` }}>
         {[
           { icon: '💰', label: 'Cost',     val: formatGold(session.estimated_cost_usd) },
           { icon: '⚡', label: 'Tokens',   val: (session.total_tokens ?? 0).toLocaleString() },
@@ -2612,22 +2703,53 @@ function WoWTooltipOverlay({ session, cls, name, role, onClose }: {
           { icon: '📁', label: 'Project',  val: session.project },
         ].map(({ icon, label, val }) => (
           <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span style={{ fontSize: 9, color: '#94a3b8' }}>{icon} {label}</span>
-            <span style={{ fontSize: 9, color: '#e8d5a3' }}>{val}</span>
+            <span style={{ fontSize: 10, color: '#94a3b8' }}>{icon} {label}</span>
+            <span style={{ fontSize: 10, color: '#e8d5a3', fontVariantNumeric: 'tabular-nums' }}>{val}</span>
           </div>
         ))}
       </div>
 
+      {/* Signature moves — with full name + description */}
+      {activeMoves.length > 0 && (
+        <div style={{ padding: '7px 12px 8px', borderBottom: `1px solid ${cls.color}22` }}>
+          <div style={{ fontSize: 8, color: `${cls.color}99`, letterSpacing: 2, marginBottom: 5, textTransform: 'uppercase' }}>
+            Signature Moves
+          </div>
+          {activeMoves.map((m) => {
+            const desc = typeof m.quote === 'function' ? m.quote(session) : m.quote;
+            return (
+              <div key={m.name} style={{
+                display: 'flex', gap: 7, alignItems: 'flex-start',
+                marginBottom: 4, padding: '3px 5px',
+                background: `${cls.color}10`,
+                borderLeft: `2px solid ${cls.color}88`, borderRadius: 2,
+              }}>
+                <span style={{ fontSize: 13, lineHeight: 1.1, flexShrink: 0 }}>{m.emoji}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: cls.color, fontWeight: 600, lineHeight: 1.2 }}>
+                    {m.name}
+                  </div>
+                  <div style={{ fontSize: 9, color: '#c8a855cc', lineHeight: 1.3, marginTop: 1 }}>
+                    {desc}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Abilities / tools */}
       {tools.length > 0 && (
-        <div style={{ padding: '6px 12px 8px' }}>
-          <div style={{ fontSize: 8, color: '#c8a85566', letterSpacing: 2, marginBottom: 5, textTransform: 'uppercase' }}>
+        <div style={{ padding: '7px 12px 8px', borderBottom: `1px solid ${cls.color}22` }}>
+          <div style={{ fontSize: 8, color: `${cls.color}99`, letterSpacing: 2, marginBottom: 5, textTransform: 'uppercase' }}>
             Abilities
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {tools.map(([tool, count]) => (
               <div key={tool} style={{
-                fontSize: 8, padding: '2px 6px',
-                border: `1px solid ${cls.color}33`, borderRadius: 2,
+                fontSize: 9, padding: '2px 6px',
+                border: `1px solid ${cls.color}44`, borderRadius: 2,
                 color: cls.color, background: `${cls.aura}0a`,
               }}>
                 {tool} ×{count}
@@ -2636,6 +2758,15 @@ function WoWTooltipOverlay({ session, cls, name, role, onClose }: {
           </div>
         </div>
       )}
+
+      {/* Flavor quote — rotating, only on selected panel */}
+      <div style={{
+        padding: '7px 12px 9px',
+        fontSize: 10, fontStyle: 'italic', color: '#e4d4a8cc', lineHeight: 1.4,
+        background: `${cls.color}08`,
+      }}>
+        "{quote}"
+      </div>
     </div>
   );
 }
@@ -2786,15 +2917,21 @@ function Scene({ group, selectedId, onSelect, livePosMapOut }: {
     return m;
   }, [nodes]);
 
-  const connections = useMemo(() => nodes
-    .filter((n) => n.session.parent_session_id && initPosMap.has(n.session.parent_session_id))
-    .map((n) => ({
-      key:      n.session.session_id,
-      childId:  n.session.session_id,
-      parentId: n.session.parent_session_id!,
-      color:    n.cls.color,
-    })),
-  [nodes, initPosMap]);
+  const connections = useMemo(() => {
+    const byId = new Map(nodes.map((n) => [n.session.session_id, n]));
+    return nodes
+      .filter((n) => n.session.parent_session_id && initPosMap.has(n.session.parent_session_id))
+      .map((n) => {
+        const parent = byId.get(n.session.parent_session_id!);
+        return {
+          key:         n.session.session_id,
+          childId:     n.session.session_id,
+          parentId:    n.session.parent_session_id!,
+          color:       n.cls.color,
+          parentColor: parent?.cls.color ?? n.cls.color,
+        };
+      });
+  }, [nodes, initPosMap]);
 
   const center = useMemo(() => {
     if (!nodes.length) return new THREE.Vector3(0, 0, 0);
@@ -2827,7 +2964,7 @@ function Scene({ group, selectedId, onSelect, livePosMapOut }: {
 
       {connections.map((conn) => (
         <DynamicLeyLine key={conn.key} childId={conn.childId} parentId={conn.parentId}
-          color={conn.color} livePosMap={livePosMap} />
+          color={conn.color} parentColor={conn.parentColor} livePosMap={livePosMap} />
       ))}
 
       {nodes.map((pn) => (
