@@ -1182,6 +1182,7 @@ function CenterPortal() {
 function MageTower() {
   const orbRef = useRef<THREE.Mesh>(null);
   const windowRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const flagRef = useRef<THREE.Mesh>(null);
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     if (orbRef.current) {
@@ -1191,6 +1192,7 @@ function MageTower() {
     windowRefs.current.forEach((ref) => {
       if (ref) (ref.material as THREE.MeshBasicMaterial).opacity = 0.4 + Math.sin(t * 2) * 0.2;
     });
+    if (flagRef.current) flagRef.current.rotation.z = Math.sin(t * 1.2) * 0.08;
   });
   return (
     <group position={[7.5, 0, -7.5]}>
@@ -1204,6 +1206,18 @@ function MageTower() {
         <cylinderGeometry args={[0.7, 0.8, 2.8, 8]} />
         <meshBasicMaterial color="#1e1832" />
       </mesh>
+      {/* Balcony ledge */}
+      <mesh position={[0, 2.4, 0]}>
+        <torusGeometry args={[0.78, 0.04, 4, 8]} />
+        <meshBasicMaterial color="#2a2040" />
+      </mesh>
+      {/* Balcony railing posts */}
+      {[0, (Math.PI * 2) / 3, (Math.PI * 4) / 3].map((angle, i) => (
+        <mesh key={`bp${i}`} position={[Math.cos(angle) * 0.78, 2.5, Math.sin(angle) * 0.78]}>
+          <boxGeometry args={[0.04, 0.2, 0.04]} />
+          <meshBasicMaterial color="#241a38" />
+        </mesh>
+      ))}
       {/* Roof cone */}
       <mesh position={[0, 3.4, 0]}>
         <coneGeometry args={[0.85, 1.2, 8]} />
@@ -1213,6 +1227,21 @@ function MageTower() {
       <mesh position={[0, 4.1, 0]}>
         <coneGeometry args={[0.15, 0.4, 4]} />
         <meshBasicMaterial color="#8b5cf6" />
+      </mesh>
+      {/* Roof flag */}
+      <mesh ref={flagRef} position={[0.2, 4.2, 0]}>
+        <planeGeometry args={[0.2, 0.15]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.5} side={THREE.DoubleSide} />
+      </mesh>
+      {/* Door */}
+      <mesh position={[0, 0.3, 0.82]}>
+        <planeGeometry args={[0.25, 0.5]} />
+        <meshBasicMaterial color="#1a1008" />
+      </mesh>
+      {/* Doorstep */}
+      <mesh position={[0, 0.03, 0.9]}>
+        <boxGeometry args={[0.5, 0.06, 0.2]} />
+        <meshBasicMaterial color="#2a2040" />
       </mesh>
       {/* Window slits */}
       {[0, (Math.PI * 2) / 3, (Math.PI * 4) / 3].map((angle, i) => (
@@ -1234,10 +1263,24 @@ function MageTower() {
 
 function Armory() {
   const flameRefs = useRef<(THREE.Mesh | null)[]>([]);
-  useFrame((state) => {
+  const smokeRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const smokeState = useRef([0, 0.3, 0.6].map((p) => ({ y: 2.4 + p, opacity: 0.3 })));
+
+  useFrame((state, delta) => {
     const t = state.clock.elapsedTime;
     flameRefs.current.forEach((ref, i) => {
       if (ref) ref.scale.y = 0.8 + Math.sin(t * 6 + i * 2) * 0.2;
+    });
+    // Smoke rising from chimney
+    smokeState.current.forEach((s, i) => {
+      const ref = smokeRefs.current[i];
+      if (!ref) return;
+      s.y += delta * 0.4;
+      s.opacity = Math.max(0, 0.3 - (s.y - 2.4) * 0.15);
+      if (s.y > 3.8) { s.y = 2.4; s.opacity = 0.3; }
+      ref.position.y = s.y;
+      ref.scale.setScalar(0.5 + (s.y - 2.4) * 0.6);
+      (ref.material as THREE.MeshBasicMaterial).opacity = s.opacity;
     });
   });
   return (
@@ -1252,13 +1295,40 @@ function Armory() {
         <coneGeometry args={[1.2, 0.8, 4]} />
         <meshBasicMaterial color="#3a2a18" />
       </mesh>
+      {/* Chimney */}
+      <mesh position={[0.6, 1.9, -0.3]}>
+        <boxGeometry args={[0.25, 0.6, 0.25]} />
+        <meshBasicMaterial color="#2a1e18" />
+      </mesh>
+      <mesh position={[0.6, 2.25, -0.3]}>
+        <boxGeometry args={[0.32, 0.06, 0.32]} />
+        <meshBasicMaterial color="#1a1008" />
+      </mesh>
+      {/* Smoke particles */}
+      {[0, 1, 2].map((i) => (
+        <mesh key={`sm${i}`} ref={(el) => { smokeRefs.current[i] = el; }}
+          position={[0.6, 2.4 + i * 0.3, -0.3]}>
+          <sphereGeometry args={[0.06, 4, 4]} />
+          <meshBasicMaterial color="#888888" transparent opacity={0.2} />
+        </mesh>
+      ))}
       {/* Door */}
       <mesh position={[0, 0.4, 0.71]}>
         <planeGeometry args={[0.4, 0.6]} />
         <meshBasicMaterial color="#1a1008" />
       </mesh>
+      {/* Doorstep */}
+      <mesh position={[0, 0.03, 0.82]}>
+        <boxGeometry args={[0.6, 0.06, 0.2]} />
+        <meshBasicMaterial color="#3a2a18" />
+      </mesh>
+      {/* Side window */}
+      <mesh position={[1.01, 0.85, 0]}>
+        <planeGeometry args={[0.2, 0.15]} />
+        <meshBasicMaterial color="#c8a855" transparent opacity={0.3} side={THREE.DoubleSide} />
+      </mesh>
       {/* Weapon rack */}
-      <mesh position={[1.01, 0.6, 0]}>
+      <mesh position={[1.01, 0.6, 0.35]}>
         <boxGeometry args={[0.05, 0.8, 0.6]} />
         <meshBasicMaterial color="#4a3a2a" />
       </mesh>
@@ -1400,6 +1470,352 @@ function PerimeterWall() {
   );
 }
 
+// ─── Ground Paths (radial walkways from gates to center) ────────────────────
+
+function ArcanePaths() {
+  const GATE_ANGLES = [Math.PI / 2, 0, -Math.PI / 2, Math.PI]; // N(-z), E(+x), S(+z), W(-x)
+  const RADII = [5.8, 6.8, 7.8, 8.8, 9.5, 10.3];
+
+  const segments = useMemo(() => {
+    const segs: { x: number; z: number; rot: number }[] = [];
+    GATE_ANGLES.forEach((angle) => {
+      RADII.forEach((r) => {
+        segs.push({
+          x: Math.sin(angle) * r,
+          z: -Math.cos(angle) * r,
+          rot: angle,
+        });
+      });
+    });
+    return segs;
+  }, []);
+
+  return (
+    <>
+      {segments.map((s, i) => (
+        <mesh key={i} position={[s.x, -0.044, s.z]} rotation={[-Math.PI / 2, 0, s.rot]}>
+          <planeGeometry args={[0.8, 1.8]} />
+          <meshBasicMaterial color="#2e2548" transparent opacity={0.6} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+      {/* Rune endpoint rings where paths meet ward ring */}
+      {GATE_ANGLES.map((angle, i) => (
+        <mesh key={`re${i}`} rotation={[-Math.PI / 2, 0, 0]}
+          position={[Math.sin(angle) * 5.8, -0.042, -Math.cos(angle) * 5.8]}>
+          <ringGeometry args={[0.3, 0.4, 6]} />
+          <meshBasicMaterial color="#c8a855" transparent opacity={0.2} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+// ─── Ground Scatter (texture decals) ────────────────────────────────────────
+
+function GroundScatter() {
+  const scratches = useMemo(() => [
+    { x: 7.5, z: 2.0, rot: 0.4 }, { x: -5.0, z: -8.0, rot: 1.1 },
+    { x: 2.0, z: 8.5, rot: 2.3 }, { x: -8.5, z: -2.0, rot: 0.7 },
+    { x: 9.0, z: 5.0, rot: 1.8 }, { x: -2.0, z: -9.5, rot: 2.9 },
+  ], []);
+  const moss = useMemo(() => [
+    [-10.5, -7.0], [10.5, 7.0], [-10.0, 1.0], [10.0, -1.0], [-5.5, -10.0], [5.5, 10.0],
+  ], []);
+  const runes = useMemo(() => [
+    [1.5, -8.0], [-1.5, 8.0], [8.0, 1.5], [-8.0, -1.5], [5.0, -5.0], [-5.0, 5.0],
+  ], []);
+
+  return (
+    <>
+      {scratches.map((s, i) => (
+        <mesh key={`sc${i}`} rotation={[-Math.PI / 2, 0, s.rot]} position={[s.x, -0.043, s.z]}>
+          <planeGeometry args={[0.8, 0.04]} />
+          <meshBasicMaterial color="#3a2a4a" transparent opacity={0.2} side={THREE.DoubleSide} />
+        </mesh>
+      ))}
+      {moss.map(([x, z], i) => (
+        <mesh key={`ms${i}`} rotation={[-Math.PI / 2, 0, i * 0.8]} position={[x!, -0.044, z!]}>
+          <circleGeometry args={[0.3, 5]} />
+          <meshBasicMaterial color="#1a2a1e" transparent opacity={0.15} />
+        </mesh>
+      ))}
+      {runes.map(([x, z], i) => (
+        <mesh key={`rn${i}`} rotation={[-Math.PI / 2, 0, 0]} position={[x!, -0.042, z!]}>
+          <ringGeometry args={[0.15, 0.2, 5]} />
+          <meshBasicMaterial color="#c8a855" transparent opacity={0.08} />
+        </mesh>
+      ))}
+    </>
+  );
+}
+
+// ─── Arcane Crystal Trees ───────────────────────────────────────────────────
+
+const TREE_VARIANTS: Record<string, { canopyA: string; canopyB: string; crystal: string }> = {
+  purple: { canopyA: '#2a1848', canopyB: '#3a2058', crystal: '#8b5cf6' },
+  teal:   { canopyA: '#1a3038', canopyB: '#1e3a42', crystal: '#60dbc8' },
+  gold:   { canopyA: '#2a2418', canopyB: '#3a3020', crystal: '#c8a855' },
+  blue:   { canopyA: '#1a2040', canopyB: '#222a4a', crystal: '#60a5fa' },
+};
+
+function ArcaneCrystalTree({ position, variant }: { position: [number, number, number]; variant: string }) {
+  const v = TREE_VARIANTS[variant] ?? TREE_VARIANTS.purple!;
+  const crystalRef = useRef<THREE.Mesh>(null);
+  const shimmerRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const canopyRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const phase = useMemo(() => position[0] * 0.7 + position[2] * 0.3, [position]);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (crystalRef.current) crystalRef.current.rotation.y = t * 0.8;
+    canopyRefs.current.forEach((ref) => {
+      if (ref) ref.rotation.y = Math.sin(t * 0.4 + phase) * 0.03;
+    });
+    shimmerRefs.current.forEach((ref, i) => {
+      if (!ref) return;
+      const speed = [1.2, -0.8, 1.5][i]!;
+      const h = [1.8, 2.3, 2.8][i]!;
+      const angle = t * speed + i * 2.1 + phase;
+      ref.position.set(Math.cos(angle) * 0.5, h, Math.sin(angle) * 0.5);
+      (ref.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3 + i * 1.5) * 0.15;
+    });
+  });
+
+  return (
+    <group position={position}>
+      {/* Ground shadow ring */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <ringGeometry args={[0.2, 0.6, 8]} />
+        <meshBasicMaterial color="#0a0818" transparent opacity={0.25} />
+      </mesh>
+      {/* Root flare */}
+      <mesh position={[0, 0.15, 0]}>
+        <cylinderGeometry args={[0.22, 0.12, 0.3, 6]} />
+        <meshBasicMaterial color="#1a1020" />
+      </mesh>
+      {/* Trunk */}
+      <mesh position={[0, 0.9, 0]}>
+        <cylinderGeometry args={[0.12, 0.18, 1.8, 6]} />
+        <meshBasicMaterial color="#1e1428" />
+      </mesh>
+      {/* Lower canopy */}
+      <mesh ref={(el) => { canopyRefs.current[0] = el; }} position={[0, 2.0, 0]}>
+        <coneGeometry args={[0.9, 1.0, 6]} />
+        <meshBasicMaterial color={v.canopyA} />
+      </mesh>
+      {/* Upper canopy */}
+      <mesh ref={(el) => { canopyRefs.current[1] = el; }} position={[0, 2.7, 0]}>
+        <coneGeometry args={[0.65, 0.8, 6]} />
+        <meshBasicMaterial color={v.canopyB} />
+      </mesh>
+      {/* Crystal tip */}
+      <mesh ref={crystalRef} position={[0, 3.2, 0]}>
+        <octahedronGeometry args={[0.15, 0]} />
+        <meshBasicMaterial color={v.crystal} transparent opacity={0.7} />
+      </mesh>
+      {/* Shimmer particles */}
+      {[0, 1, 2].map((i) => (
+        <mesh key={i} ref={(el) => { shimmerRefs.current[i] = el; }}>
+          <sphereGeometry args={[0.04, 4, 4]} />
+          <meshBasicMaterial color={v.crystal} transparent opacity={0.4} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// ─── Scattered Props ────────────────────────────────────────────────────────
+
+function ScatteredDetailProps() {
+  const lanternRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const pedestalRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const spellRefs = useRef<(THREE.Mesh | null)[]>([]);
+
+  const LANTERN_POS: [number, number, number][] = [[7.0, 0, -9.5], [-7.0, 0, 9.5], [-9.5, 0, -3.0]];
+  const PEDESTAL_POS: [number, number, number][] = [[10.0, 0, -3.5], [-3.5, 0, -10.0], [3.5, 0, 10.0]];
+  const PEDESTAL_COLORS = ['#8b5cf6', '#c8a855', '#60a5fa'];
+  const SPELL_POS: [number, number, number][] = [[8.0, -0.043, 3.0], [-8.0, -0.043, -3.0], [3.0, -0.043, 9.0], [-3.0, -0.043, -9.0]];
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    lanternRefs.current.forEach((ref, i) => {
+      if (ref) (ref.material as THREE.MeshBasicMaterial).opacity = 0.5 + Math.sin(t * 2 + i * 2) * 0.2;
+    });
+    pedestalRefs.current.forEach((ref, i) => {
+      if (!ref) return;
+      ref.rotation.y = t * 1.2;
+      ref.position.y = 0.55 + Math.sin(t * 1.5 + i * 1.8) * 0.08;
+    });
+    spellRefs.current.forEach((ref) => {
+      if (ref) ref.rotation.z += 0.002;
+    });
+  });
+
+  return (
+    <>
+      {/* Lantern posts */}
+      {LANTERN_POS.map((pos, i) => (
+        <group key={`ln${i}`} position={pos}>
+          <mesh position={[0, 0.6, 0]}>
+            <cylinderGeometry args={[0.03, 0.03, 1.2, 4]} />
+            <meshBasicMaterial color="#3a2a18" />
+          </mesh>
+          <mesh position={[0.12, 1.15, 0]}>
+            <boxGeometry args={[0.25, 0.03, 0.03]} />
+            <meshBasicMaterial color="#3a2a18" />
+          </mesh>
+          <mesh ref={(el) => { lanternRefs.current[i] = el; }} position={[0.22, 1.08, 0]}>
+            <sphereGeometry args={[0.08, 6, 6]} />
+            <meshBasicMaterial color="#c8a855" transparent opacity={0.6} />
+          </mesh>
+        </group>
+      ))}
+      {/* Arcane pedestals */}
+      {PEDESTAL_POS.map((pos, i) => (
+        <group key={`pd${i}`} position={pos}>
+          <mesh position={[0, 0.25, 0]}>
+            <cylinderGeometry args={[0.25, 0.3, 0.5, 6]} />
+            <meshBasicMaterial color="#2a2040" />
+          </mesh>
+          <mesh position={[0, 0.52, 0]}>
+            <cylinderGeometry args={[0.28, 0.25, 0.08, 6]} />
+            <meshBasicMaterial color="#241a38" />
+          </mesh>
+          <mesh ref={(el) => { pedestalRefs.current[i] = el; }} position={[0, 0.55, 0]}>
+            <octahedronGeometry args={[0.1, 0]} />
+            <meshBasicMaterial color={PEDESTAL_COLORS[i]} transparent opacity={0.7} />
+          </mesh>
+        </group>
+      ))}
+      {/* Stone benches */}
+      <group position={[8.5, 0, -9.0]}>
+        <mesh position={[0, 0.2, 0]}><boxGeometry args={[1.0, 0.15, 0.35]} /><meshBasicMaterial color="#2a2040" /></mesh>
+        <mesh position={[0, 0.08, 0]}><boxGeometry args={[0.9, 0.16, 0.15]} /><meshBasicMaterial color="#221a36" /></mesh>
+      </group>
+      <group position={[-8.5, 0, 9.0]}>
+        <mesh position={[0, 0.2, 0]}><boxGeometry args={[1.0, 0.15, 0.35]} /><meshBasicMaterial color="#2a2040" /></mesh>
+        <mesh position={[0, 0.08, 0]}><boxGeometry args={[0.9, 0.16, 0.15]} /><meshBasicMaterial color="#221a36" /></mesh>
+      </group>
+      {/* Spell circles on ground */}
+      {SPELL_POS.map((pos, i) => (
+        <group key={`sp${i}`} ref={(el) => { if (el) spellRefs.current[i] = el.children[0] as THREE.Mesh; }}
+          rotation={[-Math.PI / 2, 0, i * 0.8]} position={pos}>
+          <mesh>
+            <ringGeometry args={[0.6, 0.7, 6]} />
+            <meshBasicMaterial color="#8b5cf6" transparent opacity={0.12} side={THREE.DoubleSide} />
+          </mesh>
+          <mesh>
+            <ringGeometry args={[0.2, 0.25, 3]} />
+            <meshBasicMaterial color="#c8a855" transparent opacity={0.15} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
+      ))}
+      {/* Barrel clusters */}
+      <group position={[-10.0, 0, 4.0]}>
+        <mesh position={[0, 0.3, 0]}><cylinderGeometry args={[0.25, 0.22, 0.6, 8]} /><meshBasicMaterial color="#3a2a18" /></mesh>
+        <mesh position={[0.35, 0.2, 0]}><cylinderGeometry args={[0.15, 0.14, 0.4, 8]} /><meshBasicMaterial color="#4a3820" /></mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.61, 0]}><circleGeometry args={[0.25, 8]} /><meshBasicMaterial color="#2a1e10" /></mesh>
+      </group>
+      <group position={[10.0, 0, -4.0]}>
+        <mesh position={[0, 0.3, 0]}><cylinderGeometry args={[0.25, 0.22, 0.6, 8]} /><meshBasicMaterial color="#3a2a18" /></mesh>
+        <mesh position={[0.35, 0.2, 0]}><cylinderGeometry args={[0.15, 0.14, 0.4, 8]} /><meshBasicMaterial color="#4a3820" /></mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.61, 0]}><circleGeometry args={[0.25, 8]} /><meshBasicMaterial color="#2a1e10" /></mesh>
+      </group>
+      {/* Weapon rack */}
+      <group position={[-6.5, 0, 8.8]}>
+        <mesh position={[0, 0.5, 0]}><boxGeometry args={[0.08, 1.0, 0.6]} /><meshBasicMaterial color="#3a2a18" /></mesh>
+        <mesh position={[0.04, 0.6, -0.18]}><boxGeometry args={[0.03, 0.6, 0.06]} /><meshBasicMaterial color="#c8a855" /></mesh>
+        <mesh position={[0.04, 0.55, 0]}><boxGeometry args={[0.03, 0.7, 0.06]} /><meshBasicMaterial color="#8b5cf6" /></mesh>
+        <mesh position={[0.04, 0.5, 0.18]}><boxGeometry args={[0.03, 0.5, 0.06]} /><meshBasicMaterial color="#60a5fa" /></mesh>
+      </group>
+    </>
+  );
+}
+
+// ─── Arcane Fountain ────────────────────────────────────────────────────────
+
+function ArcaneFountain() {
+  const waterRef = useRef<THREE.Mesh>(null);
+  const crystalRef = useRef<THREE.Mesh>(null);
+  const jetRef = useRef<THREE.Mesh>(null);
+  const splashRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const rippleRef = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (waterRef.current) (waterRef.current.material as THREE.MeshBasicMaterial).opacity = 0.35 + Math.sin(t * 1.2) * 0.1;
+    if (crystalRef.current) {
+      crystalRef.current.rotation.y = t * 0.6;
+      crystalRef.current.position.y = 1.1 + Math.sin(t * 1.0) * 0.05;
+    }
+    if (jetRef.current) jetRef.current.scale.y = 0.8 + Math.sin(t * 3) * 0.2;
+    splashRefs.current.forEach((ref, i) => {
+      if (!ref) return;
+      ref.position.y = 0.28 + Math.abs(Math.sin(t * 2.5 + i * 1.5)) * 0.15;
+      (ref.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.abs(Math.sin(t * 2.5 + i * 1.5)) * 0.3;
+    });
+    if (rippleRef.current) {
+      const cycle = (t * 0.5) % 1;
+      const s = 1 + cycle;
+      rippleRef.current.scale.setScalar(s);
+      (rippleRef.current.material as THREE.MeshBasicMaterial).opacity = 0.2 * (1 - cycle);
+    }
+  });
+
+  return (
+    <group position={[4.0, 0, 9.5]}>
+      {/* Ground rune ring */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <ringGeometry args={[1.1, 1.2, 8]} />
+        <meshBasicMaterial color="#60a5fa" transparent opacity={0.1} />
+      </mesh>
+      {/* Base platform */}
+      <mesh position={[0, 0.1, 0]}>
+        <cylinderGeometry args={[1.0, 1.1, 0.2, 8]} />
+        <meshBasicMaterial color="#2a2040" />
+      </mesh>
+      {/* Basin wall */}
+      <mesh position={[0, 0.3, 0]}>
+        <torusGeometry args={[0.85, 0.12, 6, 8]} />
+        <meshBasicMaterial color="#241a38" />
+      </mesh>
+      {/* Water surface */}
+      <mesh ref={waterRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.25, 0]}>
+        <circleGeometry args={[0.75, 12]} />
+        <meshBasicMaterial color="#1a3050" transparent opacity={0.4} />
+      </mesh>
+      {/* Ripple ring */}
+      <mesh ref={rippleRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.26, 0]}>
+        <ringGeometry args={[0.3, 0.35, 12]} />
+        <meshBasicMaterial color="#60a5fa" transparent opacity={0.15} />
+      </mesh>
+      {/* Central column */}
+      <mesh position={[0, 0.6, 0]}>
+        <cylinderGeometry args={[0.08, 0.12, 0.8, 6]} />
+        <meshBasicMaterial color="#2a2040" />
+      </mesh>
+      {/* Water jet */}
+      <mesh ref={jetRef} position={[0, 0.9, 0]}>
+        <cylinderGeometry args={[0.02, 0.01, 0.4, 4]} />
+        <meshBasicMaterial color="#60a5fa" transparent opacity={0.4} />
+      </mesh>
+      {/* Crystal top */}
+      <mesh ref={crystalRef} position={[0, 1.1, 0]}>
+        <octahedronGeometry args={[0.12, 0]} />
+        <meshBasicMaterial color="#60a5fa" transparent opacity={0.7} />
+      </mesh>
+      {/* Splash particles */}
+      {[0, 1, 2, 3].map((i) => (
+        <mesh key={i} ref={(el) => { splashRefs.current[i] = el; }}
+          position={[Math.cos(i * Math.PI / 2) * 0.6, 0.3, Math.sin(i * Math.PI / 2) * 0.6]}>
+          <sphereGeometry args={[0.03, 4, 4]} />
+          <meshBasicMaterial color="#60a5fa" transparent opacity={0.3} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 function ArcaneBanner({ position, color, phase }: { position: [number, number, number]; color: string; phase: number }) {
   const fabricRef = useRef<THREE.Mesh>(null);
   useFrame((state) => {
@@ -1464,6 +1880,18 @@ function PlazaEnvironment() {
       <Armory />
       <SceneryProps />
       <PerimeterWall />
+      {/* Ground detail */}
+      <ArcanePaths />
+      <GroundScatter />
+      {/* Crystal trees */}
+      <ArcaneCrystalTree position={[-8.5, 0, -8.0]} variant="teal" />
+      <ArcaneCrystalTree position={[8.5, 0, 8.0]} variant="purple" />
+      <ArcaneCrystalTree position={[9.5, 0, -6.0]} variant="gold" />
+      <ArcaneCrystalTree position={[-9.0, 0, 6.0]} variant="blue" />
+      {/* Scattered props */}
+      <ScatteredDetailProps />
+      {/* Fountain */}
+      <ArcaneFountain />
     </>
   );
 }
