@@ -94,12 +94,6 @@ const DEFAULT_MOVEMENT: MovementProfile = { speed: 1.5, bounceAmp: 0.05, idlePau
 
 type QuoteFn = (s: Session) => string;
 
-function pickQuote(catType: string, session: Session): string {
-  const quotes = CHARACTER_QUOTES[catType] ?? CHARACTER_QUOTES._fallback!;
-  const q = quotes[Math.floor(Math.random() * quotes.length)]!;
-  return typeof q === 'function' ? q(session) : q;
-}
-
 const CHARACTER_QUOTES: Record<string, (string | QuoteFn)[]> = {
   builder: [ // Wolverine
     "I'm the best at what I do.",
@@ -259,10 +253,6 @@ function getChampionName(session: Session, i: number): string {
 function hpPercent(costUsd: number, maxCost: number): number {
   const ratio = maxCost > 0 ? costUsd / maxCost : 0;
   return Math.max(12, Math.round(100 - ratio * 60));
-}
-
-function manaPercent(tokens: number, maxTokens: number): number {
-  return maxTokens > 0 ? Math.min(100, Math.round((tokens / maxTokens) * 100)) : 0;
 }
 
 function formatGold(usd: number): string {
@@ -1953,152 +1943,83 @@ function PlazaEnvironment() {
 
 // ─── WoW Nameplate ────────────────────────────────────────────────────────────
 
-function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
+function WoWNameplate({ pn, maxCost, selected }: {
   pn: PositionedNode; maxCost: number; maxTokens: number; selected: boolean;
 }) {
   const hp  = hpPercent(pn.session.estimated_cost_usd, maxCost);
-  const mp  = manaPercent(pn.session.total_tokens ?? 0, maxTokens);
   const c   = pn.cls;
   const hpC = hp > 60 ? '#22c55e' : hp > 30 ? '#f59e0b' : '#ef4444';
   const catType = pn.session.cat_type ?? 'ghost';
 
-  // Rotating quote — changes every 8-12 seconds
-  const [quote, setQuote] = useState(() => pickQuote(catType, pn.session));
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setQuote(pickQuote(catType, pn.session));
-    }, 8000 + Math.random() * 4000);
-    return () => clearInterval(interval);
-  }, [catType, pn.session]);
-
-  // Active signature moves for this session
+  // Active signature moves for this session — fire only on notable events
   const activeMoves = useMemo(() => {
     const moves = SIGNATURE_MOVES[catType] ?? [];
     return moves.filter(m => m.trigger(pn.session));
   }, [catType, pn.session]);
 
-  // Cast bar — top tool + progress based on message count
-  const topTool = useMemo(() => {
-    const tools = pn.session.tools;
-    if (!tools) return null;
-    const entries = Object.entries(tools).sort((a, b) => b[1] - a[1]);
-    return entries[0]?.[0] ?? null;
-  }, [pn.session.tools]);
-  const castProgress = Math.min(100, (pn.session.message_count ?? 0) * 4);
-
   const tokens = pn.session.total_tokens ?? 0;
   const tokensShort = tokens >= 1_000_000
     ? `${(tokens / 1_000_000).toFixed(1)}M`
     : tokens >= 1_000 ? `${Math.round(tokens / 1_000)}k` : `${tokens}`;
+  const running = !pn.session.is_ghost;
 
   return (
     <Html center position={[0, 3.8, 0]} style={{ pointerEvents: 'none' }}>
       <div style={{
-        width: 168, background: 'linear-gradient(180deg, rgba(10,8,16,.92), rgba(4,2,8,.94))',
-        border: `1px solid ${selected ? '#63f7b3' : c.color}aa`,
-        borderRadius: 4, padding: '5px 7px 6px',
+        width: 140, background: 'rgba(8,6,14,.88)',
+        border: `1px solid ${selected ? '#63f7b3' : c.color}99`,
+        borderRadius: 3, padding: '4px 7px 5px',
         fontFamily: 'monospace', userSelect: 'none',
-        boxShadow: selected
-          ? `0 0 10px ${c.aura}66, inset 0 0 8px ${c.aura}22`
-          : activeMoves.length > 0 ? `0 0 6px ${c.aura}44` : '0 1px 3px rgba(0,0,0,.5)',
+        boxShadow: selected ? `0 0 10px ${c.aura}66` : 'none',
       }}>
-        {/* Header: name left, role right */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+        {/* Name + status dot */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+          <span style={{
+            width: 5, height: 5, borderRadius: '50%',
+            background: running ? '#4ade80' : '#6b7280',
+            boxShadow: running ? '0 0 4px #4ade80' : 'none', flexShrink: 0,
+          }} />
           <span style={{
             fontSize: 12, color: c.color, fontWeight: 700,
-            textShadow: `0 0 6px ${c.aura}`, letterSpacing: 0.3,
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110,
+            textShadow: `0 0 4px ${c.aura}aa`, letterSpacing: 0.2,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
           }}>{pn.name}</span>
-          <span style={{
-            fontSize: 8, color: `${c.color}cc`, letterSpacing: 1.2,
-            textTransform: 'uppercase', fontWeight: 600,
-          }}>{pn.role}</span>
         </div>
 
-        {/* HP bar with inline label + value */}
-        <StatBar
-          icon="♥" label="HP" color={hpC} trackColor="#0a1a0a"
-          pct={hp} value={formatGold(pn.session.estimated_cost_usd)}
-        />
-        {/* MP bar */}
-        <StatBar
-          icon="◈" label="MP" color={c.color} trackColor="#050e1a"
-          pct={mp} value={tokensShort}
-        />
+        {/* Cost bar — the primary signal */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 2 }}>
+          <div style={{ flex: 1, height: 4, background: '#1a0a0a', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ width: `${hp}%`, height: '100%', background: hpC }} />
+          </div>
+          <span style={{
+            fontSize: 10, color: '#e4d4a8', fontVariantNumeric: 'tabular-nums',
+            minWidth: 42, textAlign: 'right',
+          }}>{formatGold(pn.session.estimated_cost_usd)}</span>
+        </div>
 
-        {/* Cast bar */}
-        {!pn.session.is_ghost && (
-          <div style={{ marginTop: 3 }}>
-            <div style={{
-              fontSize: 8, color: '#c8a855cc', marginBottom: 1,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
-              {topTool ? `▸ ${topTool}` : '▸ channeling'}
-            </div>
-            <div style={{ height: 3, background: '#1a1408', borderRadius: 2, overflow: 'hidden' }}>
-              <div style={{
-                width: `${castProgress}%`, height: '100%',
-                background: 'linear-gradient(90deg, #c8a855, #f5c518)',
-                borderRadius: 2,
-                boxShadow: castProgress > 0 ? '0 0 4px #f5c51888' : 'none',
-              }} />
-            </div>
+        {/* Tokens · duration */}
+        <div style={{
+          display: 'flex', justifyContent: 'space-between',
+          fontSize: 9, color: '#c8a855bb', fontVariantNumeric: 'tabular-nums',
+        }}>
+          <span>{tokensShort} tok</span>
+          <span>{formatDur(pn.session.duration_seconds)}</span>
+        </div>
+
+        {/* Signature badges — only when something notable fires */}
+        {activeMoves.length > 0 && (
+          <div style={{ display: 'flex', gap: 2, marginTop: 4 }}>
+            {activeMoves.map((m) => (
+              <span key={m.name}
+                title={typeof m.quote === 'function' ? m.quote(pn.session) : m.quote}
+                style={{ fontSize: 11, lineHeight: 1, cursor: 'default' }}>
+                {m.emoji}
+              </span>
+            ))}
           </div>
         )}
-
-        {/* Footer: duration + signature move badges */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, gap: 4 }}>
-          <span style={{ fontSize: 9, color: '#c8a855cc' }}>⏱ {formatDur(pn.session.duration_seconds)}</span>
-          {activeMoves.length > 0 && (
-            <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              {activeMoves.map((m) => (
-                <span key={m.name} title={typeof m.quote === 'function' ? m.quote(pn.session) : m.quote}
-                  style={{
-                    fontSize: 10, padding: '1px 3px', borderRadius: 2,
-                    background: `${c.color}33`, border: `1px solid ${c.color}66`,
-                    cursor: 'default', lineHeight: 1,
-                  }}>
-                  {m.emoji}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Quote — two-line wrap, better contrast */}
-        <div style={{
-          marginTop: 5, padding: '3px 5px', borderRadius: 3,
-          background: `${c.color}15`, borderLeft: `2px solid ${c.color}88`,
-          fontSize: 8, color: '#e4d4a8cc', lineHeight: 1.35, fontStyle: 'italic',
-          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-          overflow: 'hidden',
-        }}>
-          "{quote}"
-        </div>
       </div>
     </Html>
-  );
-}
-
-// Labelled stat bar: icon · label · filled track · value on right.
-function StatBar({ icon, label, color, trackColor, pct, value }: {
-  icon: string; label: string; color: string; trackColor: string; pct: number; value: string;
-}) {
-  return (
-    <div style={{ marginBottom: 3 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 8, lineHeight: 1, marginBottom: 1 }}>
-        <span style={{ color: `${color}dd`, fontWeight: 600, letterSpacing: 0.5 }}>
-          <span style={{ marginRight: 3 }}>{icon}</span>{label}
-        </span>
-        <span style={{ color: '#e4d4a8cc', fontVariantNumeric: 'tabular-nums' }}>{value}</span>
-      </div>
-      <div style={{ height: 4, background: trackColor, borderRadius: 2, overflow: 'hidden', border: '1px solid rgba(255,255,255,.05)' }}>
-        <div style={{
-          width: `${pct}%`, height: '100%', background: color, borderRadius: 2,
-          boxShadow: `0 0 4px ${color}66`,
-        }} />
-      </div>
-    </div>
   );
 }
 
