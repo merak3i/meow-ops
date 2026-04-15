@@ -15,7 +15,7 @@
  */
 
 import { useRef, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
 import { furVertexShader, furFragmentShader, defaultFurUniforms } from './shaders/fur';
@@ -63,10 +63,12 @@ function SSSMesh({
   geometry,
   color,
   subsurfaceColor,
+  furMutingRef,
 }: {
   geometry:        THREE.BufferGeometry;
   color:           string;
   subsurfaceColor?: string;
+  furMutingRef?:   React.MutableRefObject<number>;
 }) {
   const albedo = useMemo(() => hexToRgb(color), [color]);
   const sssCol = useMemo(
@@ -82,11 +84,13 @@ function SSSMesh({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
-  // Update camera position each frame (no re-render cost)
+  // Update camera position + muted albedo each frame (no re-render cost)
   useFrame(({ camera }) => {
     (uniforms['uCamPos'] as { value: number[] }).value = [
       camera.position.x, camera.position.y, camera.position.z,
     ];
+    const mute = furMutingRef?.current ?? 0;
+    (uniforms['uAlbedoColor'] as { value: number[] }).value = muteColor(albedo, mute);
   });
 
   return (
@@ -113,14 +117,54 @@ interface FurShellsProps {
   patternType: number;
   timeRef:     React.MutableRefObject<number>;
   fatigue:     number;
+  /** Override gravity droop per body part. Tail 0.40, body 0.12 (default), head 0.05. */
+  furGravity?: number;
+  /** Ref to smoothed 0..1 desaturation — lets neglected cats go matted without re-render. */
+  furMutingRef?: React.MutableRefObject<number>;
+}
+
+// Luma-preserving desaturation toward grey, lerp factor t in 0..1.
+function muteColor(rgb: [number, number, number], t: number): [number, number, number] {
+  if (t <= 0.001) return rgb;
+  const lum = rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114;
+  return [
+    rgb[0] + (lum - rgb[0]) * t,
+    rgb[1] + (lum - rgb[1]) * t,
+    rgb[2] + (lum - rgb[2]) * t,
+  ];
 }
 
 function FurShells({
   geometry, shellCount, baseColor, tipColor,
   furLength, stripeScale, patternType, timeRef, fatigue,
+  furGravity, furMutingRef,
 }: FurShellsProps) {
+  const groupRef = useRef<THREE.Group>(null);
+  const { camera } = useThree();
+
+  // Update uTime + uCamPos each frame so wind animation and specular track correctly.
+  // Also re-apply desaturated base/tip colours when the state demands muted fur.
+  // The uniforms object is created once at mount from JSX; we mutate .value in-place.
+  useFrame(() => {
+    const g = groupRef.current;
+    if (!g) return;
+    const t = timeRef.current;
+    const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+    const mute = furMutingRef?.current ?? 0;
+    const b = muteColor(baseColor, mute);
+    const tp = muteColor(tipColor,  mute);
+    for (let i = 0; i < g.children.length; i++) {
+      const mat = (g.children[i] as THREE.Mesh).material as THREE.ShaderMaterial | undefined;
+      if (!mat?.uniforms) continue;
+      if (mat.uniforms['uTime'])      mat.uniforms['uTime'].value = t;
+      if (mat.uniforms['uCamPos'])    mat.uniforms['uCamPos'].value = [cx, cy, cz];
+      if (mat.uniforms['uBaseColor']) mat.uniforms['uBaseColor'].value = b;
+      if (mat.uniforms['uTipColor'])  mat.uniforms['uTipColor'].value  = tp;
+    }
+  });
+
   return (
-    <>
+    <group ref={groupRef}>
       {Array.from({ length: shellCount }, (_, i) => {
         const u: Record<string, { value: unknown }> = {
           ...defaultFurUniforms(),
@@ -133,6 +177,7 @@ function FurShells({
           uFurLength:   { value: furLength },
           uStripeScale: { value: stripeScale },
           uPatternType: { value: patternType },
+          ...(furGravity !== undefined ? { uFurGravity: { value: furGravity } } : {}),
         };
         return (
           <mesh key={i} geometry={geometry}>
@@ -146,7 +191,7 @@ function FurShells({
           </mesh>
         );
       })}
-    </>
+    </group>
   );
 }
 
@@ -222,10 +267,11 @@ export function ProceduralCat({
   const fatigue    = morphWeights.fatigue;
 
   // ── Geometries ─────────────────────────────────────────────────────────────
-  // Body: wide oval — NOT a tall capsule. Sitting cat is wider than tall.
+  // Body: sitting cat — taller than wide so the head + ears read clearly above torso.
+  // At robustness=1.0 + size=1.0 (scale=1.3): body ≈ 0.90w × 1.18h world units.
   const bodyGeo = useMemo(() => {
     const g = new THREE.SphereGeometry(0.28, 28, 22);
-    g.scale(bodyScaleX * 1.55, 1.25, 1.40);   // wide × 0.87 tall × 0.98 deep
+    g.scale(bodyScaleX * 1.08, 1.62, 1.12);   // narrower × taller × shallower
     return withTangents(g);
   }, [bodyScaleX]);
 
@@ -243,20 +289,20 @@ export function ProceduralCat({
     return withTangents(g);
   }, []);
 
-  // Ears: triangular cones — radialSegments=3 gives sharp pointed ears
-  const earOuterGeo = useMemo(
-    () => new THREE.ConeGeometry(0.125, 0.285, 3, 1),
-    [],
-  );
-  // Inner ear: slightly smaller, same shape, warm pink
-  const earInnerGeo = useMemo(
-    () => {
-      const g = new THREE.ConeGeometry(0.072, 0.210, 3, 1);
-      g.translate(0, 0.014, 0.010);   // offset slightly inward/forward
-      return g;
-    },
-    [],
-  );
+  // Ears: rounded cones — 8 radial segments read as ears from any angle (3
+  // segments produced a flat triangle in side profile).
+  const earOuterGeo = useMemo(() => {
+    const g = new THREE.ConeGeometry(0.125, 0.285, 8, 1);
+    g.scale(1.0, 1.0, 0.72);    // flatten front-to-back so ears aren't cones
+    return g;
+  }, []);
+  // Inner ear: smaller, same profile, warm pink
+  const earInnerGeo = useMemo(() => {
+    const g = new THREE.ConeGeometry(0.072, 0.210, 8, 1);
+    g.scale(1.0, 1.0, 0.72);
+    g.translate(0, 0.014, 0.012);
+    return g;
+  }, []);
 
   // Neck: short tapered cylinder
   const neckGeo = useMemo(
@@ -328,16 +374,23 @@ export function ProceduralCat({
   const pawLRef      = useRef<THREE.Group>(null);
   const pawRRef      = useRef<THREE.Group>(null);
 
-  const timeRef = useRef(0);
+  const timeRef      = useRef(0);
+  const furMutingRef = useRef(0);
 
   useFrame(({ clock }) => {
     timeRef.current = clock.getElapsedTime();
     const a = animTargets.current;
+    furMutingRef.current = a.furMuting;
 
     if (bodyGroupRef.current) {
-      bodyGroupRef.current.position.y = a.breathY;
+      // bodyY carries postural sag (state-driven); breathY is the per-breath bob
+      bodyGroupRef.current.position.y = a.breathY + a.bodyY;
       bodyGroupRef.current.rotation.z = a.bodyRoll;
     }
+    // Head tilt (concerned's signature curiosity cue) applied to the head IK group
+    const headGrp = headRef.current as THREE.Object3D | null;
+    if (headGrp) headGrp.rotation.z = a.headTilt;
+
     if (tailRootRef.current) tailRootRef.current.rotation.z = a.tailBaseAngle;
     if (tailMidRef.current)  tailMidRef.current.rotation.z  = a.tailTipAngle;
 
@@ -372,18 +425,18 @@ export function ProceduralCat({
   }, [pal.nose]);
 
   // ── Body dimensions for positioning ───────────────────────────────────────
-  // Body SphereGeometry(0.28) × scale(1.55, 1.25, 1.40) → halfH = 0.28*1.25 = 0.35
-  const bodyHalfH = 0.28 * 1.25;   // 0.350
+  // Body SphereGeometry(0.28) × scale(1.08, 1.62, 1.12) → halfH = 0.28*1.62 = 0.454
+  const bodyHalfH = 0.28 * 1.62;   // 0.454
   // Head SphereGeometry(0.27) × scale(1, 0.96, 0.94) → radius ≈ 0.27
   const headR      = 0.27 * headScale;
   // Head centre sits just above body top with a small neck overlap
-  const headCentreY = bodyHalfH + headR * 0.55;   // ≈ 0.350 + 0.149 = 0.499 → ~0.50
+  const headCentreY = bodyHalfH + headR * 0.55;   // ≈ 0.454 + 0.149 = 0.603 → ~0.60
 
   return (
     <group ref={bodyGroupRef}>
 
       {/* ── Body ──────────────────────────────────────────────────────────── */}
-      <SSSMesh geometry={bodyGeo} color={pal.body} subsurfaceColor={pal.nose} />
+      <SSSMesh geometry={bodyGeo} color={pal.body} subsurfaceColor={pal.nose} furMutingRef={furMutingRef} />
       <FurShells
         geometry={bodyGeo}
         shellCount={bodyShells}
@@ -394,6 +447,8 @@ export function ProceduralCat({
         patternType={patternType}
         timeRef={timeRef}
         fatigue={fatigue}
+        furGravity={0.15}
+        furMutingRef={furMutingRef}
       />
 
       {/* ── Neck ──────────────────────────────────────────────────────────── */}
@@ -407,7 +462,7 @@ export function ProceduralCat({
         position={[0, headCentreY, 0.042]}
       >
         {/* Head fur + SSS */}
-        <SSSMesh geometry={headGeo} color={pal.body} subsurfaceColor={pal.nose} />
+        <SSSMesh geometry={headGeo} color={pal.body} subsurfaceColor={pal.nose} furMutingRef={furMutingRef} />
         <FurShells
           geometry={headGeo}
           shellCount={14}
@@ -418,6 +473,8 @@ export function ProceduralCat({
           patternType={0}
           timeRef={timeRef}
           fatigue={fatigue}
+          furGravity={0.04}
+          furMutingRef={furMutingRef}
         />
 
         {/* ── Ears ──────────────────────────────────────────────────────── */}
@@ -500,7 +557,7 @@ export function ProceduralCat({
       {/* ── Tail ──────────────────────────────────────────────────────────── */}
       <group ref={tailRootRef} position={[0, -0.200, -0.250]}>
         <group ref={tailMidRef} position={[0.15, -0.04, 0]}>
-          <SSSMesh geometry={tailGeo} color={pal.accent} subsurfaceColor={pal.nose} />
+          <SSSMesh geometry={tailGeo} color={pal.accent} subsurfaceColor={pal.nose} furMutingRef={furMutingRef} />
           <FurShells
             geometry={tailGeo}
             shellCount={12}
@@ -511,6 +568,8 @@ export function ProceduralCat({
             patternType={0}
             timeRef={timeRef}
             fatigue={fatigue}
+            furGravity={0.40}
+            furMutingRef={furMutingRef}
           />
           {/* Tail hit zone */}
           <mesh

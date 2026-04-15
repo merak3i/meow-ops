@@ -9,6 +9,8 @@ export interface CatAnimTargets {
   breathY:        number;   // y-offset body bob
   breathScaleY:   number;   // y-scale for chest expansion
   bodyRoll:       number;   // z-rotation of whole body (idle sway)
+  bodyY:          number;   // postural y-offset (slump in fatigue/neglected)
+  headTilt:       number;   // head z-rotation (curious tilt for concerned)
   tailBaseAngle:  number;   // rotation.z of tail root
   tailTipAngle:   number;   // secondary rotation.z of mid-tail
   earLAngle:      number;   // rotation.x of left ear (forward+)
@@ -17,6 +19,7 @@ export interface CatAnimTargets {
   pupilScale:     number;   // iris/pupil scale (dilates on pet)
   pawLiftL:       number;   // 0–1 front-left paw raise
   pawLiftR:       number;   // 0–1 front-right paw raise
+  furMuting:      number;   // 0=vibrant, 1=desaturated toward grey (neglected)
 }
 
 // ─── Per-state config ─────────────────────────────────────────────────────────
@@ -32,6 +35,9 @@ interface StateConfig {
   earAsymmetry:   number;   // 'concerned': one ear tilts back
   eyeOpenness:    number;
   pupilScale:     number;
+  bodySag:        number;   // postural Y-drop (0 = upright, 0.15 = heavy slump)
+  headTilt:       number;   // head z-rotation in radians (curious tilt)
+  furMuting:      number;   // 0 = saturated, 1 = desaturated (sadness signal)
 }
 
 const STATE_CONFIG: Record<string, StateConfig> = {
@@ -39,31 +45,37 @@ const STATE_CONFIG: Record<string, StateConfig> = {
     breathHz: 0.40, breathAmp: 0.010, bodyRollAmp: 0.018,
     tailSwayHz: 0.30, tailSwayAmp: 0.22, tailBaseOffset: 0.05,
     earAngle: 0.00, earAsymmetry: 0, eyeOpenness: 0.92, pupilScale: 0.80,
+    bodySag: 0.00, headTilt: 0.00, furMuting: 0.00,
   },
   active: {
     breathHz: 0.90, breathAmp: 0.009, bodyRollAmp: 0.008,
     tailSwayHz: 0.80, tailSwayAmp: 0.32, tailBaseOffset: 0.12,
     earAngle: 0.18, earAsymmetry: 0, eyeOpenness: 1.00, pupilScale: 0.75,
+    bodySag: -0.02, headTilt: 0.00, furMuting: 0.00,   // perked, slight lift
   },
   focus: {
     breathHz: 0.28, breathAmp: 0.006, bodyRollAmp: 0.004,
     tailSwayHz: 0.12, tailSwayAmp: 0.07, tailBaseOffset: -0.18,
     earAngle: 0.06, earAsymmetry: 0, eyeOpenness: 0.62, pupilScale: 0.60,
+    bodySag: 0.00, headTilt: 0.00, furMuting: 0.00,
   },
   fatigue: {
     breathHz: 0.50, breathAmp: 0.017, bodyRollAmp: 0.025,
     tailSwayHz: 0.15, tailSwayAmp: 0.10, tailBaseOffset: -0.30,
     earAngle: -0.28, earAsymmetry: 0, eyeOpenness: 0.44, pupilScale: 0.70,
+    bodySag: 0.07, headTilt: -0.05, furMuting: 0.15,    // slumps + slight head droop
   },
   neglected: {
     breathHz: 0.24, breathAmp: 0.021, bodyRollAmp: 0.030,
     tailSwayHz: 0.06, tailSwayAmp: 0.05, tailBaseOffset: -0.42,
     earAngle: -0.38, earAsymmetry: 0, eyeOpenness: 0.32, pupilScale: 0.65,
+    bodySag: 0.13, headTilt: -0.10, furMuting: 0.42,    // heavy slump, matted look
   },
   concerned: {
     breathHz: 0.60, breathAmp: 0.013, bodyRollAmp: 0.012,
     tailSwayHz: 0.50, tailSwayAmp: 0.16, tailBaseOffset: 0.00,
     earAngle: -0.05, earAsymmetry: 0.38, eyeOpenness: 0.88, pupilScale: 0.85,
+    bodySag: 0.00, headTilt: 0.22, furMuting: 0.00,     // signature curious head tilt
   },
 };
 
@@ -75,11 +87,18 @@ export function useCatAnimation(
 ): React.MutableRefObject<CatAnimTargets> {
   const targets = useRef<CatAnimTargets>({
     breathY: 0, breathScaleY: 1, bodyRoll: 0,
+    bodyY: 0, headTilt: 0,
     tailBaseAngle: 0, tailTipAngle: 0,
     earLAngle: 0, earRAngle: 0,
     eyeOpenness: 1, pupilScale: 0.8,
     pawLiftL: 0, pawLiftR: 0,
+    furMuting: 0,
   });
+
+  // Smoothed postural targets — crossfade between states over ~1.2s
+  const bodySagSm   = useRef(0);
+  const headTiltSm  = useRef(0);
+  const furMuteSm   = useRef(0);
 
   // Blink state
   const blinkTimer    = useRef(2 + Math.random() * 4);
@@ -102,11 +121,20 @@ export function useCatAnimation(
     // Global elapsed — use clock from fiber
     const t = performance.now() / 1000;
 
+    // ── Postural crossfade — smooth state transitions (≈1.2s half-life) ────
+    const k = 1 - Math.exp(-delta * 1.8);
+    bodySagSm.current  += (cfg.bodySag    - bodySagSm.current)  * k;
+    headTiltSm.current += (cfg.headTilt   - headTiltSm.current) * k;
+    furMuteSm.current  += (cfg.furMuting  - furMuteSm.current)  * k;
+
     // ── Breathing ──────────────────────────────────────────────────────────
     const breath = Math.sin(t * cfg.breathHz * Math.PI * 2);
     tgt.breathY      = breath * cfg.breathAmp;
     tgt.breathScaleY = 1 + breath * cfg.breathAmp * 0.6;
     tgt.bodyRoll     = Math.sin(t * cfg.breathHz * Math.PI * 2 * 0.7) * cfg.bodyRollAmp;
+    tgt.bodyY        = -bodySagSm.current;
+    tgt.headTilt     = headTiltSm.current;
+    tgt.furMuting    = furMuteSm.current;
 
     // ── Tail ───────────────────────────────────────────────────────────────
     const tailSway     = Math.sin(t * cfg.tailSwayHz * Math.PI * 2);

@@ -96,10 +96,13 @@ function Scene({
       {/* HDRI environment */}
       <Environment preset={preset} background={false} />
 
-      {/* Warm key light — upper right front */}
+      {/* Soft fill — lifts the shadow floor so the fur base isn't pure black */}
+      <ambientLight intensity={0.35} color="#fff8f2" />
+
+      {/* Warm key light — upper right front (reduced from 1.2 to avoid overexposure) */}
       <directionalLight
         position={[2.5, 4.5, 3]}
-        intensity={1.2}
+        intensity={0.90}
         castShadow
         shadow-mapSize={[1024, 1024]}
         color="#fff5e0"
