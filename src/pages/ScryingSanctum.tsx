@@ -1986,74 +1986,119 @@ function WoWNameplate({ pn, maxCost, maxTokens, selected }: {
   }, [pn.session.tools]);
   const castProgress = Math.min(100, (pn.session.message_count ?? 0) * 4);
 
+  const tokens = pn.session.total_tokens ?? 0;
+  const tokensShort = tokens >= 1_000_000
+    ? `${(tokens / 1_000_000).toFixed(1)}M`
+    : tokens >= 1_000 ? `${Math.round(tokens / 1_000)}k` : `${tokens}`;
+
   return (
     <Html center position={[0, 3.8, 0]} style={{ pointerEvents: 'none' }}>
       <div style={{
-        minWidth: 120, background: 'rgba(0,0,0,.72)',
-        border: `1px solid ${selected ? '#63f7b3' : c.color}66`,
-        borderRadius: 3, padding: '4px 6px 5px',
+        width: 168, background: 'linear-gradient(180deg, rgba(10,8,16,.92), rgba(4,2,8,.94))',
+        border: `1px solid ${selected ? '#63f7b3' : c.color}aa`,
+        borderRadius: 4, padding: '5px 7px 6px',
         fontFamily: 'monospace', userSelect: 'none',
-        boxShadow: selected ? `0 0 8px ${c.aura}44` : activeMoves.length > 0 ? `0 0 6px ${c.aura}33` : 'none',
+        boxShadow: selected
+          ? `0 0 10px ${c.aura}66, inset 0 0 8px ${c.aura}22`
+          : activeMoves.length > 0 ? `0 0 6px ${c.aura}44` : '0 1px 3px rgba(0,0,0,.5)',
       }}>
-        <div style={{ fontSize: 7, color: c.color, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 1 }}>
-          {pn.role}
+        {/* Header: name left, role right */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+          <span style={{
+            fontSize: 12, color: c.color, fontWeight: 700,
+            textShadow: `0 0 6px ${c.aura}`, letterSpacing: 0.3,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 110,
+          }}>{pn.name}</span>
+          <span style={{
+            fontSize: 8, color: `${c.color}cc`, letterSpacing: 1.2,
+            textTransform: 'uppercase', fontWeight: 600,
+          }}>{pn.role}</span>
         </div>
-        <div style={{ fontSize: 10, color: c.color, fontWeight: 700, marginBottom: 3,
-          textShadow: `0 0 6px ${c.aura}`, letterSpacing: 0.3 }}>
-          {pn.name}
-        </div>
-        <div style={{ height: 5, background: '#0a1a0a', borderRadius: 2, overflow: 'hidden', marginBottom: 2 }}>
-          <div style={{ width: `${hp}%`, height: '100%', background: hpC, borderRadius: 2 }} />
-        </div>
-        <div style={{ height: 3, background: '#050e1a', borderRadius: 2, overflow: 'hidden', marginBottom: 2 }}>
-          <div style={{ width: `${mp}%`, height: '100%', background: c.color + 'cc', borderRadius: 2 }} />
-        </div>
+
+        {/* HP bar with inline label + value */}
+        <StatBar
+          icon="♥" label="HP" color={hpC} trackColor="#0a1a0a"
+          pct={hp} value={formatGold(pn.session.estimated_cost_usd)}
+        />
+        {/* MP bar */}
+        <StatBar
+          icon="◈" label="MP" color={c.color} trackColor="#050e1a"
+          pct={mp} value={tokensShort}
+        />
+
         {/* Cast bar */}
         {!pn.session.is_ghost && (
-          <div style={{ marginBottom: 3 }}>
-            <div style={{ fontSize: 6, color: '#c8a85566', marginBottom: 1 }}>
-              {topTool ? `Casting: ${topTool}` : 'Channeling...'}
+          <div style={{ marginTop: 3 }}>
+            <div style={{
+              fontSize: 8, color: '#c8a855cc', marginBottom: 1,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {topTool ? `▸ ${topTool}` : '▸ channeling'}
             </div>
             <div style={{ height: 3, background: '#1a1408', borderRadius: 2, overflow: 'hidden' }}>
               <div style={{
                 width: `${castProgress}%`, height: '100%',
                 background: 'linear-gradient(90deg, #c8a855, #f5c518)',
                 borderRadius: 2,
+                boxShadow: castProgress > 0 ? '0 0 4px #f5c51888' : 'none',
               }} />
             </div>
           </div>
         )}
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 8, color: '#c8a85588' }}>{formatGold(pn.session.estimated_cost_usd)}</span>
-          <span style={{ fontSize: 8, color: '#c8a85588' }}>{formatDur(pn.session.duration_seconds)}</span>
+
+        {/* Footer: duration + signature move badges */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, gap: 4 }}>
+          <span style={{ fontSize: 9, color: '#c8a855cc' }}>⏱ {formatDur(pn.session.duration_seconds)}</span>
+          {activeMoves.length > 0 && (
+            <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {activeMoves.map((m) => (
+                <span key={m.name} title={typeof m.quote === 'function' ? m.quote(pn.session) : m.quote}
+                  style={{
+                    fontSize: 10, padding: '1px 3px', borderRadius: 2,
+                    background: `${c.color}33`, border: `1px solid ${c.color}66`,
+                    cursor: 'default', lineHeight: 1,
+                  }}>
+                  {m.emoji}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
-        {/* Speech bubble quote */}
+
+        {/* Quote — two-line wrap, better contrast */}
         <div style={{
-          marginTop: 4, padding: '3px 5px', borderRadius: 3,
-          background: `${c.color}11`, borderLeft: `2px solid ${c.color}44`,
-          fontSize: 7, color: '#c8a85599', lineHeight: 1.3, fontStyle: 'italic',
-          maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          marginTop: 5, padding: '3px 5px', borderRadius: 3,
+          background: `${c.color}15`, borderLeft: `2px solid ${c.color}88`,
+          fontSize: 8, color: '#e4d4a8cc', lineHeight: 1.35, fontStyle: 'italic',
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
         }}>
           "{quote}"
         </div>
-        {/* Signature move badges */}
-        {activeMoves.length > 0 && (
-          <div style={{ marginTop: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            {activeMoves.map((m) => (
-              <span key={m.name} title={typeof m.quote === 'function' ? m.quote(pn.session) : m.quote}
-                style={{
-                  fontSize: 7, padding: '1px 3px', borderRadius: 2,
-                  background: `${c.color}22`, border: `1px solid ${c.color}33`,
-                  color: c.color, cursor: 'default',
-                }}>
-                {m.emoji}
-              </span>
-            ))}
-          </div>
-        )}
       </div>
     </Html>
+  );
+}
+
+// Labelled stat bar: icon · label · filled track · value on right.
+function StatBar({ icon, label, color, trackColor, pct, value }: {
+  icon: string; label: string; color: string; trackColor: string; pct: number; value: string;
+}) {
+  return (
+    <div style={{ marginBottom: 3 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 8, lineHeight: 1, marginBottom: 1 }}>
+        <span style={{ color: `${color}dd`, fontWeight: 600, letterSpacing: 0.5 }}>
+          <span style={{ marginRight: 3 }}>{icon}</span>{label}
+        </span>
+        <span style={{ color: '#e4d4a8cc', fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+      </div>
+      <div style={{ height: 4, background: trackColor, borderRadius: 2, overflow: 'hidden', border: '1px solid rgba(255,255,255,.05)' }}>
+        <div style={{
+          width: `${pct}%`, height: '100%', background: color, borderRadius: 2,
+          boxShadow: `0 0 4px ${color}66`,
+        }} />
+      </div>
+    </div>
   );
 }
 
