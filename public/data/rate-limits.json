@@ -1,6 +1,6 @@
 {
   "_note": "Auto-populated by sync/fetch-claude-limits.mjs. Run that script to refresh.",
-  "_updated": "2026-04-16T12:29:54.122Z",
+  "_updated": "2026-04-17T11:46:00.859Z",
   "claude": {
     "session": {
       "used_pct": 73,
