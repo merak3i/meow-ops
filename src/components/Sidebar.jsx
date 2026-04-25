@@ -233,93 +233,7 @@ function SyncButton({ onReload }) {
 }
 
 
-// ── Rate limit bar (shows remaining %) ───────────────────────────────────────
-function RateLimitBar({ label, usedPct, resetLabel }) {
-  const remaining = Math.max(0, 100 - (usedPct ?? 0));
-  const color =
-    remaining > 50 ? 'var(--green, #4caf82)' :
-    remaining > 20 ? '#e8a030' :
-    'var(--red, #ff4a4a)';
-
-  return (
-    <div style={{ marginBottom: 5 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-        <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
-          {label}
-        </span>
-        <span style={{ fontSize: 9, color, fontVariantNumeric: 'tabular-nums' }}>
-          {remaining}% left
-        </span>
-      </div>
-      <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginBottom: 2 }}>
-        <div style={{
-          height: '100%', width: `${remaining}%`,
-          background: color,
-          borderRadius: 2, transition: 'width 0.4s ease',
-        }} />
-      </div>
-      {resetLabel && (
-        <div style={{ fontSize: 8.5, color: 'var(--text-muted)', textAlign: 'right' }}>
-          resets {resetLabel}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Limits panel — only rate limit bars, no session/cost/quota data ──────────
-function LimitsPanel({ rateLimits }) {
-  const cl = rateLimits?.claude;
-  const cx = rateLimits?.codex;
-  if (!cl && !cx) return null;
-
-  return (
-    <div style={{
-      margin: '0 16px 12px',
-      padding: '10px 12px',
-      background: 'var(--bg-page)',
-      border: '1px solid var(--border)',
-      borderRadius: 8,
-    }}>
-      {cl && (
-        <>
-          <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em',
-            textTransform: 'uppercase', marginBottom: 6 }}>
-            Claude.ai limits
-          </div>
-          {cl.session?.used_pct != null && (
-            <RateLimitBar label="Session" usedPct={cl.session.used_pct}
-              resetLabel={cl.session.resets_in_label ?? null} />
-          )}
-          {cl.weekly?.all_models_used_pct != null && (
-            <RateLimitBar label="Weekly (all)" usedPct={cl.weekly.all_models_used_pct}
-              resetLabel={cl.weekly.resets_label ?? null} />
-          )}
-          {cl.weekly?.sonnet_only_used_pct != null && (
-            <RateLimitBar label="Weekly (Sonnet)" usedPct={cl.weekly.sonnet_only_used_pct}
-              resetLabel={null} />
-          )}
-        </>
-      )}
-      {cx?.weekly?.remaining_pct != null && (
-        <>
-          {cl && <div style={{ borderTop: '1px solid var(--border)', margin: '8px 0' }} />}
-          <div style={{ fontSize: 9, color: 'var(--text-muted)', letterSpacing: '0.1em',
-            textTransform: 'uppercase', marginBottom: 6 }}>
-            Codex limits
-          </div>
-          <RateLimitBar
-            label="Weekly"
-            usedPct={100 - cx.weekly.remaining_pct}
-            resetLabel={cx.weekly.resets_label ?? null}
-          />
-        </>
-      )}
-    </div>
-  );
-}
-
-export default function Sidebar({ activePage, onNavigate, onReload, rateLimits }) {
+export default function Sidebar({ activePage, onNavigate, onReload }) {
   return (
     <aside
       style={{
@@ -391,7 +305,6 @@ export default function Sidebar({ activePage, onNavigate, onReload, rateLimits }
         })}
       </nav>
 
-      <LimitsPanel rateLimits={rateLimits} />
       <div style={{ flexShrink: 0 }}>
         <SyncButton onReload={onReload} />
       </div>

@@ -87,7 +87,6 @@ export default function App() {
   const [loading,     setLoading]     = useState(true);
   const [noData,      setNoData]      = useState(false);
   const [reloadKey,   setReloadKey]   = useState(0);
-  const [rateLimits,  setRateLimits]  = useState(null);
 
   // Token budgets — weekly and monthly limits per source (persisted in localStorage)
   const [tokenBudget, setTokenBudget] = useState(() => {
@@ -147,24 +146,9 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  // Fetch cached rate limit data (populated by sync/fetch-claude-limits.mjs)
-  useEffect(() => {
-    fetch('/data/rate-limits.json', { cache: 'no-cache' })
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data) setRateLimits(data); })
-      .catch(() => {});
-  }, []);
-
   const reloadData = useCallback(() => {
     invalidateRealSessions();
     setReloadKey((k) => k + 1);
-    // Re-fetch rate limits so bars update after sync
-    setTimeout(() => {
-      fetch('/data/rate-limits.json', { cache: 'no-cache' })
-        .then((r) => r.ok ? r.json() : null)
-        .then((data) => { if (data) setRateLimits(data); })
-        .catch(() => {});
-    }, 3000); // slight delay — limits script runs after sessions export
   }, []);
 
   const stats       = computeOverviewStats(sessions, dateRange);
@@ -286,7 +270,7 @@ export default function App() {
   return (
     <PasswordGate>
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} rateLimits={rateLimits} />
+      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} />
 
       <main style={{
         marginLeft: 'var(--sidebar-w)', flex: 1,
