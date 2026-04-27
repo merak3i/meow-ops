@@ -10,6 +10,7 @@ import type { Session } from '@/types/session';
 import { getSessionRunGroups } from '@/lib/agent-tree';
 import type { AgentTreeNode, SessionRunGroup } from '@/lib/agent-tree';
 import { formatRelativeTime, ageMinutes } from '@/lib/format-time';
+import { toISTDate } from '@/lib/format';
 
 // ─── Perf / Reduced-motion context ───────────────────────────────────────────
 
@@ -265,6 +266,50 @@ function hpPercent(costUsd: number, maxCost: number): number {
 function formatGold(usd: number): string {
   if (usd < 0.001) return `${(usd * 10000).toFixed(1)}c`;
   return `${usd.toFixed(4)}g`;
+}
+
+// Compact gold formatter for the dropdown — keeps the WoW theme but uses
+// fewer decimals so labels stay scannable. 149.4901g → 149.5g, 0.345g stays
+// readable, sub-cent values still render in copper (`c`).
+function formatGoldShort(usd: number): string {
+  if (usd < 0.001) return `${(usd * 10000).toFixed(1)}c`;
+  if (usd < 1)    return `${usd.toFixed(3)}g`;
+  if (usd < 10)   return `${usd.toFixed(2)}g`;
+  return `${usd.toFixed(1)}g`;
+}
+
+// Day-prefix for a run group's start time, in IST. Returns "today",
+// "yesterday", or a weekday+date like "Mon Apr 22" for older groups. Used
+// by both the option label and the optgroup header.
+function dayPrefixLabel(startedAtIso: string, nowIso: string): string {
+  const groupDate = toISTDate(startedAtIso);
+  const today     = toISTDate(nowIso);
+  const yesterday = toISTDate(new Date(new Date(nowIso).getTime() - 86_400_000).toISOString());
+  if (groupDate === today)     return 'today';
+  if (groupDate === yesterday) return 'yesterday';
+  return new Date(startedAtIso).toLocaleDateString('en-IN', {
+    timeZone: 'Asia/Kolkata', weekday: 'short', month: 'short', day: 'numeric',
+  });
+}
+
+// Run-group dropdown label format —
+//   patherle · today 14:32 · "fix billing webhook…" · 149.5g · 4 roots
+//
+// Each segment separated by middle-dot. First-message snippet is included
+// only when the root session carries one (older sessions parsed before the
+// snippet capture landed will skip the quoted segment cleanly).
+function formatRunGroupLabel(g: SessionRunGroup, nowIso: string): string {
+  const dayPrefix = dayPrefixLabel(g.startedAt, nowIso);
+  const time = new Date(g.startedAt).toLocaleTimeString('en-IN', {
+    timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const firstMsg  = g.roots[0]?.session?.first_user_message;
+  const cost      = formatGoldShort(g.totalCost);
+  const rootCount = `${g.roots.length} root${g.roots.length !== 1 ? 's' : ''}`;
+  const parts: string[] = [g.project, `${dayPrefix} ${time}`];
+  if (firstMsg) parts.push(`"${firstMsg}"`);
+  parts.push(cost, rootCount);
+  return parts.join(' · ');
 }
 
 function formatDur(s: number): string {
@@ -3646,7 +3691,12 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
     };
   }, [possessedId]);
 
-  const groups = useMemo(() => getSessionRunGroups(sessions), [sessions]);
+  // Sort run groups recency-desc so the dropdown leads with the most recent
+  // work — what a founder is usually chasing when they open the Sanctum.
+  const groups = useMemo(() => {
+    const raw = getSessionRunGroups(sessions);
+    return [...raw].sort((a, b) => (b.startedAt ?? '').localeCompare(a.startedAt ?? ''));
+  }, [sessions]);
   const group  = groups[runIdx] ?? null;
 
   // Auto-reset run index when session data changes
@@ -3733,12 +3783,44 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                 background: 'rgba(0,0,0,.7)', border: '1px solid #c8a85533',
                 borderRadius: 4, color: '#e8d5a3', fontSize: 11,
                 padding: '5px 10px', fontFamily: 'monospace', cursor: 'pointer',
+                maxWidth: 520,
               }}>
-              {groups.slice(0, 40).map((g, i) => (
-                <option key={i} value={i}>
-                  {g.project} — {formatGold(g.totalCost)} · {g.roots.length} root{g.roots.length !== 1 ? 's' : ''}
-                </option>
-              ))}
+              {(() => {
+                const visible = groups.slice(0, 40);
+                const nowIso = new Date(nowEpoch).toISOString();
+                // Short list → flat options. Long list → optgroup day-headers
+                // for scannability without forcing the user to count rows.
+                if (visible.length <= 15) {
+                  return visible.map((g, i) => (
+                    <option key={i} value={i}>{formatRunGroupLabel(g, nowIso)}</option>
+                  ));
+                }
+                type Bucket = { day: string; items: { g: SessionRunGroup; i: number }[] };
+                const buckets: Bucket[] = [];
+                let last: Bucket | null = null;
+                visible.forEach((g, i) => {
+                  const day = toISTDate(g.startedAt);
+                  if (!last || last.day !== day) {
+                    last = { day, items: [] };
+                    buckets.push(last);
+                  }
+                  last.items.push({ g, i });
+                });
+                return buckets.map(({ day, items }) => {
+                  const first = items[0];
+                  if (!first) return null;
+                  const header = dayPrefixLabel(first.g.startedAt, nowIso);
+                  const label = header === 'today' ? 'Today'
+                              : header === 'yesterday' ? 'Yesterday' : header;
+                  return (
+                    <optgroup key={day} label={label}>
+                      {items.map(({ g, i }) => (
+                        <option key={i} value={i}>{formatRunGroupLabel(g, nowIso)}</option>
+                      ))}
+                    </optgroup>
+                  );
+                });
+              })()}
             </select>
             <button onClick={handleSync} disabled={syncing} title="Sync latest sessions"
               style={{
