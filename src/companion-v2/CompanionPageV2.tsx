@@ -17,7 +17,6 @@ import { buildDeveloperProfile }                    from '@/analytics/profile';
 import type { Session }        from '@/types/session';
 import type { CompanionState } from '@/state/companionMachine';
 import type { MemoryMark }     from './useCompanionGame';
-import type { CatZone }        from './ProceduralCat';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -92,17 +91,10 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   const [actorRef, send]    = useActor(companionMachine);
   const cursorRef            = useRef({ x: 0, y: 0 });
   const [cursor, setCursor]  = useState({ x: 0, y: 0 });
-  const [actionEffect, setActionEffect] = useState<string | null>(null);
   const [pendingMilestone, setPendingMilestone] = useState<MilestoneData | null>(null);
 
-  // Ref to the 3D viewport div — used for canvas capture in cat card export
+  // Ref to the viewport div — used for canvas capture in cat card export
   const viewportRef = useRef<HTMLDivElement>(null);
-
-  // Pet signal — set to true on click, consumed by useCatAnimation inside CatMesh
-  const petSignalRef = useRef(false);
-
-  // Zone hover — drives paw cursor label
-  const [hoveredZone, setHoveredZone] = useState<CatZone | null>(null);
 
   // Mouse position for following paw cursor (viewport-relative px)
   const [pawPos, setPawPos] = useState({ x: -999, y: -999 });
@@ -132,11 +124,11 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   // Track previous growth stage for milestone detection
   const prevGrowthStageRef = useRef<string>('');
 
-  // Trigger action particle effect, auto-clear after 2s
-  // Defined early so polling + milestone effects can reference it safely
+  // Action-feedback particles: bump the key to retrigger the same effect.
+  // ParticleOverlay (inside CompanionScene) reads these and spawns a burst.
+  const [effectTrigger, setEffectTrigger] = useState<{ type: string; key: number }>({ type: '', key: 0 });
   const triggerEffect = useCallback((type: string) => {
-    setActionEffect(type);
-    setTimeout(() => setActionEffect(null), 2000);
+    setEffectTrigger((prev) => ({ type, key: prev.key + 1 }));
   }, []);
 
   const game    = useCompanionGame(sessions);
@@ -322,7 +314,6 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
     ? Math.max(morph.size, (game.cat.growthXP / 1500) * 0.8)
     : morph.size;
   const fusedMorphs   = { ...morph, fatigue: fusedFatigue, size: Math.min(1, fusedSize) };
-  const fusedProfile  = { ...profile, morph_weights: fusedMorphs };
 
   const GROWTH_COLORS: Record<string, string> = {
     kitten:   'var(--cyan)',
@@ -331,7 +322,6 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
     elder:    '#c084fc',
   };
   const stageColor = GROWTH_COLORS[profile.growth_stage] ?? 'var(--accent)';
-  const roomTier   = game.cat?.room?.tier ?? 0;
 
   return (
     <>
@@ -379,7 +369,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
           pointerEvents: 'none',
           fontSize: 22,
           zIndex: 9999,
-          transform: hoveredZone ? 'scale(1.25) rotate(-10deg)' : 'rotate(-20deg)',
+          transform: 'rotate(-20deg)',
           transition: 'transform 0.15s ease',
           userSelect: 'none',
           lineHeight: 1,
@@ -403,33 +393,11 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             cursor:       'none',
           }}
           onMouseMove={handleMouseMove}
-          onClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); petSignalRef.current = true; }}
+          onClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); }}
           onMouseEnter={() => setInViewport(true)}
-          onMouseLeave={() => { setInViewport(false); setHoveredZone(null); }}
+          onMouseLeave={() => setInViewport(false)}
         >
-          <CompanionScene
-            profile={fusedProfile}
-            cursorX={cursor.x}
-            cursorY={cursor.y}
-            state={currentState}
-            breed={game.cat?.breed ?? 'tabby'}
-            roomTier={roomTier}
-            actionEffect={actionEffect}
-            equippedAccessories={game.cat?.appearance.equippedAccessories ?? []}
-            memoryMarks={game.memoryMarks}
-            onPetSignal={petSignalRef}
-            onZoneEnter={(zone) => setHoveredZone(zone)}
-            onZoneLeave={() => setHoveredZone(null)}
-            onZoneClick={(zone) => {
-              petSignalRef.current = true;
-              send({ type: 'PET' });
-              game.actions.play();
-              const zoneEffects: Record<CatZone, string> = {
-                head: 'groom', body: 'pet', tail: 'play', paws: 'pet',
-              };
-              triggerEffect(zoneEffects[zone]);
-            }}
-          />
+          <CompanionScene state={currentState} effect={effectTrigger.type} effectKey={effectTrigger.key} />
 
           {/* State badge overlay */}
           <div style={{
@@ -471,23 +439,6 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             </div>
           )}
 
-          {/* Zone tooltip */}
-          {hoveredZone && (
-            <div style={{
-              position: 'absolute', top: 12, right: 14,
-              fontSize: 10, color: 'var(--text-secondary)', pointerEvents: 'none',
-              background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)',
-              border: '1px solid var(--border)', borderRadius: 6,
-              padding: '4px 10px',
-            }}>
-              {{
-                head:  '🐾 head scratch',
-                body:  '🤚 pet',
-                tail:  '🌀 tail!',
-                paws:  '✋ high five',
-              }[hoveredZone]}
-            </div>
-          )}
         </div>
 
         {/* ── Right sidebar ────────────────────────────────────────────────── */}
