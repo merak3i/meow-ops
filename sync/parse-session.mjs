@@ -1,5 +1,50 @@
 import { calculateCost } from './cost-calculator.mjs';
 
+// ─── First-message snippet extraction ────────────────────────────────────────
+// Captures the first user-typed message per session, ~80 chars max, used by
+// the run-group dropdown to make near-identical "patherle" rows distinguishable
+// at a glance ("fix billing webhook" beats "patherle 149.49g 4 roots ×4").
+
+const FIRST_MSG_MAX = 80;
+
+/** Read the text payload from a user-message content field (string or block array). */
+function extractUserText(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  for (const block of content) {
+    if (block && block.type === 'text' && typeof block.text === 'string') {
+      return block.text;
+    }
+  }
+  return '';
+}
+
+/** True when a user message is purely auto-injected (system-reminder, no real text). */
+function isAutoInjectedOnly(text) {
+  if (!text) return true;
+  const stripped = text
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
+    .replace(/<command-(name|message|args|stdout|stderr)>[\s\S]*?<\/command-\1>/g, '')
+    .replace(/<local-command-(stdout|stderr)>[\s\S]*?<\/local-command-\1>/g, '')
+    .trim();
+  return stripped.length === 0;
+}
+
+/** Compress raw user-message text into a single-line snippet of at most max chars. */
+function snippetize(text, max = FIRST_MSG_MAX) {
+  const cleaned = text
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, ' ')
+    .replace(/<command-name>([^<]*)<\/command-name>/g, '$1')
+    .replace(/<command-message>([^<]*)<\/command-message>/g, ' $1')
+    .replace(/<command-args>([^<]*)<\/command-args>/g, ' $1')
+    .replace(/<local-command-(stdout|stderr)>[\s\S]*?<\/local-command-\1>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  if (cleaned.length <= max) return cleaned;
+  return cleaned.slice(0, max - 1) + '…';
+}
+
 export function classifyCatType(toolCounts) {
   if (!toolCounts || typeof toolCounts !== 'object') return 'ghost';
   const total = Object.values(toolCounts).reduce((a, b) => a + b, 0);
@@ -106,6 +151,10 @@ export function parseSessionLines(lines, projectDir) {
         cat_type: 'ghost',
         is_ghost: false,
         tools: {},
+        // First user-typed message (~80 chars), used as a memorable label in
+        // the run-group dropdown. Null until we see a non-auto-injected user
+        // message in this session's log.
+        first_user_message: null,
         // Hierarchy fields
         parent_session_id: parentSessionId,
         agent_id:          agentId,
@@ -129,6 +178,15 @@ export function parseSessionLines(lines, projectDir) {
       if (!s.version && entry.version) s.version = entry.version;
       if (!s.git_branch && entry.gitBranch) s.git_branch = entry.gitBranch;
       if (!s.cwd && entry.cwd) s.cwd = entry.cwd;
+
+      // Capture the first real user-typed message (skip auto-injected blocks
+      // like <system-reminder> and tool-result echoes that aren't user intent).
+      if (!s.first_user_message) {
+        const raw = extractUserText(entry.message?.content);
+        if (raw && !isAutoInjectedOnly(raw)) {
+          s.first_user_message = snippetize(raw);
+        }
+      }
     }
 
     if (entry.type === 'assistant') {
