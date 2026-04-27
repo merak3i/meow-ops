@@ -70,18 +70,22 @@ export function computeCatLayout(cw: number, ch: number): CatLayout {
 }
 
 // ─── Base sitting cat (used for all 6 sitting states) ────────────────────────
-// Front-facing, ears up, sitting upright. The eye/mouth rows (rows 9, 10, 13)
-// are overwritten per-frame below.
+// Front-facing, sitting upright. Per-state overrides:
+//   • rows 1–4  (ears)  — picked from EARS_BY_STATE
+//   • rows 9, 10 (eyes) — picked from the state's eye-frame track
+//   • row 13   (mouth)  — picked from the state's eye-frame track
+// Rows 5–8 (head/forehead/brow) and 14–31 (body/legs) stay upright across all
+// states — keeps the cat consistently cute even when sad (decision Q3=c).
 //
 // Column ruler — counts from 0:
 //                    1111111111222222222233
 //          01234567890123456789012345678901
 const BASE_BODY: Sprite = [
   '................................', //  0
-  '......ooo..............ooo......', //  1  ear tips
-  '.....oFFFo............oFFFo.....', //  2  ears widening
-  '.....oFPFo............oFPFo.....', //  3  pink inner ear
-  '....oFPFFo............oFFPFo....', //  4  ears widest
+  '......ooo..............ooo......', //  1  ear tips         (overridden)
+  '.....oFFFo............oFFFo.....', //  2  ears widening    (overridden)
+  '.....oFPFo............oFPFo.....', //  3  pink inner ear   (overridden)
+  '....oFPFFo............oFFPFo....', //  4  ears widest      (overridden)
   '....oFFFFFooooooooooooFFFFFo....', //  5  head crown
   '...oFFLLFFFFFFFFFFFFFFFFLLFFo...', //  6  forehead with light streaks
   '...oFLLLFFFFFFFFFFFFFFFFLLLFo...', //  7  brow
@@ -282,6 +286,71 @@ const FRAMES_BY_STATE: Record<CompanionState, readonly EyeFrame[]> = {
   concerned: CONCERNED_FRAMES,
 };
 
+// ─── Ear variants per state ───────────────────────────────────────────────────
+// Posture cue: ears change shape per state to make state legible at a glance.
+// Each variant is a 4-row tuple covering rows 1–4 of the sprite. Body stays
+// upright across all states (decision Q3=c) so the cat reads "still cute" in
+// fatigue/neglected — the ears do the emotional work.
+
+type EarVariant = readonly [string, string, string, string];
+
+// Tall, pointy ears — energetic baseline.
+const EARS_ALERT: EarVariant = [
+  '......ooo..............ooo......',
+  '.....oFFFo............oFFFo.....',
+  '.....oFPFo............oFPFo.....',
+  '....oFPFFo............oFFPFo....',
+];
+
+// Tips shift one column toward center — alert, leaning-in posture.
+const EARS_FORWARD: EarVariant = [
+  '.......oo..............oo.......',
+  '.....oFFFo............oFFFo.....',
+  '.....oFPFo............oFPFo.....',
+  '....oFPFFo............oFFPFo....',
+];
+
+// One row shorter from the top — natural resting cat ears.
+const EARS_RELAXED: EarVariant = [
+  '................................',
+  '......ooo..............ooo......',
+  '.....oFPFo............oFPFo.....',
+  '....oFPFFo............oFFPFo....',
+];
+
+// No tips, flopped one column outward — drowsy, heavy ears.
+const EARS_DROOP: EarVariant = [
+  '................................',
+  '................................',
+  '....oFFFFo............oFFFFo....',
+  '...oFFPFFo............oFFPFFo...',
+];
+
+// Tips lower and smaller — pulled back from worry.
+const EARS_HALF_BACK: EarVariant = [
+  '................................',
+  '................................',
+  '......ooo..............ooo......',
+  '.....oFFFo............oFFFo.....',
+];
+
+// Just outline hints poking above the head — fully pinned back.
+const EARS_FLAT_BACK: EarVariant = [
+  '................................',
+  '................................',
+  '................................',
+  '......ooo..............ooo......',
+];
+
+const EARS_BY_STATE: Record<CompanionState, EarVariant> = {
+  active:    EARS_ALERT,
+  idle:      EARS_RELAXED,
+  focus:     EARS_FORWARD,
+  fatigue:   EARS_DROOP,
+  neglected: EARS_FLAT_BACK,
+  concerned: EARS_HALF_BACK,
+};
+
 // ─── Frame picker + sprite composition ────────────────────────────────────────
 
 /** Pick the active eye frame for `state` at `elapsedMs`. Returns frame index
@@ -310,7 +379,12 @@ export function spriteForState(
   elapsedMs = 0,
 ): { frameIdx: number; sprite: Sprite } {
   const { idx, frame } = pickEyeFrame(state, elapsedMs);
+  const ears = EARS_BY_STATE[state] ?? EARS_ALERT;
   const out = BASE_BODY.slice();
+  out[1]  = ears[0];
+  out[2]  = ears[1];
+  out[3]  = ears[2];
+  out[4]  = ears[3];
   out[9]  = frame.row9;
   out[10] = frame.row10;
   out[13] = frame.row13;
@@ -337,5 +411,9 @@ if (import.meta.env.DEV) {
       checkRow(`${state}[${i}].row10`, f.row10);
       checkRow(`${state}[${i}].row13`, f.row13);
     });
+  }
+
+  for (const [state, ears] of Object.entries(EARS_BY_STATE)) {
+    ears.forEach((row, i) => checkRow(`${state}-ears[${i + 1}]`, row));
   }
 }
