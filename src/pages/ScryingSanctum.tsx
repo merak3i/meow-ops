@@ -2596,8 +2596,13 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
       {/* Trail particles */}
       <CharacterTrail color={trailColor} isMoving={isMovingRef} />
       <FootstepDust isMoving={isMovingRef} />
-      <WoWNameplate pn={pn} maxCost={maxCost} maxTokens={maxTokens} selected={selected}
-        nowEpoch={nowEpoch} possessed={possessed} />
+      {/* Nameplate is click-to-open: hidden by default, shows only when this
+          character is selected (or possessed by an admin). Keeps the Sanctum
+          floor readable instead of plastered with HUD cards. */}
+      {(selected || possessed) && (
+        <WoWNameplate pn={pn} maxCost={maxCost} maxTokens={maxTokens} selected={selected}
+          nowEpoch={nowEpoch} possessed={possessed} />
+      )}
     </group>
   );
 }
