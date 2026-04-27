@@ -1,14 +1,14 @@
 {
-  "exportedAt": "2026-04-27T12:03:56.488Z",
+  "exportedAt": "2026-04-27T13:08:28.265Z",
   "today": {
-    "cost": 1019.445773,
-    "tokens": 330899547,
-    "sessions": 13
+    "cost": 1118.523416,
+    "tokens": 379811700,
+    "sessions": 15
   },
   "thisWeek": {
-    "cost": 1019.445773,
-    "tokens": 330899547,
-    "sessions": 13
+    "cost": 1118.523416,
+    "tokens": 379811700,
+    "sessions": 15
   },
   "lastWeek": {
     "cost": 4415.6187279999995,
@@ -16,9 +16,9 @@
     "sessions": 90
   },
   "thisMonth": {
-    "cost": 8174.4578319999955,
-    "tokens": 3672291230,
-    "sessions": 179
+    "cost": 8273.535474999995,
+    "tokens": 3721203383,
+    "sessions": 181
   },
   "lastMonth": {
     "cost": 0,
@@ -26,9 +26,9 @@
     "sessions": 0
   },
   "thisYear": {
-    "cost": 8174.4578319999955,
-    "tokens": 3672291230,
-    "sessions": 179
+    "cost": 8273.535474999995,
+    "tokens": 3721203383,
+    "sessions": 181
   },
   "lastYear": {
     "cost": 0,
@@ -36,15 +36,15 @@
     "sessions": 0
   },
   "allTime": {
-    "cost": 8174.4578319999955,
-    "sessions": 179,
-    "tokens": 3672291230
+    "cost": 8273.535474999995,
+    "sessions": 181,
+    "tokens": 3721203383
   },
   "bySource": {
     "claude": {
-      "cost": 8096.426008999995,
-      "tokens": 3651451184,
-      "sessions": 178
+      "cost": 8195.503651999996,
+      "tokens": 3700363337,
+      "sessions": 180
     },
     "codex": {
       "cost": 78.031823,
@@ -223,13 +223,13 @@
     },
     {
       "date": "2026-04-27",
-      "session_count": 13,
-      "total_input_tokens": 40519,
-      "total_output_tokens": 3619250,
-      "total_cache_creation": 16115565,
-      "total_cache_read": 311124213,
-      "total_tokens": 330899547,
-      "estimated_cost_usd": 1019.445773,
+      "session_count": 15,
+      "total_input_tokens": 85598,
+      "total_output_tokens": 3964382,
+      "total_cache_creation": 17413048,
+      "total_cache_read": 358348672,
+      "total_tokens": 379811700,
+      "estimated_cost_usd": 1118.523416,
       "active_projects": 3,
       "ghost_count": 1
     }

@@ -26,6 +26,11 @@ export interface Session {
   source:                   'claude' | 'codex';
   cwd?:                     string;
   tools?:                   Record<string, number>;
+  // First user-typed message in the session (auto-injected blocks stripped),
+  // truncated to ~80 chars. Used as a human-memorable label in the run-group
+  // dropdown. Null on sessions parsed before this field was added — re-sync
+  // with `node sync/export-local.mjs` to populate.
+  first_user_message?:      string | null;
   // Agent hierarchy (populated by parse-session.mjs when parentUuid is present)
   parent_session_id?:       string | null;
   agent_id?:                string | null;
