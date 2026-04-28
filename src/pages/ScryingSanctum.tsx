@@ -1701,6 +1701,221 @@ function ArcanePaths() {
   );
 }
 
+// ─── Dalaran D2 — Architecture silhouette ────────────────────────────────────
+//
+// Three procedural layers that turn the Sanctum into a Dalaran-shaped plaza
+// without any external assets:
+//
+//   1. DalaranSkyline — eight mage-tower spires evenly placed at radius 14
+//      (outside the existing ward wall at 11.5). Varied heights 7..12 give
+//      the city a real skyline; warm gold windows pulse against the violet
+//      stone. Pure background — never interferes with agent movement.
+//   2. VioletCitadel — central focal tower behind the LLM Sun. Three tiers
+//      (base / mid / spire) at [-8, 0, -8]; the sun appears to crown its
+//      pinnacle from the camera angle.
+//   3. GothicColonnade — a ring of 12 columns at radius 10.5, between the
+//      agent floor and the wall. Marks the inner plaza and reads as
+//      Dalaran's iconic covered walkways without blocking champion sight.
+
+const D2_SPIRE_STONE   = '#1f1230';   // deep violet stone
+const D2_SPIRE_WINDOW  = '#f5c518';   // warm gold window glow (on-brand)
+const D2_SPIRE_ROOF    = '#0d0820';   // near-silhouette dark roof
+const D2_CITADEL_CROWN = '#7c5acc';   // subtle purple-gold accent ring
+
+function DalaranSpire({ position, height, radius, twin = false }: {
+  position: [number, number, number];
+  height: number;
+  radius: number;
+  twin?: boolean;
+}) {
+  const windowRef = useRef<THREE.Mesh>(null);
+  const phase = useMemo(() => Math.random() * Math.PI * 2, []);
+
+  useFrame((state) => {
+    if (windowRef.current) {
+      const t = state.clock.elapsedTime;
+      (windowRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.55 + Math.sin(t * 0.7 + phase) * 0.18;
+    }
+  });
+
+  return (
+    <group position={position}>
+      {/* Tower body — slightly tapered cylinder */}
+      <mesh position={[0, height / 2, 0]}>
+        <cylinderGeometry args={[radius * 0.82, radius, height, 8]} />
+        <meshBasicMaterial color={D2_SPIRE_STONE} />
+      </mesh>
+      {/* Mid-tier band */}
+      <mesh position={[0, height * 0.55, 0]}>
+        <cylinderGeometry args={[radius * 0.92, radius * 0.92, 0.22, 8]} />
+        <meshBasicMaterial color="#2a1a3e" />
+      </mesh>
+      {/* Spire roof — tall cone */}
+      <mesh position={[0, height + radius * 1.3, 0]}>
+        <coneGeometry args={[radius * 0.95, radius * 2.6, 8]} />
+        <meshBasicMaterial color={D2_SPIRE_ROOF} />
+      </mesh>
+      {/* Roof crown ring */}
+      <mesh position={[0, height + 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[radius * 0.95, radius * 1.08, 12]} />
+        <meshBasicMaterial color={D2_CITADEL_CROWN} transparent opacity={0.45}
+          side={THREE.DoubleSide} blending={THREE.AdditiveBlending}
+          depthWrite={false} fog={false} />
+      </mesh>
+      {/* Glowing window — single warm gold light at upper third */}
+      <mesh ref={windowRef} position={[0, height * 0.7, radius * 0.85]}>
+        <planeGeometry args={[radius * 0.45, radius * 0.65]} />
+        <meshBasicMaterial color={D2_SPIRE_WINDOW} transparent opacity={0.65}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+      {twin && (
+        <mesh position={[0, height * 0.7, -radius * 0.85]} rotation={[0, Math.PI, 0]}>
+          <planeGeometry args={[radius * 0.45, radius * 0.65]} />
+          <meshBasicMaterial color={D2_SPIRE_WINDOW} transparent opacity={0.45}
+            blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+        </mesh>
+      )}
+      {/* Tiny crown pinnacle */}
+      <mesh position={[0, height + radius * 2.6, 0]}>
+        <sphereGeometry args={[0.14, 8, 8]} />
+        <meshBasicMaterial color={D2_CITADEL_CROWN} transparent opacity={0.85}
+          blending={THREE.AdditiveBlending} fog={false} />
+      </mesh>
+    </group>
+  );
+}
+
+function DalaranSkyline() {
+  // Eight spires placed evenly around radius 14 (outside the ward wall at
+  // 11.5). Varied heights + radii give the skyline a hand-shaped silhouette.
+  const spires = useMemo(() => {
+    const out: { x: number; z: number; h: number; r: number; twin: boolean }[] = [];
+    const N = 8;
+    for (let i = 0; i < N; i++) {
+      const a   = (i / N) * Math.PI * 2 + 0.2;
+      const r   = 14 + Math.sin(i * 1.7) * 0.7;
+      const h   = 7 + ((i * 13) % 5) * 1.1;     // 7..11.4
+      const rad = 0.55 + ((i * 7) % 3) * 0.10;
+      out.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, h, r: rad, twin: i % 2 === 0 });
+    }
+    return out;
+  }, []);
+  return (
+    <>
+      {spires.map((s, i) => (
+        <DalaranSpire key={i}
+          position={[s.x, 0, s.z]} height={s.h} radius={s.r} twin={s.twin} />
+      ))}
+    </>
+  );
+}
+
+function VioletCitadel() {
+  // Central Dalaran citadel silhouette behind the LLM Sun. Three-tier
+  // (base / mid / spire) at [-8, 0, -8] so it reads as the building the
+  // sun is rising in front of from the camera's [14, 12, 14] vantage.
+  const orbRef = useRef<THREE.Mesh>(null);
+  useFrame((state) => {
+    if (orbRef.current) {
+      const t = state.clock.elapsedTime;
+      (orbRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.55 + Math.sin(t * 0.55) * 0.12;
+    }
+  });
+  return (
+    <group position={[-8, 0, -8]}>
+      {/* Base tier — widest */}
+      <mesh position={[0, 1.5, 0]}>
+        <cylinderGeometry args={[1.6, 1.85, 3, 12]} />
+        <meshBasicMaterial color={D2_SPIRE_STONE} />
+      </mesh>
+      {/* Mid tier */}
+      <mesh position={[0, 4.5, 0]}>
+        <cylinderGeometry args={[1.2, 1.4, 3, 10]} />
+        <meshBasicMaterial color="#241638" />
+      </mesh>
+      {/* Crown ring at base of upper spire */}
+      <mesh position={[0, 6.0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[1.25, 1.5, 16]} />
+        <meshBasicMaterial color={D2_CITADEL_CROWN} transparent opacity={0.55}
+          side={THREE.DoubleSide} blending={THREE.AdditiveBlending}
+          depthWrite={false} fog={false} />
+      </mesh>
+      {/* Upper tower */}
+      <mesh position={[0, 9.0, 0]}>
+        <cylinderGeometry args={[0.5, 1.1, 5, 8]} />
+        <meshBasicMaterial color="#1a0f28" />
+      </mesh>
+      {/* Tall spire roof */}
+      <mesh position={[0, 13.0, 0]}>
+        <coneGeometry args={[0.55, 2.5, 8]} />
+        <meshBasicMaterial color={D2_SPIRE_ROOF} />
+      </mesh>
+      {/* Glow orb at the spire's pinnacle — sells "Citadel hosts the API
+          source" framing under the LLM Sun. */}
+      <mesh ref={orbRef} position={[0, 14.4, 0]}>
+        <sphereGeometry args={[0.28, 12, 12]} />
+        <meshBasicMaterial color={D2_CITADEL_CROWN} transparent opacity={0.65}
+          blending={THREE.AdditiveBlending} fog={false} />
+      </mesh>
+      {/* Stained-glass window at mid tier (faces the plaza) */}
+      <mesh position={[0, 4.3, 1.41]}>
+        <planeGeometry args={[1.0, 1.6]} />
+        <meshBasicMaterial color={D2_SPIRE_WINDOW} transparent opacity={0.55}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+      {/* Stained-glass at base */}
+      <mesh position={[0, 1.3, 1.86]}>
+        <planeGeometry args={[1.5, 2.0]} />
+        <meshBasicMaterial color={D2_SPIRE_WINDOW} transparent opacity={0.42}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+    </group>
+  );
+}
+
+function GothicColonnade() {
+  // A ring of 12 slim columns at radius 10.5 — between the agent floor and
+  // the perimeter wall. Reads as Dalaran's iconic covered walkways without
+  // blocking the camera's view of champions.
+  const N = 12;
+  const RADIUS = 10.5;
+  const HEIGHT = 4.2;
+  const positions = useMemo(() => {
+    const out: [number, number, number][] = [];
+    for (let i = 0; i < N; i++) {
+      // Half-step offset so columns sit between the existing wall gates.
+      const a = (i / N) * Math.PI * 2 + Math.PI / N;
+      out.push([Math.cos(a) * RADIUS, 0, Math.sin(a) * RADIUS]);
+    }
+    return out;
+  }, []);
+  return (
+    <>
+      {positions.map((p, i) => (
+        <group key={i} position={p}>
+          {/* Column shaft */}
+          <mesh position={[0, HEIGHT / 2, 0]}>
+            <cylinderGeometry args={[0.15, 0.18, HEIGHT, 8]} />
+            <meshBasicMaterial color="#2a1a3e" />
+          </mesh>
+          {/* Capital (decorated top) */}
+          <mesh position={[0, HEIGHT - 0.10, 0]}>
+            <boxGeometry args={[0.42, 0.18, 0.42]} />
+            <meshBasicMaterial color={D2_CITADEL_CROWN} transparent opacity={0.8} />
+          </mesh>
+          {/* Base */}
+          <mesh position={[0, 0.10, 0]}>
+            <boxGeometry args={[0.36, 0.20, 0.36]} />
+            <meshBasicMaterial color="#1a0f28" />
+          </mesh>
+        </group>
+      ))}
+    </>
+  );
+}
+
 // ─── Ground Scatter (texture decals) ────────────────────────────────────────
 
 function GroundScatter() {
@@ -2079,6 +2294,12 @@ function PlazaEnvironment() {
       <Armory />
       <SceneryProps />
       <PerimeterWall />
+      {/* Dalaran D2 — architecture skyline. Backdrop-only; never crowds the
+          agent floor. Skyline at radius 14, citadel at [-8,0,-8] behind the
+          sun, colonnade ring at radius 10.5 between agents and wall. */}
+      <DalaranSkyline />
+      <VioletCitadel />
+      <GothicColonnade />
       {/* Ground detail */}
       <ArcanePaths />
       <GroundScatter />
