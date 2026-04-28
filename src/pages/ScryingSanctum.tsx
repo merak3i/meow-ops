@@ -3,7 +3,7 @@
 
 import { useRef, useState, useMemo, useEffect, Suspense, useCallback, Component, createContext, useContext, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Html, OrbitControls } from '@react-three/drei';
+import { Html, OrbitControls, Stars } from '@react-three/drei';
 // EffectComposer/Bloom removed — was breaking WebGL render pipeline on Apple GPU
 import * as THREE from 'three';
 import type { Session } from '@/types/session';
@@ -3082,6 +3082,58 @@ function ClaudeSun({ binding, selected, onClick }: {
   );
 }
 
+// ─── Dalaran Portal ──────────────────────────────────────────────────────────
+//
+// Ground-level magical centerpiece directly under the LLM Sun. Two counter-
+// rotating runic rings + an inner glow disc. Decorative only — sells the
+// "you are in a Dalaran-like plaza" feel without any click behavior.
+function DalaranPortal() {
+  const ringRef  = useRef<THREE.Mesh>(null);
+  const innerRef = useRef<THREE.Mesh>(null);
+  const glowRef  = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (ringRef.current)  ringRef.current.rotation.z  =  t * 0.18;
+    if (innerRef.current) innerRef.current.rotation.z = -t * 0.42;
+    if (glowRef.current) {
+      const pulse = 0.40 + Math.sin(t * 1.1) * 0.10;
+      (glowRef.current.material as THREE.MeshBasicMaterial).opacity = pulse;
+    }
+  });
+
+  return (
+    <group position={[0, 0.06, 0]}>
+      {/* Outer runic ring — slow clockwise drift */}
+      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[2.45, 2.75, 64]} />
+        <meshBasicMaterial color="#9b6bff" transparent opacity={0.7}
+          blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
+          depthWrite={false} fog={false} />
+      </mesh>
+      {/* Inner swirl — partial arc, counter-rotating */}
+      <mesh ref={innerRef} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.6, 2.35, 32, 1, 0, Math.PI * 1.65]} />
+        <meshBasicMaterial color="#6b8fff" transparent opacity={0.45}
+          blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
+          depthWrite={false} fog={false} />
+      </mesh>
+      {/* Center glow — pulsing softly */}
+      <mesh ref={glowRef} rotation={[-Math.PI / 2, 0, 0]}>
+        <circleGeometry args={[0.85, 32]} />
+        <meshBasicMaterial color="#d8c4ff" transparent opacity={0.4}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+      {/* Soft halo bleed — wider, fainter, sits flush with the floor */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]}>
+        <circleGeometry args={[3.4, 48]} />
+        <meshBasicMaterial color="#6840a8" transparent opacity={0.18}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+    </group>
+  );
+}
+
 // Curved compute ray from the sun to a single agent — four particles flowing
 // sun → agent, intensified by cost (brighter rays for pricier sessions).
 function ComputeRay({ sessionId, color, livePosMap }: {
@@ -3555,6 +3607,11 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
+      {/* Dalaran portal — ground-level centerpiece under the LLM Sun. The
+          two together form the central axis: API heartbeat above, magical
+          plaza marker below. */}
+      <DalaranPortal />
+
       {/* LLM Sun — heartbeat of the API. Brightness/color/eclipse all derive
           from the current run group's sessions; click opens a spend panel. */}
       <ClaudeSun
@@ -3890,11 +3947,17 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
           <Canvas
             orthographic
-            camera={{ position: [12, 16, 12], zoom: 38, up: [0, 1, 0], near: 0.1, far: 500 }}
+            camera={{ position: [14, 12, 14], zoom: 38, up: [0, 1, 0], near: 0.1, far: 500 }}
             gl={{ antialias: false, alpha: false }}
             onClick={(e) => { if (e.target === e.currentTarget) setSelected(null); }}
           >
-            <color attach="background" args={['#0a0618']} />
+            {/* Dalaran D1 — violet ambient. Background stays solid here so
+                the fog blends cleanly toward the horizon; the starfield rides
+                in front of it and the bloom pass adds the magical glow halo
+                across all bright sources. */}
+            <color attach="background" args={['#160726']} />
+            <fog attach="fog" args={['#1a0830', 28, 90]} />
+            <Stars radius={60} depth={20} count={1500} factor={2} fade speed={0.3} />
             <PerfReader statsRef={perfStatsRef} />
             <WebGLContextWatcher onContextLost={handleContextLost} onContextRestored={handleContextRestored} />
             <Suspense fallback={null}>
@@ -3924,6 +3987,12 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                 />}
               </SceneErrorBoundary>
             </Suspense>
+            {/* TODO(D4): Bloom postprocessing pass — pulled from D1 because
+                @react-three/postprocessing v3 pulls its own three + react
+                copies, causing "Invalid hook call" + "Multiple instances of
+                THREE" errors that black-screen the canvas. Revisit with vite
+                dedupe (resolve.dedupe: ['three', 'react']) before re-adding
+                <EffectComposer><Bloom/></EffectComposer> in D4. */}
           </Canvas>
 
           {/* Possession HUD — top-center chip while driving an agent */}
