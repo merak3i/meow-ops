@@ -221,6 +221,35 @@ test('Scrying Sanctum: SVG canvas renders', async ({ page }) => {
   expect(svgs).toBeGreaterThan(0);
 });
 
+test('Scrying Sanctum: scene renders without throwing into the error boundary', async ({ page }) => {
+  // Regression for the prod incident on 2026-04-28 where the Sanctum's
+  // SceneErrorBoundary tripped and black-screened the canvas. handleSceneError
+  // logs the real exception via console.error('[ScryingSanctum] Scene error
+  // caught:', err); we capture that here so future regressions surface the
+  // actual stack instead of just the chip-existence signal.
+  const sceneErrors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error' && /\[ScryingSanctum\] Scene error/.test(msg.text())) {
+      sceneErrors.push(msg.text());
+    }
+  });
+  await nav(page, 'Scrying Sanctum');
+  await page.waitForTimeout(4500);
+  // If the boundary tripped, the chip ("⚠ N scene error[s] — reload if
+  // stuck") will be in the DOM; surface the captured error message so
+  // diagnosis is one click.
+  const errorChip = page.locator('text=/scene error.*reload if stuck/i');
+  const chipCount = await errorChip.count();
+  if (chipCount > 0) {
+    throw new Error(
+      `Sanctum scene error chip visible (${chipCount}). Captured: ${
+        sceneErrors.length ? sceneErrors.join(' || ') : '(no [ScryingSanctum] log captured)'
+      }`,
+    );
+  }
+  expect(chipCount).toBe(0);
+});
+
 test('Scrying Sanctum: per-session roster visible', async ({ page }) => {
   await nav(page, 'Scrying Sanctum');
   // Phase B replaced the static class legend ("Healthy Ley Line"-era) with
