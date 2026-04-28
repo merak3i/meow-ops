@@ -53,6 +53,73 @@ const CLASS_MAP: Record<string, ClassConfig> = {
 };
 const FALLBACK_CLASS: ClassConfig = { color: '#888', emissive: '#222', label: 'AGENT', aura: '#888' };
 
+// ─── Per-session identifier + accent ─────────────────────────────────────────
+//
+// Phase B: tie each champion uniquely to its underlying session. The seven
+// CLASS_MAP entries map session.cat_type → fixed character class, so two
+// "wolverine" sessions in the same run group used to be visually identical.
+// Now we hash session_id into a stable accent (curated 7-color palette that
+// plays with Dalaran's violet ambient) and surface the branch tail (or short
+// hash fallback) as a 3D tag above each character + a row in the roster.
+
+const SESSION_ACCENTS = [
+  '#f59e0b', // amber
+  '#fb7185', // rose
+  '#14b8a6', // teal
+  '#6366f1', // indigo
+  '#10b981', // emerald
+  '#a78bfa', // violet
+  '#d97706', // copper
+] as const;
+
+/** djb2-ish 32-bit hash, stable per session_id, never negative. */
+function sessionHash(sid: string): number {
+  let h = 0;
+  for (let i = 0; i < sid.length; i++) {
+    h = ((h << 5) - h) + sid.charCodeAt(i);
+    h |= 0;
+  }
+  return Math.abs(h);
+}
+
+interface SessionIdentifier {
+  /** "feat-llm-sun" or "#A4F2" — what shows above the character + in the roster. */
+  tag:        string;
+  /** 4-char uppercase hex from session_id, always present. */
+  hashShort:  string;
+  /** Curated accent color, drives banner/aura/tag tinting. */
+  accent:     string;
+  /** Index 0..6 — exposed so visual axes (banner shape, etc.) can vary independently. */
+  accentIdx:  number;
+}
+
+/** Strip common branch prefixes (feat/, fix/, …) and clamp length so the tag
+ *  stays compact in 3D space. Empty branch → fall back to "#hashShort". */
+function sessionIdentifier(s: Session): SessionIdentifier {
+  const h = sessionHash(s.session_id);
+  const hashShort = h.toString(16).slice(0, 4).toUpperCase().padStart(4, '0');
+  const branchRaw = (s.git_branch ?? '').trim();
+  const branch = branchRaw
+    .replace(/^(feat|fix|chore|docs|refactor|test|perf|build|ci)\//, '')
+    .slice(0, 22);
+  const tag       = branch || `#${hashShort}`;
+  const accentIdx = h % SESSION_ACCENTS.length;
+  const accent    = SESSION_ACCENTS[accentIdx]!;
+  return { tag, hashShort, accent, accentIdx };
+}
+
+/** Blend two hex colors in linear RGB. amt=0 → a, amt=1 → b. */
+function blendHex(a: string, b: string, amt: number): string {
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const ar = (pa >> 16) & 0xff, ag = (pa >> 8) & 0xff, ab = pa & 0xff;
+  const br = (pb >> 16) & 0xff, bg = (pb >> 8) & 0xff, bb = pb & 0xff;
+  const r = Math.round(ar + (br - ar) * amt);
+  const g = Math.round(ag + (bg - ag) * amt);
+  const bl = Math.round(ab + (bb - ab) * amt);
+  return '#' + ((r << 16) | (g << 8) | bl).toString(16).padStart(6, '0');
+}
+
 // Per-character aura animation profiles
 const AURA_PROFILES: Record<string, { speed: number; amplitude: number; style: 'pulse' | 'flicker' | 'breathe' }> = {
   builder:     { speed: 3.8,  amplitude: 0.14, style: 'pulse' },    // Wolverine — aggressive, fast
@@ -2291,6 +2358,11 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
   const catType     = pn.session.cat_type ?? 'ghost';
   const auraProf    = AURA_PROFILES[catType] ?? DEFAULT_AURA;
   const movProf     = MOVEMENT_PROFILES[catType] ?? DEFAULT_MOVEMENT;
+  // Phase B — per-session identity. Drives the 3D tag, the pedestal accent
+  // ring, and a slight aura tint blend so two same-class champions are
+  // distinguishable at a glance without click. Stable per session_id.
+  const ident       = useMemo(() => sessionIdentifier(pn.session), [pn.session.session_id, pn.session.git_branch]);
+  const auraBlended = useMemo(() => blendHex(c.aura, ident.accent, 0.25), [c.aura, ident.accent]);
 
   // Trail particle color per character
   // Activity recency: 1.0 = fresh, 0.0 = cold (>60 min since ended_at)
@@ -2592,10 +2664,21 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
 
   return (
     <group ref={groupRef} position={pn.pos}>
-      {/* Floor aura */}
+      {/* Phase B — pedestal accent ring. Hash-derived accent color, sits
+          just outside the floor aura so two same-class champions read
+          differently at a glance. Subtle (opacity 0.45, additive). */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
+        <ringGeometry args={[1.10, 1.22, 48]} />
+        <meshBasicMaterial color={ident.accent} transparent opacity={0.45}
+          blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
+          depthWrite={false} fog={false} />
+      </mesh>
+      {/* Floor aura — class color blended 25% toward the session accent so
+          the family resemblance stays clear, but each champion has its own
+          tint. */}
       <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, 0]}>
         <ringGeometry args={[0.8, 1.05, 32]} />
-        <meshStandardMaterial color={c.aura} emissive={c.aura} emissiveIntensity={0.5}
+        <meshStandardMaterial color={auraBlended} emissive={auraBlended} emissiveIntensity={0.5}
           transparent opacity={0.4} side={THREE.DoubleSide} />
       </mesh>
       {/* Drop-zone ring — pulses teal when character is being cursor-dragged */}
@@ -2636,6 +2719,31 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         }}>
         <boxGeometry args={[1.4, 2.5, 1.4]} />
       </mesh>
+      {/* Selection pulse rings */}
+      {selected && <SelectionPulseRings color={c.aura} />}
+      {/* Trail particles */}
+      <CharacterTrail color={trailColor} isMoving={isMovingRef} />
+      <FootstepDust isMoving={isMovingRef} />
+      {/* Phase B — always-on session tag. Branch tail when present, else
+          a 4-char hash. Tinted with the session's accent so the visual
+          variation (pedestal ring, aura blend) reads as the same identity.
+          Subtle (8.5px monospace, 80% alpha) so it never fights the
+          character art. */}
+      <Html center position={[0, 3.05, 0]} style={{ pointerEvents: 'none' }}>
+        <div style={{
+          fontSize: 8.5,
+          color: ident.accent,
+          fontFamily: 'monospace',
+          whiteSpace: 'nowrap',
+          letterSpacing: 1,
+          textShadow: `0 0 4px ${ident.accent}66, 0 0 2px rgba(0,0,0,.9)`,
+          userSelect: 'none',
+          opacity: 0.85,
+          textAlign: 'center',
+        }}>
+          {ident.tag}
+        </div>
+      </Html>
       {/* Selection pulse rings */}
       {selected && <SelectionPulseRings color={c.aura} />}
       {/* Trail particles */}
@@ -3803,6 +3911,20 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
   const flatNodes    = useMemo(() => group ? layoutNodes(group.roots) : [], [group]);
   const selectedNode = flatNodes.find((n) => n.session.session_id === selected) ?? null;
 
+  // Selection handler — used by both the 3D Scene's onSelect prop and the
+  // per-session roster (top-left list). Auto-possess on select skips ghosts,
+  // touch devices, and the LLM Sun sentinel.
+  const handleSelect = useCallback((id: string | null) => {
+    setSelected(id);
+    if (id && id !== SUN_SELECTION_ID && !isCoarsePointer) {
+      const sess = flatNodes.find((n) => n.session.session_id === id);
+      if (sess && !sess.session.is_ghost) setPossessedId(id);
+      else setPossessedId(null);
+    } else {
+      setPossessedId(null);
+    }
+  }, [flatNodes, isCoarsePointer]);
+
   if (groups.length === 0) return <EmptyState />;
 
   return (
@@ -3908,19 +4030,50 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
           </div>
         </div>
 
-        {/* Legend */}
+        {/* Per-session roster — Phase B replaces the per-class legend so
+            multiple same-class champions in a run group are no longer
+            indistinguishable. Each row binds a session to its character
+            class + identifier (branch tail or hash). Click a row to select
+            that champion (same plumbing as clicking it in the 3D scene). */}
         <div style={{
           position: 'absolute', top: 60, left: 16, zIndex: 10,
-          display: 'flex', flexDirection: 'column', gap: 4, pointerEvents: 'none',
+          display: 'flex', flexDirection: 'column', gap: 3,
+          maxHeight: 'calc(100vh - 140px)', overflowY: 'auto',
+          pointerEvents: 'auto',
+          fontFamily: 'monospace',
         }}>
-          {Object.values(CLASS_MAP).map((cfg) => (
-            <div key={cfg.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ fontSize: 8, color: cfg.color, opacity: 0.7 }}>◆</span>
-              <span style={{ fontSize: 7.5, color: '#c8a85555', letterSpacing: 1.2, fontFamily: 'monospace' }}>
-                {cfg.label}
-              </span>
-            </div>
-          ))}
+          {flatNodes.map((pn) => {
+            const ident = sessionIdentifier(pn.session);
+            const isSel = selected === pn.session.session_id;
+            return (
+              <button
+                key={pn.session.session_id}
+                onClick={() => handleSelect(isSel ? null : pn.session.session_id)}
+                title={`${pn.session.project} · ${pn.cls.label} · ${pn.session.model}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: isSel ? `${ident.accent}1f` : 'transparent',
+                  border: `1px solid ${isSel ? `${ident.accent}77` : 'transparent'}`,
+                  borderRadius: 3,
+                  padding: '2px 5px',
+                  color: 'inherit',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span style={{ fontSize: 8, color: pn.cls.color, opacity: 0.85 }}>◆</span>
+                <span style={{
+                  fontSize: 8, color: ident.accent,
+                  letterSpacing: 0.5, minWidth: 4 * 8 + 2,
+                  textShadow: `0 0 3px ${ident.accent}55`,
+                }}>{ident.tag}</span>
+                <span style={{ fontSize: 7, color: '#c8a85533', letterSpacing: 1 }}>·</span>
+                <span style={{ fontSize: 7.5, color: '#c8a85577', letterSpacing: 1.2 }}>
+                  {pn.cls.label}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Controls hint */}
@@ -3965,19 +4118,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                 {group && <Scene
                   group={group}
                   selectedId={selected}
-                  onSelect={(id) => {
-                    setSelected(id);
-                    // Auto-possess on select. Skip ghosts, touch devices, and
-                    // the LLM Sun sentinel (it's not a champion — possess
-                    // doesn't apply).
-                    if (id && id !== SUN_SELECTION_ID && !isCoarsePointer) {
-                      const sess = flatNodes.find((n) => n.session.session_id === id);
-                      if (sess && !sess.session.is_ghost) setPossessedId(id);
-                      else setPossessedId(null);
-                    } else {
-                      setPossessedId(null);
-                    }
-                  }}
+                  onSelect={handleSelect}
                   livePosMapOut={livePosMap}
                   nowEpoch={nowEpoch}
                   possessedId={possessedId}
