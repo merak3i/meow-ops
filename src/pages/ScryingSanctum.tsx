@@ -3,7 +3,7 @@
 
 import { useRef, useState, useMemo, useEffect, Suspense, useCallback, Component, createContext, useContext, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Html, OrbitControls, Stars, Sparkles, Environment } from '@react-three/drei';
+import { Html, OrbitControls, Stars, Sparkles } from '@react-three/drei';
 // EffectComposer/Bloom removed — was breaking WebGL render pipeline on Apple GPU
 import * as THREE from 'three';
 import type { Session } from '@/types/session';
@@ -2894,10 +2894,6 @@ function PlazaEnvironment() {
       {/* Dalaran D3 — runic glyphs ring just outside the ward ring,
           slowly rotating with per-glyph pulse. */}
       <RunicGlyphs />
-      {/* Lich King — permanent custodian of eternal cumulative-spend +
-          ghost-count stats. Mirrors the Violet Citadel from the opposite
-          back corner. */}
-      <LichKing eternal={eternal} />
       {/* Dalaran D4 — magical lights + sparkles + faked godrays. All
           procedural; no postprocessing dep. */}
       <DalaranLampposts />
@@ -4625,20 +4621,27 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
       <ambientLight intensity={ambientInt} color={ambientColor} />
       <directionalLight position={[10, 20, 10]} intensity={1.0} color="#fff8e8" />
       <pointLight position={[0, 8, 0]} intensity={pointInt} color={pointColor} distance={30} />
-      {/* PBR-lite — drei's built-in 'night' Environment preset loads an
-          HDRI from drei's CDN and applies it as image-based lighting on
-          MeshStandardMaterial / MeshPhysicalMaterial only. The floor's
-          marble (D3) now reacts to it; existing meshBasicMaterial props
-          (champion sprites, hex tiles, banners, architecture) ignore it
-          entirely so the violet palette stays untouched. background:false
-          keeps our solid color + Stars in front. */}
-      <Suspense fallback={null}>
-        <Environment preset="night" background={false} />
-      </Suspense>
+      {/* PBR-lite intentionally stops at MeshStandardMaterial + the existing
+          ambient/directional/point lights. drei <Environment preset="night">
+          was tried but threw inside the Canvas (HDRI load via drei's CDN
+          intermittently fails / blocks render), tripping SceneErrorBoundary
+          and black-screening the Sanctum on prod. Reverted in the hotfix
+          after fc0e6f6 → bb… If we want IBL later, host the HDRI ourselves
+          in /public/textures/sky/ (see public/textures/README.md) and pass
+          the file path with `files=` instead of `preset=`. */}
 
       <Suspense fallback={null}>
         <PlazaEnvironment />
       </Suspense>
+
+      {/* Lich King — permanent custodian of eternal cumulative-spend +
+          ghost-count stats. Mirrors the Violet Citadel from the opposite
+          back corner. Rendered here in Scene (not inside PlazaEnvironment)
+          because PlazaEnvironment doesn't receive the eternal prop —
+          having it inside there caused a ReferenceError that tripped the
+          SceneErrorBoundary in production minified builds (caught
+          2026-04-28 hotfix). */}
+      <LichKing eternal={eternal} />
 
       {connections.map((conn) => (
         <DynamicLeyLine key={conn.key} childId={conn.childId} parentId={conn.parentId}
