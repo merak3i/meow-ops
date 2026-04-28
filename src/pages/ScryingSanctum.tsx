@@ -3867,6 +3867,77 @@ function SunPanelRow({ k, v }: { k: string; v: string }) {
   );
 }
 
+// Streaming-token emitter — fires inside the open LLM Sun panel. Spawns one
+// short JSON-ish text fragment every ~280ms; each token drifts up-and-right
+// from the panel's right edge over 1.6s, fading as it goes. Visually evokes
+// the model "writing tokens" out of the card in real time. Pure CSS keyframe
+// animation, no rAF, so it's effectively free.
+function ModelCardEmitter({ binding, palette }: {
+  binding: SunBinding;
+  palette: typeof TIER_PALETTE[ModelTier];
+}) {
+  const [tokens, setTokens] = useState<{ id: number; text: string; dx: number; dy: number }[]>([]);
+  const idRef = useRef(0);
+
+  useEffect(() => {
+    // Token seeds — mix of real numbers from the binding + JSON-glyph
+    // filler. Random pick per spawn so the stream looks like genuine
+    // model output rather than scripted text.
+    const seeds: string[] = [
+      `"${palette.label.toLowerCase()}"`,
+      `"$${binding.totalSpendUsd.toFixed(4)}"`,
+      formatTokens(binding.totalTokens),
+      `${(binding.cacheHitRate * 100).toFixed(0)}%`,
+      `${binding.sessionCount} sess`,
+      `${binding.avgDurationMin.toFixed(1)}m`,
+      '{', '}', '"', ':', ',', '[', ']',
+      '"model"', '"spend"', '"tokens"', '"cache"',
+    ];
+    const iv = setInterval(() => {
+      const text = seeds[Math.floor(Math.random() * seeds.length)] ?? '"';
+      const dx = 60 + Math.random() * 90;          // 60..150 px right
+      const dy = -45 + (Math.random() - 0.5) * 50; // upward with vertical spread
+      const id = idRef.current++;
+      setTokens(prev => [...prev, { id, text, dx, dy }]);
+      // Auto-prune after the animation finishes so the array doesn't grow.
+      setTimeout(() => setTokens(prev => prev.filter(t => t.id !== id)), 1700);
+    }, 280);
+    return () => clearInterval(iv);
+  }, [binding, palette.label]);
+
+  return (
+    <>
+      {tokens.map(t => (
+        <span
+          key={t.id}
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '100%',
+            color: palette.corona,
+            fontSize: 9,
+            fontFamily: 'monospace',
+            whiteSpace: 'nowrap',
+            opacity: 0,
+            animation: 'sun-token-drift 1.6s ease-out forwards',
+            textShadow: `0 0 4px ${palette.halo}88`,
+            pointerEvents: 'none',
+            ...({ '--dx': `${t.dx}px`, '--dy': `${t.dy}px` } as Record<string, string>),
+          } as React.CSSProperties}
+        >{t.text}</span>
+      ))}
+      <style>{`
+        @keyframes sun-token-drift {
+          0%   { opacity: 0; transform: translate(0, 0); }
+          12%  { opacity: 1; }
+          70%  { opacity: 0.85; }
+          100% { opacity: 0; transform: translate(var(--dx), var(--dy)); }
+        }
+      `}</style>
+    </>
+  );
+}
+
 function ClaudeSun({ binding, selected, onClick }: {
   binding:  SunBinding;
   selected: boolean;
@@ -3985,11 +4056,42 @@ function ClaudeSun({ binding, selected, onClick }: {
         })}
       </group>
 
+      {/* Always-on "LLM SUN" label above the orb. Cinzel for the engraved
+          headline, monospace for the tier subtitle. Sits above the corona
+          so the click panel (opens below) doesn't collide. Eclipse state
+          dims the label too — when the API is angry, even the title fades. */}
+      <Html center position={[0, 3.6, 0]} style={{ pointerEvents: 'none' }}>
+        <div style={{
+          fontFamily: '"Cinzel", serif',
+          fontWeight: 700,
+          fontSize: 11,
+          letterSpacing: 4,
+          color: palette.corona,
+          textShadow: `0 0 8px ${palette.halo}aa, 0 0 4px rgba(0,0,0,.9)`,
+          userSelect: 'none',
+          whiteSpace: 'nowrap',
+          textAlign: 'center',
+          opacity: eclipsed ? 0.4 : 0.9,
+        }}>
+          LLM SUN
+          <div style={{
+            fontFamily: 'monospace',
+            fontSize: 7.5, letterSpacing: 2,
+            opacity: 0.7, marginTop: 2, fontWeight: 400,
+          }}>
+            {palette.label}
+          </div>
+        </div>
+      </Html>
+
       {/* Click-to-open panel — same drei <Html> pattern as champion nameplate.
-          Hidden by default; opens when the sun is selected. */}
+          Hidden by default; opens when the sun is selected. position:relative
+          so the ModelCardEmitter's absolutely-positioned token spans anchor
+          to the panel's right edge. */}
       {selected && (
         <Html center position={[0, -3.0, 0]} style={{ pointerEvents: 'none' }}>
           <div style={{
+            position: 'relative',
             width: 200,
             background: 'rgba(8,6,14,.92)',
             border: `1px solid ${palette.corona}aa`,
@@ -4017,6 +4119,10 @@ function ClaudeSun({ binding, selected, onClick }: {
             <SunPanelRow k="Sessions"  v={`${binding.sessionCount - binding.ghostCount} live · ${binding.ghostCount} ghost`} />
             <SunPanelRow k="Cache hit" v={`${(binding.cacheHitRate * 100).toFixed(0)}%`} />
             <SunPanelRow k="Avg dur."  v={`${binding.avgDurationMin.toFixed(1)}m`} />
+            {/* Streaming token fragments — visual signal that the model is
+                generating from this card. Suppressed during eclipse since
+                an API outage shouldn't be emitting tokens. */}
+            {!eclipsed && <ModelCardEmitter binding={binding} palette={palette} />}
           </div>
         </Html>
       )}
