@@ -16,9 +16,13 @@ async function waitForApp(page: import('@playwright/test').Page) {
   }, { timeout: 20_000 });
 }
 
-/** Click a sidebar nav button by label. */
+/** Click a sidebar nav button by label. Some nav buttons carry a tag pill
+ *  child (e.g., "Scrying SanctumSANCTUM"), so match a regex prefix instead
+ *  of exact text — the regex anchors at the start so it never collides
+ *  with unrelated buttons that happen to contain the label as a substring. */
 async function nav(page: import('@playwright/test').Page, label: string) {
-  await page.getByRole('button', { name: label, exact: true }).click();
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await page.getByRole('button', { name: new RegExp(`^${escaped}`) }).first().click();
   // Brief settle — lazy chunks may need a moment
   await page.waitForTimeout(600);
 }
@@ -37,13 +41,21 @@ test('page title is Meow Operations', async ({ page }) => {
 });
 
 test('sidebar renders all nav buttons', async ({ page }) => {
+  // Sidebar items as of the active App.jsx route table. The nav helper
+  // matches a regex prefix to handle pill-tagged labels like "Scrying
+  // SanctumSANCTUM". Live Sessions used to be in the sidebar; the page
+  // is kept on disk for future use but no longer routed. Test #229
+  // covers what's left of that flow.
   const expectedNav = [
     'Overview', 'Sessions', 'By Project', 'By Day', 'By Action',
     'Cost Tracker', 'Analytics', 'Agent Ops', 'Scrying Sanctum',
-    'Companion', 'Live Sessions', 'Focus Timer',
+    'Companion', 'Focus Timer',
   ];
   for (const label of expectedNav) {
-    await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible();
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    await expect(
+      page.getByRole('button', { name: new RegExp(`^${escaped}`) }).first(),
+    ).toBeVisible();
   }
 });
 
@@ -187,18 +199,18 @@ test('Scrying Sanctum: header bar visible', async ({ page }) => {
   await expect(page.locator('text=Scrying Sanctum').first()).toBeVisible({ timeout: 15_000 });
 });
 
-test('Scrying Sanctum: demo mode shows champion labels', async ({ page }) => {
+test('Scrying Sanctum: run-group dropdown labels render', async ({ page }) => {
   await nav(page, 'Scrying Sanctum');
-  // Demo data loads after auth check (with 2s timeout fallback) + demo schedule
+  // Run-group dropdown lives in the page header. After Phase A.2 each
+  // option label includes a day prefix ("today" / "yesterday" / weekday)
+  // plus the project name. The dropdown is a native <select>, so its
+  // options live in the DOM regardless of whether it's open.
   await page.waitForTimeout(4000);
-  const html = await page.evaluate(() => document.body.innerHTML);
-  const hasChampions = (
-    html.includes('Argent Vanguard') ||
-    html.includes('Ebon Blade') ||
-    html.includes('Dalaran') ||
-    html.includes('Argent Herald')
-  );
-  expect(hasChampions).toBe(true);
+  const text = await page.evaluate(() => document.body.innerText);
+  const hasRunGroupShape =
+    /\b(today|yesterday|Mon|Tue|Wed|Thu|Fri|Sat|Sun)[, ]/.test(text)
+    || /\d+\s+roots?\b/i.test(text);
+  expect(hasRunGroupShape).toBe(true);
 });
 
 test('Scrying Sanctum: SVG canvas renders', async ({ page }) => {
@@ -209,9 +221,17 @@ test('Scrying Sanctum: SVG canvas renders', async ({ page }) => {
   expect(svgs).toBeGreaterThan(0);
 });
 
-test('Scrying Sanctum: legend strip visible', async ({ page }) => {
+test('Scrying Sanctum: per-session roster visible', async ({ page }) => {
   await nav(page, 'Scrying Sanctum');
-  await expect(page.locator('text=Healthy Ley Line')).toBeVisible({ timeout: 8_000 });
+  // Phase B replaced the static class legend ("Healthy Ley Line"-era) with
+  // a per-session roster list. Each roster row is a button containing a
+  // class label (Wolverine / Batman / Dr. Strange / etc.). At least one
+  // should be present once demo sessions load.
+  await page.waitForTimeout(3000);
+  const rosterText = await page.evaluate(() => document.body.innerText);
+  const hasClassLabel =
+    /WOLVERINE|BATMAN|DR\.\s*STRANGE|DARTH VADER|CAPTAIN AMERICA|GANDALF|TERMINATOR/i.test(rosterText);
+  expect(hasClassLabel).toBe(true);
 });
 
 // ── 11. Companion ─────────────────────────────────────────────────────────────
@@ -224,14 +244,10 @@ test('Companion: lazy chunk loads and WebGL canvas mounts', async ({ page }) => 
   expect(canvasCount).toBeGreaterThan(0);
 });
 
-// ── 12. Live Sessions ─────────────────────────────────────────────────────────
-
-test('Live Sessions: renders without crash', async ({ page }) => {
-  await nav(page, 'Live Sessions');
-  await expect(page.locator('[data-vite-error]')).toHaveCount(0);
-  const rootLen = await page.evaluate(() => document.getElementById('root')?.innerHTML.length ?? 0);
-  expect(rootLen).toBeGreaterThan(500);
-});
+// ── 12. Live Sessions (page kept on disk, not routed in current sidebar) ────
+// The Live Sessions surface is no longer reachable from the sidebar; the
+// component file remains in src/pages/LiveSessions.jsx for future re-routing.
+// This test was removed when the nav item was removed.
 
 // ── 13. Focus Timer ───────────────────────────────────────────────────────────
 
