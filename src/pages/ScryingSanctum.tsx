@@ -634,6 +634,144 @@ function getStainedGlassTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+// ─── Lich King sprite ────────────────────────────────────────────────────────
+//
+// 64×96 hand-drawn pixel sprite for the permanent Lich King figure.
+// Builds the silhouette at first call and caches it. The previous v1 used 3D
+// primitive boxes for the body, which read as a pile of geometry from the
+// orthographic camera angle — replaced with a billboard sprite that always
+// faces the camera, the same approach used by every champion.
+//
+// Composition (top → bottom):
+//   - Two upward-curving horns (Arthas-style)
+//   - Helm cone with two glowing blue eye slits
+//   - Chin / neck / collar
+//   - Spiked shoulder pauldrons
+//   - Torso with a small blue chest rune
+//   - Belt
+//   - Skirt / lower body
+//   - Cape silhouette behind
+//   - Boots
+
+let LICH_KING_TEXTURE: THREE.CanvasTexture | null = null;
+function getLichKingTexture(): THREE.CanvasTexture {
+  if (LICH_KING_TEXTURE) return LICH_KING_TEXTURE;
+  const W = 64, H = 96;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const ctx = c.getContext('2d')!;
+
+  // Palette
+  const ARMOR_DARK = '#0a0518';   // helm + boots
+  const ARMOR_BASE = '#16092a';   // torso, skirt
+  const PAULDRON   = '#2a1a3e';   // shoulders
+  const HIGHLIGHT  = '#3a2a5a';   // belt + edge accents
+  const CAPE       = '#08040f';   // cape silhouette (slightly darker than armor)
+  const RUNE_BLUE  = '#5cd2ff';   // glowing eyes + chest rune
+  const RUNE_DIM   = '#3a8fbf';   // eye slit edge fade
+
+  ctx.clearRect(0, 0, W, H);
+
+  // ── Cape (drawn first so it sits behind the body) — wider at bottom
+  ctx.fillStyle = CAPE;
+  ctx.fillRect(14, 38,  36, 38);
+  ctx.fillRect(10, 56,  44, 30);
+  ctx.fillRect(8,  72,  48, 16);
+
+  // ── Horns (Arthas helmet, curving outward)
+  ctx.fillStyle = ARMOR_DARK;
+  // Left horn
+  ctx.fillRect(20,  4, 4, 4);
+  ctx.fillRect(18,  8, 4, 4);
+  ctx.fillRect(16, 12, 4, 4);
+  // Right horn
+  ctx.fillRect(40,  4, 4, 4);
+  ctx.fillRect(42,  8, 4, 4);
+  ctx.fillRect(44, 12, 4, 4);
+
+  // ── Helm — cone widening downward
+  ctx.fillStyle = ARMOR_DARK;
+  ctx.fillRect(24, 14, 16, 4);
+  ctx.fillRect(22, 18, 20, 4);
+  ctx.fillRect(20, 22, 24, 8);    // widest band where the eye slits sit
+
+  // Eye slit cavity (cuts the helm) — fill with deeper black so the glow
+  // reads as light spilling out of holes rather than painted on.
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(24, 22, 6, 4);
+  ctx.fillRect(34, 22, 6, 4);
+  // The glow itself — bright cyan rectangle inside each cavity.
+  ctx.fillStyle = RUNE_BLUE;
+  ctx.fillRect(25, 23, 4, 2);
+  ctx.fillRect(35, 23, 4, 2);
+  // Subtle dimmer edge so the glow has a cool falloff
+  ctx.fillStyle = RUNE_DIM;
+  ctx.fillRect(24, 25, 6, 1);
+  ctx.fillRect(34, 25, 6, 1);
+
+  // ── Lower helm + chin
+  ctx.fillStyle = ARMOR_DARK;
+  ctx.fillRect(22, 30, 20, 2);
+  ctx.fillRect(24, 32, 16, 2);
+  ctx.fillRect(26, 34, 12, 2);  // narrowing toward neck
+
+  // ── Pauldrons (spiked shoulder armor)
+  ctx.fillStyle = PAULDRON;
+  // Left
+  ctx.fillRect(10, 38, 12, 8);
+  ctx.fillRect(8,  34,  6, 6);   // upward spike
+  // Right
+  ctx.fillRect(42, 38, 12, 8);
+  ctx.fillRect(50, 34,  6, 6);
+  // Pauldron rim accents
+  ctx.fillStyle = HIGHLIGHT;
+  ctx.fillRect(10, 38, 12, 1);
+  ctx.fillRect(42, 38, 12, 1);
+
+  // ── Torso
+  ctx.fillStyle = ARMOR_BASE;
+  ctx.fillRect(22, 36, 20, 30);
+
+  // Center chest rune (small glowing square)
+  ctx.fillStyle = RUNE_BLUE;
+  ctx.fillRect(30, 46, 4, 4);
+  // Faint vertical accent line down the chest
+  ctx.fillStyle = HIGHLIGHT;
+  ctx.fillRect(31, 38, 2, 24);
+
+  // ── Belt
+  ctx.fillStyle = HIGHLIGHT;
+  ctx.fillRect(20, 62, 24, 4);
+  // Belt buckle
+  ctx.fillStyle = RUNE_BLUE;
+  ctx.fillRect(30, 63, 4, 2);
+
+  // ── Skirt / lower body
+  ctx.fillStyle = ARMOR_BASE;
+  ctx.fillRect(20, 66, 24, 16);
+  // Skirt edge runes
+  ctx.fillStyle = RUNE_BLUE;
+  ctx.fillRect(24, 78, 2, 2);
+  ctx.fillRect(38, 78, 2, 2);
+
+  // ── Boots
+  ctx.fillStyle = ARMOR_DARK;
+  ctx.fillRect(22, 82, 8, 12);
+  ctx.fillRect(34, 82, 8, 12);
+  // Boot toecaps
+  ctx.fillStyle = HIGHLIGHT;
+  ctx.fillRect(22, 92, 8, 2);
+  ctx.fillRect(34, 92, 8, 2);
+
+  const tex = new THREE.CanvasTexture(c);
+  // Crisp pixels — disable mipmap blur so the silhouette stays sharp.
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  LICH_KING_TEXTURE = tex;
+  return tex;
+}
+
 function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasTexture] {
   const cached = TEXTURE_CACHE.get(catType);
   if (cached) return cached;
@@ -2299,17 +2437,20 @@ function GothicColonnade() {
 
 function LichKing({ eternal }: { eternal: EternalStats }) {
   const wispsRef = useRef<THREE.Group>(null);
-  const eye1Ref  = useRef<THREE.Mesh>(null);
-  const eye2Ref  = useRef<THREE.Mesh>(null);
+  const eyeHaloRef = useRef<THREE.Mesh>(null);
   const swordRef = useRef<THREE.Mesh>(null);
   const auraRef  = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     if (wispsRef.current) wispsRef.current.rotation.y = -t * 0.18;
-    const eyePulse = 0.7 + Math.sin(t * 1.4) * 0.30;
-    if (eye1Ref.current) (eye1Ref.current.material as THREE.MeshBasicMaterial).opacity = eyePulse;
-    if (eye2Ref.current) (eye2Ref.current.material as THREE.MeshBasicMaterial).opacity = eyePulse;
+    // The sprite's eye cavities have a static blue glow baked in. We pulse
+    // a small additive halo plane in front of the helm to add the
+    // "watching you" feel without animating the texture itself.
+    if (eyeHaloRef.current) {
+      const pulse = 0.35 + Math.sin(t * 1.4) * 0.20;
+      (eyeHaloRef.current.material as THREE.MeshBasicMaterial).opacity = pulse;
+    }
     if (swordRef.current) {
       (swordRef.current.material as THREE.MeshBasicMaterial).opacity = 0.75 + Math.sin(t * 0.7) * 0.20;
     }
@@ -2373,48 +2514,25 @@ function LichKing({ eternal }: { eternal: EternalStats }) {
         <meshBasicMaterial color="#1a0f28" />
       </mesh>
 
-      {/* Lich body — hooded humanoid in dark armor */}
-      <group position={[0, 0.95, -0.05]}>
-        {/* Torso */}
-        <mesh position={[0, 0.35, 0]}>
-          <boxGeometry args={[0.5, 0.7, 0.32]} />
-          <meshBasicMaterial color="#0f0820" />
-        </mesh>
-        {/* Helmet */}
-        <mesh position={[0, 0.95, 0]}>
-          <boxGeometry args={[0.42, 0.42, 0.36]} />
-          <meshBasicMaterial color="#0a0518" />
-        </mesh>
-        {/* Helmet horns */}
-        <mesh position={[-0.18, 1.30, 0]} rotation={[0, 0, 0.18]}>
-          <coneGeometry args={[0.08, 0.46, 4]} />
-          <meshBasicMaterial color="#0a0518" />
-        </mesh>
-        <mesh position={[0.18, 1.30, 0]} rotation={[0, 0, -0.18]}>
-          <coneGeometry args={[0.08, 0.46, 4]} />
-          <meshBasicMaterial color="#0a0518" />
-        </mesh>
-        {/* Glowing eye slits */}
-        <mesh ref={eye1Ref} position={[-0.10, 0.96, 0.19]}>
-          <boxGeometry args={[0.07, 0.04, 0.02]} />
-          <meshBasicMaterial color="#5cd2ff" transparent opacity={0.9}
-            blending={THREE.AdditiveBlending} fog={false} />
-        </mesh>
-        <mesh ref={eye2Ref} position={[0.10, 0.96, 0.19]}>
-          <boxGeometry args={[0.07, 0.04, 0.02]} />
-          <meshBasicMaterial color="#5cd2ff" transparent opacity={0.9}
-            blending={THREE.AdditiveBlending} fog={false} />
-        </mesh>
-        {/* Pauldrons */}
-        <mesh position={[-0.32, 0.65, 0]}>
-          <boxGeometry args={[0.18, 0.18, 0.34]} />
-          <meshBasicMaterial color="#1a0f28" />
-        </mesh>
-        <mesh position={[0.32, 0.65, 0]}>
-          <boxGeometry args={[0.18, 0.18, 0.34]} />
-          <meshBasicMaterial color="#1a0f28" />
-        </mesh>
-      </group>
+      {/* Lich body — hand-drawn pixel sprite (hooded warrior with horns +
+          glowing eye slits + cape + pauldrons). Replaces the v1 stack of
+          primitive boxes which read as a pile of geometry from the
+          orthographic camera angle. The sprite is a billboard so it always
+          faces the camera, identical pattern to every champion in the
+          scene. Feet anchor to the platform top (y=0.40) — sprite center
+          is at y = 0.40 + 4.6/2 = 2.70. */}
+      <sprite scale={[3.2, 4.6, 1]} position={[0, 2.70, 0.05]}>
+        <spriteMaterial map={getLichKingTexture()} transparent alphaTest={0.05} fog={false} />
+      </sprite>
+      {/* Eye-glow halo — small additive plane that pulses in front of the
+          helm, sells the "watching" feel since the sprite eyes are static
+          (baked into the texture). Sits a hair forward in z so it's never
+          occluded by the sprite. */}
+      <mesh ref={eyeHaloRef} position={[0, 3.61, 0.20]}>
+        <planeGeometry args={[0.78, 0.18]} />
+        <meshBasicMaterial color="#5cd2ff" transparent opacity={0.40}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
 
       {/* Frostmourne — planted blade-up in front of the throne */}
       <group position={[0, 0.5, 0.55]}>
