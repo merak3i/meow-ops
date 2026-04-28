@@ -2414,6 +2414,15 @@ function LichKing({ eternal }: { eternal: EternalStats }) {
 
       {/* Frostmourne — planted blade-up in front of the throne */}
       <group position={[0, 0.5, 0.55]}>
+        {/* Dalaran D5 — wide bloom-fake halo around the blade. Cylinder
+            with very low additive opacity so Frostmourne reads as bloomed
+            without postprocessing. */}
+        <mesh position={[0, 0.95, 0]}>
+          <cylinderGeometry args={[0.32, 0.32, 1.9, 12, 1, true]} />
+          <meshBasicMaterial color="#5cd2ff" transparent opacity={0.06}
+            blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
+            depthWrite={false} fog={false} />
+        </mesh>
         {/* Blade glow (wider, additive) */}
         <mesh ref={swordRef} position={[0, 0.95, 0]}>
           <boxGeometry args={[0.12, 1.7, 0.03]} />
@@ -2478,7 +2487,9 @@ function LichKing({ eternal }: { eternal: EternalStats }) {
           boxShadow: '0 0 12px rgba(92,210,255,0.18)',
         }}>
           <div style={{
-            fontSize: 7.5, opacity: 0.7, letterSpacing: 2.5, marginBottom: 2,
+            fontFamily: '"Cinzel", serif',
+            fontSize: 9, fontWeight: 700, opacity: 0.85,
+            letterSpacing: 3, marginBottom: 3,
           }}>
             ETERNAL · LICH KING
           </div>
@@ -3943,6 +3954,19 @@ function ClaudeSun({ binding, selected, onClick }: {
         <meshBasicMaterial color={palette.corona} transparent opacity={0.14}
           blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
       </mesh>
+      {/* Dalaran D5 — wide bloom-fake corona. Very low opacity additive
+          sphere at 2× the corona radius. No animation; sits steady so the
+          sun reads as bloomed without postprocessing. */}
+      <mesh>
+        <sphereGeometry args={[5.0, 16, 16]} />
+        <meshBasicMaterial color={palette.halo} transparent opacity={0.05}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+      <mesh>
+        <sphereGeometry args={[7.5, 16, 16]} />
+        <meshBasicMaterial color={palette.core} transparent opacity={0.025}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
       {/* Selection ring — visible only when the sun is the active selection */}
       {selected && (
         <mesh rotation={[Math.PI / 2, 0, 0]}>
@@ -3979,7 +4003,8 @@ function ClaudeSun({ binding, selected, onClick }: {
             lineHeight: 1.5,
           }}>
             <div style={{
-              fontSize: 9, letterSpacing: 2, color: palette.corona,
+              fontFamily: '"Cinzel", serif', fontWeight: 700,
+              fontSize: 11, letterSpacing: 2.5, color: palette.corona,
               textTransform: 'uppercase', marginBottom: 4,
             }}>
               {eclipsed ? '⚠ Eclipse' : 'LLM Sun'} · {palette.label}
@@ -4755,7 +4780,11 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
           background: 'rgba(4,2,12,.85)', backdropFilter: 'blur(8px)',
         }}>
           <div>
-            <div style={{ fontSize: 8.5, color: '#c8a85555', letterSpacing: 3, textTransform: 'uppercase' }}>
+            <div style={{
+              fontFamily: '"Cinzel", serif', fontWeight: 700,
+              fontSize: 12, color: '#c8a855aa',
+              letterSpacing: 4, textTransform: 'uppercase',
+            }}>
               Scrying Sanctum
             </div>
             <div style={{ fontSize: 11, color: '#c8a85566', fontFamily: 'monospace' }}>
