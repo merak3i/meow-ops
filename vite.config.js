@@ -102,6 +102,13 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src'),
     },
+    // dedupe: force a single copy of three / react / react-dom across the
+    // dep tree. Without this, @react-three/postprocessing transitively pulls
+    // stats-gl which ships its own three, causing "Multiple instances of
+    // THREE" + "Invalid hook call" runtime errors that black-screen the
+    // canvas. With dedupe, all three.js + react references resolve to the
+    // root install, fixing bloom + future R3F-postprocessing usage.
+    dedupe: ['three', 'react', 'react-dom'],
   },
   plugins: [react(), tailwindcss(), meowSyncPlugin()],
 });
