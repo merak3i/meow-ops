@@ -2952,7 +2952,12 @@ function WoWNameplate({ pn, maxCost, selected, nowEpoch, possessed }: {
         borderRadius: 3, padding: '4px 7px 5px',
         fontFamily: 'monospace', userSelect: 'none',
         boxShadow: possessed ? '0 0 14px #f59e0b99' : selected ? `0 0 10px ${c.aura}66` : 'none',
-      }}>
+        // Absorb clicks so reading the nameplate doesn't trigger the
+        // Canvas's onPointerMissed deselect. <Html> wrapper still has
+        // pointer-events:none so the rest of the overlay is click-through.
+        pointerEvents: 'auto', cursor: 'default',
+      }}
+      onClick={(e) => e.stopPropagation()}>
         {/* Name + status dot */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
           <span style={{
@@ -4103,7 +4108,12 @@ function ClaudeSun({ binding, selected, onClick }: {
             boxShadow: `0 0 14px ${palette.halo}66`,
             fontSize: 10,
             lineHeight: 1.5,
-          }}>
+            // Absorb clicks so reading the panel doesn't trigger Canvas
+            // onPointerMissed deselect. The token-emitter spans inside have
+            // pointer-events:none so they don't steal hover/click either.
+            pointerEvents: 'auto', cursor: 'default',
+          }}
+          onClick={(e) => e.stopPropagation()}>
             <div style={{
               fontFamily: '"Cinzel", serif', fontWeight: 700,
               fontSize: 11, letterSpacing: 2.5, color: palette.corona,
@@ -4645,12 +4655,19 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
       {/* Cursor tracker — raycasts mouse against ground each frame for facing + orders */}
       <CursorTracker cursorGroundRef={cursorGroundRef} />
 
-      {/* Ground-click receiver — issues move orders for the possessed agent */}
+      {/* Ground-click receiver — two roles depending on possession state.
+          Possessing: click issues a move order to the possessed agent.
+          Not possessing: click deselects whatever character/sun is open
+          (the inner-disc complement to <Canvas onPointerMissed>, which
+          covers the area outside the disc). */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}
         onClick={(e) => {
-          if (!possessedId) return;
           e.stopPropagation();
-          moveOrdersRef.current.set(possessedId, e.point.clone());
+          if (possessedId) {
+            moveOrdersRef.current.set(possessedId, e.point.clone());
+          } else if (selectedId) {
+            onSelect(null);
+          }
         }}>
         <circleGeometry args={[12, 48]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
@@ -5050,7 +5067,12 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
             orthographic
             camera={{ position: [14, 12, 14], zoom: 38, up: [0, 1, 0], near: 0.1, far: 500 }}
             gl={{ antialias: false, alpha: false }}
-            onClick={(e) => { if (e.target === e.currentTarget) setSelected(null); }}
+            // R3F's onPointerMissed fires when a click lands but no 3D mesh
+            // with a handler was hit — the proper primitive for empty-space
+            // deselect. Replaces the legacy onClick check that almost never
+            // matched (events bubble from R3F children, so e.target ===
+            // e.currentTarget was rarely true).
+            onPointerMissed={() => { if (selected) setSelected(null); }}
           >
             {/* Dalaran D1 — violet ambient. Background stays solid here so
                 the fog blends cleanly toward the horizon; the starfield rides
