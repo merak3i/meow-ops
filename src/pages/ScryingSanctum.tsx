@@ -3,7 +3,7 @@
 
 import { useRef, useState, useMemo, useEffect, Suspense, useCallback, Component, createContext, useContext, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Html, OrbitControls, Stars, Sparkles } from '@react-three/drei';
+import { Html, OrbitControls, Stars, Sparkles, Environment } from '@react-three/drei';
 // EffectComposer/Bloom removed — was breaking WebGL render pipeline on Apple GPU
 import * as THREE from 'three';
 import type { Session } from '@/types/session';
@@ -1494,12 +1494,16 @@ function ArcaneFloor() {
 
   return (
     <>
-      {/* Main dark ground — Dalaran D3: violet marble texture with thin gold
-          veins. Color tint multiplies the texture so the marble keeps its
-          natural variation while staying within the night palette. */}
+      {/* Main dark ground — Dalaran D3 marble texture, now lit (PBR-lite).
+          Switched from meshBasicMaterial to meshStandardMaterial so the
+          procedural marble actually catches the ambient + directional lights
+          added to Scene. Roughness 0.55 reads as polished-but-not-mirror;
+          metalness 0.18 lets the gold veins pick up subtle highlight. The
+          color tint stays so the night palette is preserved. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
         <circleGeometry args={[14, 64]} />
-        <meshBasicMaterial map={getMarbleTexture()} color="#9070c0" />
+        <meshStandardMaterial map={getMarbleTexture()} color="#9070c0"
+          roughness={0.55} metalness={0.18} />
       </mesh>
       {/* Hex stone tile pattern — inner sanctum warmer, outer courtyard cooler */}
       {hexTiles.map((tile, i) => (
@@ -4621,6 +4625,16 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
       <ambientLight intensity={ambientInt} color={ambientColor} />
       <directionalLight position={[10, 20, 10]} intensity={1.0} color="#fff8e8" />
       <pointLight position={[0, 8, 0]} intensity={pointInt} color={pointColor} distance={30} />
+      {/* PBR-lite — drei's built-in 'night' Environment preset loads an
+          HDRI from drei's CDN and applies it as image-based lighting on
+          MeshStandardMaterial / MeshPhysicalMaterial only. The floor's
+          marble (D3) now reacts to it; existing meshBasicMaterial props
+          (champion sprites, hex tiles, banners, architecture) ignore it
+          entirely so the violet palette stays untouched. background:false
+          keeps our solid color + Stars in front. */}
+      <Suspense fallback={null}>
+        <Environment preset="night" background={false} />
+      </Suspense>
 
       <Suspense fallback={null}>
         <PlazaEnvironment />
