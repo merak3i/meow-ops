@@ -3,7 +3,7 @@
 
 import { useRef, useState, useMemo, useEffect, Suspense, useCallback, Component, createContext, useContext, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Html, OrbitControls, Stars } from '@react-three/drei';
+import { Html, OrbitControls, Stars, Sparkles } from '@react-three/drei';
 // EffectComposer/Bloom removed — was breaking WebGL render pipeline on Apple GPU
 import * as THREE from 'three';
 import type { Session } from '@/types/session';
@@ -1260,6 +1260,165 @@ function CrystalPillar({ position, color }: { position: [number, number, number]
       {/* Glow light */}
       <pointLight position={[0, 1.2, 0]} color={color} intensity={0.25} distance={5} />
     </group>
+  );
+}
+
+// ─── Dalaran D4 — Magical lights + godrays ───────────────────────────────────
+//
+// Three procedural light layers that don't require @react-three/postprocessing
+// (which pulls duplicate three+react and breaks hooks). Procedural emissive
+// halos give a "bloomed" look on stylized scenes ~80% as well as real bloom.
+//
+//   DalaranLamppost — slim violet pole + warm gold pulsing wisp orb on top
+//                     + wide additive halo that fakes bloom around it
+//   SunGodrays     — six vertical light shafts radiating from the LLM Sun
+//                     straight down to the ground, slowly rotating
+//   AtmosphericMotes — wraps drei's <Sparkles> in three layers (near
+//                     lavender, mid gold, far white-blue) for depth feel
+
+function DalaranLamppost({ position, phase }: {
+  position: [number, number, number];
+  phase: number;
+}) {
+  const wispRef = useRef<THREE.Mesh>(null);
+  const haloRef = useRef<THREE.Mesh>(null);
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (wispRef.current) {
+      const pulse = 0.85 + Math.sin(t * 1.6 + phase) * 0.15;
+      wispRef.current.scale.setScalar(pulse);
+      const wispMat = wispRef.current.material as THREE.MeshBasicMaterial;
+      wispMat.opacity = 0.85 + Math.sin(t * 1.6 + phase) * 0.10;
+    }
+    if (haloRef.current) {
+      const haloMat = haloRef.current.material as THREE.MeshBasicMaterial;
+      haloMat.opacity = 0.20 + Math.sin(t * 1.6 + phase) * 0.06;
+    }
+  });
+  return (
+    <group position={position}>
+      {/* Base — small stone block */}
+      <mesh position={[0, 0.10, 0]}>
+        <boxGeometry args={[0.25, 0.20, 0.25]} />
+        <meshBasicMaterial color="#1a0f28" />
+      </mesh>
+      {/* Pole — slim cylinder */}
+      <mesh position={[0, 1.2, 0]}>
+        <cylinderGeometry args={[0.05, 0.06, 2.2, 6]} />
+        <meshBasicMaterial color="#2a1a3e" />
+      </mesh>
+      {/* Lantern frame — small cage at top */}
+      <mesh position={[0, 2.45, 0]}>
+        <boxGeometry args={[0.20, 0.20, 0.20]} />
+        <meshBasicMaterial color="#3a2a1c" transparent opacity={0.7} />
+      </mesh>
+      {/* Wisp orb — warm gold inside the lantern */}
+      <mesh ref={wispRef} position={[0, 2.45, 0]}>
+        <sphereGeometry args={[0.10, 12, 12]} />
+        <meshBasicMaterial color="#ffcb6a" transparent opacity={0.9}
+          blending={THREE.AdditiveBlending} fog={false} />
+      </mesh>
+      {/* Bloom-fake halo — wide additive sphere fakes a glow halo */}
+      <mesh ref={haloRef} position={[0, 2.45, 0]}>
+        <sphereGeometry args={[0.45, 16, 12]} />
+        <meshBasicMaterial color="#ffb84a" transparent opacity={0.20}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+    </group>
+  );
+}
+
+function DalaranLampposts() {
+  // Eight lampposts evenly spaced at radius 8.5, between the agent area
+  // (~5–7) and the gothic colonnade (10.5). Phases offset so the lamps
+  // don't pulse in lockstep.
+  const lamps = useMemo(() => {
+    const out: { x: number; z: number; phase: number }[] = [];
+    const N = 8;
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2 + Math.PI / N;  // half-step from gates
+      out.push({
+        x: Math.cos(a) * 8.5,
+        z: Math.sin(a) * 8.5,
+        phase: i * 0.7,
+      });
+    }
+    return out;
+  }, []);
+  return (
+    <>
+      {lamps.map((l, i) => (
+        <DalaranLamppost key={i} position={[l.x, 0, l.z]} phase={l.phase} />
+      ))}
+    </>
+  );
+}
+
+function SunGodrays() {
+  // Six vertical light shafts radiating from the LLM Sun position straight
+  // down. Each shaft is a tall thin plane with an additive cream gradient
+  // texture; the whole group rotates slowly so the rays sweep across the
+  // floor like actual sunbeams. Faked because real volumetric godrays
+  // require postprocessing — for an orthographic camera, vertical planes
+  // read just fine.
+  const groupRef = useRef<THREE.Group>(null);
+  const SHAFT_COUNT = 6;
+  const SUN_Y = 8;        // matches SUN_POSITION.y
+  const SUN_X = -4;       // matches SUN_POSITION.x
+  const SUN_Z = -4;       // matches SUN_POSITION.z
+
+  // Single shared geometry — tall vertical plane that reaches sun→ground.
+  const shaftGeo = useMemo(() => new THREE.PlaneGeometry(1.4, SUN_Y), []);
+
+  // Shared additive cream gradient texture: bright at top (sun), fading to
+  // transparent at bottom (ground). Cheaper than vertex colors.
+  const shaftTex = useMemo(() => {
+    const c = document.createElement('canvas');
+    c.width = 16; c.height = 256;
+    const ctx = c.getContext('2d')!;
+    const grad = ctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0,    'rgba(255,244,196,0.9)');
+    grad.addColorStop(0.45, 'rgba(255,224,140,0.4)');
+    grad.addColorStop(1,    'rgba(255,212,108,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 16, 256);
+    const tex = new THREE.CanvasTexture(c);
+    return tex;
+  }, []);
+
+  useFrame((state) => {
+    if (groupRef.current) groupRef.current.rotation.y = state.clock.elapsedTime * 0.04;
+  });
+
+  return (
+    <group ref={groupRef} position={[SUN_X, SUN_Y / 2, SUN_Z]}>
+      {Array.from({ length: SHAFT_COUNT }, (_, i) => {
+        const a = (i / SHAFT_COUNT) * Math.PI;  // half-rotation since planes are double-sided-equivalent
+        return (
+          <mesh key={i} rotation={[0, a, 0]} geometry={shaftGeo}>
+            <meshBasicMaterial map={shaftTex} transparent opacity={0.18}
+              side={THREE.DoubleSide} blending={THREE.AdditiveBlending}
+              depthWrite={false} fog={false} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+function AtmosphericMotes() {
+  // Three drei <Sparkles> layers at different depths/sizes for parallax.
+  // Near = lavender, mid = gold, far = pale blue. The whole field reads as
+  // drifting magical motes filling the violet ambient.
+  return (
+    <>
+      <Sparkles count={80}  scale={[14, 6, 14]}  size={2.0} color="#c4a4ff"
+        speed={0.4} opacity={0.7} position={[0, 1, 0]} />
+      <Sparkles count={120} scale={[20, 8, 20]} size={1.4} color="#ffd97a"
+        speed={0.25} opacity={0.5} position={[0, 2, 0]} />
+      <Sparkles count={200} scale={[28, 10, 28]} size={0.9} color="#cce0ff"
+        speed={0.15} opacity={0.4} position={[0, 3, 0]} />
+    </>
   );
 }
 
@@ -2724,6 +2883,11 @@ function PlazaEnvironment() {
           ghost-count stats. Mirrors the Violet Citadel from the opposite
           back corner. */}
       <LichKing eternal={eternal} />
+      {/* Dalaran D4 — magical lights + sparkles + faked godrays. All
+          procedural; no postprocessing dep. */}
+      <DalaranLampposts />
+      <SunGodrays />
+      <AtmosphericMotes />
       {/* Ground detail */}
       <ArcanePaths />
       <GroundScatter />
