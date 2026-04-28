@@ -488,6 +488,125 @@ function getShadowTexture(): THREE.CanvasTexture {
   return SHADOW_TEXTURE;
 }
 
+// ─── Dalaran D3 — Procedural surface textures ───────────────────────────────
+//
+// Three lazy-singleton CanvasTextures generated at first use. Cheaper than
+// custom GLSL, plays nice with existing meshBasicMaterial, and keeps the
+// "no external assets" promise of D1–D4.
+//
+//   getMarbleTexture()       — violet marble with thin gold veins for the
+//                              main floor disc. 512² with 2× repeat.
+//   getStainedGlassTexture() — multi-band stained-glass strip (gold, violet,
+//                              indigo, rose) for citadel + spire windows.
+//   The runic glow inlays go in via the RunicGlyphs scene component instead
+//   of a texture — easier UVs on a ringGeometry and lets the glyphs pulse.
+
+let MARBLE_TEXTURE: THREE.CanvasTexture | null = null;
+function getMarbleTexture(): THREE.CanvasTexture {
+  if (MARBLE_TEXTURE) return MARBLE_TEXTURE;
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 512;
+  const ctx = c.getContext('2d')!;
+
+  // Base — deep violet marble
+  ctx.fillStyle = '#1c1430';
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Mottle — many small radial splotches, alternating darker/lighter so the
+  // surface has organic tone variation instead of looking flat.
+  for (let i = 0; i < 240; i++) {
+    const x = Math.random() * 512;
+    const y = Math.random() * 512;
+    const r = 8 + Math.random() * 36;
+    const isLight = Math.random() < 0.5;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, isLight ? 'rgba(80,60,120,0.18)' : 'rgba(8,4,18,0.22)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+
+  // Gold veins — thin curved lines tracing through the marble. Each is a
+  // gradient-stroked quadratic bezier so the vein fades in/out along its
+  // length (mimics natural mineral cracks).
+  ctx.lineWidth = 0.7;
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 28; i++) {
+    const x1 = Math.random() * 512;
+    const y1 = Math.random() * 512;
+    const x2 = Math.random() * 512;
+    const y2 = Math.random() * 512;
+    const cx = (x1 + x2) / 2 + (Math.random() - 0.5) * 220;
+    const cy = (y1 + y2) / 2 + (Math.random() - 0.5) * 220;
+    const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+    grad.addColorStop(0,   'rgba(200,168,85,0)');
+    grad.addColorStop(0.5, 'rgba(200,168,85,0.7)');
+    grad.addColorStop(1,   'rgba(200,168,85,0)');
+    ctx.strokeStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.quadraticCurveTo(cx, cy, x2, y2);
+    ctx.stroke();
+  }
+
+  // Polish highlights — sparse soft spots so the marble reads as wet/glossy
+  // under the violet ambient.
+  for (let i = 0; i < 18; i++) {
+    const x = Math.random() * 512;
+    const y = Math.random() * 512;
+    const r = 32 + Math.random() * 50;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, 'rgba(124,90,204,0.10)');
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 2);
+  MARBLE_TEXTURE = tex;
+  return tex;
+}
+
+let STAINED_GLASS_TEXTURE: THREE.CanvasTexture | null = null;
+function getStainedGlassTexture(): THREE.CanvasTexture {
+  if (STAINED_GLASS_TEXTURE) return STAINED_GLASS_TEXTURE;
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 256;
+  const ctx = c.getContext('2d')!;
+
+  // Six horizontal panes. Each pane is a vertical gradient that lights
+  // toward the middle so the glass reads as backlit by interior light.
+  // Sequence: gold, violet, indigo, gold, rose, violet — repeats up the
+  // window for a "tall narrow stained-glass" feel.
+  const panes = ['#f5c518', '#a78bfa', '#6b8fff', '#f5c518', '#fb7185', '#7c5acc'];
+  const stripeH = 256 / panes.length;
+  for (let i = 0; i < panes.length; i++) {
+    const top = i * stripeH;
+    const grad = ctx.createLinearGradient(0, top, 0, top + stripeH);
+    grad.addColorStop(0,    panes[i]!);
+    grad.addColorStop(0.5,  '#ffffff');
+    grad.addColorStop(1,    panes[(i + 1) % panes.length]!);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, top, 64, stripeH);
+  }
+
+  // Lead lines — dark bars between panes (the cames in real stained glass).
+  ctx.fillStyle = '#1a0f28';
+  for (let i = 0; i <= panes.length; i++) {
+    ctx.fillRect(0, i * stripeH - 1, 64, 2);
+  }
+  // Vertical lead — single bar down the middle so each pane has a bisected
+  // diamond pattern.
+  ctx.fillRect(31, 0, 2, 256);
+
+  const tex = new THREE.CanvasTexture(c);
+  STAINED_GLASS_TEXTURE = tex;
+  return tex;
+}
+
 function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasTexture] {
   const cached = TEXTURE_CACHE.get(catType);
   if (cached) return cached;
@@ -1189,10 +1308,12 @@ function ArcaneFloor() {
 
   return (
     <>
-      {/* Main dark ground */}
+      {/* Main dark ground — Dalaran D3: violet marble texture with thin gold
+          veins. Color tint multiplies the texture so the marble keeps its
+          natural variation while staying within the night palette. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
         <circleGeometry args={[14, 64]} />
-        <meshBasicMaterial color="#1a1428" />
+        <meshBasicMaterial map={getMarbleTexture()} color="#9070c0" />
       </mesh>
       {/* Hex stone tile pattern — inner sanctum warmer, outer courtyard cooler */}
       {hexTiles.map((tile, i) => (
@@ -1763,16 +1884,18 @@ function DalaranSpire({ position, height, radius, twin = false }: {
           side={THREE.DoubleSide} blending={THREE.AdditiveBlending}
           depthWrite={false} fog={false} />
       </mesh>
-      {/* Glowing window — single warm gold light at upper third */}
+      {/* Glowing stained-glass window — multi-band texture (gold/violet/
+          indigo/rose) at upper third, additive so the panes glow against
+          the violet stone. Per-spire phase animates the overall opacity. */}
       <mesh ref={windowRef} position={[0, height * 0.7, radius * 0.85]}>
         <planeGeometry args={[radius * 0.45, radius * 0.65]} />
-        <meshBasicMaterial color={D2_SPIRE_WINDOW} transparent opacity={0.65}
+        <meshBasicMaterial map={getStainedGlassTexture()} transparent opacity={0.65}
           blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
       </mesh>
       {twin && (
         <mesh position={[0, height * 0.7, -radius * 0.85]} rotation={[0, Math.PI, 0]}>
           <planeGeometry args={[radius * 0.45, radius * 0.65]} />
-          <meshBasicMaterial color={D2_SPIRE_WINDOW} transparent opacity={0.45}
+          <meshBasicMaterial map={getStainedGlassTexture()} transparent opacity={0.45}
             blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
         </mesh>
       )}
@@ -1859,18 +1982,65 @@ function VioletCitadel() {
         <meshBasicMaterial color={D2_CITADEL_CROWN} transparent opacity={0.65}
           blending={THREE.AdditiveBlending} fog={false} />
       </mesh>
-      {/* Stained-glass window at mid tier (faces the plaza) */}
+      {/* Stained-glass window at mid tier (faces the plaza) — D3 texture
+          gives multi-band gold/violet/indigo panes with lead lines. */}
       <mesh position={[0, 4.3, 1.41]}>
         <planeGeometry args={[1.0, 1.6]} />
-        <meshBasicMaterial color={D2_SPIRE_WINDOW} transparent opacity={0.55}
+        <meshBasicMaterial map={getStainedGlassTexture()} transparent opacity={0.7}
           blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
       </mesh>
-      {/* Stained-glass at base */}
+      {/* Stained-glass at base — wider, dimmer, larger pane count via uv repeat */}
       <mesh position={[0, 1.3, 1.86]}>
         <planeGeometry args={[1.5, 2.0]} />
-        <meshBasicMaterial color={D2_SPIRE_WINDOW} transparent opacity={0.42}
+        <meshBasicMaterial map={getStainedGlassTexture()} transparent opacity={0.55}
           blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
       </mesh>
+    </group>
+  );
+}
+
+function RunicGlyphs() {
+  // Twelve small glowing glyphs inscribed just outside the ward ring at
+  // radius 5.4. Slow group rotation + per-glyph opacity pulse make them
+  // read as ancient inlays gradually waking up. All on the same y-plane
+  // as the ward (-0.034) so they sit flush with the floor.
+  const groupRef = useRef<THREE.Group>(null);
+  const phases = useMemo(
+    () => Array.from({ length: 12 }, () => Math.random() * Math.PI * 2),
+    [],
+  );
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (!groupRef.current) return;
+    groupRef.current.rotation.z = t * 0.045; // slow glyph procession
+    groupRef.current.children.forEach((child, i) => {
+      const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.30 + Math.sin(t * 0.8 + (phases[i] ?? 0)) * 0.18;
+    });
+  });
+
+  const N = 12;
+  const RADIUS = 5.4;
+  return (
+    <group ref={groupRef} position={[0, -0.034, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      {Array.from({ length: N }, (_, i) => {
+        const a = (i / N) * Math.PI * 2;
+        const x = Math.cos(a) * RADIUS;
+        const y = Math.sin(a) * RADIUS;
+        const variant = i % 4;
+        return (
+          <mesh key={i} position={[x, y, 0]} rotation={[0, 0, a + Math.PI / 2]}>
+            {variant === 0 && <ringGeometry args={[0.06, 0.11, 6]} />}
+            {variant === 1 && <planeGeometry args={[0.20, 0.045]} />}
+            {variant === 2 && <ringGeometry args={[0.07, 0.13, 4, 1, 0, Math.PI]} />}
+            {variant === 3 && <planeGeometry args={[0.045, 0.20]} />}
+            <meshBasicMaterial color="#ffd97a" transparent opacity={0.35}
+              blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
+              depthWrite={false} fog={false} />
+          </mesh>
+        );
+      })}
     </group>
   );
 }
@@ -2300,6 +2470,9 @@ function PlazaEnvironment() {
       <DalaranSkyline />
       <VioletCitadel />
       <GothicColonnade />
+      {/* Dalaran D3 — runic glyphs ring just outside the ward ring,
+          slowly rotating with per-glyph pulse. */}
+      <RunicGlyphs />
       {/* Ground detail */}
       <ArcanePaths />
       <GroundScatter />
