@@ -5099,12 +5099,14 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                 />}
               </SceneErrorBoundary>
             </Suspense>
-            {/* TODO(D4): Bloom postprocessing pass — pulled from D1 because
-                @react-three/postprocessing v3 pulls its own three + react
-                copies, causing "Invalid hook call" + "Multiple instances of
-                THREE" errors that black-screen the canvas. Revisit with vite
-                dedupe (resolve.dedupe: ['three', 'react']) before re-adding
-                <EffectComposer><Bloom/></EffectComposer> in D4. */}
+            {/* Bloom postprocessing attempted twice (D1 + this round) and
+                pulled both times. @react-three/postprocessing v3 transitively
+                pulls stats-gl which ships its own three + maath copies; even
+                with vite resolve.dedupe applied, the dev server still hits
+                "Invalid hook call" + "Multiple instances of THREE" errors
+                that black-screen the canvas. Procedural bloom-fake halos in
+                D4/D5 (wide additive spheres around bright sources) cover
+                ~80% of what real bloom would add at zero risk. */}
           </Canvas>
 
           {/* Possession HUD — top-center chip while driving an agent */}
