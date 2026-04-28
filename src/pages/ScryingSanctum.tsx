@@ -108,6 +108,33 @@ function sessionIdentifier(s: Session): SessionIdentifier {
   return { tag, hashShort, accent, accentIdx };
 }
 
+// ─── Eternal Stats (for the Lich King) ───────────────────────────────────────
+//
+// All-time aggregates pulled from every session in sessions.json — not just
+// the current run group. The Lich King is the permanent custodian of these
+// numbers: cumulative spend is the headline figure (THE eternal ops number,
+// never resets), ghost session count is the narrative flavor (the souls he
+// commands). Both update whenever Sync sessions runs.
+
+interface EternalStats {
+  totalSpend:    number;  // sum of estimated_cost_usd across every session
+  totalTokens:   number;  // sum of total_tokens across every session
+  totalSessions: number;  // count of all sessions ever parsed
+  ghostCount:    number;  // count of sessions where is_ghost === true
+}
+
+function deriveEternal(sessions: ReadonlyArray<Session>): EternalStats {
+  let totalSpend = 0;
+  let totalTokens = 0;
+  let ghostCount = 0;
+  for (const s of sessions) {
+    totalSpend  += s.estimated_cost_usd ?? 0;
+    totalTokens += s.total_tokens       ?? 0;
+    if (s.is_ghost) ghostCount++;
+  }
+  return { totalSpend, totalTokens, totalSessions: sessions.length, ghostCount };
+}
+
 /** Blend two hex colors in linear RGB. amt=0 → a, amt=1 → b. */
 function blendHex(a: string, b: string, amt: number): string {
   const pa = parseInt(a.slice(1), 16);
@@ -2086,6 +2113,226 @@ function GothicColonnade() {
   );
 }
 
+// ─── Lich King — permanent custodian of eternal ops stats ───────────────────
+//
+// A monumental seated figure on a raised throne at [8, 0, -8] (back-right
+// from the camera, mirrors the Violet Citadel back-left). Built from
+// primitives — no sprite, doesn't roam, doesn't participate in the
+// per-session selection flow. He IS the eternal axis: while champions
+// (current run group) come and go, the Lich King is always there with the
+// all-time numbers above his helm.
+//
+// Eternal-stat mapping:
+//   - totalSpend → headline number on the floating label, also drives the
+//     frosty aura's scale (logarithmic, so $100 vs $10k reads proportional)
+//   - ghostCount → number of orbiting ghost wisps (capped at 8 so the
+//     visual stays clean even with hundreds of failed sessions)
+//   - totalSessions → secondary footer number on the label
+//
+// Frostmourne planted in front of the throne sells the lore reading. Eyes
+// pulse blue, sword glows blue, frosty hemispherical mist domes the
+// platform. All additive blending so the figure reads against the violet
+// floor.
+
+function LichKing({ eternal }: { eternal: EternalStats }) {
+  const wispsRef = useRef<THREE.Group>(null);
+  const eye1Ref  = useRef<THREE.Mesh>(null);
+  const eye2Ref  = useRef<THREE.Mesh>(null);
+  const swordRef = useRef<THREE.Mesh>(null);
+  const auraRef  = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (wispsRef.current) wispsRef.current.rotation.y = -t * 0.18;
+    const eyePulse = 0.7 + Math.sin(t * 1.4) * 0.30;
+    if (eye1Ref.current) (eye1Ref.current.material as THREE.MeshBasicMaterial).opacity = eyePulse;
+    if (eye2Ref.current) (eye2Ref.current.material as THREE.MeshBasicMaterial).opacity = eyePulse;
+    if (swordRef.current) {
+      (swordRef.current.material as THREE.MeshBasicMaterial).opacity = 0.75 + Math.sin(t * 0.7) * 0.20;
+    }
+    if (auraRef.current) auraRef.current.scale.setScalar((auraScale) * (1 + Math.sin(t * 0.45) * 0.04));
+  });
+
+  // Aura scales logarithmically with cumulative spend so the figure feels
+  // heavier as costs accumulate. $1 → 1.0, $100 → 1.3, $1k → 1.45,
+  // $10k → 1.6, $100k → 1.75. Capped at 2.0 so a runaway burn doesn't
+  // dominate the scene.
+  const auraScale = useMemo(() => {
+    return Math.min(2.0, 1 + Math.log10(Math.max(1, eternal.totalSpend)) * 0.15);
+  }, [eternal.totalSpend]);
+
+  // Cap ghost wisps at 8 so the orbit stays legible even on accounts with
+  // hundreds of failed sessions.
+  const wispCount = Math.min(eternal.ghostCount, 8);
+
+  // Format spend — always with thousands separators when ≥$1k.
+  const spendLabel = useMemo(() => {
+    if (eternal.totalSpend < 100)  return `$${eternal.totalSpend.toFixed(2)}`;
+    if (eternal.totalSpend < 1000) return `$${eternal.totalSpend.toFixed(0)}`;
+    return `$${eternal.totalSpend.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
+  }, [eternal.totalSpend]);
+
+  return (
+    <group position={[8, 0, -8]}>
+      {/* Frosty aura — large hemisphere, additive, scales with eternal spend */}
+      <mesh ref={auraRef} position={[0, 1.2, 0]}>
+        <sphereGeometry args={[2.6, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshBasicMaterial color="#4a7fcf" transparent opacity={0.10}
+          blending={THREE.AdditiveBlending} side={THREE.BackSide}
+          depthWrite={false} fog={false} />
+      </mesh>
+
+      {/* Stone platform — three concentric steps */}
+      <mesh position={[0, 0.10, 0]}>
+        <cylinderGeometry args={[2.2, 2.4, 0.20, 16]} />
+        <meshBasicMaterial color="#1a1428" />
+      </mesh>
+      <mesh position={[0, 0.30, 0]}>
+        <cylinderGeometry args={[1.7, 1.9, 0.20, 12]} />
+        <meshBasicMaterial color="#231a36" />
+      </mesh>
+
+      {/* Throne — back panel + seat + armrests */}
+      <mesh position={[0, 1.85, -0.6]}>
+        <boxGeometry args={[1.3, 2.6, 0.18]} />
+        <meshBasicMaterial color="#1a0f28" />
+      </mesh>
+      <mesh position={[0, 0.78, -0.05]}>
+        <boxGeometry args={[1.0, 0.18, 0.9]} />
+        <meshBasicMaterial color="#241636" />
+      </mesh>
+      <mesh position={[-0.55, 1.10, -0.05]}>
+        <boxGeometry args={[0.18, 0.5, 0.9]} />
+        <meshBasicMaterial color="#1a0f28" />
+      </mesh>
+      <mesh position={[0.55, 1.10, -0.05]}>
+        <boxGeometry args={[0.18, 0.5, 0.9]} />
+        <meshBasicMaterial color="#1a0f28" />
+      </mesh>
+
+      {/* Lich body — hooded humanoid in dark armor */}
+      <group position={[0, 0.95, -0.05]}>
+        {/* Torso */}
+        <mesh position={[0, 0.35, 0]}>
+          <boxGeometry args={[0.5, 0.7, 0.32]} />
+          <meshBasicMaterial color="#0f0820" />
+        </mesh>
+        {/* Helmet */}
+        <mesh position={[0, 0.95, 0]}>
+          <boxGeometry args={[0.42, 0.42, 0.36]} />
+          <meshBasicMaterial color="#0a0518" />
+        </mesh>
+        {/* Helmet horns */}
+        <mesh position={[-0.18, 1.30, 0]} rotation={[0, 0, 0.18]}>
+          <coneGeometry args={[0.08, 0.46, 4]} />
+          <meshBasicMaterial color="#0a0518" />
+        </mesh>
+        <mesh position={[0.18, 1.30, 0]} rotation={[0, 0, -0.18]}>
+          <coneGeometry args={[0.08, 0.46, 4]} />
+          <meshBasicMaterial color="#0a0518" />
+        </mesh>
+        {/* Glowing eye slits */}
+        <mesh ref={eye1Ref} position={[-0.10, 0.96, 0.19]}>
+          <boxGeometry args={[0.07, 0.04, 0.02]} />
+          <meshBasicMaterial color="#5cd2ff" transparent opacity={0.9}
+            blending={THREE.AdditiveBlending} fog={false} />
+        </mesh>
+        <mesh ref={eye2Ref} position={[0.10, 0.96, 0.19]}>
+          <boxGeometry args={[0.07, 0.04, 0.02]} />
+          <meshBasicMaterial color="#5cd2ff" transparent opacity={0.9}
+            blending={THREE.AdditiveBlending} fog={false} />
+        </mesh>
+        {/* Pauldrons */}
+        <mesh position={[-0.32, 0.65, 0]}>
+          <boxGeometry args={[0.18, 0.18, 0.34]} />
+          <meshBasicMaterial color="#1a0f28" />
+        </mesh>
+        <mesh position={[0.32, 0.65, 0]}>
+          <boxGeometry args={[0.18, 0.18, 0.34]} />
+          <meshBasicMaterial color="#1a0f28" />
+        </mesh>
+      </group>
+
+      {/* Frostmourne — planted blade-up in front of the throne */}
+      <group position={[0, 0.5, 0.55]}>
+        {/* Blade glow (wider, additive) */}
+        <mesh ref={swordRef} position={[0, 0.95, 0]}>
+          <boxGeometry args={[0.12, 1.7, 0.03]} />
+          <meshBasicMaterial color="#5cd2ff" transparent opacity={0.85}
+            blending={THREE.AdditiveBlending} fog={false} />
+        </mesh>
+        {/* Blade core (solid, dark) */}
+        <mesh position={[0, 0.95, 0]}>
+          <boxGeometry args={[0.06, 1.7, 0.012]} />
+          <meshBasicMaterial color="#0f1a2a" />
+        </mesh>
+        {/* Crossguard */}
+        <mesh position={[0, 0.10, 0]}>
+          <boxGeometry args={[0.34, 0.06, 0.10]} />
+          <meshBasicMaterial color="#1a0f28" />
+        </mesh>
+        {/* Hilt */}
+        <mesh position={[0, -0.10, 0]}>
+          <boxGeometry args={[0.06, 0.30, 0.06]} />
+          <meshBasicMaterial color="#241636" />
+        </mesh>
+        {/* Pommel — blue gem */}
+        <mesh position={[0, -0.30, 0]}>
+          <sphereGeometry args={[0.07, 8, 8]} />
+          <meshBasicMaterial color="#5cd2ff" transparent opacity={0.85}
+            blending={THREE.AdditiveBlending} fog={false} />
+        </mesh>
+      </group>
+
+      {/* Ghost wisps — orbiting at varied radii/heights, count = ghostCount
+          capped at 8. Souls of failed sessions made visual. */}
+      <group ref={wispsRef} position={[0, 1.4, 0]}>
+        {Array.from({ length: wispCount }, (_, i) => {
+          const a = (i / Math.max(1, wispCount)) * Math.PI * 2;
+          const r = 1.85 + (i % 2) * 0.35;
+          const y = (i % 3) * 0.45 - 0.30;
+          return (
+            <mesh key={i} position={[Math.cos(a) * r, y, Math.sin(a) * r]}>
+              <sphereGeometry args={[0.10, 8, 8]} />
+              <meshBasicMaterial color="#9cccff" transparent opacity={0.55}
+                blending={THREE.AdditiveBlending} fog={false} />
+            </mesh>
+          );
+        })}
+      </group>
+
+      {/* Floating eternal-stats label above the helm */}
+      <Html center position={[0, 4.2, 0]} style={{ pointerEvents: 'none' }}>
+        <div style={{
+          fontFamily: 'monospace',
+          color: '#5cd2ff',
+          background: 'rgba(8,10,28,0.88)',
+          border: '1px solid #5cd2ff66',
+          borderRadius: 3,
+          padding: '4px 9px 5px',
+          fontSize: 9,
+          letterSpacing: 1,
+          whiteSpace: 'nowrap',
+          textShadow: '0 0 4px #5cd2ff66',
+          userSelect: 'none',
+          textAlign: 'center',
+          boxShadow: '0 0 12px rgba(92,210,255,0.18)',
+        }}>
+          <div style={{
+            fontSize: 7.5, opacity: 0.7, letterSpacing: 2.5, marginBottom: 2,
+          }}>
+            ETERNAL · LICH KING
+          </div>
+          <div style={{ fontWeight: 'bold' }}>{spendLabel} spent</div>
+          <div style={{ fontSize: 8, opacity: 0.85, marginTop: 1 }}>
+            {eternal.ghostCount} ghosts · {eternal.totalSessions} sessions
+          </div>
+        </div>
+      </Html>
+    </group>
+  );
+}
+
 // ─── Ground Scatter (texture decals) ────────────────────────────────────────
 
 function GroundScatter() {
@@ -2473,6 +2720,10 @@ function PlazaEnvironment() {
       {/* Dalaran D3 — runic glyphs ring just outside the ward ring,
           slowly rotating with per-glyph pulse. */}
       <RunicGlyphs />
+      {/* Lich King — permanent custodian of eternal cumulative-spend +
+          ghost-count stats. Mirrors the Violet Citadel from the opposite
+          back corner. */}
+      <LichKing eternal={eternal} />
       {/* Ground detail */}
       <ArcanePaths />
       <GroundScatter />
@@ -3995,7 +4246,7 @@ function WebGLContextWatcher({ onContextLost, onContextRestored }: {
 
 // ─── Full 3D Scene ────────────────────────────────────────────────────────────
 
-function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessedId, moveInputRef, cursorGroundRef, moveOrdersRef }: {
+function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessedId, moveInputRef, cursorGroundRef, moveOrdersRef, eternal }: {
   group: SessionRunGroup; selectedId: string | null; onSelect: (id: string | null) => void;
   livePosMapOut:   React.MutableRefObject<Map<string, THREE.Vector3>>;
   nowEpoch:        number;
@@ -4003,6 +4254,7 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
   moveInputRef:    React.MutableRefObject<{ x: number; z: number }>;
   cursorGroundRef: React.MutableRefObject<THREE.Vector3>;
   moveOrdersRef:   React.MutableRefObject<Map<string, THREE.Vector3 | null>>;
+  eternal:         EternalStats;
 }) {
   const nodes     = useMemo(() => layoutNodes(group.roots), [group]);
   const maxCost   = useMemo(() => Math.max(...nodes.map((n) => n.session.estimated_cost_usd), 0.001), [nodes]);
@@ -4304,6 +4556,9 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
   const flatNodes    = useMemo(() => group ? layoutNodes(group.roots) : [], [group]);
   const selectedNode = flatNodes.find((n) => n.session.session_id === selected) ?? null;
+  // Eternal stats — cumulative across ALL sessions (not run group). Drives
+  // the Lich King's label + aura scale + ghost wisp count.
+  const eternal = useMemo(() => deriveEternal(sessions), [sessions]);
 
   // Selection handler — used by both the 3D Scene's onSelect prop and the
   // per-session roster (top-left list). Auto-possess on select skips ghosts,
@@ -4513,6 +4768,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                   group={group}
                   selectedId={selected}
                   onSelect={handleSelect}
+                  eternal={eternal}
                   livePosMapOut={livePosMap}
                   nowEpoch={nowEpoch}
                   possessedId={possessedId}
