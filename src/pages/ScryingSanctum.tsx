@@ -2597,38 +2597,65 @@ function LichKing({ eternal }: { eternal: EternalStats }) {
 
   return (
     <group position={[8, 0, -8]}>
-      {/* Frosty aura — large hemisphere, additive, scales with eternal spend */}
-      <mesh ref={auraRef} position={[0, 1.2, 0]}>
-        <sphereGeometry args={[2.6, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
+      {/* Frosty aura — large hemisphere, additive, scales with eternal spend.
+          Lifted by +0.20 to follow the new third platform step. */}
+      <mesh ref={auraRef} position={[0, 1.4, 0]}>
+        <sphereGeometry args={[2.8, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2]} />
         <meshBasicMaterial color="#4a7fcf" transparent opacity={0.10}
           blending={THREE.AdditiveBlending} side={THREE.BackSide}
           depthWrite={false} fog={false} />
       </mesh>
 
-      {/* Stone platform — three concentric steps */}
+      {/* Stone platform — wider three-step ziggurat. Earlier the dais was
+          two narrow steps (top radius 1.7) which made the Lich King feel
+          like he perched in the back-right corner. The pyramid now reads
+          as commanding the back-right, balancing the Violet Citadel that
+          mirrors from the back-left. Top step still 1.9–2.1 so the throne
+          + sprite fit; the wider lower steps spread the visual weight. */}
       <mesh position={[0, 0.10, 0]}>
-        <cylinderGeometry args={[2.2, 2.4, 0.20, 16]} />
-        <meshBasicMaterial color="#1a1428" />
+        <cylinderGeometry args={[3.4, 3.6, 0.20, 24]} />
+        <meshBasicMaterial color="#13091e" />
       </mesh>
       <mesh position={[0, 0.30, 0]}>
-        <cylinderGeometry args={[1.7, 1.9, 0.20, 12]} />
+        <cylinderGeometry args={[2.6, 2.8, 0.20, 20]} />
+        <meshBasicMaterial color="#1a1428" />
+      </mesh>
+      <mesh position={[0, 0.50, 0]}>
+        <cylinderGeometry args={[1.9, 2.1, 0.20, 16]} />
+        <meshBasicMaterial color="#231a36" />
+      </mesh>
+      {/* Sweeping front stair — three slim slabs descending toward the
+          plaza so the dais reads as approachable, not a sealed plinth.
+          Slabs are slightly wider than tall so they read as steps from
+          the orthographic camera. */}
+      <mesh position={[0, 0.10, 2.4]}>
+        <boxGeometry args={[2.0, 0.20, 0.6]} />
+        <meshBasicMaterial color="#13091e" />
+      </mesh>
+      <mesh position={[0, 0.30, 2.0]}>
+        <boxGeometry args={[1.6, 0.20, 0.5]} />
+        <meshBasicMaterial color="#1a1428" />
+      </mesh>
+      <mesh position={[0, 0.50, 1.6]}>
+        <boxGeometry args={[1.2, 0.20, 0.4]} />
         <meshBasicMaterial color="#231a36" />
       </mesh>
 
-      {/* Throne — back panel + seat + armrests */}
-      <mesh position={[0, 1.85, -0.6]}>
+      {/* Throne — back panel + seat + armrests, all lifted +0.20 for the
+          new top step at y=0.60. */}
+      <mesh position={[0, 2.05, -0.6]}>
         <boxGeometry args={[1.3, 2.6, 0.18]} />
         <meshBasicMaterial color="#1a0f28" />
       </mesh>
-      <mesh position={[0, 0.78, -0.05]}>
+      <mesh position={[0, 0.98, -0.05]}>
         <boxGeometry args={[1.0, 0.18, 0.9]} />
         <meshBasicMaterial color="#241636" />
       </mesh>
-      <mesh position={[-0.55, 1.10, -0.05]}>
+      <mesh position={[-0.55, 1.30, -0.05]}>
         <boxGeometry args={[0.18, 0.5, 0.9]} />
         <meshBasicMaterial color="#1a0f28" />
       </mesh>
-      <mesh position={[0.55, 1.10, -0.05]}>
+      <mesh position={[0.55, 1.30, -0.05]}>
         <boxGeometry args={[0.18, 0.5, 0.9]} />
         <meshBasicMaterial color="#1a0f28" />
       </mesh>
@@ -2636,38 +2663,32 @@ function LichKing({ eternal }: { eternal: EternalStats }) {
       {/* Lich body — hand-drawn pixel sprite (Arthas-style: horns + skull
           pauldrons + chest skull + ornate cape + frost mist around boots).
           128×192 source, billboard so it always faces the camera. Scale
-          bumped from v1's 3.2×4.6 → 3.8×5.4 so the figure reads at the
-          default camera distance — the previous v1 was easy to miss in
-          the back-right corner. Feet anchor to platform top (y=0.40);
-          sprite center = 0.40 + 5.4/2 = 3.10. */}
-      <sprite scale={[3.8, 5.4, 1]} position={[0, 3.10, 0.05]}>
+          3.8×5.4. Feet anchor to top step (y=0.60); sprite center =
+          0.60 + 5.4/2 = 3.30. */}
+      <sprite scale={[3.8, 5.4, 1]} position={[0, 3.30, 0.05]}>
         <spriteMaterial map={getLichKingTexture()} transparent alphaTest={0.05} fog={false} />
       </sprite>
-      {/* Eye-glow halo — small additive plane that pulses in front of the
-          helm, sells the "watching" feel since the sprite eyes are static
-          (baked into the texture). Sits a hair forward in z so it's never
-          occluded by the sprite. New eye-y in 192-tall sprite is at
-          ~pixel-y 42 → world offset = (96 - 42) × (5.4 / 192) = 1.52
-          above sprite center → world y = 3.10 + 1.52 = 4.62. */}
-      <mesh ref={eyeHaloRef} position={[0, 4.62, 0.20]}>
+      {/* Eye-glow halo — pulses in front of the helm. Sits at world y =
+          3.30 + 1.52 = 4.82, in z=0.20 to stay forward of the sprite. */}
+      <mesh ref={eyeHaloRef} position={[0, 4.82, 0.20]}>
         <planeGeometry args={[0.95, 0.22]} />
         <meshBasicMaterial color="#5cd2ff" transparent opacity={0.40}
           blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
       </mesh>
-      {/* Ground frost ring — flat disc on the platform around the boots.
-          Additive blue so it reads as luminous frost spreading from the
-          Lich King's stance. Slightly larger than the platform top step
-          so it spills onto the surrounding floor. Static (no animation)
-          — the aura hemisphere above already pulses. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.42, 0]}>
-        <ringGeometry args={[0.9, 2.0, 48]} />
+      {/* Ground frost ring — sits on the new top step (y=0.62) around the
+          boots. Slightly wider than the top step so it spills onto the
+          mid step, reinforcing the multi-tier dais. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.62, 0]}>
+        <ringGeometry args={[0.9, 2.2, 48]} />
         <meshBasicMaterial color="#5cd2ff" transparent opacity={0.18}
           blending={THREE.AdditiveBlending} depthWrite={false}
           side={THREE.DoubleSide} fog={false} />
       </mesh>
 
-      {/* Frostmourne — planted blade-up in front of the throne */}
-      <group position={[0, 0.5, 0.55]}>
+      {/* Frostmourne — planted blade-up in front of the throne. Lifted
+          +0.20 to anchor on the top step, blade still extends upward
+          past the Lich's chest. */}
+      <group position={[0, 0.7, 0.55]}>
         {/* Dalaran D5 — wide bloom-fake halo around the blade. Cylinder
             with very low additive opacity so Frostmourne reads as bloomed
             without postprocessing. */}
@@ -2708,7 +2729,7 @@ function LichKing({ eternal }: { eternal: EternalStats }) {
 
       {/* Ghost wisps — orbiting at varied radii/heights, count = ghostCount
           capped at 8. Souls of failed sessions made visual. */}
-      <group ref={wispsRef} position={[0, 1.4, 0]}>
+      <group ref={wispsRef} position={[0, 1.6, 0]}>
         {Array.from({ length: wispCount }, (_, i) => {
           const a = (i / Math.max(1, wispCount)) * Math.PI * 2;
           const r = 1.85 + (i % 2) * 0.35;
@@ -2724,7 +2745,7 @@ function LichKing({ eternal }: { eternal: EternalStats }) {
       </group>
 
       {/* Floating eternal-stats label above the helm */}
-      <Html center position={[0, 4.2, 0]} style={{ pointerEvents: 'none' }}>
+      <Html center position={[0, 4.4, 0]} style={{ pointerEvents: 'none' }}>
         <div style={{
           fontFamily: 'monospace',
           color: '#5cd2ff',
@@ -3098,6 +3119,162 @@ function ArcaneBanner({ position, color, phase }: { position: [number, number, n
   );
 }
 
+// ─── Stage Rim ──────────────────────────────────────────────────────────────
+//
+// Flat annular ring on the floor at radius 8.0–8.5 framing the champion
+// performance area. Champions roam to ±5.5 (waypoint corners ≈ 7.8 from
+// origin) so the rim sits *just outside* their reach — defines the stage
+// edge without obstructing movement. 12 additive cyan rune marks ride on
+// the lip giving the eye anchor points around the circle. Pure decals,
+// no vertical extrusion (a 3D lip would clip champions at corner waypoints).
+
+function StageRim() {
+  return (
+    <group>
+      {/* Outer dark band — reads as the cut stone edge */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
+        <ringGeometry args={[8.00, 8.50, 96]} />
+        <meshBasicMaterial color="#160a26" side={THREE.DoubleSide} />
+      </mesh>
+      {/* Inner lighter highlight — sells the chamfered top of the lip */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.045, 0]}>
+        <ringGeometry args={[7.92, 8.02, 96]} />
+        <meshBasicMaterial color="#3a2a5a" side={THREE.DoubleSide} />
+      </mesh>
+      {/* 12 rune marks evenly spaced around the rim — each rotated tangent
+          to the circle so they read as engraved glyphs, not floating tags */}
+      {Array.from({ length: 12 }).map((_, i) => {
+        const a = (i / 12) * Math.PI * 2;
+        const r = 8.22;
+        return (
+          <mesh
+            key={i}
+            rotation={[-Math.PI / 2, 0, -a]}
+            position={[Math.cos(a) * r, 0.05, Math.sin(a) * r]}
+          >
+            <planeGeometry args={[0.45, 0.18]} />
+            <meshBasicMaterial color="#5cd2ff" transparent opacity={0.42}
+              blending={THREE.AdditiveBlending} depthWrite={false}
+              side={THREE.DoubleSide} fog={false} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+// ─── Atmospheric Fog Bands ───────────────────────────────────────────────────
+//
+// Stacked additive planes at the back of the scene push the Citadel and
+// Lich King visually deeper into haze, so the foreground action pops. Sits
+// in front of the existing `<fog>` distance fog (which fades the wall but
+// is too uniform to give directional depth on its own). Gated behind
+// perfLevel since 4 large additive quads cost real fillrate on weak GPUs.
+
+function AtmosphericFog() {
+  const perf = usePerfLevel();
+  if (perf === 'low') return null;
+  return (
+    <group>
+      {/* Far back band — widest, lowest opacity, deepest position */}
+      <mesh position={[0, 3.5, -13]}>
+        <planeGeometry args={[40, 7]} />
+        <meshBasicMaterial color="#2a1e4a" transparent opacity={0.18}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false}
+          side={THREE.DoubleSide} />
+      </mesh>
+      {/* Mid back band — tighter wash sitting in front of the far band */}
+      <mesh position={[0, 2.5, -10]}>
+        <planeGeometry args={[32, 5]} />
+        <meshBasicMaterial color="#1a1438" transparent opacity={0.14}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false}
+          side={THREE.DoubleSide} />
+      </mesh>
+      {/* Side bands — subtler flanks angled inward, frame the wings */}
+      <mesh position={[-12, 2.8, -3]} rotation={[0, Math.PI / 4, 0]}>
+        <planeGeometry args={[16, 5]} />
+        <meshBasicMaterial color="#1c1240" transparent opacity={0.12}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false}
+          side={THREE.DoubleSide} />
+      </mesh>
+      <mesh position={[12, 2.8, -3]} rotation={[0, -Math.PI / 4, 0]}>
+        <planeGeometry args={[16, 5]} />
+        <meshBasicMaterial color="#1c1240" transparent opacity={0.12}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false}
+          side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+// ─── Stage Lights ───────────────────────────────────────────────────────────
+//
+// Six tall warm-gold glow columns at the rim (radius 8.7), offset 30°
+// so none align with the cardinal axes. Each pairs a soft additive
+// cylinder ("flame body"), a brighter pulsing core sphere ("flame head"),
+// a stone pedestal at the base, and a small ground rune ring. Adds the
+// "ten thousand candles" stage feel and balances the cyan/violet palette
+// with a warm complement. Cores pulse asynchronously via per-light phase
+// offset so the stage doesn't strobe in unison.
+
+function StageLights() {
+  const positions = useMemo<Array<[number, number]>>(() => {
+    const arr: Array<[number, number]> = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+      arr.push([Math.cos(a) * 8.7, Math.sin(a) * 8.7]);
+    }
+    return arr;
+  }, []);
+
+  const coreRefs = useRef<(THREE.Mesh | null)[]>([]);
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    coreRefs.current.forEach((mesh, i) => {
+      if (!mesh) return;
+      const phase = t * 1.4 + i * 0.7;
+      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(phase) * 0.20;
+    });
+  });
+
+  return (
+    <>
+      {positions.map(([x, z], i) => (
+        <group key={i} position={[x, 0, z]}>
+          {/* Stone pedestal */}
+          <mesh position={[0, 0.10, 0]}>
+            <cylinderGeometry args={[0.20, 0.24, 0.20, 12]} />
+            <meshBasicMaterial color="#1a0f28" />
+          </mesh>
+          {/* Flame body — tall additive cylinder */}
+          <mesh position={[0, 1.05, 0]}>
+            <cylinderGeometry args={[0.18, 0.10, 2.0, 12, 1, true]} />
+            <meshBasicMaterial color="#f5c518" transparent opacity={0.22}
+              blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
+              depthWrite={false} fog={false} />
+          </mesh>
+          {/* Flame core — bright pulsing head */}
+          <mesh
+            ref={(m) => { coreRefs.current[i] = m; }}
+            position={[0, 0.55, 0]}
+          >
+            <sphereGeometry args={[0.13, 12, 12]} />
+            <meshBasicMaterial color="#ffd97a" transparent opacity={0.85}
+              blending={THREE.AdditiveBlending} fog={false} depthWrite={false} />
+          </mesh>
+          {/* Ground rune ring at the base */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.045, 0]}>
+            <ringGeometry args={[0.32, 0.42, 18]} />
+            <meshBasicMaterial color="#f5c518" transparent opacity={0.40}
+              blending={THREE.AdditiveBlending} depthWrite={false}
+              side={THREE.DoubleSide} fog={false} />
+          </mesh>
+        </group>
+      ))}
+    </>
+  );
+}
+
 function PlazaEnvironment() {
   const pillarPositions: { pos: [number, number, number]; color: string }[] = [
     { pos: [0, 0, -9], color: '#8b5cf6' },   // N — purple
@@ -3117,6 +3294,15 @@ function PlazaEnvironment() {
     <>
       <ArcaneFloor />
       <CenterPortal />
+      {/* Stage frame — defines the inside/outside of the performance area
+          so the eye reads the plaza as a stage instead of an open courtyard.
+          The rim alone gives the floor an edge; the warm rim lights add the
+          theatre feel and balance the cyan/violet palette with gold. The
+          back fog band pushes the Citadel + Lich King visually deeper so
+          the foreground action pops. */}
+      <StageRim />
+      <StageLights />
+      <AtmosphericFog />
       {pillarPositions.map((p, i) => (
         <CrystalPillar key={i} position={p.pos} color={p.color} />
       ))}
@@ -3747,6 +3933,18 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         <meshBasicMaterial color={ident.accent} transparent opacity={0.45}
           blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
           depthWrite={false} fog={false} />
+      </mesh>
+      {/* Stage spotlight glyph — outer rune circle that's always visible
+          under the champion. Sits just outside the pulsing aura ring and
+          stays steady (no scale animation), so each champion reads as
+          having a permanent "spot" on the stage even when the aura is at
+          its low pulse. Uses class colour blended toward the session
+          accent so two same-class champions can still be told apart. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
+        <ringGeometry args={[1.10, 1.22, 48]} />
+        <meshBasicMaterial color={auraBlended} transparent opacity={0.18}
+          blending={THREE.AdditiveBlending} depthWrite={false}
+          side={THREE.DoubleSide} fog={false} />
       </mesh>
       {/* Floor aura — class color blended 25% toward the session accent so
           the family resemblance stays clear, but each champion has its own
@@ -5324,10 +5522,15 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
         {/* WebGL Canvas */}
         <div style={{ flex: 1, minHeight: 520, position: 'relative' }}>
-          {/* Cinematic vignette */}
+          {/* Cinematic vignette — tightened so the eye locks on centre.
+              Inner transparent disc shrunk 55% → 45% and the corner stop
+              deepened 0.85 → 0.92, so far elements (Citadel, Lich King)
+              read as "into the gloom" rather than fully lit. Pure CSS
+              overlay with `pointer-events: none` so it never blocks the
+              Canvas pointer events underneath. */}
           <div style={{
             position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
-            background: 'radial-gradient(ellipse at 50% 50%, transparent 55%, rgba(4,2,12,.45) 80%, rgba(2,1,6,.85) 100%)',
+            background: 'radial-gradient(ellipse at 50% 50%, transparent 45%, rgba(4,2,12,.55) 75%, rgba(2,1,6,.92) 100%)',
           }} />
 
           <Canvas
