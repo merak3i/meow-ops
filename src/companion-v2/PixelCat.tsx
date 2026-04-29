@@ -70,6 +70,22 @@ export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
     const drawSprite = (sprite: Sprite): void => {
       ctx.clearRect(0, 0, cw, ch);
 
+      // Faint horizon line — gives the cat a place to be instead of floating
+      // in the void. 1px wide, fades out at the canvas edges. Sits at the
+      // same y as the centre of the floor shadow so the shadow reads as
+      // contact with the line, not random ground.
+      if (showShadow) {
+        const horizonY = offsetY + drawnH - blockPx * 1.5;
+        const grad = ctx.createLinearGradient(0, horizonY, cw, horizonY);
+        grad.addColorStop(0,    'rgba(255,255,255,0)');
+        grad.addColorStop(0.15, 'rgba(255,255,255,0.05)');
+        grad.addColorStop(0.5,  'rgba(255,255,255,0.08)');
+        grad.addColorStop(0.85, 'rgba(255,255,255,0.05)');
+        grad.addColorStop(1,    'rgba(255,255,255,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, horizonY, cw, 1);
+      }
+
       // Soft elliptical floor shadow so the cat doesn't float.
       if (showShadow) {
         ctx.save();
