@@ -4,6 +4,8 @@ import StatCard from '../components/StatCard';
 import DailyChart from '../components/DailyChart';
 import ToolBreakdown from '../components/ToolBreakdown';
 import SpendChart from '../components/SpendChart';
+import { Eyebrow } from '../components/ui/Eyebrow';
+import { ToggleGroup } from '../components/ui/ToggleGroup';
 import { formatTokens, formatCost } from '../lib/format';
 import {
   computeOverviewStats,
@@ -14,34 +16,22 @@ import {
 
 // ─── Source filter toggle ─────────────────────────────────────────────────────
 const SOURCE_OPTIONS = [
-  { id: 'both',   label: 'All' },
-  { id: 'claude', label: '◆ Claude' },
-  { id: 'codex',  label: '⬡ Codex' },
+  { value: 'both',   label: 'All' },
+  { value: 'claude', label: '◆ Claude' },
+  { value: 'codex',  label: '⬡ Codex' },
 ];
 
 function SourceToggle({ value, onChange }) {
   return (
-    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginRight: 4 }}>Source</span>
-      {SOURCE_OPTIONS.map(({ id, label }) => (
-        <button
-          key={id}
-          onClick={() => onChange(id)}
-          style={{
-            fontSize: 11,
-            padding: '3px 12px',
-            borderRadius: 4,
-            border: '1px solid var(--border)',
-            cursor: 'pointer',
-            background: value === id ? 'var(--accent)' : 'transparent',
-            color: value === id ? '#000' : 'var(--text-muted)',
-            fontWeight: value === id ? 500 : 400,
-            transition: 'all 0.15s',
-          }}
-        >
-          {label}
-        </button>
-      ))}
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Source</span>
+      <ToggleGroup
+        value={value}
+        onChange={onChange}
+        options={SOURCE_OPTIONS}
+        size="sm"
+        ariaLabel="Session source"
+      />
     </div>
   );
 }
@@ -73,10 +63,7 @@ function SourceComparisonPanel({ allSessions }) {
 
   return (
     <div style={{ marginBottom: 24 }}>
-      <p style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase',
-        letterSpacing: 1, marginBottom: 10 }}>
-        Source Breakdown
-      </p>
+      <Eyebrow style={{ marginBottom: 10 }}>Source Breakdown</Eyebrow>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {rows.map(({ key, label, sigil, color, icon: Icon }) => {
           const s   = stats[key];
@@ -270,10 +257,7 @@ function TokenQuotaPanel({ sourceStats, tokenBudget, onBudgetChange }) {
 
   return (
     <div style={{ marginBottom: 24 }}>
-      <p style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase',
-        letterSpacing: 1, marginBottom: 10 }}>
-        Token Quota
-      </p>
+      <Eyebrow style={{ marginBottom: 10 }}>Token Quota</Eyebrow>
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${sources.length}, 1fr)`, gap: 12 }}>
         {sources.map(({ key, label, sigil, color, weekTokens, monthTokens, weekSessions, monthSessions }) => {
           const budget = tokenBudget[key] || { week: 0, month: 0 };
@@ -485,9 +469,7 @@ export default function Overview({
       {/* ── Spend breakdown cards ── */}
       <div style={{ marginBottom: 24 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <p style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
-            Cost Breakdown
-          </p>
+          <Eyebrow>Cost Breakdown</Eyebrow>
           {costSummary?.exportedAt && source === 'both' && (
             <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
               updated {new Date(costSummary.exportedAt).toLocaleTimeString('en-IN', {

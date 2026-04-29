@@ -1,24 +1,11 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  LayoutDashboard, List, FolderKanban, CalendarDays, Wrench, DollarSign,
-  Cat, Timer, RefreshCw, Check, AlertCircle, BarChart3, GitBranch, Swords,
+  RefreshCw, Check, AlertCircle, Sun, Moon,
 } from 'lucide-react';
 import { triggerSync, getSyncStatus, invalidateRealSessions } from '../lib/queries';
-
-const NAV = [
-  { id: 'overview',   label: 'Overview',        icon: LayoutDashboard },
-  { id: 'sessions',   label: 'Sessions',        icon: List },
-  { id: 'by-project', label: 'By Project',      icon: FolderKanban },
-  { id: 'by-day',     label: 'By Day',          icon: CalendarDays },
-  { id: 'by-action',  label: 'By Action',       icon: Wrench },
-  { id: 'cost',       label: 'Cost Tracker',    icon: DollarSign },
-  { id: 'analytics',  label: 'Analytics',       icon: BarChart3 },
-  { id: 'agent-ops',  label: 'Agent Ops',       icon: GitBranch },
-  { id: 'sanctum',    label: 'Scrying Sanctum', icon: Swords },
-  { id: 'companion',  label: 'Companion',       icon: Cat },
-  { id: 'pomodoro',   label: 'Focus Timer',     icon: Timer },
-];
+import { Eyebrow } from './ui/Eyebrow';
+import { NAV_SECTIONS } from './nav-config';
 
 function relativeTime(ms) {
   if (!ms) return 'never';
@@ -29,59 +16,7 @@ function relativeTime(ms) {
   return Math.floor(diff / 86_400_000) + 'd ago';
 }
 
-// ─── Sync/Refresh buttons ─────────────────────────────────────────────────────
-
-function RefreshButton({ onReload }) {
-  const [status, setStatus] = useState('idle');
-
-  const handleRefresh = async () => {
-    if (status === 'refreshing') return;
-    setStatus('refreshing');
-    try {
-      invalidateRealSessions();
-      await onReload?.();
-      setStatus('success');
-      setTimeout(() => setStatus('idle'), 2000);
-    } catch {
-      setStatus('error');
-      setTimeout(() => setStatus('idle'), 2500);
-    }
-  };
-
-  const Icon = status === 'success' ? Check : status === 'error' ? AlertCircle : RefreshCw;
-  const accent =
-    status === 'success' ? 'var(--green)' :
-    status === 'error' ? 'var(--red)' :
-    status === 'refreshing' ? 'var(--accent)' : 'var(--text-secondary)';
-
-  return (
-    <div style={{ padding: '0 16px', marginBottom: 8 }}>
-      <button
-        onClick={handleRefresh}
-        disabled={status === 'refreshing'}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-          padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8,
-          background: 'var(--bg-page)', color: accent, cursor: status === 'refreshing' ? 'wait' : 'pointer',
-          fontSize: 12, fontFamily: 'inherit', textAlign: 'left', transition: 'all 0.3s var(--ease)',
-        }}
-        onMouseEnter={(e) => { if (status === 'idle') e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
-        onMouseLeave={(e) => { if (status === 'idle') e.currentTarget.style.borderColor = 'var(--border)'; }}
-      >
-        <motion.span
-          animate={status === 'refreshing' ? { rotate: 360 } : { rotate: 0 }}
-          transition={status === 'refreshing' ? { duration: 1, repeat: Infinity, ease: 'linear' } : { duration: 0.3 }}
-          style={{ display: 'flex', alignItems: 'center' }}
-        >
-          <Icon size={14} />
-        </motion.span>
-        <span style={{ flex: 1 }}>
-          {status === 'refreshing' ? 'Refreshing…' : status === 'success' ? 'Refreshed' : status === 'error' ? 'Failed' : 'Refresh data'}
-        </span>
-      </button>
-    </div>
-  );
-}
+// ─── Sync button ─────────────────────────────────────────────────────────────
 
 function SyncButton({ onReload }) {
   const [status, setStatus] = useState('idle');
@@ -233,6 +168,61 @@ function SyncButton({ onReload }) {
 }
 
 
+// ─── Theme toggle ────────────────────────────────────────────────────────────
+//
+// Sun/moon icon button in the sidebar footer. The light-theme tokens live in
+// index.css under `:root[data-theme="light"]` so flipping the attribute
+// repaints the dashboard chrome without a re-render. The Sanctum 3D scene
+// and Companion 2D canvas keep their baked palettes regardless — they're
+// not theme-aware (the fantasy environment lighting is intentional).
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState(
+    () => document.documentElement.getAttribute('data-theme') ?? 'dark',
+  );
+
+  function toggle() {
+    const next = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('meow-ops-theme', next); } catch { /* quota */ }
+    setTheme(next);
+  }
+
+  const Icon = theme === 'dark' ? Sun : Moon;
+  const tip  = theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
+
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      title={tip}
+      aria-label={tip}
+      style={{
+        background: 'transparent',
+        border: '1px solid var(--border)',
+        borderRadius: 6,
+        padding: '4px 6px',
+        color: 'var(--text-muted)',
+        cursor: 'pointer',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        transition: 'all 0.2s var(--ease)',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = 'var(--border-hover)';
+        e.currentTarget.style.color = 'var(--text-secondary)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = 'var(--border)';
+        e.currentTarget.style.color = 'var(--text-muted)';
+      }}
+    >
+      <Icon size={12} />
+    </button>
+  );
+}
+
 export default function Sidebar({ activePage, onNavigate, onReload }) {
   return (
     <aside
@@ -256,63 +246,75 @@ export default function Sidebar({ activePage, onNavigate, onReload }) {
         <span style={{ fontSize: 15, fontWeight: 300, color: 'var(--text-primary)' }}>Meow Operations</span>
       </div>
 
-      {/* Nav */}
+      {/* Nav — grouped sections (Insights / Operations / Living). Active item
+          reads as a filled chip with rounded corners + 12px lateral margin
+          rather than a 2px left border, matching the modern dashboard style
+          (Linear, Vercel, Notion). The Sanctum gold-override is gone; the
+          Operations section heading does the categorical work the gold used
+          to do, and Sanctum reads as a normal nav item. */}
       <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
-        {NAV.map(({ id, label, icon: Icon }) => {
-          const active = activePage === id;
-          const isSanctum = id === 'sanctum';
-          return (
-            <button
-              key={id}
-              onClick={() => onNavigate(id)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10,
-                padding: '10px 20px',
-                border: 'none',
-                background: active
-                  ? isSanctum ? 'rgba(200,168,85,.1)' : 'var(--bg-hover)'
-                  : 'transparent',
-                color: active
-                  ? isSanctum ? '#c8a855' : 'var(--text-primary)'
-                  : isSanctum ? '#c8a85588' : 'var(--text-secondary)',
-                cursor: 'pointer',
-                fontSize: 13,
-                fontFamily: 'inherit',
-                letterSpacing: 'inherit',
-                textAlign: 'left',
-                borderLeft: active
-                  ? isSanctum ? '2px solid #c8a855' : '2px solid var(--accent)'
-                  : '2px solid transparent',
-                transition: 'all 0.3s var(--ease)',
-              }}
-              onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-              onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
-            >
-              <Icon size={16} />
-              {label}
-              {isSanctum && (
-                <span style={{
-                  marginLeft: 'auto', fontSize: 7.5,
-                  color: '#c8a85599', letterSpacing: 1, textTransform: 'uppercase',
-                  border: '1px solid #c8a85533', borderRadius: 2,
-                  padding: '1px 5px',
-                }}>
-                  SANCTUM
-                </span>
-              )}
-            </button>
-          );
-        })}
+        {NAV_SECTIONS.map((section, idx) => (
+          <div key={section.label} style={{ marginTop: idx === 0 ? 0 : 14 }}>
+            <Eyebrow style={{ padding: '0 20px', marginBottom: 6 }}>
+              {section.label}
+            </Eyebrow>
+            {section.items.map(({ id, label, icon: Icon }) => {
+              const active = activePage === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => onNavigate(id)}
+                  style={{
+                    width: 'calc(100% - 16px)',
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 12px',
+                    margin: '0 8px',
+                    border: 'none',
+                    background: active ? 'var(--bg-hover)' : 'transparent',
+                    color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontFamily: 'inherit',
+                    letterSpacing: 'inherit',
+                    textAlign: 'left',
+                    borderRadius: 6,
+                    transition: 'all 0.3s var(--ease)',
+                  }}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
+                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
+                >
+                  <Icon size={16} />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       <div style={{ flexShrink: 0 }}>
         <SyncButton onReload={onReload} />
       </div>
 
-      {/* Footer */}
-      <div style={{ padding: '0 20px', color: 'var(--text-muted)', fontSize: 11, flexShrink: 0 }}>
-        <span style={{ opacity: .5 }}>powered by</span>{' '}
-        <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Meow Creative Haus</span>
+      {/* Footer — theme toggle on the left, powered-by text on the right.
+          Toggle reads/writes the document's data-theme attribute and
+          persists to localStorage; main.jsx applies the initial value
+          before render to avoid a flash of the wrong theme. */}
+      <div style={{
+        padding: '0 20px',
+        color: 'var(--text-muted)',
+        fontSize: 11,
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 8,
+      }}>
+        <ThemeToggle />
+        <div>
+          <span style={{ opacity: .5 }}>powered by</span>{' '}
+          <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Meow Creative Haus</span>
+        </div>
       </div>
     </aside>
   );

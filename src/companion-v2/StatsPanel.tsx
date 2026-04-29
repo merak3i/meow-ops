@@ -122,9 +122,11 @@ export function StatsPanel({ cat, mood, drawers, trait, onPlay, onGroom, onSleep
 
   return (
     <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
-      {/* Header: life stage + mood */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div>
+      {/* Header: life stage + mood. Trait chip rides next to mood — earlier
+          it was a full-width pill below the header which read as an alert
+          and cost vertical space the stats need. */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, gap: 8 }}>
+        <div style={{ minWidth: 0 }}>
           <span style={{
             fontSize: 10, fontWeight: 600,
             textTransform: 'uppercase', letterSpacing: 1,
@@ -132,38 +134,38 @@ export function StatsPanel({ cat, mood, drawers, trait, onPlay, onGroom, onSleep
           }}>
             {cat.lifeStage.replace('youngAdult', 'Young Adult')}
           </span>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {cat.name} · {cat.breed}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: moodColor }}>
-          <span style={{ fontSize: 16 }}>{moodIcon}</span>
-          <span style={{ fontSize: 10, textTransform: 'capitalize' }}>{mood}</span>
-        </div>
-      </div>
-
-      {/* Personality trait badge */}
-      {trait && (
-        <div
-          title={trait.bonus}
-          style={{
-            display:      'flex',
-            alignItems:   'center',
-            gap:          6,
-            marginBottom: 12,
-            padding:      '5px 10px',
-            background:   'var(--border)',
-            borderRadius: 6,
-            cursor:       'help',
-          }}
-        >
-          <span style={{ fontSize: 14 }}>{trait.badge}</span>
-          <span style={{ fontSize: 11, color: trait.color, fontWeight: 500 }}>{trait.name}</span>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 'auto' }}>
-            {trait.bonus}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          {trait && (
+            <span
+              title={`${trait.name} · ${trait.bonus}`}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+                padding: '2px 6px',
+                background: 'var(--bg-hover)',
+                border: '1px solid var(--border)',
+                borderRadius: 4,
+                fontSize: 10,
+                color: trait.color,
+                fontWeight: 500,
+                cursor: 'help',
+              }}
+            >
+              <span style={{ fontSize: 11 }}>{trait.badge}</span>
+              {trait.name}
+            </span>
+          )}
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: moodColor }}>
+            <span style={{ fontSize: 16 }}>{moodIcon}</span>
+            <span style={{ fontSize: 10, textTransform: 'capitalize' }}>{mood}</span>
           </span>
         </div>
-      )}
+      </div>
 
       {/* Stat bars */}
       <StatBar label="Hunger"    value={cat.stats.hunger}    color="var(--amber)" />
@@ -180,14 +182,21 @@ export function StatsPanel({ cat, mood, drawers, trait, onPlay, onGroom, onSleep
         </span>
       </div>
 
-      {/* Action buttons */}
-      <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-        <ActionBtn icon="🍖" label="Feed"     onClick={() => drawers.setFoodOpen(true)} />
-        <ActionBtn icon="🎮" label="Play"     onClick={onPlay} />
-        <ActionBtn icon="✨" label="Groom"    onClick={onGroom} />
-        <ActionBtn icon="💤" label="Sleep"    onClick={onSleep} />
-        <ActionBtn icon="👒" label="Wardrobe" onClick={() => drawers.setWardrobeOpen(true)} />
-        <ActionBtn icon="🏠" label="Room"     onClick={() => drawers.setRoomOpen(true)} />
+      {/* Action buttons — split 4 + 2 so the primary care actions
+          (feed/play/groom/sleep) get full row width and the utilities
+          (wardrobe/room) don't crowd them. Six buttons at fontSize 10
+          in one row was unreadable on 280px panel widths. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <ActionBtn icon="🍖" label="Feed"  onClick={() => drawers.setFoodOpen(true)} />
+          <ActionBtn icon="🎮" label="Play"  onClick={onPlay} />
+          <ActionBtn icon="✨" label="Groom" onClick={onGroom} />
+          <ActionBtn icon="💤" label="Sleep" onClick={onSleep} />
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <ActionBtn icon="👒" label="Wardrobe" onClick={() => drawers.setWardrobeOpen(true)} />
+          <ActionBtn icon="🏠" label="Room"     onClick={() => drawers.setRoomOpen(true)} />
+        </div>
       </div>
 
       {/* Share button */}

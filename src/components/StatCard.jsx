@@ -10,12 +10,12 @@ export default function StatCard({ label, value, sub, icon: Icon, color }) {
       style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 12, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 1 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 1 }}>
           {label}
         </span>
         {Icon && <Icon size={16} style={{ color: color || 'var(--text-muted)' }} />}
       </div>
-      <div style={{ fontSize: 28, fontWeight: 300, color: color || 'var(--text-primary)' }}>
+      <div style={{ fontSize: 32, fontWeight: 400, color: color || 'var(--text-primary)' }}>
         {value}
       </div>
       {sub && (

@@ -1,3 +1,9 @@
+// DateFilter — segmented control over the date-range options. Thin wrapper
+// over the ToggleGroup primitive so visual changes (border/padding/active
+// state) ripple through every segmented control in the app from one place.
+
+import { ToggleGroup } from './ui/ToggleGroup';
+
 const OPTIONS = [
   { value: '1h',  label: '1h'  },
   { value: '24h', label: '24h' },
@@ -9,27 +15,12 @@ const OPTIONS = [
 
 export default function DateFilter({ value, onChange }) {
   return (
-    <div style={{ display: 'flex', gap: 4, background: 'var(--bg-card)', borderRadius: 8, padding: 3, border: '1px solid var(--border)' }}>
-      {OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onChange(opt.value)}
-          style={{
-            padding: '6px 14px',
-            border: 'none',
-            borderRadius: 6,
-            background: value === opt.value ? 'var(--bg-hover)' : 'transparent',
-            color: value === opt.value ? 'var(--text-primary)' : 'var(--text-muted)',
-            cursor: 'pointer',
-            fontSize: 12,
-            fontFamily: 'inherit',
-            fontWeight: 500,
-            transition: 'all 0.3s var(--ease)',
-          }}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
+    <ToggleGroup
+      value={value}
+      onChange={onChange}
+      options={OPTIONS}
+      size="md"
+      ariaLabel="Date range"
+    />
   );
 }

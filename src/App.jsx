@@ -9,6 +9,8 @@ import ByDay from './pages/ByDay';
 import ByAction from './pages/ByAction';
 import CostTracker from './pages/CostTracker';
 import Pomodoro from './pages/Pomodoro';
+import { pageById } from './components/nav-config';
+import { usePageRoute } from './lib/usePageRoute';
 
 // Heavy pages — code-split to keep the main bundle lean
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
@@ -73,8 +75,22 @@ function NoDataScreen() {
 }
 
 export default function App() {
-  const [page, setPage] = useState('overview');
-  const [dateRange, setDateRange] = useState(30);
+  const [page, setPage] = usePageRoute();
+  // Persist date range across reloads so reopening the dashboard keeps
+  // your last context. Falls back to 30d if nothing stored or stored
+  // value is unrecognised.
+  const [dateRange, setDateRange] = useState(() => {
+    try {
+      const raw = localStorage.getItem('meow-ops-date-range');
+      if (raw === '1h' || raw === '24h' || raw === 'all') return raw;
+      const num = Number.parseInt(raw, 10);
+      if (num === 7 || num === 30 || num === 90) return num;
+    } catch { /* localStorage blocked */ }
+    return 30;
+  });
+  useEffect(() => {
+    try { localStorage.setItem('meow-ops-date-range', String(dateRange)); } catch { /* quota */ }
+  }, [dateRange]);
 
   // Two session arrays:
   //   sessions    — date-filtered, used for display (table, charts, per-page views)
@@ -151,10 +167,13 @@ export default function App() {
     setReloadKey((k) => k + 1);
   }, []);
 
-  const stats       = computeOverviewStats(sessions, dateRange);
   const projectData = getProjectBreakdown(sessions);
   const toolData    = getToolBreakdownFromSessions(sessions);
   const modelData   = getModelBreakdown(sessions);
+  // Stats are recomputed inside Overview against the source-filtered list, so
+  // the App-level value is only consumed by CostTracker. Compute lazily there
+  // would be cleaner; keeping the call here for now to preserve behaviour.
+  const stats       = computeOverviewStats(sessions, dateRange);
 
   // Source breakdown for sidebar + overview — computed from ALL sessions (no date filter)
   // Also computes this-week and this-month token usage for budget tracking
@@ -267,6 +286,12 @@ export default function App() {
     }
   };
 
+  // Per-page chrome flags come from NAV_SECTIONS via pageById, so adding a
+  // page is one entry in nav-config rather than two edits to negation lists.
+  const pageDesc      = pageById(page);
+  const showDateFilter = pageDesc?.usesDateFilter ?? false;
+  const fullBleed      = pageDesc?.fullBleed      ?? false;
+
   return (
     <PasswordGate>
     <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -274,12 +299,11 @@ export default function App() {
 
       <main style={{
         marginLeft: 'var(--sidebar-w)', flex: 1,
-        ...(page === 'sanctum'
+        ...(fullBleed
           ? { padding: 0, maxWidth: 'none', display: 'flex', flexDirection: 'column', height: '100vh' }
           : { padding: 32, maxWidth: 1280 }),
       }}>
-        {page !== 'pomodoro' && page !== 'companion' &&
-         page !== 'agent-ops' && page !== 'analytics' && page !== 'sanctum' && (
+        {showDateFilter && (
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
             <DateFilter value={dateRange} onChange={setDateRange} />
           </div>

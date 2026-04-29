@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from 'react';
+import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { useActor } from '@xstate/react';
 
 import { CompanionScene }      from './CompanionScene';
@@ -69,6 +69,10 @@ const THRESHOLD_MILESTONES: [string, (tokens: number, cost: number, streak: numb
   ['$500',        (_, c) => c >= 500,      { title: '$500 Invested',       description: 'Elite tier AI usage. Legendary.',                   emoji: '👑' }],
 ];
 
+// Dev-only state cycler order — module scope so it isn't recreated on every
+// render. The `\` key clears the override and falls back to the live state.
+const STATE_CYCLE: CompanionState[] = ['active', 'idle', 'focus', 'concerned', 'fatigue', 'neglected'];
+
 // ─── Morph weight bar ─────────────────────────────────────────────────────────
 
 function MorphBar({ label, value, color = 'var(--accent)' }: { label: string; value: number; color?: string }) {
@@ -100,7 +104,10 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   const [pawPos, setPawPos] = useState({ x: -999, y: -999 });
   const [inViewport, setInViewport] = useState(false);
 
-  // Autonomous behaviour — cat does something random every 20–55s
+  // Autonomous behaviour — cat does something random every 20–55s. Skips
+  // the firing when the tab is hidden so background tabs don't burn a
+  // ParticleOverlay redraw every minute. Resumes immediately on next
+  // tick once the user comes back.
   useEffect(() => {
     const ACTIONS: Array<{ effect: string; label: string }> = [
       { effect: 'groom', label: '🐾 Grooming...' },
@@ -111,8 +118,10 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
     const schedule = () => {
       const delay = 20_000 + Math.random() * 35_000;
       id = setTimeout(() => {
-        const pick = ACTIONS[Math.floor(Math.random() * ACTIONS.length)]!;
-        triggerEffect(pick.effect);
+        if (!document.hidden) {
+          const pick = ACTIONS[Math.floor(Math.random() * ACTIONS.length)]!;
+          triggerEffect(pick.effect);
+        }
         schedule();
       }, delay);
     };
@@ -132,7 +141,9 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   }, []);
 
   const game    = useCompanionGame(sessions);
-  const profile = buildDeveloperProfile(sessions);
+  // Profile walks every session — memoise against the array reference so we
+  // don't redo the walk on unrelated re-renders (cursor moves, tick events).
+  const profile = useMemo(() => buildDeveloperProfile(sessions), [sessions]);
 
   // Push analytics profile into the XState machine
   useEffect(() => {
@@ -280,9 +291,9 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   const ctx          = actorRef.context;
   const morph        = profile.morph_weights;
 
-  // Dev-only state cycler — press [ / ] to walk through every CompanionState so
-  // you can eyeball each pose. Press \ to clear the override.
-  const STATE_CYCLE: CompanionState[] = ['active', 'idle', 'focus', 'concerned', 'fatigue', 'neglected'];
+  // Dev-only state cycler — press [ / ] to walk through every CompanionState
+  // so you can eyeball each pose. Press \ to clear the override. STATE_CYCLE
+  // is defined at module scope above.
   const [debugState, setDebugState] = useState<CompanionState | null>(null);
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -382,6 +393,10 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20, height: 'calc(100vh - 140px)', minHeight: 540 }}>
 
         {/* ── 3D Viewport ──────────────────────────────────────────────────── */}
+        {/* Click forwards to onCatClick → PixelCat onClick rather than living
+            on the viewport, so future hit-testing on opaque pixels can land
+            without re-routing handlers. The state badge below has
+            `pointerEvents: 'none'` so it doesn't swallow clicks. */}
         <div
           ref={viewportRef}
           style={{
@@ -393,11 +408,15 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             cursor:       'none',
           }}
           onMouseMove={handleMouseMove}
-          onClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); }}
           onMouseEnter={() => setInViewport(true)}
           onMouseLeave={() => setInViewport(false)}
         >
-          <CompanionScene state={currentState} effect={effectTrigger.type} effectKey={effectTrigger.key} />
+          <CompanionScene
+            state={currentState}
+            effect={effectTrigger.type}
+            effectKey={effectTrigger.key}
+            onCatClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); }}
+          />
 
           {/* State badge overlay */}
           <div style={{

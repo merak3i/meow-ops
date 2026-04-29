@@ -636,132 +636,251 @@ function getStainedGlassTexture(): THREE.CanvasTexture {
 
 // ─── Lich King sprite ────────────────────────────────────────────────────────
 //
-// 64×96 hand-drawn pixel sprite for the permanent Lich King figure.
-// Builds the silhouette at first call and caches it. The previous v1 used 3D
-// primitive boxes for the body, which read as a pile of geometry from the
-// orthographic camera angle — replaced with a billboard sprite that always
-// faces the camera, the same approach used by every champion.
+// 128×192 hand-drawn pixel sprite for the permanent Lich King figure.
+// Composition matches the WotLK Arthas reference: horned helm with glowing
+// eye slits, skull pauldrons, chest skull motif, ornate cape, belt skull
+// buckle, gauntlets at hip-level, sabatons, frost mist around the boots.
+// Frostmourne is a separate 3D mesh planted in front (lore: oath sword).
 //
 // Composition (top → bottom):
-//   - Two upward-curving horns (Arthas-style)
-//   - Helm cone with two glowing blue eye slits
-//   - Chin / neck / collar
-//   - Spiked shoulder pauldrons
-//   - Torso with a small blue chest rune
-//   - Belt
-//   - Skirt / lower body
-//   - Cape silhouette behind
-//   - Boots
+//   - Curving horns + helm crown spike
+//   - Horned helm with glowing cyan eye slits
+//   - Gorget / collar
+//   - Skull pauldrons (skull on each shoulder)
+//   - Chest plate with center rune column + chest skull motif
+//   - Belt with skull buckle
+//   - Gauntlets at sides (fists clenched at hip level)
+//   - Skirt / tassets with edge runes
+//   - Greaves + sabatons
+//   - Frost mist + ice spikes around feet
+//   - Cape silhouette behind body, widening downward
 
 let LICH_KING_TEXTURE: THREE.CanvasTexture | null = null;
 function getLichKingTexture(): THREE.CanvasTexture {
   if (LICH_KING_TEXTURE) return LICH_KING_TEXTURE;
-  const W = 64, H = 96;
+  const W = 128, H = 192;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
 
-  // Palette
-  const ARMOR_DARK = '#0a0518';   // helm + boots
-  const ARMOR_BASE = '#16092a';   // torso, skirt
-  const PAULDRON   = '#2a1a3e';   // shoulders
-  const HIGHLIGHT  = '#3a2a5a';   // belt + edge accents
-  const CAPE       = '#08040f';   // cape silhouette (slightly darker than armor)
-  const RUNE_BLUE  = '#5cd2ff';   // glowing eyes + chest rune
-  const RUNE_DIM   = '#3a8fbf';   // eye slit edge fade
+  // Palette — D5 Dalaran armor with Arthas frost accents
+  const ARMOR_DK   = '#0a0518';
+  const ARMOR      = '#1a0f2e';
+  const ARMOR_MD   = '#2a1a40';
+  const ARMOR_HI   = '#3a2a5a';
+  const ARMOR_RIM  = '#5a4a7a';
+  const BONE_LT    = '#d8d8c8';
+  const BONE_MD    = '#a0a08c';
+  const BONE_DK    = '#3a3a30';
+  const CAPE_DK    = '#06020c';
+  const CAPE       = '#0e0820';
+  const CAPE_RIM   = '#1c1235';
+  const RUNE       = '#5cd2ff';
+  const RUNE_DIM   = '#2a6090';
+  const FROST      = '#bce5ff';
+  const FROST_DIM  = '#5b8cb8';
+
+  const px = (x: number, y: number, w: number, h: number, color: string) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, w, h);
+  };
 
   ctx.clearRect(0, 0, W, H);
 
-  // ── Cape (drawn first so it sits behind the body) — wider at bottom
-  ctx.fillStyle = CAPE;
-  ctx.fillRect(14, 38,  36, 38);
-  ctx.fillRect(10, 56,  44, 30);
-  ctx.fillRect(8,  72,  48, 16);
+  // ── Cape (drawn first, behind body) — wide trapezoid widening downward
+  px(40,  46, 48, 4,  CAPE_DK);
+  px(36,  50, 56, 8,  CAPE);
+  px(32,  58, 64, 10, CAPE_DK);
+  px(28,  68, 72, 12, CAPE);
+  px(24,  80, 80, 16, CAPE_DK);
+  px(20,  96, 88, 20, CAPE);
+  px(16, 116, 96, 24, CAPE_DK);
+  px(12, 140, 104, 28, CAPE);
+  px(10, 168, 108, 16, CAPE_DK);
+  // cape rim accents
+  px(12, 168, 104, 1, CAPE_RIM);
+  px(10, 182, 108, 1, CAPE_RIM);
+  // cape vertical fold lines
+  px(40,  60, 1, 110, CAPE_RIM);
+  px(86,  60, 1, 110, CAPE_RIM);
 
-  // ── Horns (Arthas helmet, curving outward)
-  ctx.fillStyle = ARMOR_DARK;
-  // Left horn
-  ctx.fillRect(20,  4, 4, 4);
-  ctx.fillRect(18,  8, 4, 4);
-  ctx.fillRect(16, 12, 4, 4);
-  // Right horn
-  ctx.fillRect(40,  4, 4, 4);
-  ctx.fillRect(42,  8, 4, 4);
-  ctx.fillRect(44, 12, 4, 4);
+  // ── Horns (Arthas helmet, curving up and outward)
+  // Left horn — three stepped segments
+  px(38,  4, 6, 4, ARMOR_DK);
+  px(34,  8, 6, 4, ARMOR_DK);
+  px(30, 12, 6, 6, ARMOR_DK);
+  px(28, 18, 4, 4, ARMOR);
+  // Right horn — mirror
+  px(84,  4, 6, 4, ARMOR_DK);
+  px(88,  8, 6, 4, ARMOR_DK);
+  px(92, 12, 6, 6, ARMOR_DK);
+  px(96, 18, 4, 4, ARMOR);
 
-  // ── Helm — cone widening downward
-  ctx.fillStyle = ARMOR_DARK;
-  ctx.fillRect(24, 14, 16, 4);
-  ctx.fillRect(22, 18, 20, 4);
-  ctx.fillRect(20, 22, 24, 8);    // widest band where the eye slits sit
+  // ── Helm crown spike (small top crest)
+  px(60,  0, 8, 4, ARMOR_DK);
+  px(62,  4, 4, 4, ARMOR);
 
-  // Eye slit cavity (cuts the helm) — fill with deeper black so the glow
-  // reads as light spilling out of holes rather than painted on.
-  ctx.fillStyle = '#000000';
-  ctx.fillRect(24, 22, 6, 4);
-  ctx.fillRect(34, 22, 6, 4);
-  // The glow itself — bright cyan rectangle inside each cavity.
-  ctx.fillStyle = RUNE_BLUE;
-  ctx.fillRect(25, 23, 4, 2);
-  ctx.fillRect(35, 23, 4, 2);
-  // Subtle dimmer edge so the glow has a cool falloff
-  ctx.fillStyle = RUNE_DIM;
-  ctx.fillRect(24, 25, 6, 1);
-  ctx.fillRect(34, 25, 6, 1);
+  // ── Helm dome
+  px(46, 14, 36, 4, ARMOR_DK);
+  px(42, 18, 44, 6, ARMOR);
+  px(40, 24, 48, 6, ARMOR_MD);
+  px(40, 30, 48, 4, ARMOR);
+  px(40, 34, 48, 2, ARMOR_DK);
+  // helm side ridges (vertical highlight strips)
+  px(40, 18, 2, 16, ARMOR_RIM);
+  px(86, 18, 2, 16, ARMOR_RIM);
 
-  // ── Lower helm + chin
-  ctx.fillStyle = ARMOR_DARK;
-  ctx.fillRect(22, 30, 20, 2);
-  ctx.fillRect(24, 32, 16, 2);
-  ctx.fillRect(26, 34, 12, 2);  // narrowing toward neck
+  // ── Face cavity — deep shadow inside helm
+  px(46, 36, 36, 12, '#000000');
+  // Eye slits — bright cyan glow
+  px(50, 40, 8, 4, RUNE);
+  px(70, 40, 8, 4, RUNE);
+  // eye glow falloff
+  px(48, 44, 12, 2, RUNE_DIM);
+  px(68, 44, 12, 2, RUNE_DIM);
 
-  // ── Pauldrons (spiked shoulder armor)
-  ctx.fillStyle = PAULDRON;
-  // Left
-  ctx.fillRect(10, 38, 12, 8);
-  ctx.fillRect(8,  34,  6, 6);   // upward spike
-  // Right
-  ctx.fillRect(42, 38, 12, 8);
-  ctx.fillRect(50, 34,  6, 6);
-  // Pauldron rim accents
-  ctx.fillStyle = HIGHLIGHT;
-  ctx.fillRect(10, 38, 12, 1);
-  ctx.fillRect(42, 38, 12, 1);
+  // ── Helm jaw guard / lower face
+  px(46, 46, 36, 4, ARMOR_DK);
+  px(50, 50, 28, 4, ARMOR_MD);
+  px(54, 54, 20, 2, ARMOR_DK);
 
-  // ── Torso
-  ctx.fillStyle = ARMOR_BASE;
-  ctx.fillRect(22, 36, 20, 30);
+  // ── Gorget / collar
+  px(54, 56, 20, 4, ARMOR_MD);
+  px(56, 58, 16, 2, ARMOR_HI);
+  px(54, 60, 20, 1, ARMOR_RIM);
 
-  // Center chest rune (small glowing square)
-  ctx.fillStyle = RUNE_BLUE;
-  ctx.fillRect(30, 46, 4, 4);
-  // Faint vertical accent line down the chest
-  ctx.fillStyle = HIGHLIGHT;
-  ctx.fillRect(31, 38, 2, 24);
+  // ── Pauldrons (skull on each shoulder)
+  // Left pauldron base
+  px(18, 52, 26, 18, ARMOR_DK);
+  px(20, 54, 24,  4, ARMOR);
+  // upward spike on left pauldron
+  px(16, 46,  8,  6, ARMOR_DK);
+  px(18, 44,  4,  4, ARMOR_DK);
+  // left skull on pauldron
+  px(22, 56, 16, 12, BONE_MD);
+  px(24, 58, 12,  8, BONE_LT);
+  // skull eye sockets
+  px(26, 60, 3, 3, BONE_DK);
+  px(31, 60, 3, 3, BONE_DK);
+  // skull jaw line
+  px(26, 64, 8, 1, BONE_MD);
+  // pauldron rim
+  px(18, 68, 26, 2, ARMOR_HI);
+
+  // Right pauldron (mirror)
+  px(84, 52, 26, 18, ARMOR_DK);
+  px(84, 54, 24,  4, ARMOR);
+  px(104, 46, 8,  6, ARMOR_DK);
+  px(106, 44, 4,  4, ARMOR_DK);
+  px(90, 56, 16, 12, BONE_MD);
+  px(92, 58, 12,  8, BONE_LT);
+  px(94, 60, 3, 3, BONE_DK);
+  px(99, 60, 3, 3, BONE_DK);
+  px(94, 64, 8, 1, BONE_MD);
+  px(84, 68, 26, 2, ARMOR_HI);
+
+  // ── Chest plate
+  px(44, 60, 40, 40, ARMOR_DK);
+  px(46, 62, 36, 36, ARMOR);
+  // vertical center column
+  px(62, 62, 4, 36, ARMOR_MD);
+  // glowing center rune line
+  px(63, 64, 2, 32, RUNE_DIM);
+  px(63, 70, 2, 4,  RUNE);
+  px(63, 84, 2, 4,  RUNE);
+  // chest rim highlights
+  px(44, 60, 2, 38, ARMOR_HI);
+  px(82, 60, 2, 38, ARMOR_HI);
+  // chest skull motif (smaller, in upper chest)
+  px(56, 74, 16, 12, ARMOR_DK);
+  px(58, 76, 12,  8, BONE_MD);
+  px(60, 78,  8,  6, BONE_LT);
+  px(60, 79,  2,  2, BONE_DK);
+  px(66, 79,  2,  2, BONE_DK);
+  // shoulder strap connecting pauldrons to chest
+  px(42, 58, 4, 2, ARMOR_RIM);
+  px(82, 58, 4, 2, ARMOR_RIM);
 
   // ── Belt
-  ctx.fillStyle = HIGHLIGHT;
-  ctx.fillRect(20, 62, 24, 4);
-  // Belt buckle
-  ctx.fillStyle = RUNE_BLUE;
-  ctx.fillRect(30, 63, 4, 2);
+  px(40, 100, 48, 6, ARMOR_DK);
+  px(40, 100, 48, 1, ARMOR_HI);
+  px(40, 105, 48, 1, ARMOR_HI);
+  // belt center buckle (skull)
+  px(58, 101, 12, 4, BONE_MD);
+  px(60, 102,  8, 2, BONE_LT);
+  px(61, 102,  2, 2, BONE_DK);
+  px(65, 102,  2, 2, BONE_DK);
 
-  // ── Skirt / lower body
-  ctx.fillStyle = ARMOR_BASE;
-  ctx.fillRect(20, 66, 24, 16);
-  // Skirt edge runes
-  ctx.fillStyle = RUNE_BLUE;
-  ctx.fillRect(24, 78, 2, 2);
-  ctx.fillRect(38, 78, 2, 2);
+  // ── Arms + gauntlets (fists clenched at hip level)
+  // Left arm
+  px(34, 70, 8, 30, ARMOR_DK);
+  px(36, 72, 4, 26, ARMOR);
+  // Left gauntlet (hand)
+  px(32, 96, 14, 14, ARMOR_DK);
+  px(34, 98, 10, 10, ARMOR_MD);
+  px(32, 108, 14, 2, ARMOR_HI);
+  // Right arm
+  px(86, 70, 8, 30, ARMOR_DK);
+  px(88, 72, 4, 26, ARMOR);
+  // Right gauntlet
+  px(82, 96, 14, 14, ARMOR_DK);
+  px(84, 98, 10, 10, ARMOR_MD);
+  px(82, 108, 14, 2, ARMOR_HI);
 
-  // ── Boots
-  ctx.fillStyle = ARMOR_DARK;
-  ctx.fillRect(22, 82, 8, 12);
-  ctx.fillRect(34, 82, 8, 12);
-  // Boot toecaps
-  ctx.fillStyle = HIGHLIGHT;
-  ctx.fillRect(22, 92, 8, 2);
-  ctx.fillRect(34, 92, 8, 2);
+  // ── Skirt / tassets
+  px(44, 106, 40, 28, ARMOR_DK);
+  px(46, 108, 36, 24, ARMOR);
+  // tasset divisions (vertical lines)
+  px(56, 108, 1, 24, ARMOR_RIM);
+  px(72, 108, 1, 24, ARMOR_RIM);
+  // skirt edge runes
+  px(48, 128, 2, 2, RUNE);
+  px(78, 128, 2, 2, RUNE);
+  // skirt bottom edge highlight
+  px(44, 132, 40, 2, ARMOR_HI);
+
+  // ── Greaves (legs)
+  // Left
+  px(48, 134, 12, 28, ARMOR_DK);
+  px(50, 136,  8, 24, ARMOR);
+  px(48, 158, 12,  2, ARMOR_HI);
+  // Right
+  px(68, 134, 12, 28, ARMOR_DK);
+  px(70, 136,  8, 24, ARMOR);
+  px(68, 158, 12,  2, ARMOR_HI);
+
+  // ── Sabatons (armored boots)
+  // Left
+  px(44, 162, 16, 16, ARMOR_DK);
+  px(46, 164, 12, 12, ARMOR);
+  px(44, 174, 16,  4, ARMOR_MD);
+  px(40, 174,  6,  4, ARMOR_DK);   // toe spike
+  // Right
+  px(68, 162, 16, 16, ARMOR_DK);
+  px(70, 164, 12, 12, ARMOR);
+  px(68, 174, 16,  4, ARMOR_MD);
+  px(82, 174,  6,  4, ARMOR_DK);
+
+  // ── Frost mist + ice spikes around feet
+  // Wispy frost flames
+  px(36, 178, 4, 4, FROST_DIM);
+  px(40, 180, 4, 6, FROST);
+  px(46, 178, 4, 6, FROST_DIM);
+  px(52, 182, 4, 4, FROST);
+  px(60, 184, 8, 2, FROST_DIM);
+  px(72, 182, 4, 4, FROST);
+  px(78, 178, 4, 6, FROST_DIM);
+  px(84, 180, 4, 6, FROST);
+  px(88, 178, 4, 4, FROST_DIM);
+  // Ground frost band
+  px(30, 186, 68, 2, FROST_DIM);
+  px(38, 188, 52, 2, FROST);
+  // small ice spikes radiating outward
+  px(28, 184, 2, 4, FROST);
+  px(98, 184, 2, 4, FROST);
+  px(34, 188, 2, 2, FROST);
+  px(94, 188, 2, 2, FROST);
 
   const tex = new THREE.CanvasTexture(c);
   // Crisp pixels — disable mipmap blur so the silhouette stays sharp.
@@ -2514,24 +2633,37 @@ function LichKing({ eternal }: { eternal: EternalStats }) {
         <meshBasicMaterial color="#1a0f28" />
       </mesh>
 
-      {/* Lich body — hand-drawn pixel sprite (hooded warrior with horns +
-          glowing eye slits + cape + pauldrons). Replaces the v1 stack of
-          primitive boxes which read as a pile of geometry from the
-          orthographic camera angle. The sprite is a billboard so it always
-          faces the camera, identical pattern to every champion in the
-          scene. Feet anchor to the platform top (y=0.40) — sprite center
-          is at y = 0.40 + 4.6/2 = 2.70. */}
-      <sprite scale={[3.2, 4.6, 1]} position={[0, 2.70, 0.05]}>
+      {/* Lich body — hand-drawn pixel sprite (Arthas-style: horns + skull
+          pauldrons + chest skull + ornate cape + frost mist around boots).
+          128×192 source, billboard so it always faces the camera. Scale
+          bumped from v1's 3.2×4.6 → 3.8×5.4 so the figure reads at the
+          default camera distance — the previous v1 was easy to miss in
+          the back-right corner. Feet anchor to platform top (y=0.40);
+          sprite center = 0.40 + 5.4/2 = 3.10. */}
+      <sprite scale={[3.8, 5.4, 1]} position={[0, 3.10, 0.05]}>
         <spriteMaterial map={getLichKingTexture()} transparent alphaTest={0.05} fog={false} />
       </sprite>
       {/* Eye-glow halo — small additive plane that pulses in front of the
           helm, sells the "watching" feel since the sprite eyes are static
           (baked into the texture). Sits a hair forward in z so it's never
-          occluded by the sprite. */}
-      <mesh ref={eyeHaloRef} position={[0, 3.61, 0.20]}>
-        <planeGeometry args={[0.78, 0.18]} />
+          occluded by the sprite. New eye-y in 192-tall sprite is at
+          ~pixel-y 42 → world offset = (96 - 42) × (5.4 / 192) = 1.52
+          above sprite center → world y = 3.10 + 1.52 = 4.62. */}
+      <mesh ref={eyeHaloRef} position={[0, 4.62, 0.20]}>
+        <planeGeometry args={[0.95, 0.22]} />
         <meshBasicMaterial color="#5cd2ff" transparent opacity={0.40}
           blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+      {/* Ground frost ring — flat disc on the platform around the boots.
+          Additive blue so it reads as luminous frost spreading from the
+          Lich King's stance. Slightly larger than the platform top step
+          so it spills onto the surrounding floor. Static (no animation)
+          — the aura hemisphere above already pulses. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.42, 0]}>
+        <ringGeometry args={[0.9, 2.0, 48]} />
+        <meshBasicMaterial color="#5cd2ff" transparent opacity={0.18}
+          blending={THREE.AdditiveBlending} depthWrite={false}
+          side={THREE.DoubleSide} fog={false} />
       </mesh>
 
       {/* Frostmourne — planted blade-up in front of the throne */}
