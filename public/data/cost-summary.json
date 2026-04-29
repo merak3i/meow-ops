@@ -1,14 +1,14 @@
 {
-  "exportedAt": "2026-04-29T12:47:59.076Z",
+  "exportedAt": "2026-04-29T19:41:00.755Z",
   "today": {
-    "cost": 1760.256739,
-    "tokens": 563721032,
-    "sessions": 12
+    "cost": 737.936319,
+    "tokens": 261448256,
+    "sessions": 5
   },
   "thisWeek": {
-    "cost": 4041.860595,
-    "tokens": 1404546060,
-    "sessions": 31
+    "cost": 4381.614391,
+    "tokens": 1509807659,
+    "sessions": 33
   },
   "lastWeek": {
     "cost": 4234.553881000002,
@@ -16,9 +16,9 @@
     "sessions": 89
   },
   "thisMonth": {
-    "cost": 11015.807806999997,
-    "tokens": 4696322710,
-    "sessions": 196
+    "cost": 11355.561602999995,
+    "tokens": 4801584309,
+    "sessions": 198
   },
   "lastMonth": {
     "cost": 0,
@@ -26,9 +26,9 @@
     "sessions": 0
   },
   "thisYear": {
-    "cost": 11015.807806999997,
-    "tokens": 4696322710,
-    "sessions": 196
+    "cost": 11355.561602999995,
+    "tokens": 4801584309,
+    "sessions": 198
   },
   "lastYear": {
     "cost": 0,
@@ -36,15 +36,15 @@
     "sessions": 0
   },
   "allTime": {
-    "cost": 11015.807806999997,
-    "sessions": 196,
-    "tokens": 4696322710
+    "cost": 11355.561602999995,
+    "sessions": 198,
+    "tokens": 4801584309
   },
   "bySource": {
     "claude": {
-      "cost": 10937.775983999998,
-      "tokens": 4675482664,
-      "sessions": 195
+      "cost": 11277.529779999995,
+      "tokens": 4780744263,
+      "sessions": 197
     },
     "codex": {
       "cost": 78.031823,
@@ -247,14 +247,26 @@
     },
     {
       "date": "2026-04-29",
-      "session_count": 12,
-      "total_input_tokens": 248067,
-      "total_output_tokens": 4670195,
-      "total_cache_creation": 33596030,
-      "total_cache_read": 525206740,
-      "total_tokens": 563721032,
-      "estimated_cost_usd": 1760.256739,
-      "active_projects": 4,
+      "session_count": 9,
+      "total_input_tokens": 245671,
+      "total_output_tokens": 3886630,
+      "total_cache_creation": 27434977,
+      "total_cache_read": 375967097,
+      "total_tokens": 407534375,
+      "estimated_cost_usd": 1362.074216,
+      "active_projects": 3,
+      "ghost_count": 1
+    },
+    {
+      "date": "2026-04-30",
+      "session_count": 5,
+      "total_input_tokens": 21422,
+      "total_output_tokens": 1756380,
+      "total_cache_creation": 12543815,
+      "total_cache_read": 247126639,
+      "total_tokens": 261448256,
+      "estimated_cost_usd": 737.936319,
+      "active_projects": 3,
       "ghost_count": 1
     }
   ]
