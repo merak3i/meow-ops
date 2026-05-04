@@ -1,10 +1,37 @@
 # 🐾 Meow Operations
 
-> **The open source AI observability layer with a soul — and a cat.**
+> **Local-first AI observability for people who live inside agentic coding tools.**
 
-A local-first, multi-model token analytics dashboard, Pomodoro focus system, and living 3D AI companion — all in one installable PWA. Free, MIT-licensed, and built for every developer who wants to understand what their AI agents are actually doing and what they're actually worth.
+Meow Operations turns local Claude Code, OpenAI Codex Desktop, Aider, and Cursor session logs into an installable PWA. It shows token spend, model mix, tool usage, session quality, live agent timelines, a Pomodoro focus timer, and a living 3D cat companion. No accounts. No telemetry. MIT-licensed.
 
-**Not just a cost tracker. A productivity OS for the agentic age.**
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/01-overview.png" alt="Meow Operations overview dashboard"></td>
+    <td width="50%"><img src="docs/screenshots/02-cost-tracker.png" alt="Meow Operations cost tracker"></td>
+  </tr>
+  <tr>
+    <td><strong>Overview</strong><br>Sessions, spend, tokens, tool mix, and source split in one view.</td>
+    <td><strong>Cost Tracker</strong><br>Daily cost, cumulative burn, and model-level spend breakdowns.</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/03-colony.png" alt="Meow Operations cat companion"></td>
+    <td width="50%"><img src="docs/screenshots/04-live-sessions.png" alt="Meow Operations live sessions"></td>
+  </tr>
+  <tr>
+    <td><strong>Cat Companion</strong><br>A WebGL companion that evolves from your actual work pattern.</td>
+    <td><strong>Live Sessions</strong><br>Real-time cards for active agent work and tool usage.</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/05-focus-timer.png" alt="Meow Operations focus timer"></td>
+    <td width="50%"><img src="docs/screenshots/09-sessions.png" alt="Meow Operations session table"></td>
+  </tr>
+  <tr>
+    <td><strong>Focus Timer</strong><br>Pomodoro flow with cat breeds, streaks, and local-only state.</td>
+    <td><strong>Sessions</strong><br>Sortable session table with tool profile and cat-type classification.</td>
+  </tr>
+</table>
 
 ---
 
