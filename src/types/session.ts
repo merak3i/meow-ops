@@ -23,9 +23,13 @@ export interface Session {
   cat_type:                 CatType;
   is_ghost:                 boolean;
   is_subagent?:             boolean;
-  source:                   'claude' | 'codex';
+  source:                   'claude' | 'codex' | 'cursor' | 'aider';
   cwd?:                     string;
   tools?:                   Record<string, number>;
+  // Human-visible title from the source app when available. Codex Desktop
+  // stores these in ~/.codex/session_index.jsonl; other sources may fall
+  // back to first_user_message until their native title metadata is exposed.
+  session_title?:           string | null;
   // First user-typed message in the session (auto-injected blocks stripped),
   // truncated to ~80 chars. Used as a human-memorable label in the run-group
   // dropdown. Null on sessions parsed before this field was added — re-sync

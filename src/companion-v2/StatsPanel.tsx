@@ -1,6 +1,9 @@
 // StatsPanel.tsx — 5 stat bars + 6 action buttons + mood + life stage + trait badge + share.
 // Right panel of the Companion page.
 
+import type { ReactNode } from 'react';
+import { Camera, Gamepad2, Home, Moon, Shirt, Sparkles, Utensils } from 'lucide-react';
+
 import type { CatState, DrawerState, PersonalityTrait } from './useCompanionGame';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -34,12 +37,12 @@ function StatBar({ label, value, color }: { label: string; value: number; color:
           {pct.toFixed(0)}
         </span>
       </div>
-      <div style={{ height: 4, background: 'var(--border)', borderRadius: 3, overflow: 'hidden' }}>
+      <div style={{ height: 5, background: 'color-mix(in oklab, var(--border) 74%, var(--bg-page) 26%)', borderRadius: 4, overflow: 'hidden' }}>
         <div style={{
           height: '100%',
           width: `${pct}%`,
-          background: pct < 25 ? '#f87171' : pct < 50 ? 'var(--amber)' : color,
-          borderRadius: 3,
+          background: `linear-gradient(90deg, ${pct < 25 ? '#f87171' : pct < 50 ? 'var(--amber)' : color}, color-mix(in oklab, ${pct < 25 ? '#f87171' : pct < 50 ? 'var(--amber)' : color} 60%, white 40%))`,
+          borderRadius: 4,
           transition: 'width 0.8s ease',
         }} />
       </div>
@@ -48,11 +51,12 @@ function StatBar({ label, value, color }: { label: string; value: number; color:
 }
 
 function ActionBtn({
-  icon, label, onClick,
+  icon, label, onClick, color = 'var(--text-secondary)',
 }: {
-  icon: string;
+  icon: ReactNode;
   label: string;
   onClick: () => void;
+  color?: string;
 }) {
   return (
     <button
@@ -62,11 +66,14 @@ function ActionBtn({
         display:      'flex',
         flexDirection: 'column',
         alignItems:   'center',
-        gap:          3,
-        padding:      '8px 6px',
+        justifyContent:'center',
+        gap:          5,
+        minWidth:     0,
+        height:       56,
+        padding:      '7px 5px',
         border:       '1px solid var(--border)',
         borderRadius: 8,
-        background:   'transparent',
+        background:   'rgba(255,255,255,.018)',
         cursor:       'pointer',
         color:        'var(--text-secondary)',
         fontSize:     10,
@@ -83,8 +90,8 @@ function ActionBtn({
         (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)';
       }}
     >
-      <span style={{ fontSize: 18 }}>{icon}</span>
-      <span>{label}</span>
+      <span style={{ color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</span>
+      <span style={{ width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
     </button>
   );
 }
@@ -121,7 +128,7 @@ export function StatsPanel({ cat, mood, drawers, trait, onPlay, onGroom, onSleep
   const moodIcon   = MOOD_ICONS[mood] ?? '😺';
 
   return (
-    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+    <div className="companion-panel" style={{ padding: '15px 16px' }}>
       {/* Header: life stage + mood. Trait chip rides next to mood — earlier
           it was a full-width pill below the header which read as an alert
           and cost vertical space the stats need. */}
@@ -149,7 +156,7 @@ export function StatsPanel({ cat, mood, drawers, trait, onPlay, onGroom, onSleep
                 padding: '2px 6px',
                 background: 'var(--bg-hover)',
                 border: '1px solid var(--border)',
-                borderRadius: 4,
+                borderRadius: 6,
                 fontSize: 10,
                 color: trait.color,
                 fontWeight: 500,
@@ -188,14 +195,14 @@ export function StatsPanel({ cat, mood, drawers, trait, onPlay, onGroom, onSleep
           in one row was unreadable on 280px panel widths. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
         <div style={{ display: 'flex', gap: 6 }}>
-          <ActionBtn icon="🍖" label="Feed"  onClick={() => drawers.setFoodOpen(true)} />
-          <ActionBtn icon="🎮" label="Play"  onClick={onPlay} />
-          <ActionBtn icon="✨" label="Groom" onClick={onGroom} />
-          <ActionBtn icon="💤" label="Sleep" onClick={onSleep} />
+          <ActionBtn icon={<Utensils size={17} />} label="Feed"  color="var(--amber)" onClick={() => drawers.setFoodOpen(true)} />
+          <ActionBtn icon={<Gamepad2 size={17} />} label="Play"  color="var(--cyan)" onClick={onPlay} />
+          <ActionBtn icon={<Sparkles size={17} />} label="Groom" color="#c084fc" onClick={onGroom} />
+          <ActionBtn icon={<Moon size={17} />} label="Sleep" color="#93c5fd" onClick={onSleep} />
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <ActionBtn icon="👒" label="Wardrobe" onClick={() => drawers.setWardrobeOpen(true)} />
-          <ActionBtn icon="🏠" label="Room"     onClick={() => drawers.setRoomOpen(true)} />
+          <ActionBtn icon={<Shirt size={17} />} label="Wardrobe" color="#f0abfc" onClick={() => drawers.setWardrobeOpen(true)} />
+          <ActionBtn icon={<Home size={17} />} label="Room" color="var(--green)" onClick={() => drawers.setRoomOpen(true)} />
         </div>
       </div>
 
@@ -216,6 +223,10 @@ export function StatsPanel({ cat, mood, drawers, trait, onPlay, onGroom, onSleep
             cursor:       'pointer',
             fontFamily:   'inherit',
             transition:   'all 0.15s',
+            display:      'inline-flex',
+            alignItems:   'center',
+            justifyContent:'center',
+            gap:          7,
           }}
           onMouseEnter={(e) => {
             (e.currentTarget as HTMLButtonElement).style.background  = 'var(--bg-hover)';
@@ -226,7 +237,8 @@ export function StatsPanel({ cat, mood, drawers, trait, onPlay, onGroom, onSleep
             (e.currentTarget as HTMLButtonElement).style.color       = 'var(--text-muted)';
           }}
         >
-          📸 Share card
+          <Camera size={14} />
+          Share card
         </button>
       )}
     </div>

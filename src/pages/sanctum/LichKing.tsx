@@ -1,8 +1,8 @@
 // LichKing — permanent custodian of eternal ops stats.
 //
-// A monumental figure on a raised throne at [8, 0, -8] (back-right from the
+// A mounted figure on an icy plinth at [8, 0, -8] (back-right from the
 // camera, mirrors the Violet Citadel back-left). Built from primitives + a
-// hand-drawn 128×192 pixel-art sprite (see textures.ts → getLichKingTexture).
+// hand-drawn mounted pixel-art sprite (see textures.ts → getLichKingTexture).
 // Doesn't roam, doesn't participate in the per-session selection flow. He IS
 // the eternal axis: while champions (current run group) come and go, the
 // Lich King is always there with the all-time numbers above his helm.
@@ -15,9 +15,9 @@
 //                    visual stays clean even with hundreds of failed sessions)
 //   - totalSessions → secondary footer number on the label
 //
-// Frostmourne planted in front of the throne sells the lore reading. Eyes
-// pulse blue, sword glows blue, frosty hemispherical mist domes the platform.
-// All additive blending so the figure reads against the violet floor.
+// The silhouette is now reference-inspired: armored undead horse, rider with
+// spiked helm, sword stretched left, torn cloak, and blue ice base. All
+// additive blending so the figure reads against the violet floor.
 
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
@@ -28,23 +28,85 @@ import type { EternalStats } from './types';
 import { getLichKingTexture } from './textures';
 
 export function LichKing({ eternal }: { eternal: EternalStats }) {
+  const mountRef = useRef<THREE.Group>(null);
   const wispsRef = useRef<THREE.Group>(null);
+  const capeRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const hoofMistRefs = useRef<(THREE.Mesh | null)[]>([]);
   const eyeHaloRef = useRef<THREE.Mesh>(null);
   const swordRef = useRef<THREE.Mesh>(null);
+  const swordGroupRef = useRef<THREE.Group>(null);
+  const frostRingRef = useRef<THREE.Mesh>(null);
+  const roarRingRef = useRef<THREE.Mesh>(null);
+  const roarWaveRef = useRef<THREE.Mesh>(null);
+  const roarCrownRef = useRef<THREE.Mesh>(null);
   const auraRef  = useRef<THREE.Mesh>(null);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
+    const breath = Math.sin(t * 1.12);
+    const weightShift = Math.sin(t * 2.35 + 0.4);
+    const hoofLift = Math.max(0, Math.sin(t * 2.35 + 0.85));
+
+    if (mountRef.current) {
+      mountRef.current.position.y = breath * 0.055 + hoofLift * 0.035;
+      mountRef.current.rotation.z = Math.sin(t * 0.72) * 0.018 + weightShift * 0.006;
+      mountRef.current.scale.set(1 - breath * 0.010, 1 + breath * 0.030, 1);
+    }
+    capeRefs.current.forEach((mesh, i) => {
+      if (!mesh) return;
+      const phase = t * (1.3 + i * 0.22) + i * 1.7;
+      mesh.rotation.z = -0.22 - i * 0.06 + Math.sin(phase) * 0.11;
+      mesh.position.x = -1.18 - i * 0.28 + Math.sin(phase * 0.75) * 0.05;
+      mesh.position.y = 3.55 - i * 0.16 + Math.cos(phase) * 0.045;
+      mesh.scale.y = 1 + Math.sin(phase + 0.7) * 0.12;
+      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.32 + Math.sin(phase + 1.1) * 0.08;
+    });
+    hoofMistRefs.current.forEach((mesh, i) => {
+      if (!mesh) return;
+      const cycle = (t * 0.58 + i * 0.31) % 1;
+      const s = 0.55 + cycle * 1.4;
+      mesh.scale.set(s * 1.45, s, 1);
+      mesh.position.y = 0.72 + cycle * 0.16;
+      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.20 * (1 - cycle);
+    });
     if (wispsRef.current) wispsRef.current.rotation.y = -t * 0.18;
     // The sprite's eye cavities have a static blue glow baked in. We pulse
     // a small additive halo plane in front of the helm to add the
     // "watching you" feel without animating the texture itself.
     if (eyeHaloRef.current) {
-      const pulse = 0.35 + Math.sin(t * 1.4) * 0.20;
+      const pulse = 0.45 + Math.sin(t * 1.9) * 0.28;
       (eyeHaloRef.current.material as THREE.MeshBasicMaterial).opacity = pulse;
     }
     if (swordRef.current) {
-      (swordRef.current.material as THREE.MeshBasicMaterial).opacity = 0.75 + Math.sin(t * 0.7) * 0.20;
+      const roarCycle = (t % 7.2) / 7.2;
+      const roarBoost = roarCycle < 0.16 ? 0.35 * (1 - roarCycle / 0.16) : 0;
+      (swordRef.current.material as THREE.MeshBasicMaterial).opacity = 0.78 + Math.sin(t * 1.15) * 0.18 + roarBoost;
+    }
+    if (swordGroupRef.current) {
+      swordGroupRef.current.rotation.z = -0.05 + Math.sin(t * 1.05) * 0.030;
+      swordGroupRef.current.position.y = Math.sin(t * 1.25 + 0.4) * 0.035;
+    }
+    if (frostRingRef.current) {
+      frostRingRef.current.rotation.z = t * 0.28;
+      (frostRingRef.current.material as THREE.MeshBasicMaterial).opacity = 0.18 + Math.sin(t * 1.35) * 0.07;
+    }
+
+    // Rare high-energy beat: every ~7s an icy roar rolls out from the dais.
+    const cycle = (t % 7.2) / 7.2;
+    const roarActive = cycle < 0.34;
+    const roar = roarActive ? 1 - cycle / 0.34 : 0;
+    if (roarRingRef.current) {
+      roarRingRef.current.scale.setScalar(0.85 + cycle * 4.6);
+      (roarRingRef.current.material as THREE.MeshBasicMaterial).opacity = roar * 0.42;
+    }
+    if (roarWaveRef.current) {
+      roarWaveRef.current.scale.setScalar(0.6 + cycle * 2.4);
+      (roarWaveRef.current.material as THREE.MeshBasicMaterial).opacity = roar * 0.18;
+    }
+    if (roarCrownRef.current) {
+      roarCrownRef.current.rotation.y = t * 0.7;
+      roarCrownRef.current.position.y = 2.55 + cycle * 1.2;
+      (roarCrownRef.current.material as THREE.MeshBasicMaterial).opacity = roar * 0.26;
     }
     if (auraRef.current) auraRef.current.scale.setScalar((auraScale) * (1 + Math.sin(t * 0.45) * 0.04));
   });
@@ -69,7 +131,7 @@ export function LichKing({ eternal }: { eternal: EternalStats }) {
   }, [eternal.totalSpend]);
 
   return (
-    <group position={[8, 0, -8]}>
+    <group position={[5.0, 0, -7.3]}>
       {/* Frosty aura — large hemisphere, additive, scales with eternal spend.
           Lifted by +0.20 to follow the new third platform step. */}
       <mesh ref={auraRef} position={[0, 1.4, 0]}>
@@ -79,126 +141,136 @@ export function LichKing({ eternal }: { eternal: EternalStats }) {
           depthWrite={false} fog={false} />
       </mesh>
 
-      {/* Stone platform — wider three-step ziggurat. Earlier the dais was
-          two narrow steps (top radius 1.7) which made the Lich King feel
-          like he perched in the back-right corner. The pyramid now reads
-          as commanding the back-right, balancing the Violet Citadel that
-          mirrors from the back-left. Top step still 1.9–2.1 so the throne
-          + sprite fit; the wider lower steps spread the visual weight. */}
+      {/* Icy plinth — black iron base plus snow shelf, matching the mounted
+          reference without adding perimeter architecture back into scene. */}
       <mesh position={[0, 0.10, 0]}>
-        <cylinderGeometry args={[3.4, 3.6, 0.20, 24]} />
-        <meshBasicMaterial color="#13091e" />
+        <cylinderGeometry args={[3.6, 3.8, 0.20, 28]} />
+        <meshBasicMaterial color="#070910" />
       </mesh>
       <mesh position={[0, 0.30, 0]}>
-        <cylinderGeometry args={[2.6, 2.8, 0.20, 20]} />
-        <meshBasicMaterial color="#1a1428" />
+        <cylinderGeometry args={[3.05, 3.25, 0.26, 20]} />
+        <meshBasicMaterial color="#151923" />
       </mesh>
       <mesh position={[0, 0.50, 0]}>
-        <cylinderGeometry args={[1.9, 2.1, 0.20, 16]} />
-        <meshBasicMaterial color="#231a36" />
+        <cylinderGeometry args={[2.55, 2.85, 0.28, 14]} />
+        <meshBasicMaterial color="#d6e8ee" />
       </mesh>
-      {/* Sweeping front stair — three slim slabs descending toward the
-          plaza so the dais reads as approachable, not a sealed plinth.
-          Slabs are slightly wider than tall so they read as steps from
-          the orthographic camera. */}
-      <mesh position={[0, 0.10, 2.4]}>
-        <boxGeometry args={[2.0, 0.20, 0.6]} />
-        <meshBasicMaterial color="#13091e" />
-      </mesh>
-      <mesh position={[0, 0.30, 2.0]}>
-        <boxGeometry args={[1.6, 0.20, 0.5]} />
-        <meshBasicMaterial color="#1a1428" />
-      </mesh>
-      <mesh position={[0, 0.50, 1.6]}>
-        <boxGeometry args={[1.2, 0.20, 0.4]} />
-        <meshBasicMaterial color="#231a36" />
-      </mesh>
+      {/* Iron spikes around the base lip. */}
+      {Array.from({ length: 12 }, (_, i) => {
+        const a = (i / 12) * Math.PI * 2;
+        const r = 3.25;
+        return (
+          <mesh key={`spike-${i}`} position={[Math.cos(a) * r, 0.58, Math.sin(a) * r]} rotation={[0, -a, 0]}>
+            <coneGeometry args={[0.10, 0.55, 4]} />
+            <meshBasicMaterial color="#090a0f" />
+          </mesh>
+        );
+      })}
+      {/* Blue ice crystal cluster at the front-left of the plinth. */}
+      {[
+        [-1.45, 0.85, 1.08, 0.85],
+        [-1.05, 0.75, 1.02, 0.65],
+        [-1.75, 0.68, 0.82, 0.55],
+        [-0.72, 0.62, 1.20, 0.45],
+      ].map(([x, y, z, s], i) => (
+        <mesh key={`ice-${i}`} position={[x!, y!, z!]} rotation={[0.2, i * 0.55, 0.25]}>
+          <octahedronGeometry args={[s!, 0]} />
+          <meshBasicMaterial color={i % 2 === 0 ? '#42d8ff' : '#8eeaff'} transparent opacity={0.72}
+            blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+        </mesh>
+      ))}
 
-      {/* Throne — back panel + seat + armrests, all lifted +0.20 for the
-          new top step at y=0.60. */}
-      <mesh position={[0, 2.05, -0.6]}>
-        <boxGeometry args={[1.3, 2.6, 0.18]} />
-        <meshBasicMaterial color="#1a0f28" />
-      </mesh>
-      <mesh position={[0, 0.98, -0.05]}>
-        <boxGeometry args={[1.0, 0.18, 0.9]} />
-        <meshBasicMaterial color="#241636" />
-      </mesh>
-      <mesh position={[-0.55, 1.30, -0.05]}>
-        <boxGeometry args={[0.18, 0.5, 0.9]} />
-        <meshBasicMaterial color="#1a0f28" />
-      </mesh>
-      <mesh position={[0.55, 1.30, -0.05]}>
-        <boxGeometry args={[0.18, 0.5, 0.9]} />
-        <meshBasicMaterial color="#1a0f28" />
-      </mesh>
+      {/* Mounted Lich King — hand-drawn sprite: spiked rider, armored undead
+          horse, torn cloak, and ice base. Wide billboard to match the
+          side-facing reference composition. */}
+      <group ref={mountRef}>
+        {/* Separate cape ribbons give the baked sprite real cloth motion. */}
+        {[0, 1, 2].map((i) => (
+          <mesh
+            key={`cape-${i}`}
+            ref={(m) => { capeRefs.current[i] = m; }}
+            renderOrder={1}
+            position={[-1.18 - i * 0.28, 3.55 - i * 0.16, 0.035]}
+            rotation={[0, 0, -0.24 - i * 0.05]}
+          >
+            <planeGeometry args={[0.42 + i * 0.08, 2.0 - i * 0.22]} />
+            <meshBasicMaterial
+              color={i === 0 ? '#170822' : i === 1 ? '#250d32' : '#0b0618'}
+              transparent opacity={0.34} side={THREE.DoubleSide}
+              blending={THREE.AdditiveBlending} depthWrite={false} fog={false}
+            />
+          </mesh>
+        ))}
+        <sprite scale={[7.9, 5.9, 1]} position={[0, 3.65, 0.10]}>
+          <spriteMaterial map={getLichKingTexture()} transparent alphaTest={0.05} fog={false} />
+        </sprite>
+        {/* Eye-glow halo — pulses near the rider's helm. */}
+        <mesh ref={eyeHaloRef} position={[-0.78, 5.18, 0.28]}>
+          <planeGeometry args={[0.86, 0.20]} />
+          <meshBasicMaterial color="#5cd2ff" transparent opacity={0.40}
+            blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+        </mesh>
 
-      {/* Lich body — hand-drawn pixel sprite (Arthas-style: horns + skull
-          pauldrons + chest skull + ornate cape + frost mist around boots).
-          128×192 source, billboard so it always faces the camera. Scale
-          3.8×5.4. Feet anchor to top step (y=0.60); sprite center =
-          0.60 + 5.4/2 = 3.30. */}
-      <sprite scale={[3.8, 5.4, 1]} position={[0, 3.30, 0.05]}>
-        <spriteMaterial map={getLichKingTexture()} transparent alphaTest={0.05} fog={false} />
-      </sprite>
-      {/* Eye-glow halo — pulses in front of the helm. Sits at world y =
-          3.30 + 1.52 = 4.82, in z=0.20 to stay forward of the sprite. */}
-      <mesh ref={eyeHaloRef} position={[0, 4.82, 0.20]}>
-        <planeGeometry args={[0.95, 0.22]} />
-        <meshBasicMaterial color="#5cd2ff" transparent opacity={0.40}
-          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
-      </mesh>
+        {/* Horizontal blade glow stretched left, matching the reference pose. */}
+        <group ref={swordGroupRef} position={[-2.25, 4.62, 0.42]} rotation={[0, 0, -0.05]}>
+          <mesh ref={swordRef} position={[0, 0, 0]}>
+            <boxGeometry args={[3.8, 0.09, 0.035]} />
+            <meshBasicMaterial color="#5cd2ff" transparent opacity={0.85}
+              blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+          </mesh>
+          <mesh position={[0.05, 0, 0.01]}>
+            <boxGeometry args={[3.65, 0.035, 0.012]} />
+            <meshBasicMaterial color="#0f1a2a" />
+          </mesh>
+          <mesh position={[1.85, 0, 0.02]}>
+            <sphereGeometry args={[0.09, 10, 10]} />
+            <meshBasicMaterial color="#7de3ff" transparent opacity={0.95}
+              blending={THREE.AdditiveBlending} fog={false} />
+          </mesh>
+        </group>
+      </group>
       {/* Ground frost ring — sits on the new top step (y=0.62) around the
           boots. Slightly wider than the top step so it spills onto the
           mid step, reinforcing the multi-tier dais. */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.62, 0]}>
+      <mesh ref={frostRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.62, 0]}>
         <ringGeometry args={[0.9, 2.2, 48]} />
         <meshBasicMaterial color="#5cd2ff" transparent opacity={0.18}
           blending={THREE.AdditiveBlending} depthWrite={false}
           side={THREE.DoubleSide} fog={false} />
       </mesh>
-
-      {/* Frostmourne — planted blade-up in front of the throne. Lifted
-          +0.20 to anchor on the top step, blade still extends upward
-          past the Lich's chest. */}
-      <group position={[0, 0.7, 0.55]}>
-        {/* Dalaran D5 — wide bloom-fake halo around the blade. Cylinder
-            with very low additive opacity so Frostmourne reads as bloomed
-            without postprocessing. */}
-        <mesh position={[0, 0.95, 0]}>
-          <cylinderGeometry args={[0.32, 0.32, 1.9, 12, 1, true]} />
-          <meshBasicMaterial color="#5cd2ff" transparent opacity={0.06}
-            blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
-            depthWrite={false} fog={false} />
+      {/* Hoof frost wisps: quiet continuous motion tied to the mount weight shift. */}
+      {[[-1.0, 0.0], [0.88, 0.05], [1.55, -0.05]].map(([x, z], i) => (
+        <mesh
+          key={`hoof-mist-${i}`}
+          ref={(m) => { hoofMistRefs.current[i] = m; }}
+          rotation={[-Math.PI / 2, 0, i * 0.7]}
+          position={[x!, 0.72, z!]}
+        >
+          <ringGeometry args={[0.18, 0.28, 18]} />
+          <meshBasicMaterial color="#8eeaff" transparent opacity={0.16}
+            blending={THREE.AdditiveBlending} depthWrite={false}
+            side={THREE.DoubleSide} fog={false} />
         </mesh>
-        {/* Blade glow (wider, additive) */}
-        <mesh ref={swordRef} position={[0, 0.95, 0]}>
-          <boxGeometry args={[0.12, 1.7, 0.03]} />
-          <meshBasicMaterial color="#5cd2ff" transparent opacity={0.85}
-            blending={THREE.AdditiveBlending} fog={false} />
-        </mesh>
-        {/* Blade core (solid, dark) */}
-        <mesh position={[0, 0.95, 0]}>
-          <boxGeometry args={[0.06, 1.7, 0.012]} />
-          <meshBasicMaterial color="#0f1a2a" />
-        </mesh>
-        {/* Crossguard */}
-        <mesh position={[0, 0.10, 0]}>
-          <boxGeometry args={[0.34, 0.06, 0.10]} />
-          <meshBasicMaterial color="#1a0f28" />
-        </mesh>
-        {/* Hilt */}
-        <mesh position={[0, -0.10, 0]}>
-          <boxGeometry args={[0.06, 0.30, 0.06]} />
-          <meshBasicMaterial color="#241636" />
-        </mesh>
-        {/* Pommel — blue gem */}
-        <mesh position={[0, -0.30, 0]}>
-          <sphereGeometry args={[0.07, 8, 8]} />
-          <meshBasicMaterial color="#5cd2ff" transparent opacity={0.85}
-            blending={THREE.AdditiveBlending} fog={false} />
-        </mesh>
-      </group>
+      ))}
+      {/* Periodic icy roar / weapon pulse: one low ring, one vertical wave,
+          one crown arc. These are transform-only and cheap to animate. */}
+      <mesh ref={roarRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.68, 0]}>
+        <ringGeometry args={[0.72, 0.82, 64]} />
+        <meshBasicMaterial color="#8eeaff" transparent opacity={0}
+          blending={THREE.AdditiveBlending} depthWrite={false}
+          side={THREE.DoubleSide} fog={false} />
+      </mesh>
+      <mesh ref={roarWaveRef} position={[0, 2.15, 0]}>
+        <sphereGeometry args={[1.35, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshBasicMaterial color="#5cd2ff" transparent opacity={0}
+          blending={THREE.AdditiveBlending} depthWrite={false}
+          side={THREE.BackSide} fog={false} />
+      </mesh>
+      <mesh ref={roarCrownRef} position={[0, 2.55, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[1.65, 0.018, 6, 48]} />
+        <meshBasicMaterial color="#dffaff" transparent opacity={0}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
 
       {/* Ghost wisps — orbiting at varied radii/heights, count = ghostCount
           capped at 8. Souls of failed sessions made visual. */}
@@ -218,7 +290,7 @@ export function LichKing({ eternal }: { eternal: EternalStats }) {
       </group>
 
       {/* Floating eternal-stats label above the helm */}
-      <Html center position={[0, 4.4, 0]} style={{ pointerEvents: 'none' }}>
+      <Html center position={[0, 7.05, 0]} style={{ pointerEvents: 'none' }}>
         <div style={{
           fontFamily: 'monospace',
           color: '#5cd2ff',

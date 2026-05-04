@@ -11,7 +11,7 @@ import type { AgentTreeNode, SessionRunGroup } from '@/lib/agent-tree';
 import { toISTDate } from '@/lib/format';
 import {
   CLASS_MAP, FALLBACK_CLASS, SESSION_ACCENTS,
-  getChampionName, getPipelineRole,
+  getPipelineRole,
 } from './classes';
 import type { EternalStats, PositionedNode, SessionIdentifier } from './types';
 
@@ -92,6 +92,62 @@ export function formatGoldShort(usd: number): string {
   return `${usd.toFixed(1)}g`;
 }
 
+function cleanLabelText(raw: string | null | undefined): string {
+  return (raw ?? '')
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function clampLabel(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return text.slice(0, Math.max(0, max - 1)).trimEnd() + '…';
+}
+
+export function sessionFolderLabel(s: Session, max = 24): string {
+  const cwd = (s.cwd ?? '').trim();
+  if (!cwd) return clampLabel(s.project || s.source || 'session', max);
+
+  const parts = cwd.split('/').filter(Boolean);
+  const userIdx = parts[0] === 'Users' && parts.length > 2 ? 2 : 0;
+  const rel = parts.slice(userIdx);
+
+  const claudeIdx = rel.indexOf('.claude');
+  if (claudeIdx >= 0 && rel[claudeIdx + 1] === 'worktrees') {
+    return clampLabel(`worktree/${rel[claudeIdx + 2] || 'unknown'}`, max);
+  }
+
+  let label: string;
+  if (rel[0] === 'repos') {
+    label = rel.length >= 2 ? rel.slice(0, 2).join('/') : 'repos';
+  } else if (rel.length >= 2) {
+    label = rel.slice(-2).join('/');
+  } else {
+    label = rel[0] || s.project || s.source || 'session';
+  }
+  return clampLabel(label, max);
+}
+
+export function sessionConversationTitle(s: Session, max = 48): string {
+  const title = cleanLabelText(s.session_title)
+    || cleanLabelText(s.first_user_message)
+    || cleanLabelText(s.agent_slug)
+    || cleanLabelText(s.project)
+    || s.source
+    || 'session';
+  return clampLabel(title, max);
+}
+
+export function formatSessionDisplayName(
+  s: Session,
+  opts: { maxTitle?: number; maxFolder?: number; includeFolder?: boolean } = {},
+): string {
+  const title = sessionConversationTitle(s, opts.maxTitle ?? 48);
+  if (opts.includeFolder === false) return title;
+  return `${title} [${sessionFolderLabel(s, opts.maxFolder ?? 24)}]`;
+}
+
 // Day-prefix for a run group's start time, in IST. Returns "today",
 // "yesterday", or a weekday+date like "Mon Apr 22" for older groups. Used
 // by both the option label and the optgroup header.
@@ -107,21 +163,23 @@ export function dayPrefixLabel(startedAtIso: string, nowIso: string): string {
 }
 
 // Run-group dropdown label format —
-//   patherle · today 14:32 · "fix billing webhook…" · 149.5g · 4 roots
+//   Improve oneclickwebsite scope [repos/oneclickwebsite] · today 14:32 · 149.5g · 4 roots
 //
-// Each segment separated by middle-dot. First-message snippet is included
-// only when the root session carries one (older sessions parsed before the
-// snippet capture landed will skip the quoted segment cleanly).
+// Labels prefer native source-app chat titles, then first user message, then
+// project fallback. Folder context stays in brackets so repeated chat names
+// across repos remain distinguishable.
 export function formatRunGroupLabel(g: SessionRunGroup, nowIso: string): string {
   const dayPrefix = dayPrefixLabel(g.startedAt, nowIso);
   const time = new Date(g.startedAt).toLocaleTimeString('en-IN', {
     timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false,
   });
-  const firstMsg  = g.roots[0]?.session?.first_user_message;
+  const rootSession = g.roots[0]?.session;
+  const title = rootSession
+    ? formatSessionDisplayName(rootSession, { maxTitle: 74, maxFolder: 28 })
+    : g.project;
   const cost      = formatGoldShort(g.totalCost);
   const rootCount = `${g.roots.length} root${g.roots.length !== 1 ? 's' : ''}`;
-  const parts: string[] = [g.project, `${dayPrefix} ${time}`];
-  if (firstMsg) parts.push(`"${firstMsg}"`);
+  const parts: string[] = [title, `${dayPrefix} ${time}`];
   parts.push(cost, rootCount);
   return parts.join(' · ');
 }
@@ -161,7 +219,7 @@ export function layoutNodes(roots: AgentTreeNode[]): PositionedNode[] {
         total,
         pos:     [x, 0, z],
         cls:     CLASS_MAP[cat] ?? FALLBACK_CLASS,
-        name:    getChampionName(node.session, globalIdx),
+        name:    formatSessionDisplayName(node.session, { maxTitle: 34, maxFolder: 18 }),
         role:    getPipelineRole(globalIdx, total),
       });
       globalIdx++;
