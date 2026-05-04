@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { useActor } from '@xstate/react';
+import { Cat, Flame, HeartPulse, Sparkles, Target } from 'lucide-react';
 
 import { CompanionScene }      from './CompanionScene';
 import { StatsPanel }          from './StatsPanel';
@@ -17,6 +18,7 @@ import { buildDeveloperProfile }                    from '@/analytics/profile';
 import type { Session }        from '@/types/session';
 import type { CompanionState } from '@/state/companionMachine';
 import type { MemoryMark }     from './useCompanionGame';
+import './companion-page.css';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -333,6 +335,22 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
     elder:    '#c084fc',
   };
   const stageColor = GROWTH_COLORS[profile.growth_stage] ?? 'var(--accent)';
+  const careScore = game.cat
+    ? Math.round((
+      game.cat.stats.hunger +
+      game.cat.stats.energy +
+      game.cat.stats.happiness +
+      game.cat.stats.health +
+      game.cat.stats.shine
+    ) / 5)
+    : 0;
+  const daysTogether = game.cat
+    ? Math.max(0, Math.floor((Date.now() - new Date(game.cat.adoptedAt).getTime()) / 86_400_000))
+    : 0;
+  const companionName = game.cat?.name ?? 'Companion';
+  const companionMeta = game.cat
+    ? `${game.cat.breed} · ${game.mood}`
+    : 'Adopt a local-first coding companion';
 
   return (
     <>
@@ -390,7 +408,39 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
       )}
 
       {/* ── Main layout ──────────────────────────────────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 280px', gap: 20, height: 'calc(100vh - 140px)', minHeight: 540 }}>
+      <section className="companion-page">
+        <header className="companion-page__header">
+          <div className="companion-page__title">
+            <div className="companion-page__mark" style={{ color: stageColor }}>
+              <Cat size={19} strokeWidth={1.8} />
+            </div>
+            <div>
+              <div className="companion-page__eyebrow">Living Companion</div>
+              <h1>{companionName}</h1>
+              <p>{companionMeta}</p>
+            </div>
+          </div>
+
+          <div className="companion-page__kpis">
+            <div className="companion-kpi">
+              <HeartPulse size={14} />
+              <span>Care</span>
+              <strong>{game.cat ? careScore : 'New'}</strong>
+            </div>
+            <div className="companion-kpi">
+              <Flame size={14} />
+              <span>Streak</span>
+              <strong>{game.cat?.streakDays ?? profile.active_streak_days}d</strong>
+            </div>
+            <div className="companion-kpi">
+              <Sparkles size={14} />
+              <span>Together</span>
+              <strong>{game.cat ? `${daysTogether}d` : `${profile.total_sessions} runs`}</strong>
+            </div>
+          </div>
+        </header>
+
+        <div className="companion-layout">
 
         {/* ── 3D Viewport ──────────────────────────────────────────────────── */}
         {/* Click forwards to onCatClick → PixelCat onClick rather than living
@@ -399,14 +449,8 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             `pointerEvents: 'none'` so it doesn't swallow clicks. */}
         <div
           ref={viewportRef}
-          style={{
-            background:   'var(--bg-card)',
-            border:       '1px solid var(--border)',
-            borderRadius: 12,
-            overflow:     'hidden',
-            position:     'relative',
-            cursor:       'none',
-          }}
+          className="companion-viewport-frame"
+          style={{ cursor: 'none' }}
           onMouseMove={handleMouseMove}
           onMouseEnter={() => setInViewport(true)}
           onMouseLeave={() => setInViewport(false)}
@@ -419,13 +463,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
           />
 
           {/* State badge overlay */}
-          <div style={{
-            position: 'absolute', bottom: 16, left: 16,
-            background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)',
-            border: '1px solid var(--border)', borderRadius: 8,
-            padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 8,
-            pointerEvents: 'none',
-          }}>
+          <div className="companion-state-badge">
             <span style={{ fontSize: 16 }}>{stateEmoji(currentState)}</span>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{stateLabel(currentState)}</span>
             {debugState && (
@@ -437,10 +475,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
 
           {/* Memory marks legend — bottom right */}
           {game.memoryMarks.length > 0 && (
-            <div style={{
-              position: 'absolute', bottom: 16, right: 14,
-              display: 'flex', gap: 4, pointerEvents: 'none',
-            }}>
+            <div className="companion-memory-marks">
               {game.memoryMarks.map((m) => {
                 const labels: Record<string, string> = {
                   'scar':          '🩹',
@@ -461,7 +496,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
         </div>
 
         {/* ── Right sidebar ────────────────────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
+        <div className="companion-sidebar">
 
           {/* Game stats — only if a cat is alive */}
           {game.cat && game.cat.status === 'alive' && (
@@ -478,15 +513,16 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
           )}
 
           {/* Analytics identity card */}
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+          <div className="companion-panel">
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               <div style={{
-                width: 36, height: 36, borderRadius: '50%',
+                width: 36, height: 36, borderRadius: 8,
                 background: stageColor,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 18, flexShrink: 0,
+                color: '#050505', flexShrink: 0,
+                boxShadow: `0 0 24px color-mix(in oklab, ${stageColor} 30%, transparent)`,
               }}>
-                🐱
+                <Cat size={18} strokeWidth={2.1} />
               </div>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>
@@ -521,7 +557,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
           </div>
 
           {/* Anatomy morph weights */}
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+          <div className="companion-panel">
             <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>
               Anatomy
             </div>
@@ -533,7 +569,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
           </div>
 
           {/* Pomodoro */}
-          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '14px 16px' }}>
+          <div className="companion-panel">
             <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
               Focus Block
             </div>
@@ -545,15 +581,17 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
                 ? () => send({ type: 'POMODORO_END' })
                 : () => send({ type: 'POMODORO_START' })}
               style={{
-                width: '100%', padding: '8px 0', borderRadius: 6, marginTop: 12,
+                width: '100%', padding: '8px 0', borderRadius: 7, marginTop: 12,
                 border: `1px solid ${ctx.pomodoroActive ? 'var(--accent)' : 'var(--border)'}`,
                 background: ctx.pomodoroActive ? 'var(--accent)' : 'transparent',
                 color: ctx.pomodoroActive ? '#000' : 'var(--text-muted)',
                 fontSize: 12, cursor: 'pointer', fontWeight: ctx.pomodoroActive ? 600 : 400,
                 transition: 'all 0.2s', fontFamily: 'inherit',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
               }}
             >
-              {ctx.pomodoroActive ? '🎯 End Focus Block' : '🎯 Start Focus Block'}
+              <Target size={14} />
+              {ctx.pomodoroActive ? 'End Focus Block' : 'Start Focus Block'}
             </button>
           </div>
 
@@ -564,7 +602,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
 
           {/* Dev debug */}
           {import.meta.env.DEV && (
-            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', fontSize: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>
+            <div className="companion-panel" style={{ fontSize: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>
               <div style={{ marginBottom: 4, color: 'var(--accent)' }}>// dev state</div>
               <div>state:   {currentState}</div>
               <div>idle:    {ctx.idleSeconds}s</div>
@@ -575,7 +613,8 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             </div>
           )}
         </div>
-      </div>
+        </div>
+      </section>
     </>
   );
 }

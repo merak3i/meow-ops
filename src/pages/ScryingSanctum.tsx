@@ -4,6 +4,7 @@
 import { useRef, useState, useMemo, useEffect, Suspense, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Html, OrbitControls, Stars, Sparkles } from '@react-three/drei';
+import { Activity, RefreshCw, Zap } from 'lucide-react';
 // EffectComposer/Bloom removed — was breaking WebGL render pipeline on Apple GPU
 import * as THREE from 'three';
 import type { Session } from '@/types/session';
@@ -34,7 +35,7 @@ import {
 import {
   sessionHash, sessionIdentifier, deriveEternal, blendHex,
   hpPercent, formatGold, formatGoldShort, dayPrefixLabel, formatRunGroupLabel,
-  formatDur, layoutNodes, WAYPOINTS,
+  formatDur, formatSessionDisplayName, sessionFolderLabel, layoutNodes, WAYPOINTS,
 } from './sanctum/helpers';
 import {
   getShadowTexture, getMarbleTexture, getStainedGlassTexture,
@@ -462,9 +463,11 @@ function ArcaneFloor() {
     return lines;
   }, []);
 
-  // Generate hex tile grid positions within radius 12 — inner sanctum vs outer courtyard
+  // Generate hex tile grid positions within radius 12 — inner sanctum vs outer courtyard.
+  // `tone` gives the floor subtle Dalaran stone variation without turning it
+  // into a patchwork.
   const hexTiles = useMemo(() => {
-    const tiles: { x: number; z: number; dark: boolean; inner: boolean }[] = [];
+    const tiles: { x: number; z: number; dark: boolean; inner: boolean; tone: number }[] = [];
     const size = 1.1;
     const h = size * Math.sqrt(3);
     for (let row = -12; row <= 12; row++) {
@@ -472,7 +475,13 @@ function ArcaneFloor() {
         const x = col * size * 1.5;
         const z = row * h + (col % 2 !== 0 ? h / 2 : 0);
         if (x * x + z * z > 12 * 12) continue;
-        tiles.push({ x, z, dark: (row + col) % 2 === 0, inner: x * x + z * z < 5 * 5 });
+        tiles.push({
+          x,
+          z,
+          dark: (row + col) % 2 === 0,
+          inner: x * x + z * z < 5 * 5,
+          tone: Math.abs((row * 5 + col * 3) % 5),
+        });
       }
     }
     return tiles;
@@ -488,29 +497,41 @@ function ArcaneFloor() {
           color tint stays so the night palette is preserved. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
         <circleGeometry args={[14, 64]} />
-        <meshStandardMaterial map={getMarbleTexture()} color="#9070c0"
-          roughness={0.55} metalness={0.18} />
+        <meshStandardMaterial map={getMarbleTexture()} color="#b18cff"
+          emissive="#1b0f40" emissiveIntensity={0.18}
+          roughness={0.42} metalness={0.24} />
       </mesh>
-      {/* Hex stone tile pattern — inner sanctum warmer, outer courtyard cooler */}
-      {hexTiles.map((tile, i) => (
-        <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.048, tile.z]}>
-          <circleGeometry args={[0.52, 6]} />
-          <meshBasicMaterial color={tile.inner
-            ? (tile.dark ? '#251e3a' : '#2a2244')
-            : (tile.dark ? '#1e1832' : '#221c3a')} />
-        </mesh>
-      ))}
+      {/* Hex stone tile pattern — unified violet stone with faint blue/gold
+          shifts so the color is present but no longer confetti-like. */}
+      {hexTiles.map((tile, i) => {
+        const base = tile.inner ? '#3d2a65' : '#241a3c';
+        const tint = tile.tone === 0 ? '#5cd2ff'
+          : tile.tone === 1 ? '#a78bfa'
+          : tile.tone === 2 ? '#ffd36a'
+          : '#4b3a74';
+        const color = blendHex(base, tint, tile.inner ? 0.075 : 0.045);
+        const finalColor = tile.dark
+          ? blendHex(color, '#090613', tile.inner ? 0.10 : 0.14)
+          : color;
+        return (
+          <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.048, tile.z]}>
+            <circleGeometry args={[0.52, 6]} />
+            <meshBasicMaterial color={finalColor} />
+          </mesh>
+        );
+      })}
       {/* Hex tile gap lines — faint grid overlay */}
       {hexTiles.map((tile, i) => (
         <mesh key={`r${i}`} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.046, tile.z]}>
           <ringGeometry args={[0.50, 0.54, 6]} />
-          <meshBasicMaterial color="#0e0a18" transparent opacity={0.5} />
+          <meshBasicMaterial color={tile.inner ? '#130d24' : '#0a0714'} transparent opacity={0.42} />
         </mesh>
       ))}
       {/* Ward ring — boundary between inner sanctum and outer courtyard */}
       <mesh ref={wardRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.038, 0]}>
         <ringGeometry args={[4.9, 5.15, 64]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.2} />
+        <meshBasicMaterial color="#ffd36a" transparent opacity={0.28}
+          blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       {/* Ward rune markers — counter-rotating hex dots at radius 5 */}
       <group ref={wardRuneGroupRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.036, 0]}>
@@ -519,7 +540,8 @@ function ArcaneFloor() {
           return (
             <mesh key={i} position={[Math.cos(angle) * 5, Math.sin(angle) * 5, 0]}>
               <circleGeometry args={[0.15, 6]} />
-              <meshBasicMaterial color="#c8a855" transparent opacity={0.4} />
+              <meshBasicMaterial color={i % 2 === 0 ? '#5cd2ff' : '#ffd36a'} transparent opacity={0.56}
+                blending={THREE.AdditiveBlending} depthWrite={false} />
             </mesh>
           );
         })}
@@ -527,23 +549,32 @@ function ArcaneFloor() {
       {/* Outer edge ring */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
         <ringGeometry args={[11, 11.2, 64]} />
-        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.2} />
+        <meshBasicMaterial color="#56d7ff" transparent opacity={0.28}
+          blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       {/* Concentric arcane rings */}
-      {[1.5, 3, 5, 8].map((r, i) => (
+      {[
+        { r: 1.5, color: '#ffd36a', opacity: 0.26 },
+        { r: 3.0, color: '#ff6bd6', opacity: 0.20 },
+        { r: 5.0, color: '#5cd2ff', opacity: 0.24 },
+        { r: 8.0, color: '#a78bfa', opacity: 0.22 },
+      ].map(({ r, color, opacity }, i) => (
         <mesh key={r} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04 + i * 0.002, 0]}>
           <ringGeometry args={[r - 0.06, r + 0.06, 64]} />
-          <meshBasicMaterial color="#c8a855" transparent opacity={0.15 + i * 0.04} />
+          <meshBasicMaterial color={color} transparent opacity={opacity}
+            blending={THREE.AdditiveBlending} depthWrite={false} />
         </mesh>
       ))}
       {/* Center glow */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}>
         <circleGeometry args={[1.2, 32]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.2} />
+        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.24}
+          blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.025, 0]}>
         <circleGeometry args={[0.5, 24]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.4} />
+        <meshBasicMaterial color="#ffd36a" transparent opacity={0.55}
+          blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       {/* Rotating rune segments */}
       <group ref={runeRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.035, 0]}>
@@ -556,7 +587,9 @@ function ArcaneFloor() {
             <mesh key={i} position={[cx * midR, cy * midR, 0]}
               rotation={[0, 0, r.angle + Math.PI / 2]}>
               <planeGeometry args={[0.04, len]} />
-              <meshBasicMaterial color="#c8a855" transparent opacity={0.18} side={THREE.DoubleSide} />
+              <meshBasicMaterial color={i % 3 === 0 ? '#ffd36a' : i % 3 === 1 ? '#5cd2ff' : '#ff6bd6'}
+                transparent opacity={0.24} side={THREE.DoubleSide}
+                blending={THREE.AdditiveBlending} depthWrite={false} />
             </mesh>
           );
         })}
@@ -564,7 +597,7 @@ function ArcaneFloor() {
       {/* Ground fog disc */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <circleGeometry args={[10, 48]} />
-        <meshBasicMaterial color="#2a1848" transparent opacity={0.08} />
+        <meshBasicMaterial color="#3a1f72" transparent opacity={0.12} />
       </mesh>
     </>
   );
@@ -1262,6 +1295,181 @@ function GothicColonnade() {
   );
 }
 
+function DalaranBackdropSpire({ position, height, radius, phase, crown = false }: {
+  position: [number, number, number];
+  height: number;
+  radius: number;
+  phase: number;
+  crown?: boolean;
+}) {
+  const windowRef = useRef<THREE.Mesh>(null);
+  const orbRef = useRef<THREE.Mesh>(null);
+  const bandRef = useRef<THREE.Mesh>(null);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (windowRef.current) {
+      (windowRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.26 + Math.sin(t * 0.65 + phase) * 0.10;
+    }
+    if (orbRef.current) {
+      orbRef.current.position.y = height + radius * 2.35 + Math.sin(t * 0.85 + phase) * 0.10;
+      (orbRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.50 + Math.sin(t * 0.9 + phase) * 0.20;
+    }
+    if (bandRef.current) bandRef.current.rotation.z = t * 0.18 + phase;
+  });
+
+  return (
+    <group position={position}>
+      {/* Floating island underside: Dalaran as distant mage-city, not a wall. */}
+      <mesh position={[0, 0.12, 0]}>
+        <cylinderGeometry args={[radius * 1.75, radius * 2.2, 0.24, 8]} />
+        <meshBasicMaterial color="#090615" transparent opacity={0.72} />
+      </mesh>
+      {/* Violet stone tower body, intentionally muted so it stays backdrop. */}
+      <mesh position={[0, height / 2, 0]}>
+        <cylinderGeometry args={[radius * 0.70, radius, height, 8]} />
+        <meshBasicMaterial color="#211537" transparent opacity={0.72} />
+      </mesh>
+      <mesh position={[0, height * 0.54, 0]}>
+        <cylinderGeometry args={[radius * 0.90, radius * 1.02, 0.16, 8]} />
+        <meshBasicMaterial color="#6f4b22" transparent opacity={0.46} />
+      </mesh>
+      <mesh ref={bandRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, height + 0.03, 0]}>
+        <ringGeometry args={[radius * 0.82, radius * 1.04, 12]} />
+        <meshBasicMaterial color="#c19a45" transparent opacity={0.34}
+          blending={THREE.AdditiveBlending} depthWrite={false}
+          side={THREE.DoubleSide} fog={false} />
+      </mesh>
+      <mesh position={[0, height + radius * 1.15, 0]}>
+        <coneGeometry args={[radius * 0.92, radius * 2.3, 8]} />
+        <meshBasicMaterial color={crown ? '#4b1e63' : '#2b1642'} transparent opacity={0.82} />
+      </mesh>
+      <mesh ref={windowRef} position={[0, height * 0.66, radius * 0.72]}>
+        <planeGeometry args={[radius * 0.48, radius * 0.92]} />
+        <meshBasicMaterial map={getStainedGlassTexture()} transparent opacity={0.32}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+      <mesh ref={orbRef} position={[0, height + radius * 2.35, 0]}>
+        <sphereGeometry args={[radius * 0.18, 10, 10]} />
+        <meshBasicMaterial color={crown ? '#ffd36a' : '#a78bfa'} transparent opacity={0.55}
+          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+      </mesh>
+    </group>
+  );
+}
+
+function DalaranBackdrop() {
+  const perf = usePerfLevel();
+  const crystalRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const runeRefs = useRef<(THREE.Mesh | null)[]>([]);
+
+  const spires = useMemo(() => [
+    { x: -11.5, z: -15.2, h: 4.9, r: 0.46, crown: false },
+    { x: -7.4,  z: -16.0, h: 6.4, r: 0.58, crown: false },
+    { x: -2.6,  z: -16.4, h: 8.2, r: 0.74, crown: true },
+    { x: 2.5,   z: -16.2, h: 6.9, r: 0.62, crown: false },
+    { x: 7.4,   z: -15.7, h: 5.7, r: 0.54, crown: false },
+    { x: 11.5,  z: -15.0, h: 4.7, r: 0.44, crown: false },
+  ], []);
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    crystalRefs.current.forEach((mesh, i) => {
+      if (!mesh) return;
+      mesh.rotation.y = t * (0.28 + i * 0.04);
+      mesh.position.y = 4.0 + Math.sin(t * 0.7 + i * 1.4) * 0.18;
+      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.40 + Math.sin(t * 0.9 + i) * 0.12;
+    });
+    runeRefs.current.forEach((mesh, i) => {
+      if (!mesh) return;
+      mesh.rotation.z = t * (0.08 + i * 0.015);
+      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.12 + Math.sin(t * 0.8 + i * 0.9) * 0.06;
+    });
+  });
+
+  return (
+    <group>
+      {/* Broad violet haze behind the sun and skyline. This is the cheapest
+          way to make the plaza feel embedded in a magical city. */}
+      <mesh position={[0, 5.0, -17.2]}>
+        <planeGeometry args={[34, 8]} />
+        <meshBasicMaterial color="#3b1f70" transparent opacity={0.16}
+          blending={THREE.AdditiveBlending} depthWrite={false}
+          side={THREE.DoubleSide} fog={false} />
+      </mesh>
+
+      {spires.map((s, i) => (
+        <DalaranBackdropSpire
+          key={i}
+          position={[s.x, 0, s.z]}
+          height={s.h}
+          radius={s.r}
+          phase={i * 0.9}
+          crown={s.crown}
+        />
+      ))}
+
+      {/* Gold-trim sky bridges: small, distant, and above the floor plane. */}
+      {spires.slice(0, -1).map((s, i) => {
+        const next = spires[i + 1]!;
+        const mx = (s.x + next.x) / 2;
+        const mz = (s.z + next.z) / 2;
+        const len = Math.hypot(next.x - s.x, next.z - s.z);
+        const rot = Math.atan2(next.z - s.z, next.x - s.x);
+        return (
+          <group key={`bridge-${i}`} position={[mx, 2.0 + (i % 2) * 0.35, mz]} rotation={[0, -rot, 0]}>
+            <mesh>
+              <boxGeometry args={[len * 0.72, 0.10, 0.18]} />
+              <meshBasicMaterial color="#2a1a3e" transparent opacity={0.56} />
+            </mesh>
+            <mesh position={[0, 0.08, 0]}>
+              <boxGeometry args={[len * 0.64, 0.035, 0.22]} />
+              <meshBasicMaterial color="#c19a45" transparent opacity={0.38} />
+            </mesh>
+          </group>
+        );
+      })}
+
+      {perf !== 'low' && [
+        [-5.0, -14.3, '#8b5cf6'],
+        [0.0, -14.9, '#ffd36a'],
+        [5.1, -14.4, '#5cd2ff'],
+      ].map(([x, z, color], i) => (
+        <mesh
+          key={`back-crystal-${i}`}
+          ref={(m) => { crystalRefs.current[i] = m; }}
+          position={[x as number, 4.0, z as number]}
+          rotation={[0.15, i * 0.8, 0.35]}
+        >
+          <octahedronGeometry args={[0.22 + i * 0.04, 0]} />
+          <meshBasicMaterial color={color as string} transparent opacity={0.44}
+            blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
+        </mesh>
+      ))}
+
+      {[
+        [-8.8, 5.3, -14.8, '#ffd36a'],
+        [-0.2, 6.2, -15.3, '#a78bfa'],
+        [8.6, 5.4, -14.8, '#5cd2ff'],
+      ].map(([x, y, z, color], i) => (
+        <mesh
+          key={`sky-rune-${i}`}
+          ref={(m) => { runeRefs.current[i] = m; }}
+          position={[x as number, y as number, z as number]}
+          rotation={[0, 0, i * 0.7]}
+        >
+          <ringGeometry args={[0.32, 0.40, 6]} />
+          <meshBasicMaterial color={color as string} transparent opacity={0.16}
+            blending={THREE.AdditiveBlending} depthWrite={false}
+            side={THREE.DoubleSide} fog={false} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 
 // ─── Ground Scatter (texture decals) ────────────────────────────────────────
 
@@ -1788,6 +1996,7 @@ function PlazaEnvironment() {
       <StageRim />
       <StageLights />
       <AtmosphericFog />
+      <DalaranBackdrop />
       {pillarPositions.map((p, i) => (
         <CrystalPillar key={i} position={p.pos} color={p.color} />
       ))}
@@ -1801,17 +2010,8 @@ function PlazaEnvironment() {
       <ArcaneBanner position={[-4.5, 0, -7.2]} color="#f59e0b" phase={1.2} />
       <ArcaneBanner position={[7.2, 0, 4.5]} color="#34d399" phase={2.4} />
       <ArcaneBanner position={[-7.2, 0, 4.5]} color="#a78bfa" phase={3.6} />
-      {/* Buildings */}
-      <MageTower />
-      <Armory />
-      <SceneryProps />
-      <PerimeterWall />
-      {/* Dalaran D2 — architecture skyline. Backdrop-only; never crowds the
-          agent floor. Skyline at radius 14, citadel at [-8,0,-8] behind the
-          sun, colonnade ring at radius 10.5 between agents and wall. */}
-      <DalaranSkyline />
-      <VioletCitadel />
-      <GothicColonnade />
+      {/* Perimeter buildings intentionally hidden: the Sanctum now reads as
+          an open ritual floor rather than a crowded city perimeter. */}
       {/* Dalaran D3 — runic glyphs ring just outside the ward ring,
           slowly rotating with per-glyph pulse. */}
       <RunicGlyphs />
@@ -1826,7 +2026,6 @@ function PlazaEnvironment() {
       {/* Crystal trees */}
       <ArcaneCrystalTree position={[-8.5, 0, -8.0]} variant="teal" />
       <ArcaneCrystalTree position={[8.5, 0, 8.0]} variant="purple" />
-      <ArcaneCrystalTree position={[9.5, 0, -6.0]} variant="gold" />
       <ArcaneCrystalTree position={[-9.0, 0, 6.0]} variant="blue" />
       {/* Scattered props */}
       <ScatteredDetailProps />
@@ -1868,7 +2067,7 @@ function WoWNameplate({ pn, maxCost, selected, nowEpoch, possessed }: {
   return (
     <Html center position={[0, 3.8, 0]} style={{ pointerEvents: 'none' }}>
       <div style={{
-        width: 140, background: 'rgba(8,6,14,.88)',
+        width: 190, background: 'rgba(8,6,14,.88)',
         border: `1px solid ${possessed ? '#f59e0b' : selected ? '#63f7b3' : c.color}99`,
         borderRadius: 3, padding: '4px 7px 5px',
         fontFamily: 'monospace', userSelect: 'none',
@@ -2889,7 +3088,7 @@ function WoWTooltipOverlay({ session, cls, name, role, onClose }: {
           { icon: '⚡', label: 'Tokens',   val: (session.total_tokens ?? 0).toLocaleString() },
           { icon: '⏱',  label: 'Duration', val: formatDur(session.duration_seconds) },
           { icon: '💬', label: 'Messages', val: String(session.message_count ?? '—') },
-          { icon: '📁', label: 'Project',  val: session.project },
+          { icon: '📁', label: 'Folder',   val: `[${sessionFolderLabel(session, 34)}]` },
         ].map(({ icon, label, val }) => (
           <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
             <span style={{ fontSize: 10, color: '#94a3b8' }}>{icon} {label}</span>
@@ -3321,43 +3520,77 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
   return (
     <PerfContext.Provider value={perfLevel}>
       <div style={{
-        minHeight: 'calc(100vh - 80px)', background: '#050310',
-        borderRadius: 12, overflow: 'hidden', position: 'relative',
+        height: '100vh', minHeight: 680,
+        background: 'radial-gradient(ellipse at 50% 0%, rgba(92,47,138,.22), transparent 44%), #050310',
+        borderRadius: 0, overflow: 'hidden', position: 'relative',
         display: 'flex', flexDirection: 'column',
       }}>
         {/* Header */}
         <div style={{
-          padding: '12px 20px 10px', borderBottom: '1px solid rgba(200,168,85,.12)',
-          display: 'flex', alignItems: 'center', gap: 14,
+          minHeight: 70,
+          padding: '12px 22px', borderBottom: '1px solid rgba(219,184,94,.18)',
+          display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
           zIndex: 10, position: 'relative',
-          background: 'rgba(4,2,12,.85)', backdropFilter: 'blur(8px)',
+          background: 'linear-gradient(180deg, rgba(13,7,28,.94), rgba(5,3,14,.82))',
+          backdropFilter: 'blur(14px)',
+          boxShadow: '0 1px 0 rgba(255,255,255,.03) inset, 0 18px 42px rgba(0,0,0,.35)',
         }}>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 236 }}>
             <div style={{
-              fontFamily: '"Cinzel", serif', fontWeight: 700,
-              fontSize: 12, color: '#c8a855aa',
-              letterSpacing: 4, textTransform: 'uppercase',
+              width: 36, height: 36, borderRadius: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#f2d27a',
+              background: 'radial-gradient(circle at 50% 35%, rgba(242,210,122,.22), rgba(94,47,150,.08) 62%, rgba(0,0,0,.28))',
+              border: '1px solid rgba(200,168,85,.26)',
+              boxShadow: '0 0 24px rgba(200,168,85,.18), 0 0 0 1px rgba(255,255,255,.03) inset',
             }}>
-              Scrying Sanctum
+              <Activity size={17} strokeWidth={1.8} />
             </div>
-            <div style={{ fontSize: 11, color: '#c8a85566', fontFamily: 'monospace' }}>
-              Agent Visualizer
+            <div>
+              <div style={{
+                fontFamily: '"Cinzel", serif', fontWeight: 700,
+                fontSize: 14, color: '#dfc16f',
+                letterSpacing: 4.2, textTransform: 'uppercase',
+                textShadow: '0 0 18px rgba(200,168,85,.24)',
+              }}>
+                Scrying Sanctum
+              </div>
+              <div style={{ fontSize: 10.5, color: '#a9945d', fontFamily: 'monospace', letterSpacing: 1.2 }}>
+                Dalaran agent visualizer
+              </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
-            <span style={{ fontSize: 9, color: '#64748b', fontFamily: 'monospace' }}>
-              {flatNodes.length} agent{flatNodes.length !== 1 ? 's' : ''}
-            </span>
-            <span style={{ fontSize: 9, color: '#c8a855', fontFamily: 'monospace' }}>
-              {formatGold(group?.totalCost ?? 0)}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'monospace' }}>
+            <div style={{
+              minWidth: 74, padding: '6px 9px', borderRadius: 7,
+              background: 'rgba(0,0,0,.28)', border: '1px solid rgba(200,168,85,.16)',
+            }}>
+              <div style={{ fontSize: 7.5, color: '#c8a85566', letterSpacing: 1.4, textTransform: 'uppercase' }}>Agents</div>
+              <div style={{ fontSize: 12, color: '#e8d5a3' }}>{flatNodes.length}</div>
+            </div>
+            <div style={{
+              minWidth: 86, padding: '6px 9px', borderRadius: 7,
+              background: 'rgba(0,0,0,.28)', border: '1px solid rgba(200,168,85,.16)',
+            }}>
+              <div style={{ fontSize: 7.5, color: '#c8a85566', letterSpacing: 1.4, textTransform: 'uppercase' }}>Spend</div>
+              <div style={{ fontSize: 12, color: '#d9b85f' }}>{formatGold(group?.totalCost ?? 0)}</div>
+            </div>
+          </div>
+
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+            gap: 10, marginLeft: 'auto', minWidth: 0,
+            flex: '1 1 520px', flexWrap: 'wrap',
+          }}>
             <select value={runIdx} onChange={(e) => { setRunIdx(+e.target.value); setSelected(null); }}
               style={{
-                background: 'rgba(0,0,0,.7)', border: '1px solid #c8a85533',
-                borderRadius: 4, color: '#e8d5a3', fontSize: 11,
-                padding: '5px 10px', fontFamily: 'monospace', cursor: 'pointer',
-                maxWidth: 520,
+                background: 'rgba(0,0,0,.48)', border: '1px solid rgba(200,168,85,.28)',
+                borderRadius: 7, color: '#f2dc9b', fontSize: 11,
+                padding: '8px 12px', fontFamily: 'monospace', cursor: 'pointer',
+                width: 'clamp(220px, 38vw, 620px)', minWidth: 0,
+                flex: '1 1 240px',
+                boxShadow: '0 0 0 1px rgba(255,255,255,.025) inset',
               }}>
               {(() => {
                 const visible = groups.slice(0, 40);
@@ -3398,30 +3631,40 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
             </select>
             <button onClick={handleSync} disabled={syncing} title="Sync latest sessions"
               style={{
-                background: 'rgba(0,0,0,.6)', border: '1px solid #c8a85533',
-                borderRadius: 4, color: syncing ? '#c8a85566' : '#c8a855',
-                fontSize: 10, padding: '4px 10px', fontFamily: 'monospace',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: 'rgba(0,0,0,.42)', border: '1px solid rgba(200,168,85,.28)',
+                borderRadius: 7, color: syncing ? '#c8a85566' : '#d9b85f',
+                fontSize: 10, padding: '7px 11px', fontFamily: 'monospace',
                 cursor: syncing ? 'wait' : 'pointer', letterSpacing: 1,
+                whiteSpace: 'nowrap',
               }}>
-              {syncing ? '⟳ SYNCING…' : '⟳ SYNC'}
+              <RefreshCw size={12} style={{ transform: syncing ? 'rotate(20deg)' : undefined }} />
+              {syncing ? 'SYNCING' : 'SYNC'}
             </button>
             {/* Perf preset cycling button */}
             <button onClick={cyclePerf} title="Cycle performance preset (Low / Normal / Ornate)"
               style={{
-                background: 'rgba(0,0,0,.6)', border: `1px solid ${perfLevel === 'low' ? '#f59e0b55' : perfLevel === 'ornate' ? '#8b5cf655' : '#c8a85533'}`,
-                borderRadius: 4,
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                background: 'rgba(0,0,0,.42)', border: `1px solid ${perfLevel === 'low' ? '#f59e0b66' : perfLevel === 'ornate' ? '#8b5cf666' : 'rgba(200,168,85,.28)'}`,
+                borderRadius: 7,
                 color: perfLevel === 'low' ? '#f59e0b' : perfLevel === 'ornate' ? '#a78bfa' : '#c8a85599',
-                fontSize: 10, padding: '4px 10px', fontFamily: 'monospace',
-                cursor: 'pointer', letterSpacing: 1,
+                fontSize: 10, padding: '7px 11px', fontFamily: 'monospace',
+                cursor: 'pointer', letterSpacing: 1, whiteSpace: 'nowrap',
               }}>
-              ⚡ {PERF_LABELS[perfLevel]}
+              <Zap size={12} />
+              {PERF_LABELS[perfLevel]}
             </button>
             <div style={{
-              fontSize: 8.5, letterSpacing: 2, padding: '3px 10px',
-              border: '1px solid #63f7b355', borderRadius: 2,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 8.5, letterSpacing: 2, padding: '6px 10px',
+              border: '1px solid #63f7b355', borderRadius: 7,
               color: '#63f7b3', background: 'rgba(99,247,179,.07)',
               fontFamily: 'monospace', textTransform: 'uppercase',
-            }}>ACTIVE</div>
+              whiteSpace: 'nowrap',
+            }}>
+              <Activity size={10} />
+              Active
+            </div>
           </div>
         </div>
 
@@ -3431,40 +3674,70 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
             class + identifier (branch tail or hash). Click a row to select
             that champion (same plumbing as clicking it in the 3D scene). */}
         <div style={{
-          position: 'absolute', top: 60, left: 16, zIndex: 10,
-          display: 'flex', flexDirection: 'column', gap: 3,
-          maxHeight: 'calc(100vh - 140px)', overflowY: 'auto',
+          position: 'absolute', top: 118, left: 22, zIndex: 10,
+          display: 'flex', flexDirection: 'column', gap: 4,
+          width: 244, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto',
           pointerEvents: 'auto',
           fontFamily: 'monospace',
+          padding: 8,
+          background: 'linear-gradient(135deg, rgba(10,6,22,.78), rgba(5,3,12,.48))',
+          border: '1px solid rgba(200,168,85,.16)',
+          borderRadius: 8,
+          boxShadow: '0 18px 48px rgba(0,0,0,.34), 0 0 0 1px rgba(255,255,255,.02) inset',
+          backdropFilter: 'blur(10px)',
         }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '2px 2px 7px', marginBottom: 2,
+            borderBottom: '1px solid rgba(200,168,85,.12)',
+          }}>
+            <span style={{ fontSize: 8, color: '#c8a85577', letterSpacing: 1.8, textTransform: 'uppercase' }}>
+              Champions
+            </span>
+            <span style={{ fontSize: 8, color: '#63f7b388' }}>{flatNodes.length}</span>
+          </div>
           {flatNodes.map((pn) => {
             const ident = sessionIdentifier(pn.session);
             const isSel = selected === pn.session.session_id;
+            const displayName = formatSessionDisplayName(pn.session, { maxTitle: 36, maxFolder: 18 });
+            const fullDisplayName = formatSessionDisplayName(pn.session, { maxTitle: 100, maxFolder: 60 });
             return (
               <button
                 key={pn.session.session_id}
                 onClick={() => handleSelect(isSel ? null : pn.session.session_id)}
-                title={`${pn.session.project} · ${pn.cls.label} · ${pn.session.model}`}
+                title={`${fullDisplayName} · ${pn.cls.label} · ${pn.session.model}`}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  background: isSel ? `${ident.accent}1f` : 'transparent',
-                  border: `1px solid ${isSel ? `${ident.accent}77` : 'transparent'}`,
-                  borderRadius: 3,
-                  padding: '2px 5px',
+                  width: '100%',
+                  display: 'flex', alignItems: 'flex-start', gap: 7,
+                  background: isSel ? `${ident.accent}24` : 'rgba(255,255,255,.015)',
+                  border: `1px solid ${isSel ? `${ident.accent}88` : 'rgba(200,168,85,.08)'}`,
+                  borderRadius: 6,
+                  padding: '6px 7px',
                   color: 'inherit',
                   cursor: 'pointer',
                   textAlign: 'left',
+                  boxShadow: isSel ? `0 0 18px ${ident.accent}22` : 'none',
                 }}
               >
-                <span style={{ fontSize: 8, color: pn.cls.color, opacity: 0.85 }}>◆</span>
-                <span style={{
-                  fontSize: 8, color: ident.accent,
-                  letterSpacing: 0.5, minWidth: 4 * 8 + 2,
-                  textShadow: `0 0 3px ${ident.accent}55`,
-                }}>{ident.tag}</span>
-                <span style={{ fontSize: 7, color: '#c8a85533', letterSpacing: 1 }}>·</span>
-                <span style={{ fontSize: 7.5, color: '#c8a85577', letterSpacing: 1.2 }}>
-                  {pn.cls.label}
+                <span style={{ fontSize: 9, color: pn.cls.color, opacity: 0.95, marginTop: 2 }}>◆</span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{
+                    display: 'block',
+                    fontSize: 8.5, color: '#e8d5a3',
+                    letterSpacing: 0.2, overflow: 'hidden',
+                    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {displayName}
+                  </span>
+                  <span style={{
+                    display: 'block', marginTop: 2,
+                    fontSize: 7, color: `${ident.accent}cc`,
+                    letterSpacing: 0.8, overflow: 'hidden',
+                    textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    textShadow: `0 0 3px ${ident.accent}55`,
+                  }}>
+                    {ident.tag} · {pn.cls.label}
+                  </span>
                 </span>
               </button>
             );
@@ -3473,29 +3746,31 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
         {/* Controls hint */}
         <div style={{
-          position: 'absolute', top: 60,
-          right: selectedNode ? 268 : 16,
+          position: 'absolute', top: 118,
+          right: selectedNode ? 292 : 22,
           zIndex: 10, pointerEvents: 'none', fontFamily: 'monospace',
           transition: 'right 0.2s ease',
+          padding: '8px 10px',
+          background: 'rgba(7,4,16,.36)',
+          border: '1px solid rgba(200,168,85,.10)',
+          borderRadius: 8,
+          backdropFilter: 'blur(8px)',
         }}>
           {['SCROLL · ZOOM', 'DRAG  · PAN', 'CLICK · SELECT', '` · HUD'].map((hint) => (
-            <div key={hint} style={{ fontSize: 7.5, color: '#c8a85533', letterSpacing: 1.5, textAlign: 'right', marginBottom: 2 }}>
+            <div key={hint} style={{ fontSize: 8, color: '#c8a85555', letterSpacing: 1.5, textAlign: 'right', marginBottom: 2 }}>
               {hint}
             </div>
           ))}
         </div>
 
         {/* WebGL Canvas */}
-        <div style={{ flex: 1, minHeight: 520, position: 'relative' }}>
-          {/* Cinematic vignette — tightened so the eye locks on centre.
-              Inner transparent disc shrunk 55% → 45% and the corner stop
-              deepened 0.85 → 0.92, so far elements (Citadel, Lich King)
-              read as "into the gloom" rather than fully lit. Pure CSS
-              overlay with `pointer-events: none` so it never blocks the
-              Canvas pointer events underneath. */}
+        <div style={{ flex: '1 1 0', minHeight: 0, position: 'relative' }}>
+          {/* Cinematic vignette: keeps the eye on the central plaza while
+              leaving the Lich King and far towers readable. Pure CSS overlay
+              with `pointer-events: none` so Canvas interaction stays intact. */}
           <div style={{
             position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
-            background: 'radial-gradient(ellipse at 50% 50%, transparent 45%, rgba(4,2,12,.55) 75%, rgba(2,1,6,.92) 100%)',
+            background: 'radial-gradient(ellipse at 50% 50%, transparent 50%, rgba(4,2,12,.42) 76%, rgba(2,1,6,.88) 100%), linear-gradient(180deg, rgba(2,1,8,.28) 0%, transparent 22%, rgba(2,1,8,.32) 100%)',
           }} />
 
           <Canvas

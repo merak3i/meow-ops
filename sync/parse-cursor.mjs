@@ -18,6 +18,14 @@ import { join } from 'path';
 import { calculateCost } from './cost-calculator.mjs';
 
 const DEFAULT_MODEL = 'gpt-4o';
+const FIRST_MSG_MAX = 80;
+
+function snippetize(text, max = FIRST_MSG_MAX) {
+  const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  if (cleaned.length <= max) return cleaned;
+  return cleaned.slice(0, max - 1).trimEnd() + '…';
+}
 
 export function scanCursorSessions(cursorLogsDir) {
   if (!existsSync(cursorLogsDir)) return [];
@@ -69,6 +77,11 @@ function parseCursorLog(content, filePath, stat) {
   // Try to detect model
   const modelMatch = content.match(/model['":\s]+([a-z0-9._-]{4,40})/i);
   const model      = modelMatch ? modelMatch[1] : DEFAULT_MODEL;
+  const title = snippetize(
+    content.match(/(?:title|name|summary)['":\s]+([^"\n]{6,160})/i)?.[1]
+    || content.match(/(?:user|prompt|message)['":\s]+([^"\n]{6,160})/i)?.[1]
+    || '',
+  );
 
   const sessionId = `cursor-${stat.ino || Date.now()}`;
   const mtime     = stat.mtime.toISOString();
@@ -95,6 +108,8 @@ function parseCursorLog(content, filePath, stat) {
     is_ghost:              false,
     source:                'cursor',
     tools:                 {},
+    session_title:         title || null,
+    first_user_message:    title || null,
   };
 }
 

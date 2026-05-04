@@ -151,6 +151,7 @@ export function parseSessionLines(lines, projectDir) {
         cat_type: 'ghost',
         is_ghost: false,
         tools: {},
+        session_title: null,
         // First user-typed message (~80 chars), used as a memorable label in
         // the run-group dropdown. Null until we see a non-auto-injected user
         // message in this session's log.
@@ -185,6 +186,7 @@ export function parseSessionLines(lines, projectDir) {
         const raw = extractUserText(entry.message?.content);
         if (raw && !isAutoInjectedOnly(raw)) {
           s.first_user_message = snippetize(raw);
+          s.session_title = s.first_user_message;
         }
       }
     }

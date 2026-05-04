@@ -15,6 +15,53 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join } from 'path';
 import { calculateCost } from './cost-calculator.mjs';
 
+const FIRST_MSG_MAX = 80;
+
+function snippetize(text, max = FIRST_MSG_MAX) {
+  const cleaned = String(text || '')
+    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  if (cleaned.length <= max) return cleaned;
+  return cleaned.slice(0, max - 1).trimEnd() + '…';
+}
+
+function extractTextDeep(value, depth = 0) {
+  if (!value || depth > 4) return '';
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => extractTextDeep(item, depth + 1)).filter(Boolean).join(' ');
+  }
+  if (typeof value !== 'object') return '';
+
+  for (const key of ['text', 'input_text', 'content', 'message', 'value']) {
+    if (value[key]) {
+      const text = extractTextDeep(value[key], depth + 1);
+      if (text) return text;
+    }
+  }
+  return '';
+}
+
+function loadSessionIndex(codexDir) {
+  const indexPath = join(codexDir, '..', 'session_index.jsonl');
+  const out = new Map();
+  if (!existsSync(indexPath)) return out;
+
+  const lines = readFileSync(indexPath, 'utf8').split('\n').filter(Boolean);
+  for (const line of lines) {
+    try {
+      const row = JSON.parse(line);
+      if (row.id && row.thread_name) out.set(row.id, snippetize(row.thread_name, 100));
+    } catch {
+      // Ignore malformed historical rows.
+    }
+  }
+  return out;
+}
+
 // Walk the year/month/day directory tree under codexDir, yield all rollout JSONL paths.
 function* walkCodexFiles(dir) {
   if (!existsSync(dir)) return;
@@ -87,6 +134,8 @@ export function parseCodexFile(filePath) {
     cat_type: 'architect',
     is_ghost: false,
     tools: {},
+    session_title: null,
+    first_user_message: null,
   };
 
   // Last non-null token_count info wins (cumulative totals at turn end).
@@ -115,6 +164,11 @@ export function parseCodexFile(filePath) {
       if (p.type === 'user_message') {
         session.user_message_count++;
         session.message_count++;
+        if (!session.first_user_message) {
+          const raw = extractTextDeep(p);
+          const snippet = snippetize(raw);
+          if (snippet) session.first_user_message = snippet;
+        }
       }
       if (p.type === 'agent_message') {
         session.assistant_message_count++;
@@ -161,13 +215,20 @@ export function parseCodexFile(filePath) {
 
 export function scanCodexSessions(codexDir) {
   const sessions = [];
+  const titleById = loadSessionIndex(codexDir);
   for (const filePath of walkCodexFiles(codexDir)) {
     try {
       const s = parseCodexFile(filePath);
       if (!s) continue;
       // Use rollout UUID from filename for a stable, unique session_id.
       const uuidMatch = filePath.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/);
-      if (uuidMatch) s.session_id = `codex-${uuidMatch[1]}`;
+      if (uuidMatch) {
+        const id = uuidMatch[1];
+        s.session_id = `codex-${id}`;
+        s.session_title = titleById.get(id) || s.first_user_message || null;
+      } else if (s.session_id) {
+        s.session_title = titleById.get(s.session_id) || s.first_user_message || null;
+      }
       sessions.push(s);
     } catch {
       // Skip unreadable files silently.

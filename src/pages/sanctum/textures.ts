@@ -72,40 +72,54 @@ export function getMarbleTexture(): THREE.CanvasTexture {
   c.width = 512; c.height = 512;
   const ctx = c.getContext('2d')!;
 
-  // Base — deep violet marble
-  ctx.fillStyle = '#1c1430';
+  let seed = 0x5a17c0de;
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 0x100000000;
+  };
+
+  // Base — smoother violet-blue marble. The color remains rich, but the
+  // surface is calmer so the floor reads as one ritual material.
+  ctx.fillStyle = '#271d49';
+  ctx.fillRect(0, 0, 512, 512);
+  const baseGrad = ctx.createRadialGradient(256, 236, 20, 256, 256, 330);
+  baseGrad.addColorStop(0, 'rgba(92,70,148,0.28)');
+  baseGrad.addColorStop(0.55, 'rgba(32,24,64,0.12)');
+  baseGrad.addColorStop(1, 'rgba(8,5,22,0.18)');
+  ctx.fillStyle = baseGrad;
   ctx.fillRect(0, 0, 512, 512);
 
-  // Mottle — many small radial splotches, alternating darker/lighter so the
-  // surface has organic tone variation instead of looking flat.
-  for (let i = 0; i < 240; i++) {
-    const x = Math.random() * 512;
-    const y = Math.random() * 512;
-    const r = 8 + Math.random() * 36;
-    const isLight = Math.random() < 0.5;
+  // Mottle — sparse and low contrast now; enough stone depth without
+  // creating a noisy patchwork under the agent silhouettes.
+  for (let i = 0; i < 72; i++) {
+    const x = rand() * 512;
+    const y = rand() * 512;
+    const r = 18 + rand() * 48;
+    const isLight = rand() < 0.58;
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, isLight ? 'rgba(80,60,120,0.18)' : 'rgba(8,4,18,0.22)');
+    grad.addColorStop(0, isLight ? 'rgba(116,92,184,0.09)' : 'rgba(9,6,24,0.13)');
     grad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
   }
 
-  // Gold veins — thin curved lines tracing through the marble. Each is a
-  // gradient-stroked quadratic bezier so the vein fades in/out along its
-  // length (mimics natural mineral cracks).
-  ctx.lineWidth = 0.7;
+  // Gold / cyan veins — thin curved lines tracing through the
+  // marble. Each is a gradient-stroked quadratic bezier so the vein fades
+  // in/out along its length (mimics natural mineral cracks).
+  ctx.lineWidth = 0.65;
   ctx.lineCap = 'round';
-  for (let i = 0; i < 28; i++) {
-    const x1 = Math.random() * 512;
-    const y1 = Math.random() * 512;
-    const x2 = Math.random() * 512;
-    const y2 = Math.random() * 512;
-    const cx = (x1 + x2) / 2 + (Math.random() - 0.5) * 220;
-    const cy = (y1 + y2) / 2 + (Math.random() - 0.5) * 220;
+  for (let i = 0; i < 16; i++) {
+    const x1 = rand() * 512;
+    const y1 = rand() * 512;
+    const x2 = rand() * 512;
+    const y2 = rand() * 512;
+    const cx = (x1 + x2) / 2 + (rand() - 0.5) * 180;
+    const cy = (y1 + y2) / 2 + (rand() - 0.5) * 180;
+    const vein = i % 4 === 0 ? '92,210,255' : '242,211,106';
     const grad = ctx.createLinearGradient(x1, y1, x2, y2);
-    grad.addColorStop(0,   'rgba(200,168,85,0)');
-    grad.addColorStop(0.5, 'rgba(200,168,85,0.7)');
-    grad.addColorStop(1,   'rgba(200,168,85,0)');
+    grad.addColorStop(0,   `rgba(${vein},0)`);
+    grad.addColorStop(0.5, `rgba(${vein},0.30)`);
+    grad.addColorStop(1,   `rgba(${vein},0)`);
     ctx.strokeStyle = grad;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -115,12 +129,12 @@ export function getMarbleTexture(): THREE.CanvasTexture {
 
   // Polish highlights — sparse soft spots so the marble reads as wet/glossy
   // under the violet ambient.
-  for (let i = 0; i < 18; i++) {
-    const x = Math.random() * 512;
-    const y = Math.random() * 512;
-    const r = 32 + Math.random() * 50;
+  for (let i = 0; i < 10; i++) {
+    const x = rand() * 512;
+    const y = rand() * 512;
+    const r = 46 + rand() * 64;
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, 'rgba(124,90,204,0.10)');
+    grad.addColorStop(0, i % 3 === 0 ? 'rgba(92,210,255,0.055)' : 'rgba(167,139,250,0.075)');
     grad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
@@ -129,7 +143,7 @@ export function getMarbleTexture(): THREE.CanvasTexture {
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(2, 2);
+  tex.repeat.set(1.35, 1.35);
   MARBLE_TEXTURE = tex;
   return tex;
 }
@@ -175,203 +189,217 @@ export function getStainedGlassTexture(): THREE.CanvasTexture {
 
 // ─── Lich King ───────────────────────────────────────────────────────────────
 //
-// 128×192 hand-drawn pixel sprite for the permanent Lich King figure.
-// Composition matches the WotLK Arthas reference: horned helm with glowing
-// eye slits, skull pauldrons, chest skull motif, ornate cape, belt skull
-// buckle, gauntlets at hip-level, sabatons, frost mist around the boots.
-// Frostmourne is a separate 3D mesh planted in front (lore: oath sword).
+// 256x192 hand-drawn mounted sprite for the permanent Lich King figure.
+// Reference notes: armored undead horse facing right, horned rider, sword
+// stretched left, torn cloak, bronze/steel horse barding, chains, and an icy
+// plinth. Frostmourne also has a small 3D glow in LichKing.tsx.
 
 let LICH_KING_TEXTURE: THREE.CanvasTexture | null = null;
 export function getLichKingTexture(): THREE.CanvasTexture {
   if (LICH_KING_TEXTURE) return LICH_KING_TEXTURE;
-  const W = 128, H = 192;
+  const W = 256, H = 192;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d')!;
   ctx.imageSmoothingEnabled = false;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
 
-  // Palette — D5 Dalaran armor with Arthas frost accents
-  const ARMOR_DK   = '#0a0518';
-  const ARMOR      = '#1a0f2e';
-  const ARMOR_MD   = '#2a1a40';
-  const ARMOR_HI   = '#3a2a5a';
-  const ARMOR_RIM  = '#5a4a7a';
-  const BONE_LT    = '#d8d8c8';
-  const BONE_MD    = '#a0a08c';
-  const BONE_DK    = '#3a3a30';
-  const CAPE_DK    = '#06020c';
-  const CAPE       = '#0e0820';
-  const CAPE_RIM   = '#1c1235';
-  const RUNE       = '#5cd2ff';
-  const RUNE_DIM   = '#2a6090';
-  const FROST      = '#bce5ff';
-  const FROST_DIM  = '#5b8cb8';
+  const OUTLINE   = '#080612';
+  const BLACK     = '#020309';
+  const IRON_DK   = '#070b12';
+  const IRON      = '#111827';
+  const IRON_MD   = '#27364a';
+  const IRON_HI   = '#5f7896';
+  const STEEL     = '#8ea4bd';
+  const STEEL_HI  = '#d9e8f6';
+  const GOLD_DK   = '#6f4b22';
+  const GOLD      = '#c19a45';
+  const BLUE      = '#5cd2ff';
+  const BLUE_DIM  = '#286999';
+  const ICE       = '#94efff';
+  const ICE_DK    = '#1683b3';
+  const SNOW      = '#dbeaf2';
+  const BONE      = '#d6dde4';
+  const CAPE_DK   = '#05020b';
+  const CAPE      = '#170822';
+  const CAPE_HI   = '#402148';
+  const HORSE_DK  = '#05070d';
+  const HORSE     = '#111722';
+  const HORSE_HI  = '#26384d';
+  const CLOTH     = '#35142e';
 
   const lpx = (x: number, y: number, w: number, h: number, color: string) => {
     ctx.fillStyle = color;
     ctx.fillRect(x, y, w, h);
   };
+  const poly = (points: Array<[number, number]>, color: string) => {
+    const [sx, sy] = points[0]!;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    for (const [x, y] of points.slice(1)) ctx.lineTo(x, y);
+    ctx.closePath();
+    ctx.fill();
+  };
+  const stroke = (points: Array<[number, number]>, color: string, width = 2) => {
+    const [sx, sy] = points[0]!;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    for (const [x, y] of points.slice(1)) ctx.lineTo(x, y);
+    ctx.stroke();
+  };
 
   ctx.clearRect(0, 0, W, H);
 
-  // ── Cape (drawn first, behind body) — wide trapezoid widening downward
-  lpx(40,  46, 48, 4,  CAPE_DK);
-  lpx(36,  50, 56, 8,  CAPE);
-  lpx(32,  58, 64, 10, CAPE_DK);
-  lpx(28,  68, 72, 12, CAPE);
-  lpx(24,  80, 80, 16, CAPE_DK);
-  lpx(20,  96, 88, 20, CAPE);
-  lpx(16, 116, 96, 24, CAPE_DK);
-  lpx(12, 140, 104, 28, CAPE);
-  lpx(10, 168, 108, 16, CAPE_DK);
-  // cape rim accents
-  lpx(12, 168, 104, 1, CAPE_RIM);
-  lpx(10, 182, 108, 1, CAPE_RIM);
-  // cape vertical fold lines
-  lpx(40,  60, 1, 110, CAPE_RIM);
-  lpx(86,  60, 1, 110, CAPE_RIM);
+  // Long runeblade, drawn behind the gauntlet so it reads as extended left.
+  stroke([[6, 58], [60, 57], [93, 61]], '#091321', 5);
+  stroke([[7, 57], [58, 56], [91, 60]], STEEL_HI, 2);
+  stroke([[8, 59], [60, 58], [92, 62]], BLUE_DIM, 1);
+  poly([[4, 58], [16, 54], [16, 61]], STEEL_HI);
+  lpx(83, 57, 10, 9, GOLD_DK);
+  lpx(87, 55, 5, 13, GOLD);
 
-  // ── Horns (Arthas helmet, curving up and outward)
-  lpx(38,  4, 6, 4, ARMOR_DK);
-  lpx(34,  8, 6, 4, ARMOR_DK);
-  lpx(30, 12, 6, 6, ARMOR_DK);
-  lpx(28, 18, 4, 4, ARMOR);
-  lpx(84,  4, 6, 4, ARMOR_DK);
-  lpx(88,  8, 6, 4, ARMOR_DK);
-  lpx(92, 12, 6, 6, ARMOR_DK);
-  lpx(96, 18, 4, 4, ARMOR);
+  // Torn black cloak flowing behind rider and horse.
+  poly([[55, 47], [88, 39], [122, 52], [139, 84], [132, 121],
+        [101, 132], [86, 119], [59, 143], [66, 111], [37, 126],
+        [45, 93], [20, 88], [50, 73]], CAPE_DK);
+  poly([[70, 54], [112, 56], [129, 84], [119, 114], [95, 124],
+        [85, 104], [58, 123], [66, 94], [39, 88], [63, 76]], CAPE);
+  poly([[42, 91], [55, 94], [47, 118]], CAPE_HI);
+  poly([[81, 112], [94, 117], [81, 136]], CAPE_HI);
+  stroke([[63, 64], [75, 86], [71, 116]], CAPE_HI, 2);
+  stroke([[98, 58], [111, 86], [106, 119]], '#241033', 2);
 
-  // ── Helm crown spike
-  lpx(60,  0, 8, 4, ARMOR_DK);
-  lpx(62,  4, 4, 4, ARMOR);
+  // Ice and iron display base.
+  poly([[41, 143], [195, 130], [219, 155], [194, 174],
+        [61, 177], [22, 163]], '#eef6fb');
+  poly([[57, 151], [194, 139], [211, 154], [187, 166],
+        [66, 169], [36, 160]], SNOW);
+  poly([[50, 158], [204, 154], [226, 170], [199, 187],
+        [43, 187], [19, 172]], BLACK);
+  lpx(43, 175, 156, 7, '#11131b');
+  for (let x = 42; x < 200; x += 13) {
+    poly([[x, 174], [x + 4, 166], [x + 8, 174]], IRON_DK);
+    lpx(x + 2, 176, 5, 8, IRON_MD);
+  }
+  poly([[26, 164], [40, 123], [53, 165]], ICE_DK);
+  poly([[39, 166], [60, 111], [73, 167]], BLUE);
+  poly([[58, 166], [75, 129], [87, 168]], ICE);
+  poly([[77, 166], [92, 139], [103, 169]], ICE_DK);
+  lpx(55, 128, 8, 35, '#dffaff');
+  lpx(68, 142, 6, 20, '#c8f8ff');
 
-  // ── Helm dome
-  lpx(46, 14, 36, 4, ARMOR_DK);
-  lpx(42, 18, 44, 6, ARMOR);
-  lpx(40, 24, 48, 6, ARMOR_MD);
-  lpx(40, 30, 48, 4, ARMOR);
-  lpx(40, 34, 48, 2, ARMOR_DK);
-  lpx(40, 18, 2, 16, ARMOR_RIM);
-  lpx(86, 18, 2, 16, ARMOR_RIM);
+  // Horse legs and raised foreleg.
+  poly([[91, 116], [105, 119], [102, 155], [94, 168], [86, 167], [91, 147]], HORSE);
+  poly([[128, 119], [141, 119], [146, 153], [140, 166], [130, 164], [132, 144]], HORSE_DK);
+  poly([[163, 115], [174, 119], [190, 150], [184, 164], [174, 162], [174, 143]], HORSE);
+  poly([[176, 111], [189, 112], [218, 129], [213, 141], [194, 136], [181, 126]], HORSE_DK);
+  lpx(84, 165, 18, 6, BLACK);
+  lpx(128, 163, 18, 6, BLACK);
+  lpx(173, 161, 18, 6, BLACK);
+  lpx(203, 138, 14, 5, BLACK);
+  lpx(91, 139, 8, 20, IRON_MD);
+  lpx(132, 138, 8, 21, IRON_MD);
+  lpx(176, 137, 8, 22, IRON_MD);
 
-  // ── Face cavity + eye glow
-  lpx(46, 36, 36, 12, '#000000');
-  lpx(50, 40, 8, 4, RUNE);
-  lpx(70, 40, 8, 4, RUNE);
-  lpx(48, 44, 12, 2, RUNE_DIM);
-  lpx(68, 44, 12, 2, RUNE_DIM);
+  // Horse body, saddle cloth, armored neck, and barding.
+  poly([[78, 91], [101, 76], [150, 73], [183, 83], [194, 105],
+        [178, 128], [110, 131], [81, 116]], HORSE_DK);
+  poly([[92, 88], [118, 80], [154, 82], [181, 92], [186, 107],
+        [170, 121], [113, 123], [91, 111]], HORSE);
+  poly([[105, 87], [145, 82], [171, 91], [174, 112], [150, 119],
+        [107, 116], [92, 104]], HORSE_HI);
+  poly([[94, 103], [160, 101], [174, 118], [158, 139],
+        [128, 132], [113, 146], [96, 130]], CLOTH);
+  poly([[107, 108], [164, 107], [159, 127], [135, 126], [124, 139], [111, 125]], '#4b1d39');
+  lpx(109, 96, 54, 5, GOLD_DK);
+  lpx(113, 97, 46, 2, GOLD);
+  for (let x = 112; x < 160; x += 12) lpx(x, 97, 4, 16, GOLD_DK);
+  poly([[153, 76], [170, 58], [194, 48], [221, 55], [233, 70],
+        [221, 88], [190, 91], [166, 84]], HORSE_DK);
+  poly([[166, 62], [191, 52], [217, 58], [226, 70], [216, 82],
+        [190, 83], [171, 77]], HORSE);
+  poly([[181, 50], [213, 54], [224, 66], [216, 75], [186, 72]], IRON_MD);
+  poly([[184, 48], [202, 42], [221, 53], [211, 59], [190, 55]], GOLD_DK);
+  lpx(188, 52, 29, 4, GOLD);
+  lpx(211, 60, 12, 5, STEEL);
+  lpx(217, 63, 7, 4, BLUE);
+  poly([[198, 43], [205, 24], [212, 47]], IRON_HI);
+  poly([[221, 54], [239, 48], [228, 64]], STEEL);
+  poly([[177, 59], [170, 42], [187, 55]], IRON_HI);
+  for (let i = 0; i < 5; i++) lpx(180 + i * 8, 78, 5, 8, GOLD_DK);
 
-  // ── Helm jaw + gorget
-  lpx(46, 46, 36, 4, ARMOR_DK);
-  lpx(50, 50, 28, 4, ARMOR_MD);
-  lpx(54, 54, 20, 2, ARMOR_DK);
-  lpx(54, 56, 20, 4, ARMOR_MD);
-  lpx(56, 58, 16, 2, ARMOR_HI);
-  lpx(54, 60, 20, 1, ARMOR_RIM);
+  // Saddle chains and reins.
+  stroke([[117, 92], [138, 109], [164, 115], [189, 105]], '#161c27', 3);
+  stroke([[118, 91], [139, 108], [164, 114], [190, 104]], STEEL, 1);
+  for (let i = 0; i < 8; i++) lpx(124 + i * 8, 101 + (i % 2) * 4, 4, 4, STEEL);
+  stroke([[109, 58], [146, 76], [206, 68]], '#1c2532', 2);
+  stroke([[110, 57], [147, 75], [207, 67]], GOLD, 1);
 
-  // ── Pauldrons with skulls
-  lpx(18, 52, 26, 18, ARMOR_DK);
-  lpx(20, 54, 24,  4, ARMOR);
-  lpx(16, 46,  8,  6, ARMOR_DK);
-  lpx(18, 44,  4,  4, ARMOR_DK);
-  lpx(22, 56, 16, 12, BONE_MD);
-  lpx(24, 58, 12,  8, BONE_LT);
-  lpx(26, 60, 3, 3, BONE_DK);
-  lpx(31, 60, 3, 3, BONE_DK);
-  lpx(26, 64, 8, 1, BONE_MD);
-  lpx(18, 68, 26, 2, ARMOR_HI);
-  lpx(84, 52, 26, 18, ARMOR_DK);
-  lpx(84, 54, 24,  4, ARMOR);
-  lpx(104, 46, 8,  6, ARMOR_DK);
-  lpx(106, 44, 4,  4, ARMOR_DK);
-  lpx(90, 56, 16, 12, BONE_MD);
-  lpx(92, 58, 12,  8, BONE_LT);
-  lpx(94, 60, 3, 3, BONE_DK);
-  lpx(99, 60, 3, 3, BONE_DK);
-  lpx(94, 64, 8, 1, BONE_MD);
-  lpx(84, 68, 26, 2, ARMOR_HI);
+  // Rider legs and armored torso.
+  poly([[105, 88], [118, 88], [126, 126], [116, 132], [103, 103]], IRON_DK);
+  poly([[132, 86], [144, 88], [153, 122], [145, 130], [131, 105]], IRON_DK);
+  lpx(107, 91, 8, 30, IRON_MD);
+  lpx(136, 91, 8, 29, IRON_MD);
+  lpx(111, 121, 15, 6, STEEL);
+  lpx(141, 120, 14, 6, STEEL);
+  poly([[103, 45], [130, 39], [154, 51], [156, 82], [139, 98],
+        [112, 94], [97, 74]], IRON_DK);
+  poly([[112, 48], [130, 43], [148, 53], [147, 78], [134, 89],
+        [115, 86], [104, 70]], IRON);
+  lpx(127, 48, 5, 38, IRON_HI);
+  lpx(128, 56, 3, 22, BLUE_DIM);
+  lpx(126, 64, 7, 4, BLUE);
+  poly([[78, 46], [105, 40], [114, 58], [94, 70], [72, 62]], IRON_DK);
+  poly([[145, 48], [172, 50], [174, 68], [153, 74], [139, 62]], IRON_DK);
+  poly([[83, 50], [103, 47], [109, 57], [94, 64], [78, 59]], STEEL);
+  poly([[149, 53], [169, 55], [168, 65], [153, 69], [145, 61]], STEEL);
+  lpx(90, 55, 6, 6, OUTLINE);
+  lpx(158, 58, 6, 6, OUTLINE);
+  lpx(91, 56, 4, 3, BONE);
+  lpx(159, 59, 4, 3, BONE);
 
-  // ── Chest plate
-  lpx(44, 60, 40, 40, ARMOR_DK);
-  lpx(46, 62, 36, 36, ARMOR);
-  lpx(62, 62, 4, 36, ARMOR_MD);
-  lpx(63, 64, 2, 32, RUNE_DIM);
-  lpx(63, 70, 2, 4,  RUNE);
-  lpx(63, 84, 2, 4,  RUNE);
-  lpx(44, 60, 2, 38, ARMOR_HI);
-  lpx(82, 60, 2, 38, ARMOR_HI);
-  lpx(56, 74, 16, 12, ARMOR_DK);
-  lpx(58, 76, 12,  8, BONE_MD);
-  lpx(60, 78,  8,  6, BONE_LT);
-  lpx(60, 79,  2,  2, BONE_DK);
-  lpx(66, 79,  2,  2, BONE_DK);
-  lpx(42, 58, 4, 2, ARMOR_RIM);
-  lpx(82, 58, 4, 2, ARMOR_RIM);
+  // Rider arm stretched left to the blade; right arm grips reins.
+  stroke([[106, 60], [82, 58], [58, 57]], IRON_DK, 9);
+  stroke([[107, 59], [82, 57], [58, 56]], IRON_HI, 4);
+  lpx(56, 53, 10, 10, IRON_DK);
+  lpx(58, 55, 7, 6, STEEL);
+  stroke([[150, 62], [165, 73], [176, 86]], IRON_DK, 8);
+  stroke([[150, 61], [166, 72], [176, 85]], IRON_HI, 3);
 
-  // ── Belt
-  lpx(40, 100, 48, 6, ARMOR_DK);
-  lpx(40, 100, 48, 1, ARMOR_HI);
-  lpx(40, 105, 48, 1, ARMOR_HI);
-  lpx(58, 101, 12, 4, BONE_MD);
-  lpx(60, 102,  8, 2, BONE_LT);
-  lpx(61, 102,  2, 2, BONE_DK);
-  lpx(65, 102,  2, 2, BONE_DK);
+  // Helm, crown, horns, and face glow.
+  poly([[116, 21], [130, 15], [145, 22], [150, 41],
+        [143, 54], [123, 55], [114, 42]], IRON_DK);
+  lpx(121, 25, 25, 22, IRON_MD);
+  lpx(124, 28, 19, 14, IRON);
+  lpx(119, 42, 29, 6, BLACK);
+  poly([[124, 18], [129, 1], [134, 18]], STEEL);
+  poly([[116, 24], [103, 7], [113, 31]], STEEL);
+  poly([[143, 24], [160, 9], [149, 32]], STEEL);
+  poly([[121, 20], [111, 13], [119, 28]], IRON_HI);
+  poly([[142, 20], [152, 14], [145, 29]], IRON_HI);
+  lpx(123, 35, 8, 3, BLUE);
+  lpx(136, 35, 8, 3, BLUE);
+  lpx(126, 43, 15, 2, STEEL_HI);
+  lpx(121, 49, 25, 4, IRON_MD);
 
-  // ── Arms + gauntlets
-  lpx(34, 70, 8, 30, ARMOR_DK);
-  lpx(36, 72, 4, 26, ARMOR);
-  lpx(32, 96, 14, 14, ARMOR_DK);
-  lpx(34, 98, 10, 10, ARMOR_MD);
-  lpx(32, 108, 14, 2, ARMOR_HI);
-  lpx(86, 70, 8, 30, ARMOR_DK);
-  lpx(88, 72, 4, 26, ARMOR);
-  lpx(82, 96, 14, 14, ARMOR_DK);
-  lpx(84, 98, 10, 10, ARMOR_MD);
-  lpx(82, 108, 14, 2, ARMOR_HI);
+  addOutline(ctx, W, H);
 
-  // ── Skirt / tassets
-  lpx(44, 106, 40, 28, ARMOR_DK);
-  lpx(46, 108, 36, 24, ARMOR);
-  lpx(56, 108, 1, 24, ARMOR_RIM);
-  lpx(72, 108, 1, 24, ARMOR_RIM);
-  lpx(48, 128, 2, 2, RUNE);
-  lpx(78, 128, 2, 2, RUNE);
-  lpx(44, 132, 40, 2, ARMOR_HI);
-
-  // ── Greaves
-  lpx(48, 134, 12, 28, ARMOR_DK);
-  lpx(50, 136,  8, 24, ARMOR);
-  lpx(48, 158, 12,  2, ARMOR_HI);
-  lpx(68, 134, 12, 28, ARMOR_DK);
-  lpx(70, 136,  8, 24, ARMOR);
-  lpx(68, 158, 12,  2, ARMOR_HI);
-
-  // ── Sabatons
-  lpx(44, 162, 16, 16, ARMOR_DK);
-  lpx(46, 164, 12, 12, ARMOR);
-  lpx(44, 174, 16,  4, ARMOR_MD);
-  lpx(40, 174,  6,  4, ARMOR_DK);
-  lpx(68, 162, 16, 16, ARMOR_DK);
-  lpx(70, 164, 12, 12, ARMOR);
-  lpx(68, 174, 16,  4, ARMOR_MD);
-  lpx(82, 174,  6,  4, ARMOR_DK);
-
-  // ── Frost mist + ice spikes around feet
-  lpx(36, 178, 4, 4, FROST_DIM);
-  lpx(40, 180, 4, 6, FROST);
-  lpx(46, 178, 4, 6, FROST_DIM);
-  lpx(52, 182, 4, 4, FROST);
-  lpx(60, 184, 8, 2, FROST_DIM);
-  lpx(72, 182, 4, 4, FROST);
-  lpx(78, 178, 4, 6, FROST_DIM);
-  lpx(84, 180, 4, 6, FROST);
-  lpx(88, 178, 4, 4, FROST_DIM);
-  lpx(30, 186, 68, 2, FROST_DIM);
-  lpx(38, 188, 52, 2, FROST);
-  lpx(28, 184, 2, 4, FROST);
-  lpx(98, 184, 2, 4, FROST);
-  lpx(34, 188, 2, 2, FROST);
-  lpx(94, 188, 2, 2, FROST);
+  // Late bright pass: glows, ornaments, and tiny high-contrast details.
+  lpx(123, 35, 8, 3, '#dcfbff');
+  lpx(136, 35, 8, 3, '#dcfbff');
+  lpx(126, 65, 7, 3, '#dcfbff');
+  lpx(217, 63, 7, 4, '#9ff4ff');
+  lpx(56, 55, 7, 3, '#eefbff');
+  stroke([[7, 57], [58, 56], [91, 60]], '#e6fbff', 1);
+  stroke([[9, 61], [58, 60], [90, 64]], BLUE, 1);
+  for (let x = 39; x < 205; x += 18) lpx(x, 180, 9, 2, '#3a4356');
+  for (let x = 34; x < 100; x += 13) lpx(x, 160 - (x % 3), 5, 5, '#dffaff');
+  lpx(22, 168, 184, 3, 'rgba(92,210,255,0.25)');
+  lpx(60, 185, 128, 2, 'rgba(188,245,255,0.28)');
 
   const tex = new THREE.CanvasTexture(c);
   tex.magFilter = THREE.NearestFilter;

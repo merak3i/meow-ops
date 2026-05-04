@@ -18,11 +18,19 @@
 //   5. Classify cat_type based on commands used (add/architect = architect, etc.)
 
 import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { calculateCost } from './cost-calculator.mjs';
 
 const HISTORY_FILENAME = '.aider.chat.history.md';
 const DEFAULT_MODEL    = 'claude-sonnet-4-6';
+const FIRST_MSG_MAX    = 80;
+
+function snippetize(text, max = FIRST_MSG_MAX) {
+  const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  if (cleaned.length <= max) return cleaned;
+  return cleaned.slice(0, max - 1).trimEnd() + '…';
+}
 
 export function scanAiderProjects(projectDirs) {
   if (!Array.isArray(projectDirs) || projectDirs.length === 0) return [];
@@ -96,6 +104,11 @@ function parseAiderHistory(filePath, projectName) {
     // Detect model from block (> /model <name> or Model: <name>)
     const modelM = block.match(/(?:^>\s*\/model\s+|^Model:\s*)([a-z0-9._/-]+)/mi);
     const model  = modelM ? modelM[1].trim() : DEFAULT_MODEL;
+    const firstPrompt = snippetize(
+      (block.match(/^>\s*(?!\/(?:add|model|architect|run|shell|tokens|edit)\b)(.+)$/mi)?.[1])
+      || (block.match(/^>\s*(.+)$/mi)?.[1])
+      || '',
+    );
 
     // Classify by commands used
     const catType = classifyAiderBlock(block);
@@ -112,6 +125,7 @@ function parseAiderHistory(filePath, projectName) {
     sessions.push({
       session_id:            sessionId,
       project:               projectName,
+      cwd:                   dirname(filePath),
       model,
       entrypoint:            'aider',
       git_branch:            null,
@@ -134,6 +148,8 @@ function parseAiderHistory(filePath, projectName) {
       is_ghost:              tokenLines.length === 0,
       source:                'aider',
       tools:                 {},
+      session_title:         firstPrompt || null,
+      first_user_message:    firstPrompt || null,
     });
   }
 
