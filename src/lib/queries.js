@@ -153,6 +153,18 @@ function filterByDateRange(data, dateField, dateRange) {
   return data.filter((d) => new Date(d[dateField]) >= cutoff);
 }
 
+function emptyAggregateBucket() {
+  return { cost: 0, tokens: 0, sessions: 0, duration_seconds: 0 };
+}
+
+function addSessionToBucket(acc, s) {
+  acc.cost += s.estimated_cost_usd || 0;
+  acc.tokens += s.total_tokens || 0;
+  acc.sessions += 1;
+  acc.duration_seconds += s.duration_seconds || 0;
+  return acc;
+}
+
 // ─── Demo data fallback ───────────────────────────────────────────────────────
 // Only shown if no sessions.json exists AND no Supabase is configured.
 const DEMO_SESSIONS = generateDemoData();
@@ -288,6 +300,7 @@ export function buildDailyFromSessions(sessions) {
         total_cache_read: 0,
         total_tokens: 0,
         estimated_cost_usd: 0,
+        total_duration_seconds: 0,
         active_projects: new Set(),
         ghost_count: 0,
       };
@@ -299,6 +312,7 @@ export function buildDailyFromSessions(sessions) {
     byDate[date].total_cache_read    += s.cache_read_tokens      || 0;
     byDate[date].total_tokens        += s.total_tokens  || 0;
     byDate[date].estimated_cost_usd  += s.estimated_cost_usd || 0;
+    byDate[date].total_duration_seconds += s.duration_seconds || 0;
     byDate[date].active_projects.add(s.project);
     if (s.is_ghost) byDate[date].ghost_count++;
   }
@@ -330,6 +344,7 @@ export function fillMissingDays(dailyData, dateRange) {
       total_cache_read: 0,
       total_tokens: 0,
       estimated_cost_usd: 0,
+      total_duration_seconds: 0,
       active_projects: 0,
       ghost_count: 0,
     });
@@ -338,7 +353,7 @@ export function fillMissingDays(dailyData, dateRange) {
 }
 
 // ─── computeOverviewStats ────────────────────────────────────────────────────
-export function computeOverviewStats(sessions, dateRange = 30) {
+export function computeOverviewStats(sessions) {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: IST });
 
   const todaySessions  = sessions.filter((s) => activityDay(s) === today);
@@ -348,6 +363,7 @@ export function computeOverviewStats(sessions, dateRange = 30) {
 
   const totalTokens    = sessions.reduce((a, s) => a + s.total_tokens, 0);
   const totalCost      = sessions.reduce((a, s) => a + s.estimated_cost_usd, 0);
+  const totalDuration  = sessions.reduce((a, s) => a + (s.duration_seconds || 0), 0);
   const totalProjects  = new Set(sessions.map((s) => s.project)).size;
   const ghostCount     = sessions.filter((s) => s.is_ghost).length;
   const healthRatio    = sessions.length > 0
@@ -358,18 +374,66 @@ export function computeOverviewStats(sessions, dateRange = 30) {
     periodSessions:  sessions.length,
     periodTokens:    totalTokens,
     periodCost:      totalCost,
+    periodDuration:  totalDuration,
     periodProjects:  totalProjects,
     sessionsToday:   todaySessions.length,
     tokensToday,
     costToday,
+    durationToday:   todaySessions.reduce((a, s) => a + (s.duration_seconds || 0), 0),
     projectsToday,
     // Legacy aliases kept for CostTracker compatibility
     totalSessions:   sessions.length,
     totalTokens,
     totalCost,
+    totalDuration,
     totalProjects,
     ghostCount,
     healthRatio,
+  };
+}
+
+// ─── computeTimeSpentBreakdown ───────────────────────────────────────────────
+// Source-aware duration aggregation for the Overview "Time Spent" panel.
+// Uses the same IST calendar boundaries as cost breakdowns so day/week/month
+// totals line up with the rest of the dashboard.
+export function computeTimeSpentBreakdown(sessions) {
+  const now = new Date();
+  const nowIST = new Date(now.toLocaleString('en-US', { timeZone: IST }));
+  const dowIST = nowIST.getDay();
+  const daysToMon = dowIST === 0 ? 6 : dowIST - 1;
+
+  const thisWeekStartIST = new Date(nowIST);
+  thisWeekStartIST.setDate(nowIST.getDate() - daysToMon);
+  thisWeekStartIST.setHours(0, 0, 0, 0);
+  const thisWeekStart = istMidnight(thisWeekStartIST.toLocaleDateString('en-CA'));
+
+  const thisMonthStart = istMidnight(
+    new Date(nowIST.getFullYear(), nowIST.getMonth(), 1).toLocaleDateString('en-CA'),
+  );
+  const thisYearStart = istMidnight(`${nowIST.getFullYear()}-01-01`);
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: IST });
+
+  function bucket(predicate) {
+    const total = emptyAggregateBucket();
+    const bySource = {};
+    for (const s of sessions) {
+      if (!predicate(s)) continue;
+      addSessionToBucket(total, s);
+      const src = s.source || 'claude';
+      if (!bySource[src]) bySource[src] = emptyAggregateBucket();
+      addSessionToBucket(bySource[src], s);
+    }
+    return { ...total, bySource };
+  }
+
+  return {
+    today: bucket((s) =>
+      new Date(activityDate(s)).toLocaleDateString('en-CA', { timeZone: IST }) === todayStr,
+    ),
+    thisWeek: bucket((s) => new Date(activityDate(s)) >= thisWeekStart),
+    thisMonth: bucket((s) => new Date(activityDate(s)) >= thisMonthStart),
+    thisYear: bucket((s) => new Date(activityDate(s)) >= thisYearStart),
+    allTime: bucket(() => true),
   };
 }
 
@@ -414,12 +478,10 @@ export function computeSpendBreakdown(sessions) {
     return sessions.reduce((acc, s) => {
       const d = new Date(activityDate(s));
       if (d >= start && d <= end) {
-        acc.cost     += s.estimated_cost_usd;
-        acc.tokens   += s.total_tokens;
-        acc.sessions += 1;
+        addSessionToBucket(acc, s);
       }
       return acc;
-    }, { cost: 0, tokens: 0, sessions: 0 });
+    }, emptyAggregateBucket());
   }
   const sumCost = (start, end) => bucket(start, end).cost;
 
@@ -458,22 +520,18 @@ export function computeSpendBreakdown(sessions) {
     const d = new Date(activityDate(s));
     if (d < thisMonthStart) continue;
     const src = s.source || 'claude';
-    if (!bySource[src]) bySource[src] = { sessions: 0, cost: 0, tokens: 0 };
-    bySource[src].sessions++;
-    bySource[src].cost   += s.estimated_cost_usd;
-    bySource[src].tokens += s.total_tokens;
+    if (!bySource[src]) bySource[src] = emptyAggregateBucket();
+    addSessionToBucket(bySource[src], s);
   }
 
   // Today bucket using IST day matching.
   const todayStr = now.toLocaleDateString('en-CA', { timeZone: IST });
   const todayBucket = sessions.reduce((acc, s) => {
     if (new Date(activityDate(s)).toLocaleDateString('en-CA', { timeZone: IST }) === todayStr) {
-      acc.cost += s.estimated_cost_usd;
-      acc.tokens += s.total_tokens;
-      acc.sessions++;
+      addSessionToBucket(acc, s);
     }
     return acc;
-  }, { cost: 0, tokens: 0, sessions: 0 });
+  }, emptyAggregateBucket());
 
   return {
     today:          todayBucket,
@@ -483,6 +541,7 @@ export function computeSpendBreakdown(sessions) {
     lastMonth:      bucket(lastMonthStart, lastMonthEnd),
     thisYear:       bucket(thisYearStart, now),
     lastYear:       bucket(lastYearStart, lastYearEnd),
+    allTime:        sessions.reduce((acc, s) => addSessionToBucket(acc, s), emptyAggregateBucket()),
     weeklyHistory,
     monthlyHistory,
     bySource,

@@ -217,6 +217,18 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
 
   function activityTs(s) { return s.ended_at || s.started_at; }
 
+  function emptyBucket() {
+    return { cost: 0, tokens: 0, sessions: 0, duration_seconds: 0 };
+  }
+
+  function addSession(acc, s) {
+    acc.cost += s.estimated_cost_usd || 0;
+    acc.tokens += s.total_tokens || 0;
+    acc.sessions += 1;
+    acc.duration_seconds += s.duration_seconds || 0;
+    return acc;
+  }
+
   const now      = new Date();
   const todayStr = now.toLocaleDateString('en-CA', { timeZone: IST });
 
@@ -246,12 +258,10 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
     return sessions.reduce((acc, s) => {
       const d = new Date(activityTs(s));
       if (d >= start && d <= end) {
-        acc.cost     += s.estimated_cost_usd;
-        acc.tokens   += s.total_tokens;
-        acc.sessions += 1;
+        addSession(acc, s);
       }
       return acc;
-    }, { cost: 0, tokens: 0, sessions: 0 });
+    }, emptyBucket());
   }
 
   // Per-source this-month split
@@ -260,21 +270,17 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
     const d = new Date(activityTs(s));
     if (d < thisMonthStart) continue;
     const src = s.source || 'claude';
-    if (!sourceMonth[src]) sourceMonth[src] = { cost: 0, tokens: 0, sessions: 0 };
-    sourceMonth[src].cost     += s.estimated_cost_usd;
-    sourceMonth[src].tokens   += s.total_tokens;
-    sourceMonth[src].sessions += 1;
+    if (!sourceMonth[src]) sourceMonth[src] = emptyBucket();
+    addSession(sourceMonth[src], s);
   }
 
   // Today bucket (IST day match)
   const todayBucket = allUnique.reduce((acc, s) => {
     if (istDate(activityTs(s)) === todayStr) {
-      acc.cost     += s.estimated_cost_usd;
-      acc.tokens   += s.total_tokens;
-      acc.sessions += 1;
+      addSession(acc, s);
     }
     return acc;
-  }, { cost: 0, tokens: 0, sessions: 0 });
+  }, emptyBucket());
 
   // ── Per-day summary (ALL sessions, no 250/1000 cap) ──────────────────────────
   // Used by ByDay chart and CostTracker so they show accurate data regardless
@@ -292,6 +298,7 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
         total_cache_read:       0,
         total_tokens:           0,
         estimated_cost_usd:     0,
+        total_duration_seconds: 0,
         active_projects:        new Set(),
         ghost_count:            0,
       };
@@ -304,6 +311,7 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
     d.total_cache_read     += s.cache_read_tokens     || 0;
     d.total_tokens         += s.total_tokens   || 0;
     d.estimated_cost_usd   += s.estimated_cost_usd   || 0;
+    d.total_duration_seconds += s.duration_seconds || 0;
     d.active_projects.add(s.project);
     if (s.is_ghost) d.ghost_count++;
   }
@@ -320,11 +328,7 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
     lastMonth:     bucket(allUnique, lastMonthStart, lastMonthEnd),
     thisYear:      bucket(allUnique, thisYearStart, now),
     lastYear:      bucket(allUnique, lastYearStart, lastYearEnd),
-    allTime:       {
-      cost:     allUnique.reduce((a, s) => a + s.estimated_cost_usd, 0),
-      sessions: allUnique.length,
-      tokens:   allUnique.reduce((a, s) => a + s.total_tokens, 0),
-    },
+    allTime:       allUnique.reduce((acc, s) => addSession(acc, s), emptyBucket()),
     bySource:      sourceMonth,
     daily_summary,
   };
