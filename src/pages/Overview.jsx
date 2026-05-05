@@ -1,15 +1,16 @@
 import { useState, useMemo } from 'react';
-import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus, SquareCode, Code2, Pencil, Check, X } from 'lucide-react';
+import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus, SquareCode, Code2, Pencil, Check, X, Clock } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import DailyChart from '../components/DailyChart';
 import ToolBreakdown from '../components/ToolBreakdown';
 import SpendChart from '../components/SpendChart';
 import { Eyebrow } from '../components/ui/Eyebrow';
 import { ToggleGroup } from '../components/ui/ToggleGroup';
-import { formatTokens, formatCost } from '../lib/format';
+import { formatTokens, formatCost, formatDuration } from '../lib/format';
 import {
   computeOverviewStats,
   computeSpendBreakdown,
+  computeTimeSpentBreakdown,
   getToolBreakdownFromSessions,
   buildDailyFromSessions,
 } from '../lib/queries';
@@ -20,6 +21,24 @@ const SOURCE_OPTIONS = [
   { value: 'claude', label: '◆ Claude' },
   { value: 'codex',  label: '⬡ Codex' },
 ];
+
+const SOURCE_META = {
+  claude: { label: 'Claude', sigil: '◆', color: 'var(--accent)' },
+  codex:  { label: 'Codex',  sigil: '⬡', color: 'oklch(0.65 0.18 260)' },
+  cursor: { label: 'Cursor', sigil: '▣', color: 'var(--cyan)' },
+  aider:  { label: 'Aider',  sigil: '◇', color: 'var(--amber)' },
+};
+
+function sourceMeta(src) {
+  if (SOURCE_META[src]) return SOURCE_META[src];
+  const label = String(src || 'unknown').replace(/^\w/, (c) => c.toUpperCase());
+  return { label, sigil: '•', color: 'var(--text-secondary)' };
+}
+
+function sourceDisplay(src) {
+  const meta = sourceMeta(src);
+  return `${meta.sigil} ${meta.label}`;
+}
 
 function SourceToggle({ value, onChange }) {
   return (
@@ -65,7 +84,9 @@ function SourceComparisonPanel({ allSessions }) {
     <div style={{ marginBottom: 24 }}>
       <Eyebrow style={{ marginBottom: 10 }}>Source Breakdown</Eyebrow>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        {rows.map(({ key, label, sigil, color, icon: Icon }) => {
+        {rows.map((row) => {
+          const { key, label, sigil, color } = row;
+          const SourceIcon = row.icon;
           const s   = stats[key];
           const pct = total > 0 ? (s.sessions / total) * 100 : 0;
           const avgCost = s.sessions > 0 ? s.cost / s.sessions : 0;
@@ -79,7 +100,7 @@ function SourceComparisonPanel({ allSessions }) {
               borderTop: `2px solid ${color}`,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <Icon size={14} color={color} />
+                <SourceIcon size={14} color={color} />
                 <span style={{ fontSize: 13, fontWeight: 500, color }}>
                   {sigil} {label}
                 </span>
@@ -295,6 +316,154 @@ function TokenQuotaPanel({ sourceStats, tokenBudget, onBudgetChange }) {
   );
 }
 
+// ─── Time spent panel ────────────────────────────────────────────────────────
+const TIME_PERIOD_OPTIONS = [
+  { value: 'today',     label: 'Today' },
+  { value: 'thisWeek',  label: 'Week' },
+  { value: 'thisMonth', label: 'Month' },
+  { value: 'thisYear',  label: 'Year' },
+  { value: 'allTime',   label: 'All' },
+];
+
+const TIME_PERIOD_CARDS = [
+  { key: 'today',     label: 'Today' },
+  { key: 'thisWeek',  label: 'This Week' },
+  { key: 'thisMonth', label: 'This Month' },
+  { key: 'thisYear',  label: `${new Date().getFullYear()} YTD` },
+  { key: 'allTime',   label: 'All Time' },
+];
+
+function formatTimeSpent(seconds) {
+  if (!seconds || seconds <= 0) return '0m';
+  return formatDuration(seconds);
+}
+
+function TimeCard({ label, bucket, active }) {
+  return (
+    <div style={{
+      background: 'var(--bg-card)',
+      border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+      borderRadius: 10,
+      padding: '13px 14px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 4,
+      minWidth: 0,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+        <span style={{
+          fontSize: 10,
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: 1,
+          whiteSpace: 'nowrap',
+        }}>
+          {label}
+        </span>
+        <Clock size={13} style={{ color: active ? 'var(--accent)' : 'var(--text-muted)', flexShrink: 0 }} />
+      </div>
+      <span style={{ fontSize: 22, fontWeight: 300, color: 'var(--text-primary)', lineHeight: 1.2 }}>
+        {formatTimeSpent(bucket?.duration_seconds ?? 0)}
+      </span>
+      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+        {(bucket?.sessions ?? 0).toLocaleString()} sessions
+      </span>
+    </div>
+  );
+}
+
+function TimeSpentPanel({ timeSpent, source }) {
+  const [period, setPeriod] = useState('thisMonth');
+  const bucket = timeSpent?.[period] ?? { duration_seconds: 0, sessions: 0, bySource: {} };
+  const totalSeconds = bucket.duration_seconds || 0;
+  const sourceRows = Object.entries(bucket.bySource || {})
+    .map(([src, d]) => ({ src, ...d, meta: sourceMeta(src) }))
+    .sort((a, b) => (b.duration_seconds || 0) - (a.duration_seconds || 0));
+  const scopeLabel = source === 'both' ? 'All apps' : sourceDisplay(source);
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+        <Eyebrow>Time Spent</Eyebrow>
+        <ToggleGroup
+          value={period}
+          onChange={setPeriod}
+          options={TIME_PERIOD_OPTIONS}
+          size="sm"
+          ariaLabel="Time period"
+        />
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', gap: 12, marginBottom: 12 }}>
+        {TIME_PERIOD_CARDS.map(({ key, label }) => (
+          <TimeCard key={key} label={label} bucket={timeSpent?.[key]} active={period === key} />
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 0.85fr) minmax(0, 1.75fr)', gap: 12 }}>
+        <div style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          borderRadius: 10,
+          padding: '14px 16px',
+        }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>
+            {scopeLabel}
+          </div>
+          <div style={{ fontSize: 30, lineHeight: 1.1, color: 'var(--accent)', fontWeight: 300 }}>
+            {formatTimeSpent(totalSeconds)}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+            {(bucket.sessions ?? 0).toLocaleString()} sessions · avg {formatTimeSpent(bucket.sessions ? totalSeconds / bucket.sessions : 0)}
+          </div>
+        </div>
+
+        <div style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border)',
+          borderRadius: 10,
+          padding: '12px 16px',
+        }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+            By app
+          </div>
+          <div style={{ display: 'grid', gap: 9 }}>
+            {sourceRows.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No sessions in this period</div>
+            )}
+            {sourceRows.map((row) => {
+              const seconds = row.duration_seconds || 0;
+              const pct = totalSeconds > 0 ? (seconds / totalSeconds) * 100 : 0;
+              return (
+                <div key={row.src} style={{ display: 'grid', gridTemplateColumns: '110px minmax(0, 1fr) 90px 82px', gap: 10, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: row.meta.color, whiteSpace: 'nowrap' }}>
+                    {row.meta.sigil} {row.meta.label}
+                  </span>
+                  <div style={{ height: 5, background: 'var(--border)', borderRadius: 4, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${pct}%`,
+                      background: row.meta.color,
+                      borderRadius: 4,
+                      transition: 'width 0.4s var(--ease)',
+                    }} />
+                  </div>
+                  <span style={{ fontSize: 12, color: 'var(--text-primary)', textAlign: 'right' }}>
+                    {formatTimeSpent(seconds)}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>
+                    {row.sessions} sessions
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Spend card ───────────────────────────────────────────────────────────────
 function SpendCard({ label, current, previous, sessions, tokens, highlight }) {
   const pct = previous > 0 ? ((current - previous) / previous) * 100 : null;
@@ -346,11 +515,9 @@ function periodLabel(dateRange) {
 
 // ─── Overview ─────────────────────────────────────────────────────────────────
 export default function Overview({
-  stats: rawStats,
   sessions: rawSessions = [],  // date-filtered sessions (for display cards)
   allSessions = [],            // ALL sessions, no date filter (for accurate spend cards)
   dailyData,
-  toolData: rawToolData,
   costSummary,
   dateRange = 30,
   sourceStats,
@@ -364,15 +531,17 @@ export default function Overview({
     [allSessions],
   );
 
-  // Filter both arrays by source
-  const filterBySrc = (list) =>
-    source === 'both' ? list : list.filter((s) => (s.source || 'claude') === source);
-
   // Date-filtered + source-filtered sessions (for stat cards / charts)
-  const sessions = useMemo(() => filterBySrc(rawSessions), [rawSessions, source]);
+  const sessions = useMemo(
+    () => source === 'both' ? rawSessions : rawSessions.filter((s) => (s.source || 'claude') === source),
+    [rawSessions, source],
+  );
 
   // ALL sessions filtered by source only (for spend breakdown — no date truncation)
-  const allSourceSessions = useMemo(() => filterBySrc(allSessions), [allSessions, source]);
+  const allSourceSessions = useMemo(
+    () => source === 'both' ? allSessions : allSessions.filter((s) => (s.source || 'claude') === source),
+    [allSessions, source],
+  );
 
   const stats    = useMemo(() => computeOverviewStats(sessions, dateRange),    [sessions, dateRange]);
   const toolData = useMemo(() => getToolBreakdownFromSessions(sessions),       [sessions]);
@@ -387,6 +556,11 @@ export default function Overview({
   // because switching date range to "7d" would incorrectly zero out "This Month".
   const localSpend = useMemo(
     () => computeSpendBreakdown(allSourceSessions),
+    [allSourceSessions],
+  );
+
+  const timeSpent = useMemo(
+    () => computeTimeSpentBreakdown(allSourceSessions),
     [allSourceSessions],
   );
 
@@ -465,6 +639,9 @@ export default function Overview({
           onBudgetChange={onBudgetChange}
         />
       )}
+
+      {/* ── Time spent breakdown ── */}
+      <TimeSpentPanel timeSpent={timeSpent} source={source} />
 
       {/* ── Spend breakdown cards ── */}
       <div style={{ marginBottom: 24 }}>

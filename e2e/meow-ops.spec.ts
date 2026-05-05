@@ -85,6 +85,12 @@ test('Overview: Cost Breakdown section renders', async ({ page }) => {
   await expect(page.locator('text=This Week').first()).toBeVisible();
 });
 
+test('Overview: Time Spent section renders', async ({ page }) => {
+  await expect(page.locator('text=/Time Spent/i').first()).toBeVisible();
+  await expect(page.locator('text=All apps').first()).toBeVisible();
+  await expect(page.locator('text=By app').first()).toBeVisible();
+});
+
 test('Overview: source filter toggles exist when Codex data present', async ({ page }) => {
   const hasCodex = await page.locator('button:has-text("⬡ Codex")').count() > 0;
   if (hasCodex) {

@@ -136,9 +136,10 @@ export interface MorphWeights {
 // ─── Cost summary (from cost-summary.json) ───────────────────────────────────
 
 export interface TimeBucket {
-  cost:     number;
-  tokens:   number;
-  sessions: number;
+  cost:              number;
+  tokens:            number;
+  sessions:          number;
+  duration_seconds?: number;
 }
 
 export interface DailySummaryRow {
@@ -150,6 +151,7 @@ export interface DailySummaryRow {
   total_cache_read:     number;
   total_tokens:         number;
   estimated_cost_usd:   number;
+  total_duration_seconds?: number;
   active_projects:      number;
   ghost_count:          number;
 }

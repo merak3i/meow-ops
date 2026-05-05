@@ -1,55 +1,65 @@
 {
-  "exportedAt": "2026-05-05T07:03:25.486Z",
+  "exportedAt": "2026-05-05T07:16:22.661Z",
   "today": {
-    "cost": 843.514405,
-    "tokens": 232667057,
-    "sessions": 9
+    "cost": 902.912254,
+    "tokens": 248583813,
+    "sessions": 9,
+    "duration_seconds": 207790
   },
   "thisWeek": {
-    "cost": 1076.8393449999999,
-    "tokens": 295452743,
-    "sessions": 13
+    "cost": 1136.237194,
+    "tokens": 311369499,
+    "sessions": 13,
+    "duration_seconds": 224447
   },
   "lastWeek": {
     "cost": 185.63795000000002,
     "tokens": 69644125,
-    "sessions": 6
+    "sessions": 6,
+    "duration_seconds": 452960
   },
   "thisMonth": {
-    "cost": 1077.2191469999998,
-    "tokens": 295744841,
-    "sessions": 14
+    "cost": 1136.616996,
+    "tokens": 311661597,
+    "sessions": 14,
+    "duration_seconds": 225393
   },
   "lastMonth": {
     "cost": 7765.027813000004,
     "tokens": 8396341621,
-    "sessions": 299
+    "sessions": 299,
+    "duration_seconds": 17037440
   },
   "thisYear": {
-    "cost": 9171.02340900001,
-    "tokens": 9125159946,
-    "sessions": 406
+    "cost": 9230.421258000011,
+    "tokens": 9141076702,
+    "sessions": 406,
+    "duration_seconds": 19952942
   },
   "lastYear": {
     "cost": 0,
     "tokens": 0,
-    "sessions": 0
+    "sessions": 0,
+    "duration_seconds": 0
   },
   "allTime": {
-    "cost": 9171.02340900001,
+    "cost": 9230.421258000011,
+    "tokens": 9141076702,
     "sessions": 406,
-    "tokens": 9125159946
+    "duration_seconds": 19952942
   },
   "bySource": {
     "codex": {
-      "cost": 977.0473630000001,
-      "tokens": 261981573,
-      "sessions": 11
+      "cost": 1036.445212,
+      "tokens": 277898329,
+      "sessions": 11,
+      "duration_seconds": 220462
     },
     "claude": {
       "cost": 100.171784,
       "tokens": 33763268,
-      "sessions": 3
+      "sessions": 3,
+      "duration_seconds": 4931
     }
   },
   "daily_summary": [
@@ -62,6 +72,7 @@
       "total_cache_read": 7019446,
       "total_tokens": 7883404,
       "estimated_cost_usd": 11.837019999999999,
+      "total_duration_seconds": 2109,
       "active_projects": 3,
       "ghost_count": 0
     },
@@ -74,6 +85,7 @@
       "total_cache_read": 6489223,
       "total_tokens": 7739075,
       "estimated_cost_usd": 24.999670999999996,
+      "total_duration_seconds": 1233,
       "active_projects": 1,
       "ghost_count": 2
     },
@@ -86,6 +98,7 @@
       "total_cache_read": 4631902,
       "total_tokens": 5403787,
       "estimated_cost_usd": 11.312147999999999,
+      "total_duration_seconds": 388,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -98,6 +111,7 @@
       "total_cache_read": 166421,
       "total_tokens": 171787,
       "estimated_cost_usd": 0.35057,
+      "total_duration_seconds": 101,
       "active_projects": 1,
       "ghost_count": 1
     },
@@ -110,6 +124,7 @@
       "total_cache_read": 46872,
       "total_tokens": 152044,
       "estimated_cost_usd": 0.136218,
+      "total_duration_seconds": 45,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -122,6 +137,7 @@
       "total_cache_read": 3076924,
       "total_tokens": 3224827,
       "estimated_cost_usd": 7.437673,
+      "total_duration_seconds": 874,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -134,6 +150,7 @@
       "total_cache_read": 998651,
       "total_tokens": 1241994,
       "estimated_cost_usd": 0.403428,
+      "total_duration_seconds": 200,
       "active_projects": 2,
       "ghost_count": 0
     },
@@ -146,6 +163,7 @@
       "total_cache_read": 1570055,
       "total_tokens": 1878136,
       "estimated_cost_usd": 0.970375,
+      "total_duration_seconds": 963,
       "active_projects": 3,
       "ghost_count": 1
     },
@@ -158,6 +176,7 @@
       "total_cache_read": 334208,
       "total_tokens": 345306,
       "estimated_cost_usd": 0.7096020000000001,
+      "total_duration_seconds": 159,
       "active_projects": 1,
       "ghost_count": 3
     },
@@ -170,6 +189,7 @@
       "total_cache_read": 4208576,
       "total_tokens": 4477837,
       "estimated_cost_usd": 0.750311,
+      "total_duration_seconds": 1780,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -182,6 +202,7 @@
       "total_cache_read": 165331,
       "total_tokens": 172937,
       "estimated_cost_usd": 0.137632,
+      "total_duration_seconds": 113,
       "active_projects": 1,
       "ghost_count": 1
     },
@@ -194,6 +215,7 @@
       "total_cache_read": 165283,
       "total_tokens": 174161,
       "estimated_cost_usd": 0.159071,
+      "total_duration_seconds": 127,
       "active_projects": 1,
       "ghost_count": 1
     },
@@ -206,6 +228,7 @@
       "total_cache_read": 497501,
       "total_tokens": 518256,
       "estimated_cost_usd": 0.34934,
+      "total_duration_seconds": 301,
       "active_projects": 2,
       "ghost_count": 3
     },
@@ -218,6 +241,7 @@
       "total_cache_read": 2205708,
       "total_tokens": 2439206,
       "estimated_cost_usd": 0.729927,
+      "total_duration_seconds": 308,
       "active_projects": 1,
       "ghost_count": 2
     },
@@ -230,6 +254,7 @@
       "total_cache_read": 158855,
       "total_tokens": 186732,
       "estimated_cost_usd": 0.152272,
+      "total_duration_seconds": 101,
       "active_projects": 1,
       "ghost_count": 1
     },
@@ -242,6 +267,7 @@
       "total_cache_read": 74765,
       "total_tokens": 97284,
       "estimated_cost_usd": 0.124261,
+      "total_duration_seconds": 71,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -254,6 +280,7 @@
       "total_cache_read": 14755794,
       "total_tokens": 15705600,
       "estimated_cost_usd": 8.429197,
+      "total_duration_seconds": 2074,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -266,6 +293,7 @@
       "total_cache_read": 32157801,
       "total_tokens": 34187639,
       "estimated_cost_usd": 18.045999000000002,
+      "total_duration_seconds": 54517,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -278,6 +306,7 @@
       "total_cache_read": 6827550,
       "total_tokens": 7663008,
       "estimated_cost_usd": 1.75777,
+      "total_duration_seconds": 360,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -290,6 +319,7 @@
       "total_cache_read": 43986390,
       "total_tokens": 46434807,
       "estimated_cost_usd": 63.621581000000006,
+      "total_duration_seconds": 270671,
       "active_projects": 2,
       "ghost_count": 0
     },
@@ -302,6 +332,7 @@
       "total_cache_read": 5021662,
       "total_tokens": 5765975,
       "estimated_cost_usd": 1.451792,
+      "total_duration_seconds": 710,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -314,6 +345,7 @@
       "total_cache_read": 2306153,
       "total_tokens": 2499362,
       "estimated_cost_usd": 1.640277,
+      "total_duration_seconds": 367,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -326,6 +358,7 @@
       "total_cache_read": 51228228,
       "total_tokens": 53896484,
       "estimated_cost_usd": 25.160252,
+      "total_duration_seconds": 1321472,
       "active_projects": 2,
       "ghost_count": 0
     },
@@ -338,6 +371,7 @@
       "total_cache_read": 70115636,
       "total_tokens": 73779769,
       "estimated_cost_usd": 31.552068000000002,
+      "total_duration_seconds": 55799,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -350,6 +384,7 @@
       "total_cache_read": 19558706,
       "total_tokens": 20807951,
       "estimated_cost_usd": 54.720197,
+      "total_duration_seconds": 589017,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -362,6 +397,7 @@
       "total_cache_read": 62876711,
       "total_tokens": 66886847,
       "estimated_cost_usd": 31.739912,
+      "total_duration_seconds": 275940,
       "active_projects": 3,
       "ghost_count": 0
     },
@@ -374,6 +410,7 @@
       "total_cache_read": 66833128,
       "total_tokens": 69339269,
       "estimated_cost_usd": 30.097884999999994,
+      "total_duration_seconds": 110309,
       "active_projects": 3,
       "ghost_count": 0
     },
@@ -386,6 +423,7 @@
       "total_cache_read": 206813976,
       "total_tokens": 221944726,
       "estimated_cost_usd": 250.359031,
+      "total_duration_seconds": 755575,
       "active_projects": 7,
       "ghost_count": 0
     },
@@ -398,6 +436,7 @@
       "total_cache_read": 61658809,
       "total_tokens": 64534670,
       "estimated_cost_usd": 143.58733400000003,
+      "total_duration_seconds": 78527,
       "active_projects": 2,
       "ghost_count": 0
     },
@@ -410,6 +449,7 @@
       "total_cache_read": 457951,
       "total_tokens": 776031,
       "estimated_cost_usd": 0.453921,
+      "total_duration_seconds": 38,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -422,6 +462,7 @@
       "total_cache_read": 60775821,
       "total_tokens": 66338881,
       "estimated_cost_usd": 163.84301399999998,
+      "total_duration_seconds": 265132,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -434,6 +475,7 @@
       "total_cache_read": 122344300,
       "total_tokens": 131952844,
       "estimated_cost_usd": 332.38467699999995,
+      "total_duration_seconds": 112637,
       "active_projects": 5,
       "ghost_count": 1
     },
@@ -446,6 +488,7 @@
       "total_cache_read": 588981167,
       "total_tokens": 622487148,
       "estimated_cost_usd": 942.5186649999998,
+      "total_duration_seconds": 1531229,
       "active_projects": 9,
       "ghost_count": 6
     },
@@ -458,6 +501,7 @@
       "total_cache_read": 127846876,
       "total_tokens": 134664710,
       "estimated_cost_usd": 338.802402,
+      "total_duration_seconds": 771370,
       "active_projects": 3,
       "ghost_count": 0
     },
@@ -470,6 +514,7 @@
       "total_cache_read": 5363038861,
       "total_tokens": 5568605749,
       "estimated_cost_usd": 3720.1329289999994,
+      "total_duration_seconds": 5612830,
       "active_projects": 8,
       "ghost_count": 0
     },
@@ -482,6 +527,7 @@
       "total_cache_read": 239158201,
       "total_tokens": 253467649,
       "estimated_cost_usd": 133.804994,
+      "total_duration_seconds": 1785614,
       "active_projects": 3,
       "ghost_count": 0
     },
@@ -494,6 +540,7 @@
       "total_cache_read": 89632773,
       "total_tokens": 94828087,
       "estimated_cost_usd": 55.387522,
+      "total_duration_seconds": 308947,
       "active_projects": 5,
       "ghost_count": 0
     },
@@ -506,6 +553,7 @@
       "total_cache_read": 645168368,
       "total_tokens": 679153087,
       "estimated_cost_usd": 746.1339170000001,
+      "total_duration_seconds": 4655558,
       "active_projects": 7,
       "ghost_count": 0
     },
@@ -518,6 +566,7 @@
       "total_cache_read": 1149019,
       "total_tokens": 1367061,
       "estimated_cost_usd": 1.523586,
+      "total_duration_seconds": 860,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -530,6 +579,7 @@
       "total_cache_read": 170983376,
       "total_tokens": 181759193,
       "estimated_cost_usd": 102.02432,
+      "total_duration_seconds": 532838,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -542,6 +592,7 @@
       "total_cache_read": 43290176,
       "total_tokens": 46155265,
       "estimated_cost_usd": 28.798624999999998,
+      "total_duration_seconds": 15220,
       "active_projects": 2,
       "ghost_count": 0
     },
@@ -554,6 +605,7 @@
       "total_cache_read": 47922859,
       "total_tokens": 50285209,
       "estimated_cost_usd": 148.227074,
+      "total_duration_seconds": 5080,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -566,6 +618,7 @@
       "total_cache_read": 10906430,
       "total_tokens": 13470653,
       "estimated_cost_usd": 66.448302,
+      "total_duration_seconds": 20518,
       "active_projects": 2,
       "ghost_count": 0
     },
@@ -578,6 +631,7 @@
       "total_cache_read": 99151039,
       "total_tokens": 105207135,
       "estimated_cost_usd": 205.85556999999997,
+      "total_duration_seconds": 46549,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -590,6 +644,7 @@
       "total_cache_read": 10248191,
       "total_tokens": 10808990,
       "estimated_cost_usd": 4.893959,
+      "total_duration_seconds": 1642,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -602,6 +657,7 @@
       "total_cache_read": 6091222,
       "total_tokens": 7282030,
       "estimated_cost_usd": 8.61255,
+      "total_duration_seconds": 11888,
       "active_projects": 1,
       "ghost_count": 1
     },
@@ -614,6 +670,7 @@
       "total_cache_read": 48944661,
       "total_tokens": 52985374,
       "estimated_cost_usd": 172.84809800000002,
+      "total_duration_seconds": 29284,
       "active_projects": 2,
       "ghost_count": 0
     },
@@ -626,6 +683,7 @@
       "total_cache_read": 17508738,
       "total_tokens": 18915102,
       "estimated_cost_usd": 13.129175,
+      "total_duration_seconds": 44090,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -638,6 +696,7 @@
       "total_cache_read": 163079,
       "total_tokens": 235039,
       "estimated_cost_usd": 0.361284,
+      "total_duration_seconds": 275,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -650,6 +709,7 @@
       "total_cache_read": 63314587,
       "total_tokens": 69024728,
       "estimated_cost_usd": 183.098859,
+      "total_duration_seconds": 451730,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -662,6 +722,7 @@
       "total_cache_read": 0,
       "total_tokens": 92260,
       "estimated_cost_usd": 1.798005,
+      "total_duration_seconds": 9,
       "active_projects": 1,
       "ghost_count": 1
     },
@@ -674,6 +735,7 @@
       "total_cache_read": 213965,
       "total_tokens": 292098,
       "estimated_cost_usd": 0.379802,
+      "total_duration_seconds": 946,
       "active_projects": 1,
       "ghost_count": 0
     },
@@ -686,18 +748,20 @@
       "total_cache_read": 60323150,
       "total_tokens": 62785686,
       "estimated_cost_usd": 233.32494000000003,
+      "total_duration_seconds": 16657,
       "active_projects": 2,
       "ghost_count": 0
     },
     {
       "date": "2026-05-05",
       "session_count": 9,
-      "total_input_tokens": 199746297,
-      "total_output_tokens": 937779,
+      "total_input_tokens": 215627101,
+      "total_output_tokens": 973731,
       "total_cache_creation": 1383409,
-      "total_cache_read": 223692052,
-      "total_tokens": 232667057,
-      "estimated_cost_usd": 843.514405,
+      "total_cache_read": 239161108,
+      "total_tokens": 248583813,
+      "estimated_cost_usd": 902.912254,
+      "total_duration_seconds": 207790,
       "active_projects": 2,
       "ghost_count": 0
     }
