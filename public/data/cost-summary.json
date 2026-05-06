@@ -1,14 +1,14 @@
 {
-  "exportedAt": "2026-05-06T04:22:27.124Z",
+  "exportedAt": "2026-05-06T05:45:33.061Z",
   "today": {
-    "cost": 626.4901600000001,
-    "tokens": 167928017,
-    "sessions": 3
+    "cost": 749.79355,
+    "tokens": 188349424,
+    "sessions": 16
   },
   "thisWeek": {
-    "cost": 1302.5990250000002,
-    "tokens": 357640327,
-    "sessions": 10
+    "cost": 1425.9024149999998,
+    "tokens": 378061734,
+    "sessions": 23
   },
   "lastWeek": {
     "cost": 4895.415607000002,
@@ -16,9 +16,9 @@
     "sessions": 59
   },
   "thisMonth": {
-    "cost": 1788.5983010000004,
-    "tokens": 559225223,
-    "sessions": 37
+    "cost": 1911.901691,
+    "tokens": 579646630,
+    "sessions": 50
   },
   "lastMonth": {
     "cost": 11383.363542999996,
@@ -26,9 +26,9 @@
     "sessions": 197
   },
   "thisYear": {
-    "cost": 13171.96184399999,
-    "tokens": 5317448305,
-    "sessions": 234
+    "cost": 13295.265233999991,
+    "tokens": 5337869712,
+    "sessions": 247
   },
   "lastYear": {
     "cost": 0,
@@ -36,20 +36,20 @@
     "sessions": 0
   },
   "allTime": {
-    "cost": 13171.96184399999,
-    "sessions": 234,
-    "tokens": 5317448305
+    "cost": 13295.265233999991,
+    "sessions": 247,
+    "tokens": 5337869712
   },
   "bySource": {
     "codex": {
-      "cost": 900.182914,
-      "tokens": 242191122,
-      "sessions": 11
+      "cost": 953.4583279999999,
+      "tokens": 256480276,
+      "sessions": 12
     },
     "claude": {
-      "cost": 888.415387,
-      "tokens": 317034101,
-      "sessions": 26
+      "cost": 958.4433629999997,
+      "tokens": 323166354,
+      "sessions": 38
     }
   },
   "daily_summary": [
@@ -331,15 +331,15 @@
     },
     {
       "date": "2026-05-06",
-      "session_count": 3,
-      "total_input_tokens": 167566284,
-      "total_output_tokens": 361733,
-      "total_cache_creation": 0,
-      "total_cache_read": 163165696,
-      "total_tokens": 167928017,
-      "estimated_cost_usd": 626.4901600000001,
-      "active_projects": 1,
-      "ghost_count": 0
+      "session_count": 16,
+      "total_input_tokens": 181809701,
+      "total_output_tokens": 725396,
+      "total_cache_creation": 2186359,
+      "total_cache_read": 180536000,
+      "total_tokens": 188349424,
+      "estimated_cost_usd": 749.79355,
+      "active_projects": 2,
+      "ghost_count": 1
     }
   ]
 }
