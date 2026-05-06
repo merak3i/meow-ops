@@ -1,13 +1,13 @@
 {
-  "exportedAt": "2026-05-06T05:45:33.061Z",
+  "exportedAt": "2026-05-06T06:15:32.334Z",
   "today": {
-    "cost": 749.79355,
-    "tokens": 188349424,
+    "cost": 831.650349,
+    "tokens": 210503977,
     "sessions": 16
   },
   "thisWeek": {
-    "cost": 1425.9024149999998,
-    "tokens": 378061734,
+    "cost": 1507.759214,
+    "tokens": 400216287,
     "sessions": 23
   },
   "lastWeek": {
@@ -16,8 +16,8 @@
     "sessions": 59
   },
   "thisMonth": {
-    "cost": 1911.901691,
-    "tokens": 579646630,
+    "cost": 1993.7584900000002,
+    "tokens": 601801183,
     "sessions": 50
   },
   "lastMonth": {
@@ -26,8 +26,8 @@
     "sessions": 197
   },
   "thisYear": {
-    "cost": 13295.265233999991,
-    "tokens": 5337869712,
+    "cost": 13377.122032999992,
+    "tokens": 5360024265,
     "sessions": 247
   },
   "lastYear": {
@@ -36,14 +36,14 @@
     "sessions": 0
   },
   "allTime": {
-    "cost": 13295.265233999991,
+    "cost": 13377.122032999992,
     "sessions": 247,
-    "tokens": 5337869712
+    "tokens": 5360024265
   },
   "bySource": {
     "codex": {
-      "cost": 953.4583279999999,
-      "tokens": 256480276,
+      "cost": 1035.3151269999998,
+      "tokens": 278634829,
       "sessions": 12
     },
     "claude": {
@@ -332,12 +332,12 @@
     {
       "date": "2026-05-06",
       "session_count": 16,
-      "total_input_tokens": 181809701,
-      "total_output_tokens": 725396,
+      "total_input_tokens": 203921500,
+      "total_output_tokens": 768150,
       "total_cache_creation": 2186359,
-      "total_cache_read": 180536000,
-      "total_tokens": 188349424,
-      "estimated_cost_usd": 749.79355,
+      "total_cache_read": 201455808,
+      "total_tokens": 210503977,
+      "estimated_cost_usd": 831.650349,
       "active_projects": 2,
       "ghost_count": 1
     }
