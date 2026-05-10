@@ -1,0 +1,6 @@
+{"timestamp":"2026-05-09T14:00:00.000Z","type":"session_meta","payload":{"id":"sample-abort-1","cwd":"/workspace/sample-repo","base_instructions":{"text":"Use GPT-4o."}}}
+{"timestamp":"2026-05-09T14:00:01.000Z","type":"event_msg","payload":{"type":"user_message","content":[{"type":"input_text","text":"start run"}]}}
+{"timestamp":"2026-05-09T14:00:02.000Z","type":"event_msg","payload":{"type":"agent_message"}}
+{"timestamp":"2026-05-09T14:00:03.000Z","type":"response_item","payload":{"type":"function_call","call_id":"call-z","name":"exec_command","arguments":"{\"cmd\":\"npm test\"}"}}
+{"timestamp":"2026-05-09T14:00:04.000Z","type":"event_msg","payload":{"type":"turn_aborted"}}
+{"timestamp":"2026-05-09T14:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":40,"output_tokens":15,"cached_input_tokens":10}}}}

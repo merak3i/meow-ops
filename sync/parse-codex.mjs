@@ -105,6 +105,18 @@ function inferModel(baseText = '') {
   return null;
 }
 
+function toolNameFromResponseItem(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const t = payload.type;
+  if (t === 'function_call' || t === 'custom_tool_call') {
+    return typeof payload.name === 'string' && payload.name ? payload.name : null;
+  }
+  if (t === 'web_search_call' || t === 'tool_search_call' || t === 'image_generation_call') {
+    return t;
+  }
+  return null;
+}
+
 export function parseCodexFile(filePath) {
   const content = readFileSync(filePath, 'utf8');
   const lines = content.split('\n').filter(Boolean);
@@ -140,6 +152,7 @@ export function parseCodexFile(filePath) {
 
   // Last non-null token_count info wins (cumulative totals at turn end).
   let lastTokenUsage = null;
+  const seenToolCalls = new Set();
 
   for (const line of lines) {
     let entry;
@@ -178,6 +191,21 @@ export function parseCodexFile(filePath) {
         lastTokenUsage = p.info.total_token_usage;
       }
     }
+
+    if (entry.type === 'response_item') {
+      const p = entry.payload || {};
+      const toolName = toolNameFromResponseItem(p);
+      if (!toolName) continue;
+
+      // `call_id` is stable across call + output records and lets us avoid
+      // double-counting when streams include retries/replays.
+      const callId = typeof p.call_id === 'string' && p.call_id ? p.call_id : null;
+      if (callId) {
+        if (seenToolCalls.has(callId)) continue;
+        seenToolCalls.add(callId);
+      }
+      session.tools[toolName] = (session.tools[toolName] || 0) + 1;
+    }
   }
 
   if (!session.started_at) return null;
@@ -188,7 +216,8 @@ export function parseCodexFile(filePath) {
     session.cache_read_tokens = lastTokenUsage.cached_input_tokens    || 0;
     session.output_tokens    = lastTokenUsage.output_tokens           || 0;
     session.total_tokens     = lastTokenUsage.total_tokens
-      || session.input_tokens + session.output_tokens;
+      || session.input_tokens + session.output_tokens
+      + session.cache_creation_tokens + session.cache_read_tokens;
   }
 
   session.model = session.model || 'gpt-4o';

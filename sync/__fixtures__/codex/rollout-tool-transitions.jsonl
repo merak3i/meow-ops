@@ -1,0 +1,14 @@
+{"timestamp":"2026-05-09T12:00:00.000Z","type":"session_meta","payload":{"id":"sample-tool-1","cwd":"/workspace/sample-repo","base_instructions":{"text":"You are Codex. Use GPT-5."}}}
+{"timestamp":"2026-05-09T12:00:01.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-05-09T12:00:02.000Z","type":"event_msg","payload":{"type":"user_message","content":[{"type":"input_text","text":"Please inspect tool transitions."}]}}
+{"timestamp":"2026-05-09T12:00:03.000Z","type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"Plan steps."}],"content":[],"encrypted_content":"redacted"}}
+{"timestamp":"2026-05-09T12:00:04.000Z","type":"response_item","payload":{"type":"function_call","call_id":"call-a","name":"exec_command","arguments":"{\"cmd\":\"rg -n tool\"}"}}
+{"timestamp":"2026-05-09T12:00:05.000Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-a","output":"chunk..."}}
+{"timestamp":"2026-05-09T12:00:06.000Z","type":"response_item","payload":{"type":"function_call","call_id":"call-a","name":"exec_command","arguments":"{\"cmd\":\"rg -n tool\"}"}}
+{"timestamp":"2026-05-09T12:00:07.000Z","type":"response_item","payload":{"type":"custom_tool_call","status":"completed","call_id":"call-b","name":"apply_patch","input":"*** Begin Patch..."}}
+{"timestamp":"2026-05-09T12:00:08.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call-b","output":"Success"}}
+{"timestamp":"2026-05-09T12:00:09.000Z","type":"response_item","payload":{"type":"tool_search_call","call_id":"call-c","status":"completed","execution":"client","arguments":{"query":"browser automation","limit":5}}}
+{"timestamp":"2026-05-09T12:00:10.000Z","type":"response_item","payload":{"type":"tool_search_output","call_id":"call-c","output":"[{\"name\":\"browser\"}]"}}
+{"timestamp":"2026-05-09T12:00:11.000Z","type":"response_item","payload":{"type":"web_search_call","status":"completed","action":{"search_query":[{"q":"latest docs"}]}}}
+{"timestamp":"2026-05-09T12:00:12.000Z","type":"event_msg","payload":{"type":"agent_message"}}
+{"timestamp":"2026-05-09T12:00:13.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":120,"output_tokens":45,"cached_input_tokens":30}}}}

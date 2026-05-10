@@ -1,0 +1,6 @@
+{"timestamp":"2026-05-09T13:00:00.000Z","type":"session_meta","payload":{"id":"sample-partial-1","cwd":"/workspace/sample-repo","base_instructions":{"text":"Use GPT-5."}}}
+{"timestamp":"2026-05-09T13:00:01.000Z","type":"event_msg","payload":{"type":"user_message","content":[{"type":"input_text","text":"Render safely: ```json {\"incomplete\": true"}]}}
+{"timestamp":"2026-05-09T13:00:02.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"input_text","text":"```md\\n# Draft"}]}}
+{"timestamp":"2026-05-09T13:00:03.000Z","type":"event_msg","payload":{"type":"agent_message"}}
+{"timestamp":"2026-05-09T13:00:04.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":10,"output_tokens":20,"total_tokens":30}}}}
+{"timestamp":"2026-05-09T13:00:05.000Z","type":"response_item","payload":{"type":"message","content":[{"type":"input_text","text":"broken"
