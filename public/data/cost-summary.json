@@ -1,40 +1,40 @@
 {
-  "exportedAt": "2026-05-20T17:43:51.954Z",
+  "exportedAt": "2026-05-25T19:42:59.784Z",
   "today": {
-    "cost": 380.98302900000004,
-    "tokens": 130813512,
-    "sessions": 5,
-    "duration_seconds": 107948
+    "cost": 925.4264109999999,
+    "tokens": 249691640,
+    "sessions": 3,
+    "duration_seconds": 55839
   },
   "thisWeek": {
-    "cost": 1605.854396,
-    "tokens": 460417786,
-    "sessions": 13,
-    "duration_seconds": 206035
+    "cost": 1841.592209,
+    "tokens": 497964621,
+    "sessions": 5,
+    "duration_seconds": 122915
   },
   "lastWeek": {
-    "cost": 549.987757,
-    "tokens": 155095945,
-    "sessions": 24,
-    "duration_seconds": 201002
+    "cost": 3447.790188,
+    "tokens": 956250733,
+    "sessions": 31,
+    "duration_seconds": 519255
   },
   "thisMonth": {
-    "cost": 3553.474502,
-    "tokens": 992386054,
-    "sessions": 54,
-    "duration_seconds": 688412
+    "cost": 7237.002503000001,
+    "tokens": 1986183622,
+    "sessions": 77,
+    "duration_seconds": 1124547
   },
   "lastMonth": {
-    "cost": 663.0202600000002,
-    "tokens": 277846774,
-    "sessions": 30,
-    "duration_seconds": 617990
+    "cost": 371.85705900000005,
+    "tokens": 140942101,
+    "sessions": 8,
+    "duration_seconds": 533647
   },
   "thisYear": {
-    "cost": 4276.172081999995,
-    "tokens": 1303713663,
-    "sessions": 130,
-    "duration_seconds": 1314866
+    "cost": 7668.536881999995,
+    "tokens": 2160606558,
+    "sessions": 131,
+    "duration_seconds": 1666658
   },
   "lastYear": {
     "cost": 0,
@@ -43,23 +43,23 @@
     "duration_seconds": 0
   },
   "allTime": {
-    "cost": 4276.172081999995,
-    "tokens": 1303713663,
-    "sessions": 130,
-    "duration_seconds": 1314866
+    "cost": 7668.536881999995,
+    "tokens": 2160606558,
+    "sessions": 131,
+    "duration_seconds": 1666658
   },
   "bySource": {
     "codex": {
-      "cost": 3289.0206160000002,
-      "tokens": 886578633,
-      "sessions": 46,
-      "duration_seconds": 604271
+      "cost": 6960.163893000001,
+      "tokens": 1878516273,
+      "sessions": 68,
+      "duration_seconds": 979369
     },
     "claude": {
-      "cost": 264.45388599999995,
-      "tokens": 105807421,
-      "sessions": 8,
-      "duration_seconds": 84141
+      "cost": 276.83860999999996,
+      "tokens": 107667349,
+      "sessions": 9,
+      "duration_seconds": 145178
     }
   },
   "daily_summary": [
@@ -259,68 +259,16 @@
       "ghost_count": 0
     },
     {
-      "date": "2026-04-20",
-      "session_count": 6,
-      "total_input_tokens": 13805,
-      "total_output_tokens": 248532,
-      "total_cache_creation": 2041727,
-      "total_cache_read": 8844782,
-      "total_tokens": 11148846,
-      "estimated_cost_usd": 64.41226,
-      "total_duration_seconds": 18578,
-      "active_projects": 2,
-      "ghost_count": 0
-    },
-    {
-      "date": "2026-04-21",
-      "session_count": 9,
-      "total_input_tokens": 8832,
-      "total_output_tokens": 689385,
-      "total_cache_creation": 5357879,
-      "total_cache_read": 99151039,
-      "total_tokens": 105207135,
-      "estimated_cost_usd": 205.85556999999997,
-      "total_duration_seconds": 46549,
-      "active_projects": 1,
-      "ghost_count": 0
-    },
-    {
-      "date": "2026-04-22",
-      "session_count": 2,
-      "total_input_tokens": 283,
-      "total_output_tokens": 59068,
-      "total_cache_creation": 501448,
-      "total_cache_read": 10248191,
-      "total_tokens": 10808990,
-      "estimated_cost_usd": 4.893959,
-      "total_duration_seconds": 1642,
-      "active_projects": 1,
-      "ghost_count": 0
-    },
-    {
-      "date": "2026-04-23",
-      "session_count": 3,
-      "total_input_tokens": 234,
-      "total_output_tokens": 206207,
-      "total_cache_creation": 984367,
-      "total_cache_read": 6091222,
-      "total_tokens": 7282030,
-      "estimated_cost_usd": 8.61255,
-      "total_duration_seconds": 11888,
-      "active_projects": 1,
-      "ghost_count": 1
-    },
-    {
       "date": "2026-04-24",
-      "session_count": 3,
-      "total_input_tokens": 938,
-      "total_output_tokens": 452788,
-      "total_cache_creation": 3586987,
-      "total_cache_read": 48944661,
-      "total_tokens": 52985374,
-      "estimated_cost_usd": 172.84809800000002,
-      "total_duration_seconds": 29284,
-      "active_projects": 2,
+      "session_count": 1,
+      "total_input_tokens": 860,
+      "total_output_tokens": 430535,
+      "total_cache_creation": 3363000,
+      "total_cache_read": 46733307,
+      "total_tokens": 50527702,
+      "estimated_cost_usd": 165.459236,
+      "total_duration_seconds": 23598,
+      "active_projects": 1,
       "ghost_count": 0
     },
     {
@@ -482,13 +430,78 @@
     {
       "date": "2026-05-20",
       "session_count": 5,
-      "total_input_tokens": 70320536,
-      "total_output_tokens": 372383,
-      "total_cache_creation": 1050239,
-      "total_cache_read": 123812754,
-      "total_tokens": 130813512,
-      "estimated_cost_usd": 380.98302900000004,
-      "total_duration_seconds": 107948,
+      "total_input_tokens": 79527884,
+      "total_output_tokens": 227819,
+      "total_cache_creation": 0,
+      "total_cache_read": 73431936,
+      "total_tokens": 79755703,
+      "estimated_cost_usd": 292.887819,
+      "total_duration_seconds": 101657,
+      "active_projects": 1,
+      "ghost_count": 0
+    },
+    {
+      "date": "2026-05-21",
+      "session_count": 11,
+      "total_input_tokens": 185565888,
+      "total_output_tokens": 892317,
+      "total_cache_creation": 1255997,
+      "total_cache_read": 234853778,
+      "total_tokens": 246784556,
+      "estimated_cost_usd": 817.0225740000001,
+      "total_duration_seconds": 108416,
+      "active_projects": 2,
+      "ghost_count": 0
+    },
+    {
+      "date": "2026-05-23",
+      "session_count": 2,
+      "total_input_tokens": 122322962,
+      "total_output_tokens": 240468,
+      "total_cache_creation": 0,
+      "total_cache_read": 117961344,
+      "total_tokens": 122563430,
+      "estimated_cost_usd": 455.663765,
+      "total_duration_seconds": 15940,
+      "active_projects": 1,
+      "ghost_count": 0
+    },
+    {
+      "date": "2026-05-24",
+      "session_count": 5,
+      "total_input_tokens": 177028245,
+      "total_output_tokens": 514525,
+      "total_cache_creation": 0,
+      "total_cache_read": 167703040,
+      "total_tokens": 177542770,
+      "estimated_cost_usd": 657.344663,
+      "total_duration_seconds": 195155,
+      "active_projects": 1,
+      "ghost_count": 0
+    },
+    {
+      "date": "2026-05-25",
+      "session_count": 2,
+      "total_input_tokens": 247688343,
+      "total_output_tokens": 584638,
+      "total_cache_creation": 0,
+      "total_cache_read": 232878848,
+      "total_tokens": 248272981,
+      "estimated_cost_usd": 916.165798,
+      "total_duration_seconds": 67076,
+      "active_projects": 1,
+      "ghost_count": 0
+    },
+    {
+      "date": "2026-05-26",
+      "session_count": 3,
+      "total_input_tokens": 247410736,
+      "total_output_tokens": 646738,
+      "total_cache_creation": 265421,
+      "total_cache_read": 235106857,
+      "total_tokens": 249691640,
+      "estimated_cost_usd": 925.4264109999999,
+      "total_duration_seconds": 55839,
       "active_projects": 2,
       "ghost_count": 0
     }
