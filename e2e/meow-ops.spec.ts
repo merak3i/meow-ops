@@ -2,7 +2,7 @@
  * Meow Operations — end-to-end test suite
  *
  * Runs against the Vite preview build (dist/).
- * Covers all 12 pages + key interactions.
+ * Covers all 13 pages + key interactions.
  */
 import { expect, test } from '@playwright/test';
 
@@ -49,7 +49,7 @@ test('sidebar renders all nav buttons', async ({ page }) => {
   const expectedNav = [
     'Overview', 'Sessions', 'By Project', 'By Day', 'By Action',
     'Cost Tracker', 'Analytics', 'Agent Ops', 'Scrying Sanctum',
-    'Companion', 'Focus Timer',
+    'Loop Ops', 'Companion', 'Focus Timer',
   ];
   for (const label of expectedNav) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -267,6 +267,23 @@ test('Scrying Sanctum: per-session roster visible', async ({ page }) => {
   const hasClassLabel =
     /WOLVERINE|BATMAN|DR\.\s*STRANGE|DARTH VADER|CAPTAIN AMERICA|GANDALF|TERMINATOR/i.test(rosterText);
   expect(hasClassLabel).toBe(true);
+});
+
+// ── 10b. Loop Ops ─────────────────────────────────────────────────────────────
+
+test('Loop Ops: shell renders with safety badge', async ({ page }) => {
+  await nav(page, 'Loop Ops');
+  await expect(page.getByRole('heading', { name: 'Loop Ops', exact: true })).toBeVisible();
+  // The safety invariant badge is part of the page contract from Phase 1 on.
+  await expect(page.locator('text=/production writes disabled/i')).toBeVisible();
+  await expect(page.locator('[data-vite-error]')).toHaveCount(0);
+});
+
+test('Loop Ops: instructional empty states render', async ({ page }) => {
+  await nav(page, 'Loop Ops');
+  for (const title of ['Import Master Spec', 'Start local sync', 'Verification missing']) {
+    await expect(page.locator(`text=${title}`).first()).toBeVisible();
+  }
 });
 
 // ── 11. Companion ─────────────────────────────────────────────────────────────
