@@ -18,6 +18,8 @@ const CompanionPageV2    = lazy(() => import('./companion-v2/CompanionPageV2'));
 const AgentVisualizer    = lazy(() => import('./pages/AgentVisualizer'));
 // Scrying Sanctum visualizer (uses local session data)
 const ScryingSanctum     = lazy(() => import('./pages/ScryingSanctum'));
+// Loop-Ops control room (Patherle loop architecture cockpit)
+const LoopOps            = lazy(() => import('./pages/LoopOps'));
 // D3/Realtime visualizer kept at './scrying-sanctum/ScryingSanctum' for future use
 import {
   fetchSessions,
@@ -204,6 +206,16 @@ export default function App() {
   }, [allSessions]);
 
   const renderPage = () => {
+    // Loop-Ops reads its own spec data and ships its own instructional empty
+    // states, so it must not be blocked by the session-data splash.
+    if (page === 'loop-ops') {
+      return (
+        <Suspense fallback={<PageLoader />}>
+          <LoopOps />
+        </Suspense>
+      );
+    }
+
     if (noData) return <NoDataScreen />;
 
     switch (page) {
