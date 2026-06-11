@@ -1,16 +1,16 @@
 {
-  "exportedAt": "2026-06-11T19:08:33.802Z",
+  "exportedAt": "2026-06-11T19:16:17.722Z",
   "today": {
-    "cost": 286.051206,
-    "tokens": 384450606,
-    "sessions": 5,
-    "duration_seconds": 97764
+    "cost": 290.627398,
+    "tokens": 385756069,
+    "sessions": 6,
+    "duration_seconds": 98768
   },
   "thisWeek": {
-    "cost": 3168.6713919999984,
-    "tokens": 1523175529,
-    "sessions": 102,
-    "duration_seconds": 2503045
+    "cost": 3173.247583999999,
+    "tokens": 1524480992,
+    "sessions": 103,
+    "duration_seconds": 2504049
   },
   "lastWeek": {
     "cost": 8322.470080000001,
@@ -19,10 +19,10 @@
     "duration_seconds": 2808997
   },
   "thisMonth": {
-    "cost": 11491.141471999998,
-    "tokens": 3928803728,
-    "sessions": 173,
-    "duration_seconds": 5312042
+    "cost": 11495.717663999998,
+    "tokens": 3930109191,
+    "sessions": 174,
+    "duration_seconds": 5313046
   },
   "lastMonth": {
     "cost": 18420.06913500001,
@@ -31,10 +31,10 @@
     "duration_seconds": 13309296
   },
   "thisYear": {
-    "cost": 31147.981921000046,
-    "tokens": 9574969214,
-    "sessions": 438,
-    "duration_seconds": 18766442
+    "cost": 31152.558113000046,
+    "tokens": 9576274677,
+    "sessions": 439,
+    "duration_seconds": 18767446
   },
   "lastYear": {
     "cost": 0,
@@ -43,23 +43,23 @@
     "duration_seconds": 0
   },
   "allTime": {
-    "cost": 31147.981921000046,
-    "tokens": 9574969214,
-    "sessions": 438,
-    "duration_seconds": 18766442
+    "cost": 31152.558113000046,
+    "tokens": 9576274677,
+    "sessions": 439,
+    "duration_seconds": 18767446
   },
   "bySource": {
     "codex": {
-      "cost": 5952.924183000001,
-      "tokens": 1608744479,
+      "cost": 5956.7379470000005,
+      "tokens": 1609795548,
       "sessions": 78,
-      "duration_seconds": 2619280
+      "duration_seconds": 2620241
     },
     "claude": {
-      "cost": 5538.217288999999,
-      "tokens": 2320059249,
-      "sessions": 95,
-      "duration_seconds": 2692762
+      "cost": 5538.979716999999,
+      "tokens": 2320313643,
+      "sessions": 96,
+      "duration_seconds": 2692805
     }
   },
   "daily_summary": [
@@ -598,14 +598,14 @@
     },
     {
       "date": "2026-06-12",
-      "session_count": 5,
-      "total_input_tokens": 35206427,
-      "total_output_tokens": 1050368,
-      "total_cache_creation": 11297304,
-      "total_cache_read": 368509179,
-      "total_tokens": 384450606,
-      "estimated_cost_usd": 286.051206,
-      "total_duration_seconds": 97764,
+      "session_count": 6,
+      "total_input_tokens": 36352656,
+      "total_output_tokens": 1071773,
+      "total_cache_creation": 11373543,
+      "total_cache_read": 369445393,
+      "total_tokens": 385756069,
+      "estimated_cost_usd": 290.627398,
+      "total_duration_seconds": 98768,
       "active_projects": 3,
       "ghost_count": 0
     }
