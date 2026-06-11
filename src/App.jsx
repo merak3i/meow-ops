@@ -321,7 +321,7 @@ export default function App() {
           </div>
         )}
 
-        {loading ? (
+        {loading && page !== 'loop-ops' ? (
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             height: 400, color: 'var(--text-muted)', fontSize: 14,
