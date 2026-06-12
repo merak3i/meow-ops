@@ -30,6 +30,12 @@ export interface LoopEntityDetail {
   guardrails?: string;
   evalSettings?: string;
   flywheelFlags?: string;
+  // Patherle read-only awareness (spec §Phase 6) — display/copy only, the UI
+  // never fetches against Patherle systems.
+  validationCommand?: string;
+  releaseChecks?: string[];
+  clonePath?: string;
+  cloneVerified?: boolean;
   notVerified?: string[];
 }
 

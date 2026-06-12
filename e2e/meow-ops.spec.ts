@@ -317,6 +317,10 @@ test('Loop Ops: inspector drawer answers the four questions', async ({ page }) =
     // exact:true — section headings only; body text also contains "not verified".
     await expect(inspector.getByText(q, { exact: true })).toBeVisible();
   }
+  // Phase 6 acceptance: a Wave-1 entity shows a validation command + repo links.
+  await expect(inspector.locator('text=/Validation/')).toBeVisible();
+  await expect(inspector.locator('text=/check:ai-evals|check:release/')).toBeVisible();
+  await expect(inspector.locator('text=Repo links (read-only)')).toBeVisible();
   await inspector.getByRole('button', { name: 'Close inspector' }).click();
   await expect(inspector).toHaveCount(0);
 });

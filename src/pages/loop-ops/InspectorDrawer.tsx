@@ -1,6 +1,7 @@
 // Right-hand inspector for the selected entity. Answers the four questions
 // from spec §1: what owns this, what it can touch, last verified state, and
 // what it did not verify. Display-only — no write verbs anywhere.
+import { useState } from 'react';
 import { X } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { StatusChip } from './StatusChip';
@@ -22,6 +23,31 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
     <div>
       <p style={h}>{title}</p>
       {children}
+    </div>
+  );
+}
+
+// Copy-to-clipboard for validation commands (spec §Phase 6: links open or
+// paths copy — the UI itself never runs anything against Patherle).
+function CopyableCommand({ command }: { command: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard blocked — the command stays selectable */ }
+  };
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+      <code style={{ fontSize: 10.5, lineHeight: 1.5, wordBreak: 'break-all', flex: 1 }}>{command}</code>
+      <button onClick={copy} aria-label="Copy validation command" style={{
+        background: 'var(--bg-hover)', border: '1px solid var(--border)', borderRadius: 6,
+        color: copied ? 'var(--green)' : 'var(--text-secondary)', cursor: 'pointer',
+        fontSize: 10, padding: '3px 8px', flexShrink: 0,
+      }}>
+        {copied ? 'copied' : 'copy'}
+      </button>
     </div>
   );
 }
@@ -92,6 +118,26 @@ export function InspectorDrawer({ entity, onClose }: { entity: LoopEntity; onClo
 
       {d.guardrails && (
         <Section title="Guardrails"><p style={body}>{d.guardrails}</p></Section>
+      )}
+
+      {d.validationCommand && (
+        <Section title="Validation (run yourself — Loop-Ops never executes)">
+          <CopyableCommand command={d.validationCommand} />
+        </Section>
+      )}
+
+      {(d.releaseChecks?.length ?? 0) > 0 && (
+        <Section title="Patherle release checks">
+          {d.clonePath && (
+            <p style={{ ...body, marginBottom: 6 }}>
+              clone: <code style={{ fontSize: 10.5 }}>{d.clonePath}</code>{' '}
+              {d.cloneVerified ? '✓ remote verified' : '— NOT verified'}
+            </p>
+          )}
+          <ul style={{ ...body, paddingLeft: 16 }}>
+            {d.releaseChecks?.map((c) => <li key={c}><code style={{ fontSize: 10.5 }}>{c}</code></li>)}
+          </ul>
+        </Section>
       )}
 
       {entity.repoLinks.length > 0 && (
