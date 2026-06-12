@@ -1,16 +1,35 @@
 // Loop-Ops — operator cockpit for Patherle's 31-entity loop architecture.
-// Phase 1: route + shell with instructional empty states. The React Flow
-// canvas, workbook importer, and local-API wiring land in later phases.
-// Hard invariant for every phase: no writes to Patherle production,
-// Supabase, Railway, Vercel, or GitHub from any Loop-Ops code path.
+// Phase 2: React Flow canvas (coordinator → 4 director lanes → 26 assistants),
+// inspector drawer, minimap, mobile fallback. Data comes from the committed
+// fixture at public/data/loop-ops/spec.json until the Phase 3 importer lands.
+// Hard invariant for every phase: no writes to Patherle production, Supabase,
+// Railway, Vercel, or GitHub from any Loop-Ops code path.
+import { useCallback, useState, useSyncExternalStore } from 'react';
 import { ShieldCheck, FileSpreadsheet, RefreshCw, SearchX } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
+import { useLoopOpsData } from './loop-ops/useLoopOpsData';
+import { LoopCanvas } from './loop-ops/LoopCanvas';
+import { InspectorDrawer } from './loop-ops/InspectorDrawer';
+import { SourceStrip } from './loop-ops/SourceStrip';
+import { MobileFallback } from './loop-ops/MobileFallback';
+import type { LoopEntity } from './loop-ops/types';
+
+const ALL_WAVES = [1, 2, 3, 4];
+
+// Lazily initialized so importing this module never touches window — matches
+// the guard convention elsewhere (ScryingSanctum) and keeps the module safe
+// for future jsdom unit tests.
+let mobileQuery: MediaQueryList | undefined;
+const getMobileQuery = () => (mobileQuery ??= window.matchMedia('(max-width: 768px)'));
+function subscribeMobile(cb: () => void) {
+  const mq = getMobileQuery();
+  mq.addEventListener('change', cb);
+  return () => mq.removeEventListener('change', cb);
+}
 
 const styles: Record<string, CSSProperties> = {
-  page: {
-    display: 'flex', flexDirection: 'column', height: '100vh',
-    padding: 32, overflowY: 'auto',
-  },
+  shell: { display: 'flex', flexDirection: 'column', height: '100vh' },
+  emptyWrap: { padding: 32, overflowY: 'auto' },
   header: { display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 },
   title: { fontSize: 22, fontWeight: 300, color: 'var(--text-primary)', margin: 0 },
   badge: {
@@ -35,55 +54,50 @@ const styles: Record<string, CSSProperties> = {
   cardBody: { fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 },
 };
 
-interface EmptyStateCard {
-  icon: ReactNode;
-  title: string;
-  body: string;
-}
+interface EmptyStateCard { icon: ReactNode; title: string; body: string }
 
-// Instructional empty states from the implementation spec (§7): each card
-// tells the operator what is missing and what action produces it.
+// Instructional empty states (spec §7) — shown until a spec import succeeds.
 const EMPTY_STATES: EmptyStateCard[] = [
   {
     icon: <FileSpreadsheet size={15} />,
     title: 'Import Master Spec',
-    body: 'No spec data yet. The Phase 3 importer converts the Master Spec '
-      + 'workbook into local JSON under public/data/loop-ops/ — 26 assistant '
-      + 'surfaces plus 5 synthesized coordinator/director entities.',
+    body: 'No spec data found at /data/loop-ops/spec.json. The importer converts '
+      + 'the Master Spec workbook into local JSON — 26 assistant surfaces plus '
+      + '5 synthesized coordinator/director entities.',
   },
   {
     icon: <RefreshCw size={15} />,
     title: 'Start local sync',
-    body: 'The local API on 127.0.0.1:7337 serves spec, status, and run '
-      + 'history once the Phase 4 endpoints exist. Until then this page '
-      + 'renders shell-only.',
+    body: 'The local API on 127.0.0.1:7337 serves spec, status, and run history '
+      + 'once the Phase 4 endpoints exist. Until then data loads from the static path only.',
   },
   {
     icon: <ShieldCheck size={15} />,
     title: 'No production writes enabled',
-    body: 'Loop-Ops is a cockpit, not an executor. No code path here writes '
-      + 'to Patherle production, Supabase, Railway, Vercel, or GitHub — in '
-      + 'this phase or any later one without explicit approval.',
+    body: 'Loop-Ops is a cockpit, not an executor. No code path here writes to '
+      + 'Patherle production, Supabase, Railway, Vercel, or GitHub — in this '
+      + 'phase or any later one without explicit approval.',
   },
   {
     icon: <SearchX size={15} />,
     title: 'Verification missing',
-    body: 'Every entity will show what was last verified and what was not. '
-      + 'Anything unverified stays labeled as such — in the canvas, the run '
-      + 'timeline, and agent handoffs.',
+    body: 'Every entity shows what was last verified and what was not. Anything '
+      + 'unverified stays labeled as such — in the canvas, the run timeline, and agent handoffs.',
   },
 ];
 
-export default function LoopOps() {
+function EmptyState({ error }: { error: string | null }) {
   return (
-    <div style={styles.page}>
+    <div style={styles.emptyWrap}>
       <div style={styles.header}>
         <h1 style={styles.title}>Loop Ops</h1>
-        <span style={styles.badge}>
-          <ShieldCheck size={13} />
-          production writes disabled
-        </span>
+        <span style={styles.badge}><ShieldCheck size={13} />production writes disabled</span>
       </div>
+      {error && !error.includes('404') && (
+        <p style={{ fontSize: 12, color: 'var(--warning)', margin: '0 0 12px' }}>
+          spec.json exists but failed to load: {error} — fix the data, this is not a missing import.
+        </p>
+      )}
       <p style={styles.subtitle}>
         Control room for Patherle&apos;s 31-entity loop architecture — 1 coordinator,
         4 director lanes, 26 assistant surfaces. Local-first: workbook → JSON →
@@ -96,6 +110,50 @@ export default function LoopOps() {
             <p style={styles.cardBody}>{card.body}</p>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+export default function LoopOps() {
+  const { spec, loading, error } = useLoopOpsData();
+  const [expandedWaves, setExpandedWaves] = useState<ReadonlySet<number>>(new Set([1]));
+  const [selected, setSelected] = useState<LoopEntity | null>(null);
+  const isMobile = useSyncExternalStore(subscribeMobile, () => getMobileQuery().matches);
+
+  const toggleWave = useCallback((wave: number) => {
+    setExpandedWaves((prev) => {
+      const next = new Set(prev);
+      if (next.has(wave)) next.delete(wave); else next.add(wave);
+      return next;
+    });
+  }, []);
+
+  const allExpanded = ALL_WAVES.every((w) => expandedWaves.has(w));
+  const toggleAll = useCallback(() => {
+    setExpandedWaves(allExpanded ? new Set() : new Set(ALL_WAVES));
+  }, [allExpanded]);
+
+  if (loading) {
+    return <div style={{ padding: 32, color: 'var(--text-muted)', fontSize: 14 }}>Loading Loop Ops…</div>;
+  }
+  if (!spec) return <EmptyState error={error} />;
+
+  return (
+    <div style={styles.shell}>
+      <SourceStrip meta={spec.meta} allExpanded={allExpanded} onToggleAll={toggleAll} />
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {isMobile
+          ? <MobileFallback entities={spec.entities} onSelectEntity={setSelected} />
+          : (
+            <LoopCanvas
+              entities={spec.entities}
+              expandedWaves={expandedWaves}
+              onToggleWave={toggleWave}
+              onSelectEntity={setSelected}
+            />
+          )}
+        {selected && <InspectorDrawer entity={selected} onClose={() => setSelected(null)} />}
       </div>
     </div>
   );
