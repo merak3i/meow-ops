@@ -2,7 +2,7 @@
 
 > **Local-first AI observability for people who live inside agentic coding tools.**
 
-Meow Operations turns local Claude Code, OpenAI Codex Desktop, Aider, and Cursor session logs into an installable PWA. It shows token spend, model mix, tool usage, session quality, live agent timelines, a Pomodoro focus timer, and a living 3D cat companion. No accounts. No telemetry. MIT-licensed.
+Meow Operations turns local Claude Code, OpenAI Codex Desktop, Aider, and Cursor session logs into an installable PWA. It shows token spend, model mix, tool usage, source comparison, session quality, live agent timelines, a Pomodoro focus timer, and a living 3D cat companion. No accounts. No telemetry. MIT-licensed.
 
 ## Screenshots
 
@@ -57,10 +57,17 @@ That's it. Your real session data loads on first page hit.
 ### First-time setup
 
 1. Open `http://localhost:5173` in Chrome
-2. The dashboard loads your Claude sessions immediately
-3. To add Aider sessions: `AIDER_PROJECTS=/path/to/your/project node sync/export-local.mjs`
-4. To add Cursor sessions: `CURSOR_LOGS_DIR=~/.cursor/logs node sync/export-local.mjs`
-5. Re-run the sync command any time after new AI sessions to refresh
+2. The dashboard loads your parsed local sessions immediately
+3. Codex Desktop sessions are read from `~/.codex/sessions/` automatically when present
+4. To add Aider sessions: `AIDER_PROJECTS=/path/to/your/project node sync/export-local.mjs`
+5. To add Cursor sessions: `CURSOR_LOGS_DIR=~/.cursor/logs node sync/export-local.mjs`
+6. Re-run the sync command any time after new AI sessions to refresh
+
+By default, the export keeps the latest 1000 sessions so the browser stays fast. Raise the cap with:
+
+```bash
+MEOW_MAX_SESSIONS=2000 node sync/export-local.mjs
+```
 
 ### Install as a PWA (dock-installable)
 
@@ -93,6 +100,7 @@ Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, and *
 |---|---|
 | **Overview** | Sessions, tokens, cost, healthy/ghost ratio, daily chart, tool distribution, spend by period |
 | **Sessions** | Sortable table with cat-type classification per session |
+| **Analytics** | AG Grid analytics table powered by typed session, velocity, efficiency, burn-rate, and profile modules |
 | **Agent Ops** | Wall-clock Gantt timeline of parent + subagent runs, efficiency index, drill-down panel |
 | **Scrying Sanctum** | 3D agent pipeline visualizer — unit frames, ley lines, pixel-art sprites |
 | **By Project** | Horizontal bar breakdown per project |
@@ -109,9 +117,20 @@ When you use both Claude Code and OpenAI Codex Desktop, the **Overview** page sh
 - Total cost and tokens per source
 - Average cost per session
 - Ghost rate (empty/useless sessions) with a red flag when > 15%
-- Filter the whole dashboard to one source via the `◆ Claude` / `⬡ Codex` toggle buttons
+- Weekly and monthly token budget tracking per source
+- Filter the whole dashboard to one source via the Claude / Codex source toggle
 
 The Source Usage sidebar panel is hidden automatically when only one source has data.
+
+### Codex Desktop Parser
+
+Codex Desktop support is first-class, not a CSV import. `sync/parse-codex.mjs` walks:
+
+```text
+~/.codex/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl
+```
+
+It extracts rollout ID, project path, model family, token totals, tool calls, first user-message snippet, session title from `session_index.jsonl` when available, and estimated model cost. Malformed historical rows are skipped instead of blocking the export.
 
 ### Agent Operations Visualizer
 
@@ -131,7 +150,7 @@ Click any row for a full breakdown: token split, cache hit rate, tool usage, sid
 
 ### Scrying Sanctum
 
-A real-time multi-agent pipeline visualizer with a fantasy WotLK aesthetic. Watch your AI agents communicate — see every token flow traverse the network as animated runestones along glowing ley lines.
+A 3D Dalaran-style multi-agent pipeline visualizer for local session data. Watch agent runs, token flow, latency, and session health traverse the network as animated runestones along glowing ley lines.
 
 ```
 Argent Vanguard ──────────── Ebon Blade Scout ──────────── Dalaran Archmage ──── Argent Herald
@@ -145,9 +164,9 @@ Argent Vanguard ──────────── Ebon Blade Scout ───�
 - Ley line health states: `healthy` (fast flow), `choked` (slow flow), `severed` (flickering)
 - Animated runestones travel along ley line paths carrying JSON/text/error payloads
 - Click any runestone to open a Loot Box modal showing full payload, token count, and latency
-- D3 zoom/pan canvas — scroll to zoom, drag to pan
-- Demo mode: cycles pre-built pipelines when not authenticated; no Supabase account required
-- Supabase Realtime mode: live data from `ss_pipelines`, `ss_nodes`, `ss_edges`, `ss_runestones` tables with multi-tenant RLS
+- WebGL plaza scene with performance guardrails, minimap, Lich King custodian, and LLM Sun token emitter
+- Demo mode and local-session mode with no Supabase account required
+- Supabase Realtime schema remains available for external pipelines in `db/migrations/0003_scrying_sanctum.sql`
 
 See `db/migrations/0003_scrying_sanctum.sql` for the full schema and RLS policies.
 
@@ -155,12 +174,11 @@ See `db/migrations/0003_scrying_sanctum.sql` for the full schema and RLS policie
 
 A living 3D companion rendered in WebGL with Kajiya-Kay fur shading, subsurface scattering, and proper procedural anatomy — that evolves based on your actual session data.
 
-**Procedural anatomy** (no glTF required, runs in every browser):
-- Multi-part body: capsule torso, sphere head, cylinder neck, capsule limbs, sphere paws, cubic Bezier tail, cone ears
-- Canvas-generated fur texture: 9000 directional micro-strands per part, breed-specific base color + accent stripes
-- Layered eye system: sclera (clearcoat 0.6) + iris (clearcoat 1.0, vertical slit pupil) + specular catchlight
-- Whiskers rendered as `LineSegments` — 3 per side, tapered opacity
-- Post-processing tuned to prevent bloom overexposure: `luminanceThreshold 0.88`, `focalLength 0.08`, `toneMappingExposure 0.95`
+**Procedural companion rendering** (no glTF required, runs in-browser):
+- React Three Fiber scene with breed-specific geometry, rooms, accessories, particles, and local-only gameplay state
+- Pixel-cat sprite system for lightweight companion presentation and exportable cat cards
+- XState emotional state machine driven by session profile, wellness, cursor movement, and focus state
+- Post-processing bloom was intentionally removed after WebGL stability testing on Apple GPU paths
 
 **Physical evolution — real mesh deformations:**
 
@@ -198,9 +216,9 @@ A living 3D companion rendered in WebGL with Kajiya-Kay fur shading, subsurface 
 
 **Live session detection** — page polls every 30s. When new sessions are detected while you're working, the cat reacts with a gold sparkle burst.
 
-### macOS Menu Bar
+### macOS Menu Bar And Local Sync API
 
-A native-feeling menu bar widget that auto-syncs your sessions in the background:
+A native-feeling menu bar widget can auto-sync your sessions in the background:
 
 ```bash
 cp sync/launchd-example.plist ~/Library/LaunchAgents/com.meow-ops.sync.plist
@@ -208,6 +226,15 @@ launchctl load ~/Library/LaunchAgents/com.meow-ops.sync.plist
 ```
 
 Runs `export-local.mjs` every hour, keeping your deployed dashboard current without opening a terminal.
+
+For a hosted dashboard that can trigger sync from the browser, run the local API on your machine:
+
+```bash
+node sync/local-api.mjs           # export + push
+node sync/local-api.mjs --no-push # export only
+```
+
+It listens on `http://localhost:7337`, serves fresh local `sessions.json` and `cost-summary.json`, and exposes `POST /sync` plus `GET /sync/status`. This process reads only local files on your machine.
 
 ### How Sessions Are Classified
 
@@ -248,6 +275,31 @@ Unknown variants match by family fuzzy search.
 
 ---
 
+## Sync Pipeline
+
+`sync/export-local.mjs` is the source of truth for generated dashboard data.
+
+It currently:
+- Reads Claude Code JSONL files from `~/.claude/projects/`
+- Reads Codex Desktop rollouts from `~/.codex/sessions/`
+- Optionally reads Cursor logs from `CURSOR_LOGS_DIR`
+- Optionally reads Aider project histories from `AIDER_PROJECTS`
+- Deduplicates and classifies sessions, refines project names from `cwd`, calculates model cost, and sorts by latest activity
+- Writes `public/data/sessions.json`
+- Writes `public/data/cost-summary.json` for all-session daily and spend buckets
+- Supports `--push` for the operator's own workflow
+
+Useful commands:
+
+```bash
+node sync/export-local.mjs
+node sync/export-local.mjs --push
+node sync/full-sync.mjs
+node sync/fetch-claude-limits.mjs
+```
+
+---
+
 ## Deploy as a PWA (access from any device)
 
 ### 1. Supabase Storage setup (free tier)
@@ -269,6 +321,7 @@ cp .env.example .env
 #   VITE_SUPABASE_ANON_KEY
 #   VITE_SESSIONS_URL   (public bucket URL to sessions.json)
 #   SUPABASE_SERVICE_KEY  (local only — never deployed)
+#   VITE_ACCESS_PASSWORD  (optional demo gate for hosted builds)
 ```
 
 ### 3. Sync and deploy
@@ -324,13 +377,13 @@ Local machine                                         Cloud (optional)
               └──── sync/upload-to-supabase.mjs ──► Supabase Storage
                                                          │
 PWA on dock ──► vercel.app ──── fetch sessions.json ─────┘
-              React 19 + Vite 8 + Recharts + D3
-              Three.js companion (WebGL)
+              React 19 + Vite 8 + Recharts + D3 + AG Grid
+              Three.js companion + Sanctum scene (WebGL)
               XState emotional state machine
               Supabase Realtime (Scrying Sanctum)
 ```
 
-**No backend. No server-side rendering.** The entire production build is a static bundle plus one JSON file. Supabase Realtime is opt-in for the Scrying Sanctum pipeline visualizer.
+**No hosted backend. No server-side rendering.** The production build is a static bundle plus generated JSON data. Supabase Storage/Realtime are opt-in, and `sync/local-api.mjs` is a localhost-only helper for operators who want browser-triggered sync.
 
 ---
 
@@ -349,6 +402,7 @@ PWA on dock ──► vercel.app ──── fetch sessions.json ────�
 | Realtime | Supabase Realtime (Scrying Sanctum, opt-in) |
 | Hosting | Vercel (or any static host) |
 | Sync | Node.js ESM scripts |
+| Local helper | localhost sync API on port `7337` |
 
 ---
 
@@ -376,8 +430,10 @@ npx playwright test --reporter=list
 
 - **Local-first by default.** Nothing leaves your machine in dev mode.
 - **Sessions JSON contains metrics only** — token counts, tool counts, durations, model names, project names from `cwd`. No message content, no prompts, no code.
+- **Codex snippets are intentionally short.** The parser stores a first-message/session-title snippet for labeling, not full transcript content.
 - **Supabase upload is opt-in.** Your own bucket, your own credentials.
 - **Service key is local-only.** It never appears in the production bundle.
+- **Hosted demo password gate is optional.** `VITE_ACCESS_PASSWORD` only protects demo access; it is not an account system.
 - **No analytics, no telemetry, no tracking.** The app has no idea you exist.
 
 ---
@@ -460,16 +516,16 @@ meow-ops/
 │   └── meow-ops.spec.ts         Playwright e2e tests (15 tests, all pages)
 ├── src/
 │   ├── analytics/               Velocity, efficiency, burn-rate, profile modules
-│   ├── companion-v2/            WebGL companion
-│   │   ├── ProceduralCat.tsx    Procedural anatomy, fur textures, eye shader
+│   ├── companion-v2/            WebGL/pixel companion
 │   │   ├── CompanionScene.tsx   R3F canvas, HDRI rooms, particles, post-processing
 │   │   ├── CompanionPageV2.tsx  Orchestrator — polling, milestones, marks
 │   │   ├── StatsPanel.tsx       Stat bars, actions, trait badge, share button
 │   │   ├── useCompanionGame.ts  Store wrapper, personality trait, memory marks
-│   │   ├── ActionParticles.tsx  Per-action Three.js particle effects
+│   │   ├── PixelCat.tsx         Lightweight breed sprite renderer
+│   │   ├── ParticleOverlay.tsx  Per-action particle effects
 │   │   ├── MilestoneOverlay.tsx Celebration overlay (growth, streaks, spend)
 │   │   └── CatCardExport.tsx   Canvas2D overlay → PNG download
-│   ├── components/              Charts, session table, stat cards, date filter
+│   ├── components/              Charts, session table, nav, password gate, date filter
 │   ├── lib/
 │   │   ├── agent-tree.ts        Forest builder, efficiency index, cache hit rate
 │   │   └── companion-store.js   Tamagotchi engine (localStorage)
@@ -478,7 +534,7 @@ meow-ops/
 │   │   ├── AgentDetailPanel.tsx Slide-in session detail panel
 │   │   ├── ScryingSanctum.tsx   3D agent pipeline visualizer
 │   │   └── ...                  Overview, Sessions, ByDay, ByProject, etc.
-│   ├── scrying-sanctum/         Agent pipeline visualizer (D3 + Supabase Realtime)
+│   ├── scrying-sanctum/         Realtime pipeline components for external feeds
 │   │   ├── ScryingSanctum.tsx   Main page — D3 zoom canvas, legend, loot box
 │   │   ├── ChampionNode.tsx     SVG foreignObject node card
 │   │   ├── LeyLine.tsx          SVG path with flow animation + runestones
@@ -501,7 +557,11 @@ meow-ops/
 │   ├── fetch-claude-limits.mjs  Update rate-limits.json from claude.ai/settings/usage
 │   ├── upload-to-supabase.mjs   Push to Storage bucket
 │   ├── full-sync.mjs            export + upload in one shot
+│   ├── local-api.mjs            localhost sync/status/data server
 │   └── launchd-example.plist    macOS hourly auto-sync template
+├── menubar/
+│   ├── MeowOpsBar.swift         macOS menu bar companion source
+│   └── build.sh                 Build script for MeowOpsBar.app
 ├── playwright.config.ts         Playwright configuration
 └── .env.example
 ```
@@ -510,7 +570,7 @@ meow-ops/
 
 ## License
 
-MIT. Build with it, fork it, ship it. The only ask is that derivative tools stay open source too.
+MIT. Build with it, fork it, ship it. Keeping derivative tools open source is encouraged, but not required by the license.
 
 ---
 
