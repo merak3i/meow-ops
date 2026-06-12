@@ -92,7 +92,7 @@ function EmptyState({ error }: { error: string | null }) {
   return (
     <div style={styles.emptyWrap}>
       <div style={styles.header}>
-        <h1 style={styles.title}>Loop Ops</h1>
+        <h1 style={styles.title}>The Loom</h1>
         <span style={styles.badge}><ShieldCheck size={13} />production writes disabled</span>
       </div>
       {error && !error.includes('404') && (
@@ -138,7 +138,7 @@ export default function LoopOps() {
   }, [allExpanded]);
 
   if (loading) {
-    return <div style={{ padding: 32, color: 'var(--text-muted)', fontSize: 14 }}>Loading Loop Ops…</div>;
+    return <div style={{ padding: 32, color: 'var(--text-muted)', fontSize: 14 }}>Loading the Loom…</div>;
   }
   if (!spec) return <EmptyState error={error} />;
 

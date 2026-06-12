@@ -49,7 +49,7 @@ test('sidebar renders all nav buttons', async ({ page }) => {
   const expectedNav = [
     'Overview', 'Sessions', 'By Project', 'By Day', 'By Action',
     'Cost Tracker', 'Analytics', 'Agent Ops', 'Scrying Sanctum',
-    'Loop Ops', 'Companion', 'Focus Timer',
+    'The Loom', 'Companion', 'Focus Timer',
   ];
   for (const label of expectedNav) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -281,8 +281,8 @@ async function loopSpecPresent(page: import('@playwright/test').Page): Promise<b
   return res.status() === 200;
 }
 
-test('Loop Ops: safety badge renders with or without spec data', async ({ page }) => {
-  await nav(page, 'Loop Ops');
+test('The Loom: safety badge renders with or without spec data', async ({ page }) => {
+  await nav(page, 'The Loom');
   // The safety invariant badge is part of the page contract from Phase 1 on,
   // in both the empty state and the loaded source strip.
   await expect(page.locator('text=/production writes disabled/i').first()).toBeVisible();
@@ -291,7 +291,7 @@ test('Loop Ops: safety badge renders with or without spec data', async ({ page }
 
 test('Loop Ops: canvas renders all 31 entities when waves expanded', async ({ page }) => {
   test.skip(!(await loopSpecPresent(page)), 'local-only Loop-Ops fixture absent — run the importer');
-  await nav(page, 'Loop Ops');
+  await nav(page, 'The Loom');
   await expect(page.locator('text=31 entities · 26 surfaces')).toBeVisible();
   await expect(page.locator('[data-testid="loop-canvas"]')).toBeVisible();
   // Default: wave 1 expanded → 1 coordinator + 4 directors + 3 wave-1 tenant
@@ -309,7 +309,7 @@ test('Loop Ops: canvas renders all 31 entities when waves expanded', async ({ pa
 
 test('Loop Ops: inspector drawer answers the four questions', async ({ page }) => {
   test.skip(!(await loopSpecPresent(page)), 'local-only Loop-Ops fixture absent — run the importer');
-  await nav(page, 'Loop Ops');
+  await nav(page, 'The Loom');
   await page.locator('[data-entity-id="rag.core"]').click();
   const inspector = page.locator('[data-testid="loop-inspector"]');
   await expect(inspector).toBeVisible();
@@ -332,7 +332,7 @@ test('Loop Ops: run timeline renders a recorded run with joined session cost', a
   const runs = await runsRes.json();
   test.skip(!Array.isArray(runs) || runs.length === 0, 'runs.json empty');
 
-  await nav(page, 'Loop Ops');
+  await nav(page, 'The Loom');
   const timeline = page.locator('[data-testid="loop-run-timeline"]');
   await expect(timeline).toBeVisible();
   const card = timeline.locator('[data-testid="loop-run"]').first();

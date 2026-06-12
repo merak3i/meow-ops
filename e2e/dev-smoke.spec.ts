@@ -33,7 +33,7 @@ test('Loop Ops settles past the loading state under dev React (StrictMode livene
     .locator('[data-testid="loop-source-strip"]')
     .or(page.getByText('Import Master Spec'));
   await expect(settled.first()).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText('Loading Loop Ops…')).toHaveCount(0);
+  await expect(page.getByText('Loading the Loom…')).toHaveCount(0);
 });
 
 test('refresh advances the imported-mtime chip with the service worker active', async ({ page }) => {
