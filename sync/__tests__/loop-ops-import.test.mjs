@@ -13,6 +13,7 @@ import ExcelJS from 'exceljs';
 
 const exec = promisify(execFile);
 const IMPORTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'loop-ops-import.mjs');
+const ROOT_SRC = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src');
 const REAL_SPEC = '/Users/napster/Downloads/Patherle/Agentic Harness/PATHERLE_HARNESS_MASTER_SPEC_v1_2026-06-07.xlsx';
 
 const HEADERS = ['#', 'surface_key', 'family', 'group', 'archetype', 'riskClass', 'modelTier',
@@ -51,7 +52,7 @@ async function makeWorkbook(rows, { dropColumn } = {}) {
 async function runImporter(specPath) {
   const out = mkdtempSync(join(tmpdir(), 'loopops-out-'));
   try {
-    const { stdout } = await exec('node', [IMPORTER, '--spec', specPath, '--truth', '/nonexistent.csv', '--out', out]);
+    const { stdout } = await exec('node', [IMPORTER, '--spec', specPath, '--truth', '/nonexistent.csv', '--patherle', '/nonexistent-clone', '--out', out]);
     return { code: 0, stdout, stderr: '', out };
   } catch (err) {
     return { code: err.code, stdout: err.stdout ?? '', stderr: err.stderr ?? '', out };
@@ -134,4 +135,69 @@ test('real Master Spec workbook imports with truth-sync enrichment', { skip: !ex
   const gates = JSON.parse(readFileSync(join(out, 'gates.json'), 'utf8'));
   const passed = gates.filter((g) => g.gateType === 'eval' && g.status === 'passed').map((g) => g.entityId).sort();
   assert.deepEqual(passed, ['assist.catalogue', 'assist.chatSandbox', 'assist.integrations', 'rag.core']);
+});
+
+test('absent patherle clone degrades to explicit not-verified, never a failure', async () => {
+  const res = await runImporter(await makeWorkbook(defaultRows()));
+  assert.equal(res.code, 0, res.stderr);
+  const spec = JSON.parse(readFileSync(join(res.out, 'spec.json'), 'utf8'));
+  assert.equal(spec.meta.patherle.cloneVerified, false);
+  assert.equal(spec.meta.patherle.clonePath, null);
+  const coord = spec.entities.find((e) => e.id === 'coordinator.main');
+  assert.match(coord.detail.notVerified.join(' '), /clone NOT located/);
+  // Validation commands still render with a placeholder, not a wrong path.
+  const assistant = spec.entities.find((e) => e.kind === 'assistant');
+  assert.match(assistant.detail.validationCommand, /<patherle-clone>/);
+});
+
+test('real workbook: wave-1 surfaces carry repo links + eval-gate validation command', { skip: !existsSync(REAL_SPEC) }, async () => {
+  const out = mkdtempSync(join(tmpdir(), 'loopops-p6-'));
+  await exec('node', [IMPORTER, '--spec', REAL_SPEC, '--out', out]);
+  const spec = JSON.parse(readFileSync(join(out, 'spec.json'), 'utf8'));
+  // Acceptance (spec §Phase 6): every Wave-1 entity shows at least one repo
+  // link and one validation command.
+  const waveOne = spec.entities.filter((e) => e.kind === 'assistant' && e.wave === 1);
+  assert.equal(waveOne.length, 4);
+  for (const e of waveOne) {
+    assert.ok(e.repoLinks.length >= 1, `${e.id} has no repo links`);
+    assert.match(e.detail.validationCommand, /check:ai-evals|check:release/);
+  }
+  // The four LOCKED golden-case surfaces point at the eval gate specifically.
+  for (const key of ['assist.catalogue', 'assist.chatSandbox', 'assist.integrations', 'rag.core']) {
+    const e = spec.entities.find((x) => x.id === key);
+    assert.match(e.detail.validationCommand, /check:ai-evals/);
+  }
+});
+
+test('loop-ops sources contain zero Patherle write calls (safety grep)', async () => {
+  // Acceptance (spec §Phase 6): no mutation path toward Patherle systems.
+  // Comments may NAME the forbidden systems (that's the invariant text), so
+  // this greps for code constructs, not words: fetches targeting external
+  // hosts, supabase client imports, and non-GET methods outside api.ts
+  // (whose single POST goes to the local importer endpoint only).
+  const { readdirSync: rd, readFileSync: rf, statSync: st } = await import('node:fs');
+  const files = [];
+  const walk = (dir) => {
+    for (const name of rd(dir)) {
+      const full = join(dir, name);
+      if (st(full).isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(name)) files.push(full);
+    }
+  };
+  walk(join(ROOT_SRC, 'pages', 'loop-ops'));
+  files.push(join(ROOT_SRC, 'pages', 'LoopOps.tsx'));
+
+  const offenders = [];
+  for (const f of files) {
+    const text = rf(f, 'utf8');
+    if (/fetch\([^)]*?(patherle\.com|supabase|railway|vercel)/i.test(text)) offenders.push(`${f}: external-host fetch`);
+    if (/from '@supabase|createClient\(/.test(text)) offenders.push(`${f}: supabase client`);
+    if (!f.endsWith('api.ts') && /method:\s*'(POST|PUT|DELETE|PATCH)'/.test(text)) offenders.push(`${f}: non-GET outside api.ts`);
+    if (/execSync|spawn\(|child_process/.test(text)) offenders.push(`${f}: process execution in frontend`);
+  }
+  const apiText = rf(join(ROOT_SRC, 'pages', 'loop-ops', 'api.ts'), 'utf8');
+  const posts = apiText.match(/method:\s*'(POST|PUT|DELETE|PATCH)'/g) ?? [];
+  if (posts.length !== 1 || !posts[0].includes('POST')) offenders.push(`api.ts: unexpected mutation methods ${posts.join()}`);
+
+  assert.deepEqual(offenders, []);
 });

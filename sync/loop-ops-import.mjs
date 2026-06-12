@@ -11,6 +11,7 @@
 // Fails loudly (exit 1, ALL violations listed, no partial output) when the
 // workbook does not encode exactly the 26-surface / 4-group model.
 import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
@@ -20,6 +21,29 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SPEC = '/Users/napster/Downloads/Patherle/Agentic Harness/PATHERLE_HARNESS_MASTER_SPEC_v1_2026-06-07.xlsx';
 const DEFAULT_TRUTH = '/Users/napster/Downloads/Patherle/Agentic Harness/patherle-harness-truth-sync-2026-06-07/LIVE_Surface_Registry.csv';
 const DEFAULT_OUT = join(__dirname, '..', 'public', 'data', 'loop-ops');
+// Current Patherle clone (verified 2026-06-12; a linked git worktree — the
+// importer re-verifies the remote at every run rather than trusting this).
+const DEFAULT_PATHERLE = '/Users/napster/Downloads/Patherle/patherle-cockpit';
+
+// Harness files the inspector links per spec §3.4 — clone-relative, only
+// included when they exist in the verified clone.
+const HARNESS_FILES = [
+  'backend/supabase/migrations/20260607120000_harness_foundation_tables.sql',
+  'backend/src/services/aiHarness/README.md',
+  'backend/src/services/aiHarness/registry.js',
+  'backend/src/services/aiHarness/evalRunner.js',
+  'backend/src/services/aiHarness/follyCollector.js',
+  'backend/src/routes/adminHarness.js',
+  'docs/harness/standard-pack-and-rubric.md',
+  'docs/runbooks/eval-failure.md',
+];
+
+const RELEASE_CHECKS = [
+  'backend: npm run check:release  (release checklist)',
+  'backend: npm run test:unit  (FAST deterministic gate)',
+  'backend: npm run check:ai-evals  (eval gate)',
+  'frontend: npm run lint && npm run test:regression',
+];
 
 const GROUPS = ['tenant', 'customer', 'admin', 'doer'];
 // Worst → best; synthetic entities inherit the worst child status. An empty
@@ -32,6 +56,23 @@ const worstStatus = (list) => list.length === 0
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);
   return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
+}
+
+// Read-only Patherle awareness (spec §Phase 6): locate the clone, verify its
+// remote actually points at merak3i/patherle, and stat the harness files the
+// inspector links. Never mutates the clone; absence degrades to explicit
+// not-verified notes, never to a failed import.
+function locatePatherle(clonePath) {
+  const result = { clonePath: null, cloneVerified: false, harnessFiles: [], missingHarnessFiles: HARNESS_FILES };
+  if (!existsSync(clonePath)) return result;
+  result.clonePath = clonePath;
+  try {
+    const remote = execFileSync('git', ['-C', clonePath, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim();
+    result.cloneVerified = remote.includes('merak3i/patherle');
+  } catch { /* not a git repo or git unavailable — stays unverified */ }
+  result.harnessFiles = HARNESS_FILES.filter((f) => existsSync(join(clonePath, f)));
+  result.missingHarnessFiles = HARNESS_FILES.filter((f) => !existsSync(join(clonePath, f)));
+  return result;
 }
 
 // exceljs cell values: formulas arrive as {formula, result}, rich text as
@@ -112,6 +153,7 @@ async function main() {
   const specPath = resolve(arg('spec', DEFAULT_SPEC));
   const truthPath = resolve(arg('truth', DEFAULT_TRUTH));
   const outDir = resolve(arg('out', DEFAULT_OUT));
+  const patherle = locatePatherle(resolve(arg('patherle', DEFAULT_PATHERLE)));
 
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(specPath);
@@ -175,13 +217,32 @@ async function main() {
   const edges = [];
   const gates = [];
 
+  const cloneNote = patherle.cloneVerified
+    ? `Patherle clone verified at ${patherle.clonePath}`
+    : 'Patherle clone NOT located/verified — repo links are URLs only';
+
   entities.push({
     id: 'coordinator.main', kind: 'coordinator', label: 'Main Coordinator',
     group: null, surfaceKey: null, archetype: null, riskClass: null, wave: null,
     status: 'covered',
     sources: ['synthesized: loop-ops entity model (spec §4); not present in Master Spec workbook'],
-    repoLinks: [], allowedActions: ['inspect'],
-    detail: { notVerified: ['Synthetic entity — no runtime counterpart exists yet'] },
+    repoLinks: [
+      'https://github.com/merak3i/patherle',
+      'https://github.com/merak3i/meow-ops',
+      'https://www.patherle.com',
+      'https://api.patherle.com',
+    ],
+    allowedActions: ['inspect', 'open-link'],
+    detail: {
+      clonePath: patherle.clonePath ?? undefined,
+      cloneVerified: patherle.cloneVerified,
+      releaseChecks: RELEASE_CHECKS,
+      notVerified: [
+        'Synthetic entity — no runtime counterpart exists yet',
+        ...(patherle.cloneVerified ? [] : [cloneNote]),
+        'Live deploy state of patherle.com/api.patherle.com not probed (links only)',
+      ],
+    },
   });
   for (const g of GROUPS) {
     entities.push({
@@ -189,8 +250,13 @@ async function main() {
       group: g, surfaceKey: null, archetype: null, riskClass: null, wave: null,
       status: 'covered',
       sources: [`synthesized from Master Spec group value '${g}' (spec §4)`],
-      repoLinks: [], allowedActions: ['inspect'],
-      detail: { notVerified: ['Synthetic entity — no runtime counterpart exists yet'] },
+      // Directors link the shared harness spine their lane's surfaces run on —
+      // only paths that exist in the verified clone.
+      repoLinks: patherle.cloneVerified
+        ? patherle.harnessFiles.filter((f) => f.includes('aiHarness') || f.includes('adminHarness'))
+        : [],
+      allowedActions: ['inspect', 'open-link'],
+      detail: { notVerified: ['Synthetic entity — no runtime counterpart exists yet', ...(patherle.cloneVerified ? [] : [cloneNote])] },
     });
     edges.push({ id: `e.coordinator.${g}`, source: 'coordinator.main', target: `director.${g}` });
   }
@@ -213,6 +279,16 @@ async function main() {
     const notVerified = ['Live Supabase runtime state not verified (migration files only)'];
     if (truth) notVerified.push(`Status derived from truth-sync snapshot ${basename(truthPath)}, not a live probe`);
     else notVerified.push('No truth-sync snapshot found — status reflects workbook coverage only');
+    if (!patherle.cloneVerified) notVerified.push(cloneNote);
+
+    // Validation command (spec §Phase 6): surfaces with a LOCKED golden case
+    // run the eval gate; everything else runs the release checklist. Always
+    // read-only commands executed by the operator, never by Loop-Ops.
+    const hasRealCase = ev && String(ev.case_name) && !String(ev.case_name).startsWith('TBD');
+    const cloneRoot = patherle.clonePath ?? '<patherle-clone>';
+    const validationCommand = hasRealCase
+      ? `cd "${cloneRoot}/backend" && npm run check:ai-evals`
+      : `cd "${cloneRoot}/backend" && npm run check:release`;
 
     entities.push({
       id: key, kind: 'assistant',
@@ -242,6 +318,7 @@ async function main() {
         exampleBank: ex ? `${ex.intent_key}` : '',
         beats: be ? ['1 noticed', '2 means', '3 action', '4 review', '5 undo'].filter((b) => String(be[b]).includes('✓')).join(' / ') : '',
         wiredWhen: wm ? `${wm['wired when']} · verify: ${wm['verification checkpoint']}` : '',
+        validationCommand,
         notVerified,
       },
     });
@@ -284,7 +361,20 @@ async function main() {
       entityCount: entities.length,
       assistantCount: registry.length,
       productionWritesEnabled: false,
-      links: { meowOps: 'https://github.com/merak3i/meow-ops', patherle: 'https://github.com/merak3i/patherle' },
+      links: {
+        meowOps: 'https://github.com/merak3i/meow-ops',
+        patherle: 'https://github.com/merak3i/patherle',
+        patherleProd: 'https://www.patherle.com',
+        patherleApi: 'https://api.patherle.com',
+      },
+      // Read-only Patherle awareness (spec §Phase 6) — informational only.
+      patherle: {
+        clonePath: patherle.clonePath,
+        cloneVerified: patherle.cloneVerified,
+        harnessFiles: patherle.harnessFiles,
+        missingHarnessFiles: patherle.missingHarnessFiles,
+        releaseChecks: RELEASE_CHECKS,
+      },
     },
     entities, edges,
   };
@@ -293,7 +383,10 @@ async function main() {
   const gatesBlob = JSON.stringify(gates, null, 2);
   // Secret hygiene: generated JSON must never carry credentials or long
   // base64 runs, even though the directory is gitignored.
-  const SECRET_RE = /sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{8,}|GOCSPX-[A-Za-z0-9_-]{8,}|AKIA[A-Z0-9]{12,}|[A-Za-z0-9+/]{41,}={0,2}/;
+  // The generic long-run arm deliberately excludes '/': filesystem paths are
+  // legitimate slash-joined 40+ char runs (e.g. the clone path), while the
+  // explicit prefixes above cover real-world key formats.
+  const SECRET_RE = /sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{8,}|GOCSPX-[A-Za-z0-9_-]{8,}|AKIA[A-Z0-9]{12,}|[A-Za-z0-9+]{41,}={0,2}/;
   for (const [name, blob] of [['spec.json', specBlob], ['gates.json', gatesBlob]]) {
     const hit = blob.match(SECRET_RE);
     if (hit) {
