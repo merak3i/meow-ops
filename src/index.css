@@ -55,6 +55,32 @@
   --data-4: var(--amber);
   --data-5: var(--purple);
   --data-6: var(--red);
+
+  /* Loop-Ops entity statuses — operational, not decorative (spec §8).
+     --orange is a base hue token (like --amber above) so the light overlay
+     can re-darken it. */
+  --orange: oklch(0.72 0.15 60);
+  --loop-covered:      var(--cyan);
+  --loop-wired:        var(--accent);
+  --loop-running:      var(--purple);
+  --loop-blocked:      var(--amber);
+  --loop-failed:       var(--red);
+  --loop-passed:       var(--green);
+  --loop-needs-review: var(--orange);
+}
+
+/* Loop-Ops node reveal — staggered via per-node animation-delay. Disabled
+   entirely under reduced motion; no other ambient movement exists (spec §8). */
+.loop-reveal {
+  opacity: 0;
+  animation: loop-reveal-in 0.35s var(--ease) forwards;
+}
+@keyframes loop-reveal-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loop-reveal { animation: none; opacity: 1; }
 }
 
 /* ─── Light theme overlay ────────────────────────────────────────────────────
@@ -85,6 +111,7 @@
   --red:   oklch(0.55 0.2  25);
   --purple: oklch(0.55 0.2 295);
   --cyan:  oklch(0.55 0.15 195);
+  --orange: oklch(0.58 0.15 60);
 }
 
 * {

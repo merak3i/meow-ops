@@ -24,6 +24,7 @@
     "@tailwindcss/vite": "^4.2.2",
     "@types/d3": "^7.4.3",
     "@xstate/react": "^5.0.5",
+    "@xyflow/react": "^12.11.0",
     "ag-grid-community": "^33.3.2",
     "ag-grid-react": "^33.3.2",
     "d3": "^7.9.0",
