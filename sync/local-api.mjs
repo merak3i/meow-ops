@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 // sync/local-api.mjs — local sync API server
 //
-// Lets the Vercel-hosted dashboard trigger a local export + push.
-// The browser calls http://localhost:7337/sync — which runs on YOUR machine,
-// not on Vercel — so it can read ~/.claude/projects/ and push to GitHub.
+// Lets the dashboard (local dev or the Vercel-hosted page) trigger local
+// work and read fresh local data. The browser calls http://localhost:7337
+// — which runs on YOUR machine, not on Vercel — so it can read
+// ~/.claude/projects/ and the local Loop-Ops JSON.
+//
+// All endpoints are read/local-only: session data is gitignored since
+// 2026-06-12 and nothing here pushes anywhere.
 //
 // Usage:
-//   node sync/local-api.mjs           # export + push (default)
-//   node sync/local-api.mjs --no-push # export only, skip git push
+//   node sync/local-api.mjs            # default port 7337
+//   MEOW_LOCAL_API_PORT=7437 node sync/local-api.mjs   # tests/parallel runs
 
 import { createServer }   from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
@@ -17,8 +21,9 @@ import { fileURLToPath }  from 'node:url';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT  = join(__dir, '..');
-const PORT  = 7337;
+const PORT  = Number(process.env.MEOW_LOCAL_API_PORT) || 7337;
 const NO_PUSH = process.argv.includes('--no-push');
+const LOOP_OPS_DIR = join(ROOT, 'public', 'data', 'loop-ops');
 
 // launchd doesn't inherit shell PATH — resolve node's full path explicitly
 function resolveNode() {
@@ -111,6 +116,74 @@ const server = createServer((req, res) => {
     return;
   }
 
+  // ── Loop-Ops endpoints (spec §Phase 4) — read/local-only ─────────────────
+  // GET /loop-ops/spec and /loop-ops/runs serve the gitignored local JSON;
+  // POST /loop-ops/sync re-runs the workbook importer. No push path exists
+  // here by construction — the importer never touches git.
+
+  if (req.method === 'GET' && (path === '/loop-ops/spec' || path === '/loop-ops/runs')) {
+    const file = path === '/loop-ops/spec' ? 'spec.json' : 'runs.json';
+    try {
+      res.end(readFileSync(join(LOOP_OPS_DIR, file), 'utf8'));
+    } catch {
+      if (path === '/loop-ops/runs') {
+        // No runs recorded yet is a normal state, not an error.
+        res.end('[]');
+      } else {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ ok: false, error: 'spec.json not found — POST /loop-ops/sync to import the Master Spec' }));
+      }
+    }
+    return;
+  }
+
+  if (path === '/loop-ops/status' && req.method === 'GET') {
+    const files = {};
+    for (const name of ['spec.json', 'gates.json', 'runs.json']) {
+      try {
+        const st = statSync(join(LOOP_OPS_DIR, name));
+        files[name] = { mtime: st.mtimeMs, size: st.size };
+      } catch {
+        files[name] = null;
+      }
+    }
+    let entityCount = null;
+    try {
+      entityCount = JSON.parse(readFileSync(join(LOOP_OPS_DIR, 'spec.json'), 'utf8')).meta?.entityCount ?? null;
+    } catch {}
+    res.end(JSON.stringify({ ok: files['spec.json'] !== null, files, entityCount, productionWritesEnabled: false }));
+    return;
+  }
+
+  if (path === '/loop-ops/sync' && req.method === 'POST') {
+    console.log(`\n[${new Date().toLocaleTimeString()}] Loop-Ops import triggered from browser`);
+    const child = spawn(NODE, [join(ROOT, 'sync', 'loop-ops-import.mjs')], {
+      cwd: ROOT,
+      env: { ...process.env },
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => { stdout += c; process.stdout.write(c); });
+    child.stderr.on('data', (c) => { stderr += c; });
+
+    const timer = setTimeout(() => child.kill(), 90_000);
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      let mtime = null;
+      try { mtime = statSync(join(LOOP_OPS_DIR, 'spec.json')).mtimeMs; } catch {}
+      res.end(JSON.stringify({ ok: code === 0, code, stdout: stdout.slice(-2000), stderr: stderr.slice(-500), mtime }));
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      res.statusCode = 500;
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    });
+    return;
+  }
+
   res.statusCode = 404;
   res.end(JSON.stringify({ ok: false, error: 'Not found' }));
 });
@@ -118,7 +191,11 @@ const server = createServer((req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`🐱 Meow Ops local sync API`);
   console.log(`   http://localhost:${PORT}`);
-  console.log(`   POST /sync        — export + ${NO_PUSH ? 'skip push' : 'push to GitHub'}`);
-  console.log(`   GET  /sync/status — last sync timestamp`);
+  console.log(`   POST /sync            — export session data (local-only${NO_PUSH ? '' : '; --push retired'})`);
+  console.log(`   GET  /sync/status     — last sync timestamp`);
+  console.log(`   GET  /loop-ops/spec   — Loop-Ops entities (local import)`);
+  console.log(`   GET  /loop-ops/status — Loop-Ops file freshness`);
+  console.log(`   GET  /loop-ops/runs   — recorded loop runs`);
+  console.log(`   POST /loop-ops/sync   — re-import the Master Spec workbook`);
   console.log(`\n   Keep this running while using the dashboard.\n`);
 });

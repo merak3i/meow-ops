@@ -83,6 +83,17 @@
   .loop-reveal { animation: none; opacity: 1; }
 }
 
+/* Refresh-spec button while the importer runs — activity feedback, not ambient. */
+.loop-spin {
+  animation: loop-spin 1s linear infinite;
+}
+@keyframes loop-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loop-spin { animation: none; }
+}
+
 /* ─── Light theme overlay ────────────────────────────────────────────────────
    Activated by setting `<html data-theme="light">`. The toggle in the sidebar
    footer flips this attribute and persists to localStorage. The Sanctum 3D

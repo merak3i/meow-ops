@@ -116,7 +116,7 @@ function EmptyState({ error }: { error: string | null }) {
 }
 
 export default function LoopOps() {
-  const { spec, loading, error } = useLoopOpsData();
+  const { spec, status, loading, syncing, error, refresh } = useLoopOpsData();
   const [expandedWaves, setExpandedWaves] = useState<ReadonlySet<number>>(new Set([1]));
   const [selected, setSelected] = useState<LoopEntity | null>(null);
   const isMobile = useSyncExternalStore(subscribeMobile, () => getMobileQuery().matches);
@@ -141,7 +141,19 @@ export default function LoopOps() {
 
   return (
     <div style={styles.shell}>
-      <SourceStrip meta={spec.meta} allExpanded={allExpanded} onToggleAll={toggleAll} />
+      <SourceStrip
+        meta={spec.meta}
+        status={status}
+        allExpanded={allExpanded}
+        syncing={syncing}
+        onToggleAll={toggleAll}
+        onRefresh={() => { void refresh(); }}
+      />
+      {error && (
+        <p style={{ fontSize: 12, color: 'var(--warning)', margin: 0, padding: '6px 20px' }}>
+          last import problem: {error}
+        </p>
+      )}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         {isMobile
           ? <MobileFallback entities={spec.entities} onSelectEntity={setSelected} />
