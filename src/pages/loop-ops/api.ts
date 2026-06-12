@@ -63,4 +63,55 @@ export async function postLoopSync(): Promise<LoopOpsSyncResult> {
   }
 }
 
+export async function fetchLoopRuns(): Promise<unknown> {
+  try {
+    return await fetchJson(`/data/loop-ops/runs.json?t=${Date.now()}`);
+  } catch {
+    try {
+      return await fetchJson(`${API_BASE}/runs?t=${Date.now()}`);
+    } catch {
+      // No run log anywhere is the normal pre-Phase-5 state.
+      return [];
+    }
+  }
+}
+
+export interface SessionCost {
+  costUsd: number;
+  tokens: number;
+  durationSeconds: number;
+  models: string[];
+}
+
+// Joins LoopRun.sessionIds against the session export. On the hosted build the
+// static path serves demo data (rewrite), so the local API is tried first
+// outside dev — same freshness logic as lib/queries.js.
+export async function fetchSessionCosts(ids: readonly string[]): Promise<Map<string, SessionCost>> {
+  const out = new Map<string, SessionCost>();
+  if (ids.length === 0) return out;
+  const urls = DEV
+    ? [`/data/sessions.json?t=${Date.now()}`]
+    : [`http://localhost:7337/data/sessions.json?t=${Date.now()}`, `/data/sessions.json?t=${Date.now()}`];
+  let sessions: unknown = null;
+  for (const url of urls) {
+    try {
+      sessions = await fetchJson(url);
+      break;
+    } catch { /* try next source */ }
+  }
+  if (!Array.isArray(sessions)) return out;
+  const wanted = new Set(ids);
+  for (const s of sessions as Array<Record<string, unknown>>) {
+    const id = typeof s['session_id'] === 'string' ? s['session_id'] : null;
+    if (!id || !wanted.has(id)) continue;
+    out.set(id, {
+      costUsd: Number(s['estimated_cost_usd']) || 0,
+      tokens: Number(s['total_tokens']) || 0,
+      durationSeconds: Number(s['duration_seconds']) || 0,
+      models: typeof s['model'] === 'string' && s['model'] ? [s['model']] : [],
+    });
+  }
+  return out;
+}
+
 export type { LoopSpec };

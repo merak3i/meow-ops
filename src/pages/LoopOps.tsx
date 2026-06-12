@@ -1,17 +1,19 @@
 // Loop-Ops — operator cockpit for Patherle's 31-entity loop architecture.
-// Phase 2: React Flow canvas (coordinator → 4 director lanes → 26 assistants),
-// inspector drawer, minimap, mobile fallback. Data comes from the committed
-// fixture at public/data/loop-ops/spec.json until the Phase 3 importer lands.
+// Canvas (coordinator → 4 director lanes → 26 assistants), inspector drawer,
+// mobile fallback, refresh-spec action, and the run timeline. Data is
+// LOCAL-ONLY JSON produced by sync/loop-ops-import.mjs.
 // Hard invariant for every phase: no writes to Patherle production, Supabase,
 // Railway, Vercel, or GitHub from any Loop-Ops code path.
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import { ShieldCheck, FileSpreadsheet, RefreshCw, SearchX } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useLoopOpsData } from './loop-ops/useLoopOpsData';
+import { useLoopRuns } from './loop-ops/useLoopRuns';
 import { LoopCanvas } from './loop-ops/LoopCanvas';
 import { InspectorDrawer } from './loop-ops/InspectorDrawer';
 import { SourceStrip } from './loop-ops/SourceStrip';
 import { MobileFallback } from './loop-ops/MobileFallback';
+import { RunTimeline } from './loop-ops/RunTimeline';
 import type { LoopEntity } from './loop-ops/types';
 
 const ALL_WAVES = [1, 2, 3, 4];
@@ -117,6 +119,7 @@ function EmptyState({ error }: { error: string | null }) {
 
 export default function LoopOps() {
   const { spec, status, loading, syncing, error, refresh } = useLoopOpsData();
+  const { runs, loading: runsLoading } = useLoopRuns();
   const [expandedWaves, setExpandedWaves] = useState<ReadonlySet<number>>(new Set([1]));
   const [selected, setSelected] = useState<LoopEntity | null>(null);
   const isMobile = useSyncExternalStore(subscribeMobile, () => getMobileQuery().matches);
@@ -167,6 +170,7 @@ export default function LoopOps() {
           )}
         {selected && <InspectorDrawer entity={selected} onClose={() => setSelected(null)} />}
       </div>
+      <RunTimeline runs={runs} loading={runsLoading} />
     </div>
   );
 }
