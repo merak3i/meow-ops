@@ -302,6 +302,9 @@ test('Loop Ops: canvas renders all 31 entities when waves expanded', async ({ pa
   await expect(page.locator('[data-testid="loop-cluster"]')).toHaveCount(3);
   await page.getByRole('button', { name: 'Expand all waves' }).click();
   await expect(page.locator('[data-testid="loop-entity"]')).toHaveCount(31);
+  // Phase 4 operator action — presence only; clicking would spawn the real
+  // importer against a machine-specific workbook path.
+  await expect(page.getByRole('button', { name: 'Refresh spec' })).toBeVisible();
 });
 
 test('Loop Ops: inspector drawer answers the four questions', async ({ page }) => {

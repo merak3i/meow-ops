@@ -35,6 +35,48 @@ function meowSyncPlugin() {
         }
       });
 
+      // Dev-mode mirror of the local API's Loop-Ops endpoints (sync/local-api.mjs).
+      // GETs for spec/runs aren't needed here — Vite serves public/data/ directly.
+      server.middlewares.use('/api/loop-ops/status', (req, res) => {
+        if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        const dir = join(server.config.root, 'public', 'data', 'loop-ops');
+        const files = {};
+        for (const name of ['spec.json', 'gates.json', 'runs.json']) {
+          try {
+            const st = statSync(join(dir, name));
+            files[name] = { mtime: st.mtimeMs, size: st.size };
+          } catch { files[name] = null; }
+        }
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ok: files['spec.json'] !== null, files, productionWritesEnabled: false }));
+      });
+
+      server.middlewares.use('/api/loop-ops/sync', (req, res) => {
+        if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
+        // No env option — the child inherits the dev server's environment.
+        const child = spawn('node', [join(server.config.root, 'sync', 'loop-ops-import.mjs')], {
+          cwd: server.config.root,
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (c) => { stdout += c.toString(); });
+        child.stderr.on('data', (c) => { stderr += c.toString(); });
+        const timeout = setTimeout(() => child.kill(), 90_000);
+        child.on('close', (code) => {
+          clearTimeout(timeout);
+          let mtime = null;
+          try { mtime = statSync(join(server.config.root, 'public', 'data', 'loop-ops', 'spec.json')).mtimeMs; } catch { /* not written yet */ }
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: code === 0, code, stdout: stdout.slice(-2000), stderr: stderr.slice(-500), mtime }));
+        });
+        child.on('error', (err) => {
+          clearTimeout(timeout);
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: false, error: err.message }));
+        });
+      });
+
       server.middlewares.use('/api/sync', (req, res) => {
         if (req.method !== 'POST') {
           res.statusCode = 405;
