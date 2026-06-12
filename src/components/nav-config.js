@@ -27,7 +27,7 @@ export const NAV_SECTIONS = [
     items: [
       { id: 'agent-ops', label: 'Agent Ops',       icon: GitBranch, usesDateFilter: false                  },
       { id: 'sanctum',   label: 'Scrying Sanctum', icon: Swords,    usesDateFilter: false, fullBleed: true },
-      { id: 'loop-ops',  label: 'Loop Ops',        icon: Workflow,  usesDateFilter: false, fullBleed: true },
+      { id: 'loop-ops',  label: 'The Loom',        icon: Workflow,  usesDateFilter: false, fullBleed: true },
     ],
   },
   {

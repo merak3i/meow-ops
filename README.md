@@ -170,6 +170,30 @@ Argent Vanguard ──────────── Ebon Blade Scout ───�
 
 See `db/migrations/0003_scrying_sanctum.sql` for the full schema and RLS policies.
 
+### The Loom
+
+An n8n-style read-only control room for multi-agent loop architectures. The Loom imports an Excel master spec (the "law" for a fleet of AI surfaces), synthesizes the orchestration hierarchy on top of it, and renders the whole organism as an interactive React Flow canvas — 1 coordinator, 4 director lanes, 26 worker surfaces.
+
+```
+                       Main Coordinator
+        ┌──────────┬──────┴───────┬─────────────┐
+   Tenant Dir   Customer Dir   Admin Dir    Doer Dir
+   ┌──┬──┬──┐      ┌──┴──┐        │             │
+  W1 W2 W3 …    rag.core …    ops.copilot  genie.execute
+  [needs-review] [passed]      [covered]    [covered]
+```
+
+**Features:**
+- Excel workbook importer with fail-loud validation: wrong surface count, wrong groups, duplicate keys, or missing columns abort with every violation named — zero partial output
+- Collapsible wave clusters keep a 22-node lane readable; minimap, keyboard access, light/dark theme, reduced-motion safe
+- Every node answers four questions: what owns this, what it can touch, last verified state, and what was NOT verified
+- Inspector shows Master Spec knobs (confidence floors, pass thresholds, model tiers), guardrails, eval gates, and copyable validation commands — The Loom never executes anything itself
+- Run timeline joins recorded loop runs against real session costs; an empty evidence list renders "treat with suspicion"
+- Permanent "production writes disabled" badge — the alarm branch wears red, never the safe green
+- All loop data is local-only (gitignored); the hosted demo intentionally shows the instructional empty state
+
+Local API endpoints (`sync/local-api.mjs`): `GET /loop-ops/spec|status|runs`, `POST /loop-ops/sync` re-runs the importer. Import manually with `node sync/loop-ops-import.mjs`.
+
 ### The Cat Companion
 
 A living 3D companion rendered in WebGL with Kajiya-Kay fur shading, subsurface scattering, and proper procedural anatomy — that evolves based on your actual session data.
