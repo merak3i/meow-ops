@@ -321,6 +321,31 @@ test('Loop Ops: inspector drawer answers the four questions', async ({ page }) =
   await expect(inspector).toHaveCount(0);
 });
 
+test('Loop Ops: run timeline renders a recorded run with joined session cost', async ({ page }) => {
+  test.skip(!(await loopSpecPresent(page)), 'local-only Loop-Ops fixture absent — run the importer');
+  const runsRes = await page.request.get('/data/loop-ops/runs.json');
+  test.skip(runsRes.status() !== 200, 'local-only runs.json absent — record a run first (SOP §5)');
+  const runs = await runsRes.json();
+  test.skip(!Array.isArray(runs) || runs.length === 0, 'runs.json empty');
+
+  await nav(page, 'Loop Ops');
+  const timeline = page.locator('[data-testid="loop-run-timeline"]');
+  await expect(timeline).toBeVisible();
+  const card = timeline.locator('[data-testid="loop-run"]').first();
+  await expect(card).toBeVisible();
+  // Cost joins only when the run's session ids resolve against sessions.json.
+  const sessionsRes = await page.request.get('/data/sessions.json');
+  if (sessionsRes.status() === 200) {
+    const ids = new Set((await sessionsRes.json()).map((s: { session_id: string }) => s.session_id));
+    if (runs[0].sessionIds.some((id: string) => ids.has(id))) {
+      await expect(card.locator('text=/\\$\\d/')).toBeVisible();
+    }
+  }
+  // Expanding surfaces the evidence contract: verified + not-verified lists.
+  await card.getByRole('button').first().click();
+  await expect(timeline.locator('text=/not verified:/').first()).toBeVisible();
+});
+
 // ── 11. Companion ─────────────────────────────────────────────────────────────
 
 test('Companion: lazy chunk loads and WebGL canvas mounts', async ({ page }) => {
