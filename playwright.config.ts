@@ -9,7 +9,6 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
 
   use: {
-    baseURL: 'http://localhost:4173',
     trace: 'on-first-retry',
     headless: true,
     // Wait for network idle before assertions
@@ -17,18 +16,35 @@ export default defineConfig({
     navigationTimeout: 20_000,
   },
 
-  // Serve the already-built dist — no dep optimisation reloads
-  webServer: {
-    command: 'npm run preview',
-    url: 'http://localhost:4173',
-    reuseExistingServer: !process.env.CI,
-    timeout: 30_000,
-  },
+  webServer: [
+    // Serve the already-built dist — no dep optimisation reloads
+    {
+      command: 'npm run preview',
+      url: 'http://localhost:4173',
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+    // Real Vite dev server for the dev-smoke project: dev-only failure modes
+    // (StrictMode double-effects, service-worker module caching) are invisible
+    // to the production-React preview build by construction.
+    {
+      command: 'npm run dev -- --port 5175 --strictPort',
+      url: 'http://localhost:5175',
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+  ],
 
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      testMatch: /meow-ops\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:4173' },
+    },
+    {
+      name: 'dev-smoke',
+      testMatch: /dev-smoke\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:5175' },
     },
   ],
 });
