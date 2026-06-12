@@ -8,11 +8,11 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>/Users/napster/repos/meow-ops/sync/local-api.mjs</string>
+    <string>/Users/napster/Downloads/Meow Creative Haus/business/projects/meow-ops/sync/local-api.mjs</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/napster/repos/meow-ops</string>
+  <string>/Users/napster/Downloads/Meow Creative Haus/business/projects/meow-ops</string>
 
   <key>RunAtLoad</key>
   <true/>
