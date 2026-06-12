@@ -338,22 +338,13 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
   console.log(`Wrote cost-summary.json — today $${summary.today.cost.toFixed(2)}, this week $${summary.thisWeek.cost.toFixed(2)}, this month $${summary.thisMonth.cost.toFixed(2)}, this year $${summary.thisYear.cost.toFixed(2)}`);
 }
 
-// ── Optional: commit + push to GitHub so Vercel serves fresh data ─────────────
+// ── --push retired (2026-06-12) ────────────────────────────────────────────────
+// Session data is LOCAL-ONLY: real titles/first messages were exposed in the
+// public repo and purged from history (see MEOWOPS_SESSION_DATA_EXPOSURE_AUDIT
+// in ~/Downloads). Both files are gitignored; the hosted demo serves demo-*
+// fixtures via vercel.json rewrites and the local API serves fresh local data.
+// The flag stays recognized so launchd/cron invocations don't error.
 if (process.argv.includes('--push')) {
-  console.log('\n📤 Pushing to GitHub…');
-  const { execSync } = await import('node:child_process');
-  const root = join(import.meta.dirname, '..');
-  const now = new Date().toISOString();
-  try {
-    execSync('git add public/data/sessions.json public/data/cost-summary.json', { cwd: root, stdio: 'pipe' });
-    execSync(`git commit -m "chore: update session data (${now.slice(0, 10)})"`, { cwd: root, stdio: 'pipe' });
-    execSync('git push origin main', { cwd: root, stdio: 'pipe' });
-    console.log('✓  Pushed to GitHub — Vercel will redeploy automatically');
-  } catch (err) {
-    if (!err.message.includes('nothing to commit')) {
-      console.log(`⚠  Git push failed: ${err.message}`);
-    } else {
-      console.log('✓  No changes to push');
-    }
-  }
+  console.log('\n⚠  --push is retired: session data is local-only and gitignored.');
+  console.log('   Nothing was committed or pushed. Remove --push from the caller.');
 }

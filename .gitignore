@@ -18,8 +18,12 @@ sync/.meow-ops-sync-state.json
 sync/auto-sync.log
 public/data/*
 !public/data/rate-limits.json
-!public/data/sessions.json
-!public/data/cost-summary.json
+# sessions.json and cost-summary.json are LOCAL-ONLY since 2026-06-12: they
+# carry real session titles/messages and were purged from public git history.
+# The hosted demo serves demo-* files via vercel.json rewrites; the local API
+# (sync/local-api.mjs) serves the fresh local copies. Never re-allowlist them.
+!public/data/demo-sessions.json
+!public/data/demo-cost-summary.json
 
 # Local session-history files (Pomodoro, etc.) live in the browser, not the repo
 *.history.json
