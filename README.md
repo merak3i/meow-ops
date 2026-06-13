@@ -2,7 +2,7 @@
 
 > **Local-first AI observability for people who live inside agentic coding tools.**
 
-Meow Operations turns local Claude Code, OpenAI Codex Desktop, Aider, Cursor, and Google Antigravity session logs into an installable PWA. It shows token spend, model mix, tool usage, source comparison, session quality, live agent timelines, a Pomodoro focus timer, and a living 3D cat companion. No accounts. No telemetry. MIT-licensed.
+Meow Operations turns local Claude Code, OpenAI Codex Desktop, Aider, Cursor, and Google Antigravity session logs into an installable PWA. It shows token spend, model mix, tool usage, source comparison, session quality, live agent timelines, Loom Ops for loop-based workflows, a Pomodoro focus timer, and a living 3D cat companion. No accounts. No telemetry. MIT-licensed.
 
 ## Screenshots
 
@@ -81,6 +81,8 @@ For remote access from any device (phone, iPad, second machine), see the **Deplo
 
 Developers using AI tools — Claude, GPT-4o, Gemini, Codex, Cursor, Aider — spend hundreds of dollars a month on tokens with almost no visibility into what they got for it. Not cost-per-model. Not which project burns the most. Not whether a session actually shipped something or just spun its wheels.
 
+As workflows get more layered, it also gets harder to see what is verified, what is assumed, and what still needs review.
+
 The tools that do exist count tokens. None of them:
 - Tell you what those tokens **produced**
 - Work across **multiple AI models** in one view
@@ -105,6 +107,7 @@ Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, **Cur
 | **Analytics** | AG Grid analytics table powered by typed session, velocity, efficiency, burn-rate, and profile modules |
 | **Agent Ops** | Wall-clock Gantt timeline of parent + subagent runs, efficiency index, drill-down panel |
 | **Scrying Sanctum** | 3D agent pipeline visualizer — unit frames, ley lines, pixel-art sprites |
+| **The Loom** | Read-only control room for loop-based workflows, with workbook import, ownership, verification, and evidence |
 | **By Project** | Horizontal bar breakdown per project |
 | **By Day** | Area chart of token usage and session counts over time |
 | **By Action** | Which tools your agents actually reach for |
@@ -173,9 +176,16 @@ Argent Vanguard ──────────── Ebon Blade Scout ───�
 
 See `db/migrations/0003_scrying_sanctum.sql` for the full schema and RLS policies.
 
-### The Loom
+### The Loom (Loom Ops)
 
-An n8n-style read-only control room for multi-agent loop architectures. The Loom imports your own Excel workflow spec, synthesizes the orchestration hierarchy on top of it, and renders the whole system as an interactive React Flow canvas.
+The Loom is the read-only control room for loop-based workflows. It imports a workbook or workflow spec, builds the hierarchy on top of it, and renders the result as an interactive React Flow canvas.
+
+Use it when a loop matters more than a single run:
+- Check the shape of the loop before execution starts.
+- Open any node to see ownership, access, last verified state, and what remains unverified.
+- Keep review and refresh local while the source spec changes.
+- Compare recorded runs with current cost and evidence.
+- Keep unverified items clearly labeled until evidence appears.
 
 ```
                        Main Coordinator
@@ -186,14 +196,41 @@ An n8n-style read-only control room for multi-agent loop architectures. The Loom
  [review]      [covered]      [passed]       [blocked]
 ```
 
-**Features:**
-- Excel workbook importer with fail-loud validation: unknown groups, duplicate keys, missing columns, or secret-shaped content abort with every violation named
-- Collapsible wave clusters keep dense lanes readable; minimap, keyboard access, light/dark theme, reduced-motion safe
-- Every node answers four questions: what owns this, what it can touch, last verified state, and what was NOT verified
-- Inspector shows workflow-spec knobs, guardrails, eval gates, and copyable validation commands. The Loom never executes anything itself
-- Run timeline joins recorded loop runs against real session costs; an empty evidence list renders "treat with suspicion"
-- Permanent "production writes disabled" badge — the alarm branch wears red, never the safe green
-- All loop data is local-only (gitignored); the hosted demo intentionally shows the instructional empty state
+These screens show the shape of the loop, the expanded waves, the inspector, the timeline, and the mobile fallback.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/10-loom-01-hierarchy.png" alt="The Loom hierarchy view"></td>
+    <td width="50%"><img src="docs/screenshots/11-loom-02-waves.png" alt="The Loom waves view"></td>
+  </tr>
+  <tr>
+    <td><strong>Hierarchy</strong><br>The loop at a glance, from coordinator to worker lanes.</td>
+    <td><strong>Waves</strong><br>Expanded clusters when you need the denser shape of the system.</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/12-loom-03-inspector.png" alt="The Loom inspector view"></td>
+    <td width="50%"><img src="docs/screenshots/14-loom-05-mobile.png" alt="The Loom mobile fallback view"></td>
+  </tr>
+  <tr>
+    <td><strong>Inspector</strong><br>Ownership, access, verification, and what remains unverified.</td>
+    <td><strong>Mobile fallback</strong><br>Lane cards and search when the canvas is too small.</td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/13-loom-04-timeline.png" alt="The Loom run timeline view"></td>
+  </tr>
+  <tr>
+    <td colspan="2"><strong>Timeline</strong><br>Recorded runs against current cost and evidence, so gaps stay visible.</td>
+  </tr>
+</table>
+
+**What it shows:**
+- Excel workbook importer with fail-loud validation. Unknown groups, duplicate keys, missing columns, or secret-shaped content stop the import with named violations.
+- Collapsible wave clusters keep dense lanes readable. Minimap, keyboard access, light and dark theme, and reduced-motion support stay on.
+- Every node answers four questions: what owns this, what it can touch, last verified state, and what was not verified.
+- Inspector shows workflow-spec knobs, guardrails, eval gates, and copyable validation commands. The Loom never executes anything itself.
+- Run timeline joins recorded loop runs against real session costs. An empty evidence list stays suspicious.
+- Permanent "production writes disabled" badge. The alarm branch wears red, never the safe green.
+- All loop data is local-only, and the hosted demo intentionally shows the instructional empty state.
 
 Local API endpoints (`sync/local-api.mjs`): `GET /loop-ops/spec|status|runs`, `POST /loop-ops/sync` re-runs the importer. Import manually with `node sync/loop-ops-import.mjs`.
 
@@ -210,7 +247,7 @@ npm run sync:superadmin
 Optional environment:
 
 ```bash
-MEOW_SUPERADMIN_GITHUB_REPOS=merak3i/meow-ops,merak3i/patherle
+MEOW_SUPERADMIN_GITHUB_REPOS=merak3i/meow-ops,<REPO_OWNER>/<REPO_NAME>
 MEOW_SUPERADMIN_USAGE_SNAPSHOT=/absolute/path/to/superadmin-usage.json
 MEOW_GITHUB_ACTIONS_MINUTES_LIMIT=3000
 MEOW_GITHUB_ACTIONS_STORAGE_GB_LIMIT=10
