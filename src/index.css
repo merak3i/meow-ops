@@ -173,6 +173,40 @@ code, .font-mono {
   border-color: var(--border-hover);
 }
 
+@media (max-width: 720px) {
+  :root,
+  :root[data-theme="dark"],
+  :root[data-theme="light"] {
+    --sidebar-w: 72px;
+  }
+
+  .sidebar-logo-wrap {
+    padding: 0 16px !important;
+    justify-content: center;
+  }
+
+  .sidebar-logo-text,
+  .sidebar-section-label,
+  .sidebar-nav-label,
+  .sidebar-sync-text,
+  .sidebar-sync-time,
+  .sidebar-powered-text {
+    display: none !important;
+  }
+
+  .sidebar-nav-button {
+    justify-content: center;
+    padding: 10px 0 !important;
+    gap: 0 !important;
+  }
+
+  .sidebar-sync-button {
+    justify-content: center;
+    padding: 9px 0 !important;
+    gap: 0 !important;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }

@@ -20,6 +20,8 @@ const AgentVisualizer    = lazy(() => import('./pages/AgentVisualizer'));
 const ScryingSanctum     = lazy(() => import('./pages/ScryingSanctum'));
 // Loop-Ops control room
 const LoopOps            = lazy(() => import('./pages/LoopOps'));
+// Local-only subscription, capacity, and GitHub Actions usage cockpit
+const CapacityUsage      = lazy(() => import('./pages/CapacityUsage'));
 // D3/Realtime visualizer kept at './scrying-sanctum/ScryingSanctum' for future use
 import {
   fetchSessions,
@@ -215,6 +217,13 @@ export default function App() {
         </Suspense>
       );
     }
+    if (page === 'capacity-usage') {
+      return (
+        <Suspense fallback={<PageLoader />}>
+          <CapacityUsage />
+        </Suspense>
+      );
+    }
 
     if (noData) return <NoDataScreen />;
 
@@ -310,7 +319,8 @@ export default function App() {
       <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} />
 
       <main style={{
-        marginLeft: 'var(--sidebar-w)', flex: 1,
+        marginLeft: 'var(--sidebar-w)', flex: 1, minWidth: 0,
+        width: 'calc(100vw - var(--sidebar-w))',
         ...(fullBleed
           ? { padding: 0, maxWidth: 'none', display: 'flex', flexDirection: 'column', height: '100vh' }
           : { padding: 32, maxWidth: 1280 }),
@@ -321,7 +331,7 @@ export default function App() {
           </div>
         )}
 
-        {loading && page !== 'loop-ops' ? (
+        {loading && page !== 'loop-ops' && page !== 'capacity-usage' ? (
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             height: 400, color: 'var(--text-muted)', fontSize: 14,

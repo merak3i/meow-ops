@@ -77,6 +77,51 @@ function meowSyncPlugin() {
         });
       });
 
+      // Dev-mode mirror of sync/local-api.mjs for the Capacity & Usage page.
+      server.middlewares.use('/api/superadmin-usage/status', (req, res) => {
+        if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        try {
+          const filePath = join(server.config.root, 'public', 'data', 'superadmin-usage.json');
+          const stat = statSync(filePath);
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({
+            ok: true,
+            mtime: stat.mtimeMs,
+            size: stat.size,
+            productionWritesEnabled: false,
+          }));
+        } catch {
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: false, productionWritesEnabled: false }));
+        }
+      });
+
+      server.middlewares.use('/api/superadmin-usage/sync', (req, res) => {
+        if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
+        const child = spawn('node', [join(server.config.root, 'sync', 'superadmin-usage.mjs')], {
+          cwd: server.config.root,
+          env: process.env,
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (c) => { stdout += c.toString(); });
+        child.stderr.on('data', (c) => { stderr += c.toString(); });
+        const timeout = setTimeout(() => child.kill(), 120_000);
+        child.on('close', (code) => {
+          clearTimeout(timeout);
+          let mtime = null;
+          try { mtime = statSync(join(server.config.root, 'public', 'data', 'superadmin-usage.json')).mtimeMs; } catch { /* not written yet */ }
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: code === 0, code, stdout: stdout.slice(-2000), stderr: stderr.slice(-500), mtime }));
+        });
+        child.on('error', (err) => {
+          clearTimeout(timeout);
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: false, error: err.message }));
+        });
+      });
+
       server.middlewares.use('/api/sync', (req, res) => {
         if (req.method !== 'POST') {
           res.statusCode = 405;

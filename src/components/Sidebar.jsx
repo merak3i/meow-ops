@@ -69,6 +69,7 @@ function SyncButton({ onReload }) {
       <button
         onClick={handleSync}
         disabled={status === 'syncing'}
+        className="sidebar-sync-button"
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 8,
           padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8,
@@ -86,11 +87,11 @@ function SyncButton({ onReload }) {
         >
           <Icon size={14} />
         </motion.span>
-        <span style={{ flex: 1 }}>
+        <span className="sidebar-sync-text" style={{ flex: 1 }}>
           {status === 'syncing' ? 'Syncing…' : status === 'success' ? 'Synced' : status === 'error' ? (isLocalError ? 'Server offline' : 'Failed') : 'Sync sessions'}
         </span>
         {status === 'idle' && lastSync && (
-          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{relativeTime(lastSync)}</span>
+          <span className="sidebar-sync-time" style={{ fontSize: 10, color: 'var(--text-muted)' }}>{relativeTime(lastSync)}</span>
         )}
       </button>
       <AnimatePresence>
@@ -241,9 +242,9 @@ export default function Sidebar({ activePage, onNavigate, onReload }) {
       }}
     >
       {/* Logo */}
-      <div style={{ padding: '0 20px', marginBottom: 28, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+      <div className="sidebar-logo-wrap" style={{ padding: '0 20px', marginBottom: 28, display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         <img src="/meow-logo-dark.png" alt="Meow Operations" style={{ width: 32, height: 32, borderRadius: 6 }} />
-        <span style={{ fontSize: 15, fontWeight: 300, color: 'var(--text-primary)' }}>Meow Operations</span>
+        <span className="sidebar-logo-text" style={{ fontSize: 15, fontWeight: 300, color: 'var(--text-primary)' }}>Meow Operations</span>
       </div>
 
       {/* Nav — grouped sections (Insights / Operations / Living). Active item
@@ -255,7 +256,7 @@ export default function Sidebar({ activePage, onNavigate, onReload }) {
       <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0 }}>
         {NAV_SECTIONS.map((section, idx) => (
           <div key={section.label} style={{ marginTop: idx === 0 ? 0 : 14 }}>
-            <Eyebrow style={{ padding: '0 20px', marginBottom: 6 }}>
+            <Eyebrow className="sidebar-section-label" style={{ padding: '0 20px', marginBottom: 6 }}>
               {section.label}
             </Eyebrow>
             {section.items.map(({ id, label, icon: Icon }) => {
@@ -264,6 +265,8 @@ export default function Sidebar({ activePage, onNavigate, onReload }) {
                 <button
                   key={id}
                   onClick={() => onNavigate(id)}
+                  title={label}
+                  className="sidebar-nav-button"
                   style={{
                     width: 'calc(100% - 16px)',
                     display: 'flex', alignItems: 'center', gap: 10,
@@ -284,7 +287,7 @@ export default function Sidebar({ activePage, onNavigate, onReload }) {
                   onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = 'transparent'; }}
                 >
                   <Icon size={16} />
-                  {label}
+                  <span className="sidebar-nav-label">{label}</span>
                 </button>
               );
             })}
@@ -311,7 +314,7 @@ export default function Sidebar({ activePage, onNavigate, onReload }) {
         gap: 8,
       }}>
         <ThemeToggle />
-        <div>
+        <div className="sidebar-powered-text">
           <span style={{ opacity: .5 }}>powered by</span>{' '}
           <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>Meow Creative Haus</span>
         </div>

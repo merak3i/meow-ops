@@ -24,6 +24,7 @@ const ROOT  = join(__dir, '..');
 const PORT  = Number(process.env.MEOW_LOCAL_API_PORT) || 7337;
 const NO_PUSH = process.argv.includes('--no-push');
 const LOOP_OPS_DIR = join(ROOT, 'public', 'data', 'loop-ops');
+const SUPERADMIN_USAGE_FILE = join(ROOT, 'public', 'data', 'superadmin-usage.json');
 
 // launchd doesn't inherit shell PATH — resolve node's full path explicitly
 function resolveNode() {
@@ -184,6 +185,60 @@ const server = createServer((req, res) => {
     return;
   }
 
+  // ── SuperAdmin Capacity & Usage endpoints — read/local-only ──────────────
+  // GET /superadmin-usage/data serves the sanitized local snapshot. POST
+  // /superadmin-usage/sync refreshes it from local operator-owned sources.
+  // No endpoint accepts provider credentials and no endpoint writes git.
+
+  if (path === '/superadmin-usage/data' && req.method === 'GET') {
+    try {
+      res.end(readFileSync(SUPERADMIN_USAGE_FILE, 'utf8'));
+    } catch {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ ok: false, error: 'superadmin-usage.json not found — POST /superadmin-usage/sync first' }));
+    }
+    return;
+  }
+
+  if (path === '/superadmin-usage/status' && req.method === 'GET') {
+    try {
+      const st = statSync(SUPERADMIN_USAGE_FILE);
+      res.end(JSON.stringify({ ok: true, mtime: st.mtimeMs, size: st.size, productionWritesEnabled: false }));
+    } catch {
+      res.end(JSON.stringify({ ok: false, productionWritesEnabled: false }));
+    }
+    return;
+  }
+
+  if (path === '/superadmin-usage/sync' && req.method === 'POST') {
+    console.log(`\n[${new Date().toLocaleTimeString()}] SuperAdmin usage refresh triggered from browser`);
+    const child = spawn(NODE, [join(ROOT, 'sync', 'superadmin-usage.mjs')], {
+      cwd: ROOT,
+      env: { ...process.env },
+    });
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => { stdout += c; process.stdout.write(c); });
+    child.stderr.on('data', (c) => { stderr += c; });
+
+    const timer = setTimeout(() => child.kill(), 120_000);
+
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      let mtime = null;
+      try { mtime = statSync(SUPERADMIN_USAGE_FILE).mtimeMs; } catch {}
+      res.end(JSON.stringify({ ok: code === 0, code, stdout: stdout.slice(-2000), stderr: stderr.slice(-500), mtime }));
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      res.statusCode = 500;
+      res.end(JSON.stringify({ ok: false, error: err.message }));
+    });
+    return;
+  }
+
   res.statusCode = 404;
   res.end(JSON.stringify({ ok: false, error: 'Not found' }));
 });
@@ -197,5 +252,8 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`   GET  /loop-ops/status — Loop-Ops file freshness`);
   console.log(`   GET  /loop-ops/runs   — recorded loop runs`);
   console.log(`   POST /loop-ops/sync   - re-import the Loop Ops workbook`);
+  console.log(`   GET  /superadmin-usage/data   — sanitized local usage snapshot`);
+  console.log(`   GET  /superadmin-usage/status — usage snapshot freshness`);
+  console.log(`   POST /superadmin-usage/sync   — refresh local usage snapshot`);
   console.log(`\n   Keep this running while using the dashboard.\n`);
 });

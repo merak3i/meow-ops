@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test:sync": "node --test sync/__tests__/*.test.mjs",
+    "sync:superadmin": "node sync/superadmin-usage.mjs",
     "gen:assets": "node scripts/generate-companion-assets.js",
     "gen:cats": "node scripts/generate-companion-assets.js --cats",
     "gen:rooms": "node scripts/generate-companion-assets.js --rooms",

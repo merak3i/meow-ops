@@ -24,6 +24,7 @@ public/data/*
 # (sync/local-api.mjs) serves the fresh local copies. Never re-allowlist them.
 !public/data/demo-sessions.json
 !public/data/demo-cost-summary.json
+!public/data/demo-superadmin-usage.json
 
 # Local session-history files (Pomodoro, etc.) live in the browser, not the repo
 *.history.json

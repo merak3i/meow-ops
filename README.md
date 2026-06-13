@@ -108,6 +108,7 @@ Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, and *
 | **By Action** | Which tools your agents actually reach for |
 | **Cost Tracker** | Daily cost line, cumulative burn, per-model breakdown |
 | **Live Sessions** | Real-time agent cards with tool-usage bars |
+| **Capacity & Usage** | GitHub Actions capacity, SaaS subscriptions, renewals, and SuperAdmin usage wiring |
 
 ### Source Breakdown
 
@@ -193,6 +194,27 @@ An n8n-style read-only control room for multi-agent loop architectures. The Loom
 - All loop data is local-only (gitignored); the hosted demo intentionally shows the instructional empty state
 
 Local API endpoints (`sync/local-api.mjs`): `GET /loop-ops/spec|status|runs`, `POST /loop-ops/sync` re-runs the importer. Import manually with `node sync/loop-ops-import.mjs`.
+
+### Capacity & Usage
+
+A local-first SuperAdmin cockpit for the operator's software stack: GitHub Actions run volume, cache and artifact footprint, SaaS subscription run rate, renewal pressure, and source wiring for private usage ledgers.
+
+The public build ships a generic demo screen. Real account usage stays local in `public/data/superadmin-usage.json`, which is gitignored. Refresh it with:
+
+```bash
+npm run sync:superadmin
+```
+
+Optional environment:
+
+```bash
+MEOW_SUPERADMIN_GITHUB_REPOS=merak3i/meow-ops,merak3i/patherle
+MEOW_SUPERADMIN_USAGE_SNAPSHOT=/absolute/path/to/superadmin-usage.json
+MEOW_GITHUB_ACTIONS_MINUTES_LIMIT=3000
+MEOW_GITHUB_ACTIONS_STORAGE_GB_LIMIT=10
+```
+
+The exporter accepts a local JSON snapshot shaped as `[{...}]`, `{ "services": [...] }`, `{ "rows": [...] }`, or `{ "saas": { "services": [...] } }`. Service-role keys and provider tokens do not belong in the snapshot.
 
 ### The Cat Companion
 
