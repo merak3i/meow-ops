@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Google Antigravity parser** (`sync/parse-antigravity.mjs`) — tracks Antigravity agent sessions (time, tools, project, snippet) from `~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`. Token/model/cost are not exposed by Antigravity locally (encrypted store, opaque model enum, server-side usage), so those sessions carry `usage_available: false` and are never assigned fabricated tokens or cost.
+- `sync/session-utils.mjs` — shared snippet/project/default-session helpers, removing copy-paste drift across the five parsers.
+- Golden tests for `cost-calculator`, `parse-session`, and `parse-antigravity`; security regression tests for the local API (cross-origin + DNS-rebinding rejection).
+- `.github/workflows/ci.yml` — CI runs sync tests + build (blocking) and lint + typecheck (visible, non-blocking while pre-existing debt is cleared).
+- `typecheck` npm script (`tsc --noEmit`).
+- `db/migrations/0004_rls_tenant_isolation.sql` — strict per-tenant SELECT on the legacy tables (removes the `tenant_id IS NULL` world-read).
+- Env: `MEOW_TZ`, `MEOW_NO_SNIPPETS`, `ANTIGRAVITY_DIR`, `MEOW_DASHBOARD_ORIGIN`.
+- App-shell React error boundary so one page throwing no longer blank-screens the app.
+
+### Fixed
+- **Billing accuracy:** Codex no longer double-counts cached tokens (OpenAI `input_tokens` already includes cached); Cursor can no longer produce negative `output_tokens`; Aider guards `NaN` token parses and stops fabricating a 300s duration; the cost calculator clamps negative/`NaN` tokens and flags unknown models instead of silently pricing them as Sonnet; the over-broad `flash` match no longer mis-prices `gemini-1.5-flash`.
+- **Security:** the dev server and `sync/local-api.mjs` now reject cross-origin and non-localhost-Host requests (CSRF / DNS-rebinding); a browser POST can no longer trigger `git push` (the `--push` side effect is removed from the HTTP path); secret-detection regexes now catch Supabase JWT service-role keys.
+- `export-local.mjs` does real de-duplication (was a no-op alias) and fixes a subagent `session_id` collision; reads large JSONL via a chunked reader (no 512MB single-string cap); day/week/month boundaries use the system timezone (overridable via `MEOW_TZ`) instead of hardcoded IST.
+- Runtime validation of `sessions.json` at the data-layer boundary so a malformed row can no longer `NaN`-poison every total.
+- Per-source breakdowns no longer fold Cursor/Aider/Antigravity sessions into "Claude".
+
+### Changed
+- Pricing table adds `gemini-3-pro`, `gemini-3-flash`, and `gemini-2.5-flash`.
+
+### Removed
+- Dead D3 `src/scrying-sanctum/` tree (~900 LOC, unreferenced) and its duplicate `ScryingSanctum` component.
+
 ## [1.1.0] - 2026-04-09
 
 ### Fixed
