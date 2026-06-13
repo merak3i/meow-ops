@@ -447,6 +447,7 @@ export default function CapacityUsage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState(null);
+  const [refreshNotice, setRefreshNotice] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -470,10 +471,24 @@ export default function CapacityUsage() {
   async function syncNow() {
     if (syncing) return;
     setSyncing(true);
-    const result = await postCapacityUsageSync();
-    await load();
-    if (!result.ok) setError(result.stderr || result.error || 'sync failed');
-    setSyncing(false);
+    setError(null);
+    setRefreshNotice(null);
+
+    try {
+      const result = await postCapacityUsageSync();
+      await load();
+
+      if (!result.ok) {
+        const message = result.stderr || result.error || 'sync failed';
+        setError(message);
+        setRefreshNotice({ tone: 'error', text: 'Refresh failed. Check that the local Meow Ops API is running, or use the Terminal command.' });
+        return;
+      }
+
+      setRefreshNotice({ tone: 'success', text: 'Local usage refreshed. This screen is now reading the latest snapshot.' });
+    } finally {
+      setSyncing(false);
+    }
   }
 
   const totals = data?.saas?.totals ?? {};
@@ -484,8 +499,8 @@ export default function CapacityUsage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-      <header style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20 }}>
-        <div>
+      <header style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20 }}>
+        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <Gauge size={22} style={{ color: 'var(--accent)' }} />
             <h2 style={{ fontSize: 22, margin: 0 }}>Capacity & Usage</h2>
@@ -496,29 +511,56 @@ export default function CapacityUsage() {
             <span>local file {relativeFromMs(status?.mtime)}</span>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={syncNow}
-          disabled={syncing}
-          title="Refresh local usage snapshot"
+        <div style={{ display: 'flex', flex: '0 1 auto', maxWidth: '100%', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+          <button
+            type="button"
+            onClick={syncNow}
+            disabled={syncing}
+            aria-busy={syncing}
+            title="Refresh local usage snapshot"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              minHeight: 36,
+              border: '1px solid var(--border)',
+              borderRadius: 8,
+              background: syncing ? 'var(--bg-hover)' : 'var(--bg-card)',
+              color: syncing ? 'var(--accent)' : 'var(--text-secondary)',
+              cursor: syncing ? 'wait' : 'pointer',
+              fontSize: 12,
+              fontFamily: 'inherit',
+              maxWidth: '100%',
+              padding: '8px 12px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <RefreshCw size={14} className={syncing ? 'loop-spin' : undefined} />
+            {syncing ? 'Refreshing local data' : 'Refresh local data'}
+          </button>
+        </div>
+      </header>
+
+      {refreshNotice && (
+        <div
+          role="status"
           style={{
-            display: 'inline-flex',
+            display: 'flex',
             alignItems: 'center',
             gap: 8,
-            border: '1px solid var(--border)',
+            color: refreshNotice.tone === 'error' ? 'var(--amber)' : 'var(--green)',
+            border: `1px solid ${refreshNotice.tone === 'error' ? 'var(--amber)' : 'var(--green)'}`,
             borderRadius: 8,
-            background: syncing ? 'var(--bg-hover)' : 'var(--bg-card)',
-            color: syncing ? 'var(--accent)' : 'var(--text-secondary)',
-            cursor: syncing ? 'wait' : 'pointer',
+            padding: '9px 12px',
             fontSize: 12,
-            fontFamily: 'inherit',
-            padding: '8px 12px',
+            background: 'var(--bg-card)',
           }}
         >
-          <RefreshCw size={14} className={syncing ? 'loop-spin' : undefined} />
-          {syncing ? 'Refreshing' : 'Refresh'}
-        </button>
-      </header>
+          {refreshNotice.tone === 'error' ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
+          <span>{refreshNotice.text}</span>
+        </div>
+      )}
 
       <div style={{
         display: 'grid',
