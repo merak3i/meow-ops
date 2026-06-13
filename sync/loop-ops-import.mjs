@@ -1,53 +1,28 @@
-// Loop-Ops importer — converts the Patherle Master Spec workbook into the
-// local JSON the Loop-Ops page renders (spec §Phase 3).
+// Loop-Ops importer — converts a user-supplied workflow registry workbook into
+// local JSON for the Loop-Ops page.
 //
-//   node sync/loop-ops-import.mjs [--spec <xlsx>] [--truth <csv>] [--out <dir>]
+//   node sync/loop-ops-import.mjs --spec <xlsx> [--truth <csv>] [--out <dir>]
 //
-// Outputs spec.json + gates.json under public/data/loop-ops/ (LOCAL-ONLY —
-// that directory is gitignored; the hosted build intentionally ships the
-// instructional empty state). runs.json is never touched. No git, no network,
-// no production writes — this script reads two local files and writes two.
-//
-// Fails loudly (exit 1, ALL violations listed, no partial output) when the
-// workbook does not encode exactly the 26-surface / 4-group model.
-import { mkdirSync, readFileSync, renameSync, statSync, writeFileSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+// Outputs spec.json + gates.json under public/data/loop-ops/ (LOCAL-ONLY).
+// runs.json is never touched. No git, no network, no production writes.
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const DEFAULT_SPEC = '/Users/napster/Downloads/Patherle/Agentic Harness/PATHERLE_HARNESS_MASTER_SPEC_v1_2026-06-07.xlsx';
-const DEFAULT_TRUTH = '/Users/napster/Downloads/Patherle/Agentic Harness/patherle-harness-truth-sync-2026-06-07/LIVE_Surface_Registry.csv';
+const DEFAULT_SPEC = process.env.LOOP_OPS_SPEC || join(__dirname, '..', 'examples', 'loop-ops', 'demo-spec.xlsx');
+const DEFAULT_TRUTH = process.env.LOOP_OPS_TRUTH || join(__dirname, '..', 'examples', 'loop-ops', 'demo-truth.csv');
 const DEFAULT_OUT = join(__dirname, '..', 'public', 'data', 'loop-ops');
-// Current Patherle clone (verified 2026-06-12; a linked git worktree — the
-// importer re-verifies the remote at every run rather than trusting this).
-const DEFAULT_PATHERLE = '/Users/napster/Downloads/Patherle/patherle-cockpit';
 
-// Harness files the inspector links per spec §3.4 — clone-relative, only
-// included when they exist in the verified clone.
-const HARNESS_FILES = [
-  'backend/supabase/migrations/20260607120000_harness_foundation_tables.sql',
-  'backend/src/services/aiHarness/README.md',
-  'backend/src/services/aiHarness/registry.js',
-  'backend/src/services/aiHarness/evalRunner.js',
-  'backend/src/services/aiHarness/follyCollector.js',
-  'backend/src/routes/adminHarness.js',
-  'docs/harness/standard-pack-and-rubric.md',
-  'docs/runbooks/eval-failure.md',
-];
-
+const GROUPS = ['research', 'build', 'review', 'ops'];
 const RELEASE_CHECKS = [
-  'backend: npm run check:release  (release checklist)',
-  'backend: npm run test:unit  (FAST deterministic gate)',
-  'backend: npm run check:ai-evals  (eval gate)',
-  'frontend: npm run lint && npm run test:regression',
+  'npm run test:sync',
+  'npm run build',
+  'npx playwright test',
 ];
 
-const GROUPS = ['tenant', 'customer', 'admin', 'doer'];
-// Worst → best; synthetic entities inherit the worst child status. An empty
-// set returns needs-review — it must never claim 'passed'.
 const SEVERITY = ['failed', 'blocked', 'needs-review', 'running', 'covered', 'wired', 'passed'];
 const worstStatus = (list) => list.length === 0
   ? 'needs-review'
@@ -58,25 +33,6 @@ function arg(name, fallback) {
   return i !== -1 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
 
-// Read-only Patherle awareness (spec §Phase 6): locate the clone, verify its
-// remote actually points at merak3i/patherle, and stat the harness files the
-// inspector links. Never mutates the clone; absence degrades to explicit
-// not-verified notes, never to a failed import.
-function locatePatherle(clonePath) {
-  const result = { clonePath: null, cloneVerified: false, harnessFiles: [], missingHarnessFiles: HARNESS_FILES };
-  if (!existsSync(clonePath)) return result;
-  result.clonePath = clonePath;
-  try {
-    const remote = execFileSync('git', ['-C', clonePath, 'remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim();
-    result.cloneVerified = remote.includes('merak3i/patherle');
-  } catch { /* not a git repo or git unavailable — stays unverified */ }
-  result.harnessFiles = HARNESS_FILES.filter((f) => existsSync(join(clonePath, f)));
-  result.missingHarnessFiles = HARNESS_FILES.filter((f) => !existsSync(join(clonePath, f)));
-  return result;
-}
-
-// exceljs cell values: formulas arrive as {formula, result}, rich text as
-// {richText: [...]}. Collapse everything to a plain scalar.
 function cellVal(v) {
   if (v === null || v === undefined) return '';
   if (typeof v === 'object') {
@@ -88,8 +44,6 @@ function cellVal(v) {
   return v;
 }
 
-// Workbook tabs share one layout: title r1, description r2, header row
-// (contains a known anchor column), data below. Returns [{__row, <header>: value}].
 function sheetRows(ws, anchor) {
   if (!ws) return [];
   let headerRow = 0;
@@ -115,11 +69,10 @@ function sheetRows(ws, anchor) {
   return rows;
 }
 
-// Minimal RFC-4180 CSV parser — the truth-sync export carries quoted fields
-// with embedded commas and newlines.
 function parseCsv(text) {
   const rows = [[]];
-  let field = '', inQuotes = false;
+  let field = '';
+  let inQuotes = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     if (inQuotes) {
@@ -133,27 +86,30 @@ function parseCsv(text) {
   }
   rows[rows.length - 1].push(field);
   const [header, ...data] = rows.filter((r) => r.length > 1 || (r[0] ?? '').trim());
+  if (!header) return [];
   return data.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ''])));
 }
 
-// Status per spec §6: a PARTIAL/MISSING correlation is conservative truth and
-// wins over a passing e2e gate.
 function statusFor(truth) {
   if (!truth) return 'covered';
   const corr = String(truth.correlation_status ?? '').trim().toUpperCase();
   if (corr.startsWith('PARTIAL') || corr.startsWith('MISSING')) return 'needs-review';
-  const gate = String(truth.latest_e2e_gate ?? '').trim().toLowerCase();
+  const gate = String(truth.latest_gate ?? truth.latest_e2e_gate ?? '').trim().toLowerCase();
   if (gate === 'pass') return 'passed';
   if (gate === 'fail') return 'failed';
-  const db = String(truth.db_status ?? '').trim().toLowerCase();
-  return SEVERITY.includes(db) ? db : 'covered';
+  const status = String(truth.status ?? truth.db_status ?? '').trim().toLowerCase();
+  return SEVERITY.includes(status) ? status : 'covered';
 }
 
 async function main() {
   const specPath = resolve(arg('spec', DEFAULT_SPEC));
   const truthPath = resolve(arg('truth', DEFAULT_TRUTH));
   const outDir = resolve(arg('out', DEFAULT_OUT));
-  const patherle = locatePatherle(resolve(arg('patherle', DEFAULT_PATHERLE)));
+
+  if (!existsSync(specPath)) {
+    console.error(`loop-ops-import: workbook not found at ${specPath}. Pass --spec <xlsx>.`);
+    process.exit(1);
+  }
 
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.readFile(specPath);
@@ -168,12 +124,12 @@ async function main() {
   for (const col of REQUIRED_COLS) {
     if (!(col in sample)) errors.push(`missing required registry column "${col}"`);
   }
-  if (registry.length !== 26) {
-    errors.push(`registry must hold exactly 26 assistant surfaces, found ${registry.length} (rows: ${registry.map((r) => r.__row).join(', ') || 'none'})`);
-  }
+  if (registry.length < 1) errors.push('registry must contain at least one worker surface');
+
   const groups = [...new Set(registry.map((r) => String(r.group).trim()))].sort();
-  if (errors.length === 0 && groups.join(',') !== [...GROUPS].sort().join(',')) {
-    errors.push(`groups must be exactly {${GROUPS.join(', ')}}, found {${groups.join(', ')}}`);
+  const unknownGroups = groups.filter((g) => !GROUPS.includes(g));
+  if (unknownGroups.length) {
+    errors.push(`groups must be drawn from {${GROUPS.join(', ')}}, found unknown {${unknownGroups.join(', ')}}`);
   }
   const seen = new Map();
   for (const r of registry) {
@@ -182,12 +138,11 @@ async function main() {
     else seen.set(key, r.__row);
   }
   if (errors.length) {
-    console.error('loop-ops-import: workbook validation FAILED — nothing written.');
-    errors.forEach((e) => console.error(`  ✗ ${e}`));
+    console.error('loop-ops-import: workbook validation FAILED - nothing written.');
+    errors.forEach((e) => console.error(`  x ${e}`));
     process.exit(1);
   }
 
-  // Enrichment tabs are best-effort: a missing tab degrades detail, never validity.
   const byKey = (rows) => Object.fromEntries(rows.map((r) => [String(r.surface_key).trim(), r]));
   const rubric = byKey(sheetRows(sheet('2 ·'), 'surface_key'));
   const evals = byKey(sheetRows(sheet('3 ·'), 'surface_key'));
@@ -210,53 +165,35 @@ async function main() {
       const surf = String(d['applicable surfaces'] ?? '');
       return surf.toLowerCase().startsWith('all') || surf.includes(key);
     })
-    .map((d) => `${d['danger / gap']} (${d['OWASP LLM Top-10']})`)
+    .map((d) => `${d['danger / gap']} (${d['risk family'] || d['OWASP LLM Top-10'] || 'risk'})`)
     .join('; ');
 
   const entities = [];
   const edges = [];
   const gates = [];
 
-  const cloneNote = patherle.cloneVerified
-    ? `Patherle clone verified at ${patherle.clonePath}`
-    : 'Patherle clone NOT located/verified — repo links are URLs only';
-
   entities.push({
     id: 'coordinator.main', kind: 'coordinator', label: 'Main Coordinator',
     group: null, surfaceKey: null, archetype: null, riskClass: null, wave: null,
     status: 'covered',
-    sources: ['synthesized: loop-ops entity model (spec §4); not present in Master Spec workbook'],
-    repoLinks: [
-      'https://github.com/merak3i/patherle',
-      'https://github.com/merak3i/meow-ops',
-      'https://www.patherle.com',
-      'https://api.patherle.com',
-    ],
+    sources: ['synthesized: loop-ops entity model'],
+    repoLinks: ['https://github.com/merak3i/meow-ops'],
     allowedActions: ['inspect', 'open-link'],
     detail: {
-      clonePath: patherle.clonePath ?? undefined,
-      cloneVerified: patherle.cloneVerified,
       releaseChecks: RELEASE_CHECKS,
-      notVerified: [
-        'Synthetic entity — no runtime counterpart exists yet',
-        ...(patherle.cloneVerified ? [] : [cloneNote]),
-        'Live deploy state of patherle.com/api.patherle.com not probed (links only)',
-      ],
+      notVerified: ['Synthetic entity - no runtime counterpart exists yet'],
     },
   });
+
   for (const g of GROUPS) {
     entities.push({
       id: `director.${g}`, kind: 'director', label: `${g[0].toUpperCase()}${g.slice(1)} Director`,
       group: g, surfaceKey: null, archetype: null, riskClass: null, wave: null,
       status: 'covered',
-      sources: [`synthesized from Master Spec group value '${g}' (spec §4)`],
-      // Directors link the shared harness spine their lane's surfaces run on —
-      // only paths that exist in the verified clone.
-      repoLinks: patherle.cloneVerified
-        ? patherle.harnessFiles.filter((f) => f.includes('aiHarness') || f.includes('adminHarness'))
-        : [],
+      sources: [`synthesized from registry group '${g}'`],
+      repoLinks: [],
       allowedActions: ['inspect', 'open-link'],
-      detail: { notVerified: ['Synthetic entity — no runtime counterpart exists yet', ...(patherle.cloneVerified ? [] : [cloneNote])] },
+      detail: { notVerified: ['Synthetic entity - no runtime counterpart exists yet'] },
     });
     edges.push({ id: `e.coordinator.${g}`, source: 'coordinator.main', target: `director.${g}` });
   }
@@ -275,20 +212,11 @@ async function main() {
     const refs = truth
       ? [...String(truth.source_refs ?? '').matchAll(/https:\/\/\S+?(?=\s|\||$)/g)].map((m) => m[0])
       : [];
-
-    const notVerified = ['Live Supabase runtime state not verified (migration files only)'];
-    if (truth) notVerified.push(`Status derived from truth-sync snapshot ${basename(truthPath)}, not a live probe`);
-    else notVerified.push('No truth-sync snapshot found — status reflects workbook coverage only');
-    if (!patherle.cloneVerified) notVerified.push(cloneNote);
-
-    // Validation command (spec §Phase 6): surfaces with a LOCKED golden case
-    // run the eval gate; everything else runs the release checklist. Always
-    // read-only commands executed by the operator, never by Loop-Ops.
+    const notVerified = truth
+      ? [`Status derived from truth snapshot ${basename(truthPath)}, not a live probe`]
+      : ['No truth snapshot found - status reflects workbook coverage only'];
     const hasRealCase = ev && String(ev.case_name) && !String(ev.case_name).startsWith('TBD');
-    const cloneRoot = patherle.clonePath ?? '<patherle-clone>';
-    const validationCommand = hasRealCase
-      ? `cd "${cloneRoot}/backend" && npm run check:ai-evals`
-      : `cd "${cloneRoot}/backend" && npm run check:release`;
+    const validationCommand = hasRealCase ? 'npm run test:sync' : 'npm run build';
 
     entities.push({
       id: key, kind: 'assistant',
@@ -296,25 +224,24 @@ async function main() {
       group: g, surfaceKey: key,
       archetype: String(r.archetype).trim(), riskClass: String(r.riskClass).trim(),
       wave: Number(r.wave), status: statusFor(truth),
-      sources: [`master-spec tab '1 · Registry' row ${r.__row}`,
-        ...(truth ? [`truth-sync ${basename(truthPath)} (2026-06-07)`] : [])],
-      repoLinks: [...refs, `eval/${key.startsWith('assist.') ? `assist/${key.split('.')[1]}` : key}`],
+      sources: [`registry tab '1 · Registry' row ${r.__row}`, ...(truth ? [`truth-sync ${basename(truthPath)}`] : [])],
+      repoLinks: refs,
       allowedActions: ['inspect', 'open-link'],
       detail: {
         modelTier: String(r.modelTier ?? ''), confidenceFloor: Number(r.confidenceFloor),
         passThreshold: Number(r.pass_threshold), promptVersion: String(r.promptVersion ?? ''),
         evalSet: truth ? String(truth.eval_set ?? '') : '',
-        dbStatus: truth ? String(truth.db_status ?? '') : '',
-        e2eGate: truth ? String(truth.latest_e2e_gate ?? '') : '',
+        dbStatus: truth ? String(truth.db_status ?? truth.status ?? '') : '',
+        e2eGate: truth ? String(truth.latest_e2e_gate ?? truth.latest_gate ?? '') : '',
         currentTruth: truth ? String(truth.current_truth ?? '') : '',
         correlationStatus: truth ? String(truth.correlation_status ?? '') : '',
         lastCheckedAt: truth ? String(truth.last_verified_at_utc ?? '') : '',
         guardrails: [String(r.redaction_ref ?? '').trim() && `redaction_ref=${r.redaction_ref}`, guardrailsFor(key)]
           .filter(Boolean).join('; '),
         evalSettings: ev ? `case ${ev.case_name} · LOCKED=${ev.LOCKED} · asserts ${ev['assertion types']}` : '',
-        flywheelFlags: fw ? `A=${fw['Tier A']} B=${fw['Tier B']} C=${fw['Tier C']} · sources: ${fw['folly sources']}` : '',
+        flywheelFlags: fw ? `A=${fw['Tier A']} B=${fw['Tier B']} C=${fw['Tier C']} · sources: ${fw['failure sources'] || ''}` : '',
         rubric: ru ? [ru['criterion 1 (w)'], ru['criterion 2 (w)'], ru['criterion 3 (w)'], ru['criterion 4 (w)']].filter(Boolean).join(', ') : '',
-        researchAuthority: re ? `${re['primary world-leader authority']} · refresh ${re['refresh cadence']}` : '',
+        researchAuthority: re ? `${re['primary authority']} · refresh ${re['refresh cadence']}` : '',
         exampleBank: ex ? `${ex.intent_key}` : '',
         beats: be ? ['1 noticed', '2 means', '3 action', '4 review', '5 undo'].filter((b) => String(be[b]).includes('✓')).join(' / ') : '',
         wiredWhen: wm ? `${wm['wired when']} · verify: ${wm['verification checkpoint']}` : '',
@@ -329,9 +256,11 @@ async function main() {
       const realCase = caseName && !caseName.startsWith('TBD');
       gates.push({
         id: `gate.eval.${key}`, entityId: key, gateType: 'eval',
-        status: realCase && truth && String(truth.latest_e2e_gate).trim() === 'pass' ? 'passed' : 'needs-review',
+        status: realCase && truth && String(truth.latest_e2e_gate ?? truth.latest_gate).trim().toLowerCase() === 'pass'
+          ? 'passed'
+          : 'needs-review',
         evidence: caseName || null,
-        blockingReason: realCase ? null : 'golden case not yet seeded (TBD in its wave)',
+        blockingReason: realCase ? null : 'golden case not yet seeded',
         lastCheckedAt: truth ? String(truth.last_verified_at_utc ?? '') || null : null,
       });
     }
@@ -361,52 +290,33 @@ async function main() {
       entityCount: entities.length,
       assistantCount: registry.length,
       productionWritesEnabled: false,
-      links: {
-        meowOps: 'https://github.com/merak3i/meow-ops',
-        patherle: 'https://github.com/merak3i/patherle',
-        patherleProd: 'https://www.patherle.com',
-        patherleApi: 'https://api.patherle.com',
-      },
-      // Read-only Patherle awareness (spec §Phase 6) — informational only.
-      patherle: {
-        clonePath: patherle.clonePath,
-        cloneVerified: patherle.cloneVerified,
-        harnessFiles: patherle.harnessFiles,
-        missingHarnessFiles: patherle.missingHarnessFiles,
-        releaseChecks: RELEASE_CHECKS,
-      },
+      links: { meowOps: 'https://github.com/merak3i/meow-ops' },
     },
     entities, edges,
   };
 
   const specBlob = JSON.stringify(spec, null, 2);
   const gatesBlob = JSON.stringify(gates, null, 2);
-  // Secret hygiene: generated JSON must never carry credentials or long
-  // base64 runs, even though the directory is gitignored.
-  // The generic long-run arm deliberately excludes '/': filesystem paths are
-  // legitimate slash-joined 40+ char runs (e.g. the clone path), while the
-  // explicit prefixes above cover real-world key formats.
   const SECRET_RE = /sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{8,}|GOCSPX-[A-Za-z0-9_-]{8,}|AKIA[A-Z0-9]{12,}|[A-Za-z0-9+]{41,}={0,2}/;
   for (const [name, blob] of [['spec.json', specBlob], ['gates.json', gatesBlob]]) {
     const hit = blob.match(SECRET_RE);
     if (hit) {
-      console.error(`loop-ops-import: secret-pattern hit in generated ${name} ("${hit[0].slice(0, 12)}…") — nothing written.`);
+      console.error(`loop-ops-import: secret-pattern hit in generated ${name} ("${hit[0].slice(0, 12)}...") - nothing written.`);
       process.exit(1);
     }
   }
 
   mkdirSync(outDir, { recursive: true });
-  // Write-then-rename so a crash mid-write never leaves a torn file.
   for (const [name, blob] of [['spec.json', specBlob], ['gates.json', gatesBlob]]) {
     const tmp = join(outDir, `.${name}.tmp`);
     writeFileSync(tmp, blob);
     renameSync(tmp, join(outDir, name));
   }
-  console.log(`loop-ops-import: OK — ${entities.length} entities (${registry.length} surfaces), ${edges.length} edges, ${gates.length} gates → ${outDir}`);
-  console.log(`loop-ops-import: truth-sync ${truthUsed ? `enriched from ${basename(truthPath)}` : 'NOT found — statuses reflect workbook coverage only'}`);
+  console.log(`loop-ops-import: OK - ${entities.length} entities (${registry.length} surfaces), ${edges.length} edges, ${gates.length} gates -> ${outDir}`);
+  console.log(`loop-ops-import: truth-sync ${truthUsed ? `enriched from ${basename(truthPath)}` : 'NOT found - statuses reflect workbook coverage only'}`);
 }
 
 main().catch((err) => {
-  console.error(`loop-ops-import: FAILED — ${err.message}`);
+  console.error(`loop-ops-import: FAILED - ${err.message}`);
   process.exit(1);
 });

@@ -27,8 +27,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-// Copy-to-clipboard for validation commands (spec §Phase 6: links open or
-// paths copy — the UI itself never runs anything against Patherle).
+// Copy-to-clipboard for validation commands. The UI itself never runs them.
 function CopyableCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -104,7 +103,7 @@ export function InspectorDrawer({ entity, onClose }: { entity: LoopEntity; onClo
       </Section>
 
       {knobs.some(([, v]) => v !== undefined && v !== '') && (
-        <Section title="Knobs (Master Spec)">
+      <Section title="Knobs (workflow spec)">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
             {knobs.filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => (
               <div key={k} style={{ fontSize: 11 }}>
@@ -127,7 +126,7 @@ export function InspectorDrawer({ entity, onClose }: { entity: LoopEntity; onClo
       )}
 
       {(d.releaseChecks?.length ?? 0) > 0 && (
-        <Section title="Patherle release checks">
+        <Section title="Release checks">
           {d.clonePath && (
             <p style={{ ...body, marginBottom: 6 }}>
               clone: <code style={{ fontSize: 10.5 }}>{d.clonePath}</code>{' '}

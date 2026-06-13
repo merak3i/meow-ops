@@ -19,9 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SPEC_PRESENT = existsSync(join(ROOT, 'public', 'data', 'loop-ops', 'spec.json'));
-const WORKBOOK_PRESENT = existsSync(
-  '/Users/napster/Downloads/Patherle/Agentic Harness/PATHERLE_HARNESS_MASTER_SPEC_v1_2026-06-07.xlsx',
-);
+const WORKBOOK_PRESENT = Boolean(process.env.LOOP_OPS_SPEC) && existsSync(process.env.LOOP_OPS_SPEC);
 
 test('Loop Ops settles past the loading state under dev React (StrictMode liveness)', async ({ page }) => {
   await page.goto('/#/loop-ops');
@@ -31,14 +29,14 @@ test('Loop Ops settles past the loading state under dev React (StrictMode livene
   // StrictMode's mount→cleanup→mount cycle.
   const settled = page
     .locator('[data-testid="loop-source-strip"]')
-    .or(page.getByText('Import Master Spec'));
+    .or(page.getByText('Import workflow spec'));
   await expect(settled.first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText('Loading the Loom…')).toHaveCount(0);
 });
 
 test('refresh advances the imported-mtime chip with the service worker active', async ({ page }) => {
   test.skip(!SPEC_PRESENT || !WORKBOOK_PRESENT,
-    'needs the local-only spec fixture and the Master Spec workbook');
+    'needs the local-only spec fixture and a Loop Ops workbook');
   test.setTimeout(90_000);
 
   // First load installs the service worker; the reload hands it control of

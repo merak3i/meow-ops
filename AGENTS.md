@@ -82,7 +82,7 @@ Standard global prefixes: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`. Co-au
 ## What this repo is NOT
 
 - Not a SaaS — it's a self-hosted, MIT tool the operator publishes for the community. Don't add subscription gates, paywalls, or required signup flows.
-- Not Patherle adjacent — keep it separate from the Patherle commercial codebase.
+- Not client-code adjacent. Keep private commercial codebases out of this repo.
 
 ## Out-of-scope guardrails (global, repeated for visibility)
 

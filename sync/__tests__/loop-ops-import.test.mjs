@@ -1,6 +1,5 @@
-// loop-ops-import.mjs — fail-loud validation contract (spec §Phase 3).
-// Synthetic workbooks are built per-case so the suite runs on any machine;
-// the real Master Spec test skips when the workbook is absent.
+// loop-ops-import.mjs — fail-loud validation contract.
+// Synthetic workbooks are built per-case so the suite runs on any machine.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
@@ -14,23 +13,20 @@ import ExcelJS from 'exceljs';
 const exec = promisify(execFile);
 const IMPORTER = join(dirname(fileURLToPath(import.meta.url)), '..', 'loop-ops-import.mjs');
 const ROOT_SRC = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src');
-const REAL_SPEC = '/Users/napster/Downloads/Patherle/Agentic Harness/PATHERLE_HARNESS_MASTER_SPEC_v1_2026-06-07.xlsx';
 
 const HEADERS = ['#', 'surface_key', 'family', 'group', 'archetype', 'riskClass', 'modelTier',
   'confidenceFloor', 'pass_threshold', 'evalGate', 'enabled', 'promptVersion', 'redaction_ref',
   'wave', 'phase', 'notes'];
 
 function defaultRows() {
-  // 26 surfaces across the exact four groups (22 tenant / 2 customer / 1 admin / 1 doer).
+  const groups = ['research', 'build', 'review', 'ops'];
   const rows = [];
-  for (let i = 0; i < 22; i++) rows.push({ surface_key: `assist.t${i}`, group: 'tenant' });
-  rows.push({ surface_key: 'rag.core', group: 'customer' }, { surface_key: 'voice.live', group: 'customer' });
-  rows.push({ surface_key: 'ops.copilot', group: 'admin' }, { surface_key: 'genie.execute', group: 'doer' });
+  for (let i = 0; i < 12; i++) rows.push({ surface_key: `worker.${i + 1}`, group: groups[i % groups.length] });
   return rows.map((r, i) => ({
-    '#': i + 1, family: 'intelligentAssist', archetype: 'A2', riskClass: 'suggest',
-    modelTier: 'flash', confidenceFloor: 0.28, pass_threshold: 0.78, evalGate: true,
+    '#': i + 1, family: 'loopOpsDemo', archetype: 'A2', riskClass: 'suggest',
+    modelTier: 'fast', confidenceFloor: 0.28, pass_threshold: 0.78, evalGate: true,
     enabled: true, promptVersion: `${r.surface_key}@v1`, redaction_ref: 'policy',
-    wave: (i % 4) + 1, phase: 1, notes: `Surface ${i}`, ...r,
+    wave: (i % 4) + 1, phase: 1, notes: `Worker ${i + 1}`, ...r,
   }));
 }
 
@@ -38,7 +34,7 @@ async function makeWorkbook(rows, { dropColumn } = {}) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('1 · Registry');
   const headers = HEADERS.filter((h) => h !== dropColumn);
-  ws.addRow(['TAB 1 — SURFACE REGISTRY']);
+  ws.addRow(['TAB 1 - SURFACE REGISTRY']);
   ws.addRow(['synthetic test workbook']);
   ws.addRow([]);
   ws.addRow(headers);
@@ -52,45 +48,43 @@ async function makeWorkbook(rows, { dropColumn } = {}) {
 async function runImporter(specPath) {
   const out = mkdtempSync(join(tmpdir(), 'loopops-out-'));
   try {
-    const { stdout } = await exec('node', [IMPORTER, '--spec', specPath, '--truth', '/nonexistent.csv', '--patherle', '/nonexistent-clone', '--out', out]);
+    const { stdout } = await exec('node', [IMPORTER, '--spec', specPath, '--truth', '/nonexistent.csv', '--out', out]);
     return { code: 0, stdout, stderr: '', out };
   } catch (err) {
     return { code: err.code, stdout: err.stdout ?? '', stderr: err.stderr ?? '', out };
   }
 }
 
-test('valid 26-surface workbook imports: 31 entities, 30 edges, no truth-sync', async () => {
+test('valid workbook imports with coordinator, four directors, workers, and no truth-sync', async () => {
   const res = await runImporter(await makeWorkbook(defaultRows()));
   assert.equal(res.code, 0, res.stderr);
   const spec = JSON.parse(readFileSync(join(res.out, 'spec.json'), 'utf8'));
-  assert.equal(spec.meta.entityCount, 31);
-  assert.equal(spec.meta.assistantCount, 26);
+  assert.equal(spec.meta.entityCount, 17);
+  assert.equal(spec.meta.assistantCount, 12);
   assert.equal(spec.entities.filter((e) => e.kind === 'director').length, 4);
-  assert.equal(spec.edges.length, 30);
+  assert.equal(spec.edges.length, 16);
   assert.equal(spec.meta.productionWritesEnabled, false);
   assert.equal(spec.meta.truthSync, null);
-  // Without a truth snapshot every assistant is 'covered' and says so.
   const assistant = spec.entities.find((e) => e.kind === 'assistant');
   assert.equal(assistant.status, 'covered');
-  assert.match(assistant.detail.notVerified.join(' '), /No truth-sync snapshot/);
+  assert.match(assistant.detail.notVerified.join(' '), /No truth snapshot/);
   const gates = JSON.parse(readFileSync(join(res.out, 'gates.json'), 'utf8'));
-  assert.equal(gates.filter((g) => g.gateType === 'eval').length, 26);
+  assert.equal(gates.filter((g) => g.gateType === 'eval').length, 12);
 });
 
-test('25 rows fails loudly naming the count rule', async () => {
-  const res = await runImporter(await makeWorkbook(defaultRows().slice(0, 25)));
+test('empty registry fails loudly naming the count rule', async () => {
+  const res = await runImporter(await makeWorkbook([]));
   assert.equal(res.code, 1);
-  assert.match(res.stderr, /exactly 26/);
-  assert.match(res.stderr, /found 25/);
+  assert.match(res.stderr, /at least one worker surface/);
 });
 
-test('unknown fifth group fails loudly naming the groups rule', async () => {
+test('unknown group fails loudly naming the groups rule', async () => {
   const rows = defaultRows();
-  rows[0].group = 'ghost';
+  rows[0].group = 'private-client-lane';
   const res = await runImporter(await makeWorkbook(rows));
   assert.equal(res.code, 1);
-  assert.match(res.stderr, /groups must be exactly/);
-  assert.match(res.stderr, /ghost/);
+  assert.match(res.stderr, /groups must be drawn from/);
+  assert.match(res.stderr, /private-client-lane/);
 });
 
 test('duplicate surface_key fails loudly naming both rows', async () => {
@@ -109,72 +103,31 @@ test('missing required column fails loudly naming the column', async () => {
 
 test('secret pattern in workbook content aborts before writing', async () => {
   const rows = defaultRows();
-  // Assembled at runtime so no secret-shaped literal sits in the repo.
   rows[3].notes = `key ${'sk-' + 'a1b2c3d4'.repeat(3)}`;
   const res = await runImporter(await makeWorkbook(rows));
   assert.equal(res.code, 1);
   assert.match(res.stderr, /secret-pattern hit/);
 });
 
-test('failed validation writes nothing — no partial output', async () => {
-  const res = await runImporter(await makeWorkbook(defaultRows().slice(0, 10)));
+test('failed validation writes nothing - no partial output', async () => {
+  const res = await runImporter(await makeWorkbook([{ ...defaultRows()[0], group: 'unknown' }]));
   assert.equal(res.code, 1);
   assert.equal(existsSync(join(res.out, 'spec.json')), false);
   assert.equal(existsSync(join(res.out, 'gates.json')), false);
   assert.equal(readdirSync(res.out).length, 0);
 });
 
-test('real Master Spec workbook imports with truth-sync enrichment', { skip: !existsSync(REAL_SPEC) }, async () => {
-  const out = mkdtempSync(join(tmpdir(), 'loopops-real-'));
-  const { stdout } = await exec('node', [IMPORTER, '--spec', REAL_SPEC, '--out', out]);
-  assert.match(stdout, /31 entities \(26 surfaces\)/);
-  const spec = JSON.parse(readFileSync(join(out, 'spec.json'), 'utf8'));
-  const groups = new Set(spec.entities.filter((e) => e.kind === 'assistant').map((e) => e.group));
-  assert.deepEqual([...groups].sort(), ['admin', 'customer', 'doer', 'tenant']);
-  // The four Wave-1 LOCKED golden cases are the only passing eval gates today.
-  const gates = JSON.parse(readFileSync(join(out, 'gates.json'), 'utf8'));
-  const passed = gates.filter((g) => g.gateType === 'eval' && g.status === 'passed').map((g) => g.entityId).sort();
-  assert.deepEqual(passed, ['assist.catalogue', 'assist.chatSandbox', 'assist.integrations', 'rag.core']);
-});
-
-test('absent patherle clone degrades to explicit not-verified, never a failure', async () => {
+test('metadata contains no private project clone awareness', async () => {
   const res = await runImporter(await makeWorkbook(defaultRows()));
   assert.equal(res.code, 0, res.stderr);
   const spec = JSON.parse(readFileSync(join(res.out, 'spec.json'), 'utf8'));
-  assert.equal(spec.meta.patherle.cloneVerified, false);
-  assert.equal(spec.meta.patherle.clonePath, null);
-  const coord = spec.entities.find((e) => e.id === 'coordinator.main');
-  assert.match(coord.detail.notVerified.join(' '), /clone NOT located/);
-  // Validation commands still render with a placeholder, not a wrong path.
+  assert.equal('privateProject' in spec.meta, false);
+  assert.deepEqual(Object.keys(spec.meta.links), ['meowOps']);
   const assistant = spec.entities.find((e) => e.kind === 'assistant');
-  assert.match(assistant.detail.validationCommand, /<patherle-clone>/);
+  assert.match(assistant.detail.validationCommand, /npm run (build|test:sync)/);
 });
 
-test('real workbook: wave-1 surfaces carry repo links + eval-gate validation command', { skip: !existsSync(REAL_SPEC) }, async () => {
-  const out = mkdtempSync(join(tmpdir(), 'loopops-p6-'));
-  await exec('node', [IMPORTER, '--spec', REAL_SPEC, '--out', out]);
-  const spec = JSON.parse(readFileSync(join(out, 'spec.json'), 'utf8'));
-  // Acceptance (spec §Phase 6): every Wave-1 entity shows at least one repo
-  // link and one validation command.
-  const waveOne = spec.entities.filter((e) => e.kind === 'assistant' && e.wave === 1);
-  assert.equal(waveOne.length, 4);
-  for (const e of waveOne) {
-    assert.ok(e.repoLinks.length >= 1, `${e.id} has no repo links`);
-    assert.match(e.detail.validationCommand, /check:ai-evals|check:release/);
-  }
-  // The four LOCKED golden-case surfaces point at the eval gate specifically.
-  for (const key of ['assist.catalogue', 'assist.chatSandbox', 'assist.integrations', 'rag.core']) {
-    const e = spec.entities.find((x) => x.id === key);
-    assert.match(e.detail.validationCommand, /check:ai-evals/);
-  }
-});
-
-test('loop-ops sources contain zero Patherle write calls (safety grep)', async () => {
-  // Acceptance (spec §Phase 6): no mutation path toward Patherle systems.
-  // Comments may NAME the forbidden systems (that's the invariant text), so
-  // this greps for code constructs, not words: fetches targeting external
-  // hosts, supabase client imports, and non-GET methods outside api.ts
-  // (whose single POST goes to the local importer endpoint only).
+test('loop-ops sources contain zero private project write calls', async () => {
   const { readdirSync: rd, readFileSync: rf, statSync: st } = await import('node:fs');
   const files = [];
   const walk = (dir) => {
@@ -190,7 +143,7 @@ test('loop-ops sources contain zero Patherle write calls (safety grep)', async (
   const offenders = [];
   for (const f of files) {
     const text = rf(f, 'utf8');
-    if (/fetch\([^)]*?(patherle\.com|supabase|railway|vercel)/i.test(text)) offenders.push(`${f}: external-host fetch`);
+    if (/fetch\([^)]*?(supabase|railway|vercel)/i.test(text)) offenders.push(`${f}: external-host fetch`);
     if (/from '@supabase|createClient\(/.test(text)) offenders.push(`${f}: supabase client`);
     if (!f.endsWith('api.ts') && /method:\s*'(POST|PUT|DELETE|PATCH)'/.test(text)) offenders.push(`${f}: non-GET outside api.ts`);
     if (/execSync|spawn\(|child_process/.test(text)) offenders.push(`${f}: process execution in frontend`);

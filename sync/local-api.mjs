@@ -131,7 +131,7 @@ const server = createServer((req, res) => {
         res.end('[]');
       } else {
         res.statusCode = 404;
-        res.end(JSON.stringify({ ok: false, error: 'spec.json not found — POST /loop-ops/sync to import the Master Spec' }));
+        res.end(JSON.stringify({ ok: false, error: 'spec.json not found - POST /loop-ops/sync to import a Loop Ops workbook' }));
       }
     }
     return;
@@ -196,6 +196,6 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`   GET  /loop-ops/spec   — Loop-Ops entities (local import)`);
   console.log(`   GET  /loop-ops/status — Loop-Ops file freshness`);
   console.log(`   GET  /loop-ops/runs   — recorded loop runs`);
-  console.log(`   POST /loop-ops/sync   — re-import the Master Spec workbook`);
+  console.log(`   POST /loop-ops/sync   - re-import the Loop Ops workbook`);
   console.log(`\n   Keep this running while using the dashboard.\n`);
 });

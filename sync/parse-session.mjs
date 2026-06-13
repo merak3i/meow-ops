@@ -2,8 +2,8 @@ import { calculateCost } from './cost-calculator.mjs';
 
 // ─── First-message snippet extraction ────────────────────────────────────────
 // Captures the first user-typed message per session, ~80 chars max, used by
-// the run-group dropdown to make near-identical "patherle" rows distinguishable
-// at a glance ("fix billing webhook" beats "patherle 149.49g 4 roots ×4").
+// the run-group dropdown to make near-identical project rows distinguishable
+// at a glance ("fix billing webhook" beats "backend 149.49g 4 roots x4").
 
 const FIRST_MSG_MAX = 80;
 

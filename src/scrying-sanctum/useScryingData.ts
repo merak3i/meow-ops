@@ -76,7 +76,7 @@ const DEMO_SCHEDULE: Array<['e-1'|'e-2'|'e-3', 'json'|'text'|'error', number]> =
 ];
 
 const DEMO_PAYLOADS: Record<string, Record<string, unknown>> = {
-  'e-1': { event: 'task_received', project: 'patherle', model: 'claude-sonnet-4-6', tokens: 380 },
+  'e-1': { event: 'task_received', project: 'demo-workspace', model: 'claude-sonnet-4-6', tokens: 380 },
   'e-2': { research: 'competitor analysis', sources: 14, confidence: 0.87, summary: 'Market gap identified in SME segment' },
   'e-3': { structured_output: true, lead_score: 92, contact: 'anon@example.com', action: 'enqueue_sequence' },
 };

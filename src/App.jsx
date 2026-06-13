@@ -18,7 +18,7 @@ const CompanionPageV2    = lazy(() => import('./companion-v2/CompanionPageV2'));
 const AgentVisualizer    = lazy(() => import('./pages/AgentVisualizer'));
 // Scrying Sanctum visualizer (uses local session data)
 const ScryingSanctum     = lazy(() => import('./pages/ScryingSanctum'));
-// Loop-Ops control room (Patherle loop architecture cockpit)
+// Loop-Ops control room
 const LoopOps            = lazy(() => import('./pages/LoopOps'));
 // D3/Realtime visualizer kept at './scrying-sanctum/ScryingSanctum' for future use
 import {

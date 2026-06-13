@@ -1,9 +1,8 @@
-// Loop-Ops — operator cockpit for Patherle's 31-entity loop architecture.
-// Canvas (coordinator → 4 director lanes → 26 assistants), inspector drawer,
+// Loop-Ops — operator cockpit for user-supplied multi-agent loop maps.
+// Canvas (coordinator → director lanes → worker surfaces), inspector drawer,
 // mobile fallback, refresh-spec action, and the run timeline. Data is
 // LOCAL-ONLY JSON produced by sync/loop-ops-import.mjs.
-// Hard invariant for every phase: no writes to Patherle production, Supabase,
-// Railway, Vercel, or GitHub from any Loop-Ops code path.
+// Hard invariant: no writes to production services from any Loop-Ops code path.
 import { useCallback, useState, useSyncExternalStore } from 'react';
 import { ShieldCheck, FileSpreadsheet, RefreshCw, SearchX } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
@@ -62,10 +61,10 @@ interface EmptyStateCard { icon: ReactNode; title: string; body: string }
 const EMPTY_STATES: EmptyStateCard[] = [
   {
     icon: <FileSpreadsheet size={15} />,
-    title: 'Import Master Spec',
+    title: 'Import workflow spec',
     body: 'No spec data found at /data/loop-ops/spec.json. The importer converts '
-      + 'the Master Spec workbook into local JSON — 26 assistant surfaces plus '
-      + '5 synthesized coordinator/director entities.',
+      + 'your workbook into local JSON: worker surfaces plus synthesized '
+      + 'coordinator/director entities.',
   },
   {
     icon: <RefreshCw size={15} />,
@@ -77,8 +76,8 @@ const EMPTY_STATES: EmptyStateCard[] = [
     icon: <ShieldCheck size={15} />,
     title: 'No production writes enabled',
     body: 'Loop-Ops is a cockpit, not an executor. No code path here writes to '
-      + 'Patherle production, Supabase, Railway, Vercel, or GitHub — in this '
-      + 'phase or any later one without explicit approval.',
+      + 'production dashboards, databases, deploy targets, or GitHub without '
+      + 'explicit approval.',
   },
   {
     icon: <SearchX size={15} />,
@@ -101,9 +100,9 @@ function EmptyState({ error }: { error: string | null }) {
         </p>
       )}
       <p style={styles.subtitle}>
-        Control room for Patherle&apos;s 31-entity loop architecture — 1 coordinator,
-        4 director lanes, 26 assistant surfaces. Local-first: workbook → JSON →
-        canvas. Read-only toward every production system.
+        Control room for multi-agent loop architecture: coordinator, director
+        lanes, and worker surfaces. Local-first: workbook → JSON → canvas.
+        Read-only toward every production system.
       </p>
       <div style={styles.grid}>
         {EMPTY_STATES.map((card) => (

@@ -13,7 +13,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 7437;
 const BASE = `http://127.0.0.1:${PORT}`;
 const SPEC_PRESENT = existsSync(join(ROOT, 'public', 'data', 'loop-ops', 'spec.json'));
-const WORKBOOK = '/Users/napster/Downloads/Patherle/Agentic Harness/PATHERLE_HARNESS_MASTER_SPEC_v1_2026-06-07.xlsx';
+const WORKBOOK = process.env.LOOP_OPS_SPEC || '';
 
 let server;
 
@@ -50,7 +50,7 @@ test('GET /loop-ops/spec serves the local spec', { skip: !SPEC_PRESENT }, async 
   const res = await fetch(`${BASE}/loop-ops/spec`);
   assert.equal(res.status, 200);
   const spec = await res.json();
-  assert.equal(spec.meta.entityCount, 31);
+  assert.ok(spec.meta.entityCount > 0);
   assert.equal(spec.meta.productionWritesEnabled, false);
 });
 
@@ -72,11 +72,11 @@ test('unknown loop-ops path still 404s', async () => {
   assert.equal(res.status, 404);
 });
 
-test('POST /loop-ops/sync runs the importer end-to-end', { skip: !existsSync(WORKBOOK) }, async () => {
+test('POST /loop-ops/sync runs the importer end-to-end', { skip: !WORKBOOK || !existsSync(WORKBOOK) }, async () => {
   const res = await fetch(`${BASE}/loop-ops/sync`, { method: 'POST' });
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.ok, true, body.stderr);
-  assert.match(body.stdout, /31 entities \(26 surfaces\)/);
+  assert.match(body.stdout, /entities \(\d+ surfaces\)/);
   assert.ok(typeof body.mtime === 'number');
 });

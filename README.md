@@ -137,7 +137,7 @@ It extracts rollout ID, project path, model family, token totals, tool calls, fi
 When Claude Code runs with subagents, meow-ops turns the session tree into a Gantt timeline showing exactly what ran in parallel vs. sequentially:
 
 ```
-Run: patherle — 3 agents — $0.84 — 12m ago
+Run: storefront-redesign — 3 agents — $0.84 — 12m ago
 ⏱ 10:32:14 ───────────────────────────── 10:34:57 IST
 ├── 📐 Sonnet  code-explorer    ████████████           47s $0.12
 ├── 📐 Sonnet  code-architect      ███████████████████ 1m42s $0.51
@@ -172,22 +172,22 @@ See `db/migrations/0003_scrying_sanctum.sql` for the full schema and RLS policie
 
 ### The Loom
 
-An n8n-style read-only control room for multi-agent loop architectures. The Loom imports an Excel master spec (the "law" for a fleet of AI surfaces), synthesizes the orchestration hierarchy on top of it, and renders the whole organism as an interactive React Flow canvas — 1 coordinator, 4 director lanes, 26 worker surfaces.
+An n8n-style read-only control room for multi-agent loop architectures. The Loom imports your own Excel workflow spec, synthesizes the orchestration hierarchy on top of it, and renders the whole system as an interactive React Flow canvas.
 
 ```
                        Main Coordinator
         ┌──────────┬──────┴───────┬─────────────┐
-   Tenant Dir   Customer Dir   Admin Dir    Doer Dir
-   ┌──┬──┬──┐      ┌──┴──┐        │             │
-  W1 W2 W3 …    rag.core …    ops.copilot  genie.execute
-  [needs-review] [passed]      [covered]    [covered]
+ Research Dir   Build Dir     Review Dir      Ops Dir
+   ┌──┬──┐       ┌──┬──┐        ┌──┬──┐        ┌──┐
+  W1 W2 …       W3 W4 …        W5 W6 …        W7 …
+ [review]      [covered]      [passed]       [blocked]
 ```
 
 **Features:**
-- Excel workbook importer with fail-loud validation: wrong surface count, wrong groups, duplicate keys, or missing columns abort with every violation named — zero partial output
-- Collapsible wave clusters keep a 22-node lane readable; minimap, keyboard access, light/dark theme, reduced-motion safe
+- Excel workbook importer with fail-loud validation: unknown groups, duplicate keys, missing columns, or secret-shaped content abort with every violation named
+- Collapsible wave clusters keep dense lanes readable; minimap, keyboard access, light/dark theme, reduced-motion safe
 - Every node answers four questions: what owns this, what it can touch, last verified state, and what was NOT verified
-- Inspector shows Master Spec knobs (confidence floors, pass thresholds, model tiers), guardrails, eval gates, and copyable validation commands — The Loom never executes anything itself
+- Inspector shows workflow-spec knobs, guardrails, eval gates, and copyable validation commands. The Loom never executes anything itself
 - Run timeline joins recorded loop runs against real session costs; an empty evidence list renders "treat with suspicion"
 - Permanent "production writes disabled" badge — the alarm branch wears red, never the safe green
 - All loop data is local-only (gitignored); the hosted demo intentionally shows the instructional empty state
