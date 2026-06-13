@@ -25,7 +25,9 @@ const DEFAULT_REPOS = [
 ];
 
 const SECRET_TEXT = /(token|secret|password|credential|cookie|authorization|service_role|api[_-]?key)/i;
-const TOKEN_SHAPE = /\b(?:gh[pousr]_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{16,}|xox[baprs]-[A-Za-z0-9-]+)\b/g;
+// The eyJ... JWT alt redacts Supabase service-role / anon keys (the key shape
+// this stack actually uses), which the other patterns miss.
+const TOKEN_SHAPE = /\b(?:gh[pousr]_[A-Za-z0-9_]+|sk-[A-Za-z0-9_-]{16,}|xox[baprs]-[A-Za-z0-9-]+|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b/g;
 
 function arg(name, fallback = null) {
   const idx = process.argv.indexOf(`--${name}`);

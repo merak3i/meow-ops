@@ -4,10 +4,23 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import http from 'node:http';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
+
+// Raw GET so we can spoof the Host header (fetch forbids overriding it).
+function rawGet(path, headers) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: '127.0.0.1', port: PORT, path, method: 'GET', headers },
+      (res) => { let d = ''; res.on('data', (c) => (d += c)); res.on('end', () => resolve({ status: res.statusCode, body: d })); },
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 7437;
@@ -70,6 +83,23 @@ test('GET /loop-ops/runs returns [] when no runs are recorded', async () => {
 test('unknown loop-ops path still 404s', async () => {
   const res = await fetch(`${BASE}/loop-ops/deploy`);
   assert.equal(res.status, 404);
+});
+
+// ── Security: the localhost server must not be drivable cross-origin or via a
+// rebound (non-localhost) Host header. Locks SEC-1/SEC-2 from the audit.
+test('rejects a cross-origin request (foreign Origin → 403)', async () => {
+  const res = await fetch(`${BASE}/loop-ops/status`, { headers: { Origin: 'https://evil.example.com' } });
+  assert.equal(res.status, 403);
+});
+
+test('rejects a non-localhost Host header (DNS-rebinding → 403)', async () => {
+  const res = await rawGet('/loop-ops/status', { Host: 'attacker.example.com' });
+  assert.equal(res.status, 403);
+});
+
+test('allows a same-origin / no-Origin request', async () => {
+  const res = await fetch(`${BASE}/loop-ops/status`); // no Origin header
+  assert.equal(res.status, 200);
 });
 
 test('POST /loop-ops/sync runs the importer end-to-end', { skip: !WORKBOOK || !existsSync(WORKBOOK) }, async () => {

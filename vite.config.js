@@ -14,6 +14,29 @@ function meowSyncPlugin() {
   return {
     name: 'meow-sync',
     configureServer(server) {
+      // Local-only guard. These endpoints spawn local processes, so they must
+      // never be reachable from another site. Reject non-localhost Host headers
+      // (DNS-rebinding) and any cross-origin request. Without this, a page the
+      // developer visits during `npm run dev` could POST /api/sync.
+      function blockNonLocal(req, res) {
+        const host = String(req.headers.host || '').split(':')[0].replace(/[[\]]/g, '');
+        const okHost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+        let okOrigin = true;
+        if (req.headers.origin) {
+          try {
+            const h = new URL(req.headers.origin).hostname;
+            okOrigin = h === 'localhost' || h === '127.0.0.1' || h === '::1';
+          } catch { okOrigin = false; }
+        }
+        if (!okHost || !okOrigin) {
+          res.statusCode = 403;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: false, error: 'forbidden (local-only endpoint)' }));
+          return true;
+        }
+        return false;
+      }
+
       server.middlewares.use('/api/sync/status', (req, res) => {
         if (req.method !== 'GET') {
           res.statusCode = 405;
@@ -53,6 +76,7 @@ function meowSyncPlugin() {
 
       server.middlewares.use('/api/loop-ops/sync', (req, res) => {
         if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
+        if (blockNonLocal(req, res)) return;
         // No env option — the child inherits the dev server's environment.
         const child = spawn('node', [join(server.config.root, 'sync', 'loop-ops-import.mjs')], {
           cwd: server.config.root,
@@ -98,6 +122,7 @@ function meowSyncPlugin() {
 
       server.middlewares.use('/api/superadmin-usage/sync', (req, res) => {
         if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
+        if (blockNonLocal(req, res)) return;
         const child = spawn('node', [join(server.config.root, 'sync', 'superadmin-usage.mjs')], {
           cwd: server.config.root,
           env: process.env,
@@ -128,6 +153,7 @@ function meowSyncPlugin() {
           res.end();
           return;
         }
+        if (blockNonLocal(req, res)) return;
         const scriptPath      = join(server.config.root, 'sync', 'export-local.mjs');
         const limitsScriptPath = join(server.config.root, 'sync', 'fetch-claude-limits.mjs');
         const child = spawn('node', [scriptPath], {
@@ -164,8 +190,11 @@ function meowSyncPlugin() {
 
           // After session sync completes, refresh rate limits in the background.
           // Reads Chrome cookie if possible; falls back to existing values.
-          // Pass --push to also commit + push rate-limits.json to GitHub.
-          spawn('node', [limitsScriptPath, '--push'], {
+          // NOTE: --push is intentionally NOT passed. A browser POST must never
+          // be able to trigger a git commit/push — that was a CSRF vector where
+          // any visited page could drive `git push origin main`. Publish rate
+          // limits manually with `node sync/fetch-claude-limits.mjs --push`.
+          spawn('node', [limitsScriptPath], {
             cwd: server.config.root,
             env: process.env,
             stdio: 'ignore',
