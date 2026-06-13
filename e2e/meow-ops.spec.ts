@@ -277,7 +277,19 @@ test('Scrying Sanctum: per-session roster visible', async ({ page }) => {
 
 async function loopSpecPresent(page: import('@playwright/test').Page): Promise<boolean> {
   const res = await page.request.get('/data/loop-ops/spec.json');
-  return res.status() === 200;
+  if (res.status() !== 200) return false;
+  // The SPA fallback (vite preview / vercel rewrite) serves index.html with a
+  // 200 for a missing file, so a bare status check false-positives on fresh
+  // clones / CI runners with no local Loom data. Confirm it's really the spec
+  // JSON before treating the fixture as present.
+  const contentType = res.headers()['content-type'] || '';
+  if (!contentType.includes('json')) return false;
+  try {
+    const body = await res.json();
+    return !!(body && body.meta && typeof body.meta.entityCount === 'number');
+  } catch {
+    return false;
+  }
 }
 
 test('The Loom: safety badge renders with or without spec data', async ({ page }) => {
