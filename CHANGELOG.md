@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Loop-Ops Supabase connector** (`sync/loop-ops-supabase.mjs`) — opt-in, plug-in-later: pulls live per-surface truth states from a Supabase table into the truth CSV the Loom importer already consumes (`--truth`), keyed by `surface_key`. Excel stays the structure; Supabase supplies the live state. No-op until `LOOP_OPS_SUPABASE_URL/_KEY/_TABLE` are set; all private config in env, never committed. Plus `sync/loop-ops-supabase-watch.mjs` for real-time sync via Supabase Realtime, and a near-real-time cron path. README documents all three cadences.
 - **Google Antigravity parser** (`sync/parse-antigravity.mjs`) — tracks Antigravity agent sessions (time, tools, project, snippet) from `~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`. Token/model/cost are not exposed by Antigravity locally (encrypted store, opaque model enum, server-side usage), so those sessions carry `usage_available: false` and are never assigned fabricated tokens or cost.
 - `sync/session-utils.mjs` — shared snippet/project/default-session helpers, removing copy-paste drift across the five parsers.
 - Golden tests for `cost-calculator`, `parse-session`, and `parse-antigravity`; security regression tests for the local API (cross-origin + DNS-rebinding rejection).
