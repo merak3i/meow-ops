@@ -43,19 +43,63 @@ function resolveNode() {
 }
 const NODE = resolveNode();
 
-function cors(res, origin) {
-  res.setHeader('Access-Control-Allow-Origin',  origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  // Required for Chrome Private Network Access (HTTPS page → http://localhost)
-  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+// Origin allowlist. Reflecting an arbitrary Origin (the old behavior) let ANY
+// website the operator visited read this localhost server's responses and
+// trigger its POST endpoints. We now allowlist only local dev origins plus an
+// optional hosted dashboard origin (comma-separated MEOW_DASHBOARD_ORIGIN,
+// e.g. https://meow-ops.vercel.app) so the deployed PWA can still call home.
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:5173', 'http://127.0.0.1:5173',
+  'http://localhost:4173', 'http://127.0.0.1:4173',
+  `http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`,
+]);
+for (const o of (process.env.MEOW_DASHBOARD_ORIGIN || '').split(',')) {
+  const t = o.trim();
+  if (t) ALLOWED_ORIGINS.add(t);
+}
+
+// DNS-rebinding defense: a rebound attacker domain resolves to 127.0.0.1 but
+// still sends its own Host header. Only accept localhost Host values.
+function hostIsLocal(req) {
+  const host = (req.headers.host || '').split(':')[0].replace(/[[\]]/g, '');
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+}
+
+function applyCors(res, origin) {
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    // Required for Chrome Private Network Access (HTTPS page → http://localhost)
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  }
 }
 
 const server = createServer((req, res) => {
-  cors(res, req.headers.origin);
+  const origin = req.headers.origin;
   res.setHeader('Content-Type', 'application/json');
 
-  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
+  // Reject non-localhost Host headers outright (DNS-rebinding).
+  if (!hostIsLocal(req)) {
+    res.statusCode = 403;
+    res.end(JSON.stringify({ ok: false, error: 'forbidden host' }));
+    return;
+  }
+
+  applyCors(res, origin);
+
+  if (req.method === 'OPTIONS') {
+    if (origin && !ALLOWED_ORIGINS.has(origin)) { res.writeHead(403); res.end(); return; }
+    res.writeHead(204); res.end(); return;
+  }
+
+  // Block cross-origin calls from any origin not on the allowlist.
+  if (origin && !ALLOWED_ORIGINS.has(origin)) {
+    res.statusCode = 403;
+    res.end(JSON.stringify({ ok: false, error: 'forbidden origin' }));
+    return;
+  }
 
   const path = new URL(req.url, `http://localhost:${PORT}`).pathname;
 
@@ -89,8 +133,9 @@ const server = createServer((req, res) => {
   // ── POST /sync ────────────────────────────────────────────────────────────
   if (path === '/sync' && req.method === 'POST') {
     console.log(`\n[${new Date().toLocaleTimeString()}] Sync triggered from browser`);
-    const args = NO_PUSH ? [] : ['--push'];
-    const child = spawn(NODE, [join(ROOT, 'sync', 'export-local.mjs'), ...args], {
+    // --push is retired (session data is local-only). Never pass it from an
+    // HTTP-triggered path so a browser request can never cause a git push.
+    const child = spawn(NODE, [join(ROOT, 'sync', 'export-local.mjs')], {
       cwd: ROOT,
       env: { ...process.env },
     });

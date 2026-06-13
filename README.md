@@ -2,7 +2,7 @@
 
 > **Local-first AI observability for people who live inside agentic coding tools.**
 
-Meow Operations turns local Claude Code, OpenAI Codex Desktop, Aider, and Cursor session logs into an installable PWA. It shows token spend, model mix, tool usage, source comparison, session quality, live agent timelines, a Pomodoro focus timer, and a living 3D cat companion. No accounts. No telemetry. MIT-licensed.
+Meow Operations turns local Claude Code, OpenAI Codex Desktop, Aider, Cursor, and Google Antigravity session logs into an installable PWA. It shows token spend, model mix, tool usage, source comparison, session quality, live agent timelines, a Pomodoro focus timer, and a living 3D cat companion. No accounts. No telemetry. MIT-licensed.
 
 ## Screenshots
 
@@ -94,7 +94,9 @@ Meow Operations fixes all four. For free. For everyone.
 ## What It Does
 
 ### Analytics Dashboard
-Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, and **Cursor** in one unified view. Cost tables for 30+ models.
+Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, **Cursor**, and **Google Antigravity** in one unified view. Cost tables for 30+ models.
+
+> **Google Antigravity note:** Antigravity stores session **time, tools, and project** locally (parsed from `~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`), but it does **not** expose **token counts, the model used, or cost** on disk — the conversation store is encrypted and usage lives server-side. Antigravity sessions are therefore tracked for time/tools/project and shown with `usage_available: false`; tokens and cost are never fabricated or estimated for them.
 
 | Page | What you see |
 |---|---|
@@ -276,11 +278,10 @@ Runs `export-local.mjs` every hour, keeping your deployed dashboard current with
 For a hosted dashboard that can trigger sync from the browser, run the local API on your machine:
 
 ```bash
-node sync/local-api.mjs           # export + push
-node sync/local-api.mjs --no-push # export only
+node sync/local-api.mjs           # export local data (no git push — that is retired)
 ```
 
-It listens on `http://localhost:7337`, serves fresh local `sessions.json` and `cost-summary.json`, and exposes `POST /sync` plus `GET /sync/status`. This process reads only local files on your machine.
+It listens on `http://localhost:7337`, serves fresh local `sessions.json` and `cost-summary.json`, and exposes `POST /sync` plus `GET /sync/status`. This process reads only local files on your machine and never pushes to git. Requests are restricted to localhost; if you call it from a hosted dashboard URL, allowlist that origin with `MEOW_DASHBOARD_ORIGIN` (see `.env.example`).
 
 ### How Sessions Are Classified
 
@@ -328,6 +329,7 @@ Unknown variants match by family fuzzy search.
 It currently:
 - Reads Claude Code JSONL files from `~/.claude/projects/`
 - Reads Codex Desktop rollouts from `~/.codex/sessions/`
+- Reads Google Antigravity transcripts from `~/.gemini/antigravity/` (time/tools/project only; usage not exposed by Antigravity)
 - Optionally reads Cursor logs from `CURSOR_LOGS_DIR`
 - Optionally reads Aider project histories from `AIDER_PROJECTS`
 - Deduplicates and classifies sessions, refines project names from `cwd`, calculates model cost, and sorts by latest activity
@@ -475,8 +477,9 @@ npx playwright test --reporter=list
 ## Privacy
 
 - **Local-first by default.** Nothing leaves your machine in dev mode.
-- **Sessions JSON contains metrics only** — token counts, tool counts, durations, model names, project names from `cwd`. No message content, no prompts, no code.
-- **Codex snippets are intentionally short.** The parser stores a first-message/session-title snippet for labeling, not full transcript content.
+- **Sessions JSON is metrics plus one short label snippet.** It stores token counts, tool counts, durations, model names, and project names from `cwd`, plus a single first-user-message snippet (~80 chars) and session title used to label rows. It does **not** store full message content, full prompts, or code.
+- **Want strictly metrics-only?** Set `MEOW_NO_SNIPPETS=1` before running the export and no snippet or title is captured for any source.
+- **Snippets are intentionally short.** The parser stores a first-message/session-title snippet for labeling, not full transcript content. This is the data class that was exposed in a prior public-repo incident, which is why `sessions.json` is now local-only and gitignored (the hosted demo serves sanitized `demo-*` fixtures).
 - **Supabase upload is opt-in.** Your own bucket, your own credentials.
 - **Service key is local-only.** It never appears in the production bundle.
 - **Hosted demo password gate is optional.** `VITE_ACCESS_PASSWORD` only protects demo access; it is not an account system.
@@ -555,9 +558,10 @@ meow-ops/
 │       └── cost-summary.json    Today/week/month/year spend buckets
 ├── db/
 │   └── migrations/
-│       ├── 0001_sessions.sql    Core sessions schema
-│       ├── 0002_backfill.sql    Tenant ID backfill
-│       └── 0003_scrying_sanctum.sql  Pipeline viz schema + RLS + Realtime
+│       ├── 0001_initial_schema.sql    Core sessions schema
+│       ├── 0002_daily_summaries.sql   Daily aggregates table
+│       ├── 0003_scrying_sanctum.sql   Pipeline viz schema + RLS + Realtime
+│       └── 0004_rls_tenant_isolation.sql  Strict per-tenant SELECT (no NULL-tenant world read)
 ├── e2e/
 │   └── meow-ops.spec.ts         Playwright e2e tests (15 tests, all pages)
 ├── src/
@@ -598,6 +602,8 @@ meow-ops/
 │   ├── parse-codex.mjs          OpenAI Codex Desktop parser
 │   ├── parse-cursor.mjs         Cursor IDE log parser
 │   ├── parse-aider.mjs          Aider chat history parser
+│   ├── parse-antigravity.mjs    Google Antigravity transcript parser (time/tools; usage not exposed)
+│   ├── session-utils.mjs        Shared snippet/project/default-session helpers
 │   ├── cost-calculator.mjs      30+ model pricing with fuzzy matching
 │   ├── export-local.mjs         All sources → sessions.json + cost-summary.json
 │   ├── fetch-claude-limits.mjs  Update rate-limits.json from claude.ai/settings/usage

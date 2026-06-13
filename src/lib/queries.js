@@ -27,6 +27,34 @@ const REMOTE_COST_SUMMARY_URL = deriveCostSummaryUrl();
 let REAL_SESSIONS = null;
 let REAL_SESSIONS_PROMISE = null;
 
+// Numeric fields that must be finite, non-negative numbers. sessions.json is
+// generated locally and fetched at runtime; a schema drift or a malformed row
+// would otherwise feed NaN into every reduce() and silently break all totals.
+const NUMERIC_FIELDS = [
+  'input_tokens', 'output_tokens', 'cache_creation_tokens', 'cache_read_tokens',
+  'total_tokens', 'estimated_cost_usd', 'duration_seconds', 'message_count',
+];
+
+function coerceNum(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+// Validate + repair fetched session rows at the trust boundary. Drops anything
+// that isn't an object with a session_id; clamps numeric fields so one bad row
+// can't poison aggregate stats.
+function sanitizeSessions(data) {
+  if (!Array.isArray(data)) return [];
+  const out = [];
+  for (const s of data) {
+    if (!s || typeof s !== 'object' || typeof s.session_id !== 'string') continue;
+    for (const f of NUMERIC_FIELDS) s[f] = coerceNum(s[f]);
+    if (!s.tools || typeof s.tools !== 'object') s.tools = {};
+    out.push(s);
+  }
+  return out;
+}
+
 async function loadRealSessions() {
   if (REAL_SESSIONS) return REAL_SESSIONS;
   if (REAL_SESSIONS_PROMISE) return REAL_SESSIONS_PROMISE;
@@ -45,8 +73,9 @@ async function loadRealSessions() {
       try {
         const r = await fetch(url);
         if (!r.ok) continue;
-        const data = await r.json();
-        if (Array.isArray(data) && data.length > 0) {
+        const raw = await r.json();
+        const data = sanitizeSessions(raw);
+        if (data.length > 0) {
           REAL_SESSIONS = data;
           return data;
         }

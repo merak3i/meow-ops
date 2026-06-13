@@ -19,17 +19,16 @@
 
 import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
-import { calculateCost } from './cost-calculator.mjs';
+import { calculateCostDetailed } from './cost-calculator.mjs';
+import { createSession, makeSnippet } from './session-utils.mjs';
 
 const HISTORY_FILENAME = '.aider.chat.history.md';
 const DEFAULT_MODEL    = 'claude-sonnet-4-6';
-const FIRST_MSG_MAX    = 80;
 
-function snippetize(text, max = FIRST_MSG_MAX) {
-  const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
-  if (!cleaned) return '';
-  if (cleaned.length <= max) return cleaned;
-  return cleaned.slice(0, max - 1).trimEnd() + '…';
+/** Parse a comma-grouped integer, returning 0 on any malformed input. */
+function safeInt(str) {
+  const n = parseInt(String(str).replace(/,/g, ''), 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 export function scanAiderProjects(projectDirs) {
@@ -92,11 +91,14 @@ function parseAiderHistory(filePath, projectName) {
     for (const tl of tokenLines) {
       const m = tl.match(/([\d,]+)\s*sent,\s*([\d,]+)\s*received/i);
       if (m) {
-        totalSent += parseInt(m[1].replace(/,/g, ''), 10);
-        totalRecv += parseInt(m[2].replace(/,/g, ''), 10);
+        totalSent += safeInt(m[1]);
+        totalRecv += safeInt(m[2]);
       }
       const costM = tl.match(/\$([0-9.]+)/);
-      if (costM) totalCostUsd += parseFloat(costM[1]);
+      if (costM) {
+        const c = parseFloat(costM[1]);
+        if (Number.isFinite(c) && c > 0) totalCostUsd += c;
+      }
     }
 
     if (totalSent + totalRecv === 0) { blockIndex++; continue; }
@@ -104,7 +106,7 @@ function parseAiderHistory(filePath, projectName) {
     // Detect model from block (> /model <name> or Model: <name>)
     const modelM = block.match(/(?:^>\s*\/model\s+|^Model:\s*)([a-z0-9._/-]+)/mi);
     const model  = modelM ? modelM[1].trim() : DEFAULT_MODEL;
-    const firstPrompt = snippetize(
+    const firstPrompt = makeSnippet(
       (block.match(/^>\s*(?!\/(?:add|model|architect|run|shell|tokens|edit)\b)(.+)$/mi)?.[1])
       || (block.match(/^>\s*(.+)$/mi)?.[1])
       || '',
@@ -116,41 +118,47 @@ function parseAiderHistory(filePath, projectName) {
     const sessionId = `aider-${projectName}-${blockIndex}`;
     blockIndex++;
 
-    // Estimate duration: 300s default (Aider doesn't log end times)
-    const durationSec = 300;
-    const endedAt     = startedAt
-      ? new Date(new Date(startedAt).getTime() + durationSec * 1000).toISOString()
-      : new Date().toISOString();
+    // Aider does not log end times. Rather than fabricate a duration, fall back
+    // to the file mtime for a missing start and report duration 0 (unknown)
+    // instead of a made-up 300s.
+    const fallbackTs = (() => {
+      try { return statSync(filePath).mtime.toISOString(); } catch { return startedAt; }
+    })();
+    const begin = startedAt || fallbackTs;
 
-    sessions.push({
+    // Trust Aider's self-reported cost when present (it knows its exact model
+    // billing); otherwise estimate from our table and record the source.
+    let cost = totalCostUsd > 0 ? parseFloat(totalCostUsd.toFixed(6)) : null;
+    let pricingSource = 'aider-reported';
+    if (cost === null) {
+      const priced = calculateCostDetailed(model, totalSent, totalRecv, 0, 0);
+      cost = priced.cost;
+      pricingSource = priced.pricingSource;
+    }
+
+    sessions.push(createSession({
       session_id:            sessionId,
+      source:                'aider',
       project:               projectName,
       cwd:                   dirname(filePath),
       model,
       entrypoint:            'aider',
-      git_branch:            null,
-      started_at:            startedAt || endedAt,
-      ended_at:              endedAt,
-      duration_seconds:      durationSec,
+      started_at:            begin,
+      ended_at:              begin,
+      duration_seconds:      0,
       message_count:         tokenLines.length,
       user_message_count:    tokenLines.length,
       assistant_message_count: tokenLines.length,
       input_tokens:          totalSent,
       output_tokens:         totalRecv,
-      cache_creation_tokens: 0,
-      cache_read_tokens:     0,
       total_tokens:          totalSent + totalRecv,
-      // Prefer the cost Aider reported (it knows its own model billing)
-      estimated_cost_usd:    totalCostUsd > 0
-        ? parseFloat(totalCostUsd.toFixed(6))
-        : calculateCost(model, totalSent, totalRecv, 0, 0),
+      estimated_cost_usd:    cost,
+      pricing_source:        pricingSource,
       cat_type:              catType,
       is_ghost:              tokenLines.length === 0,
-      source:                'aider',
-      tools:                 {},
       session_title:         firstPrompt || null,
       first_user_message:    firstPrompt || null,
-    });
+    }));
   }
 
   return sessions;

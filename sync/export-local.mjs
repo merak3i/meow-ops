@@ -3,15 +3,44 @@
 // Run: node sync/export-local.mjs
 // Run: node sync/export-local.mjs --push   (also commit + push to GitHub)
 
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'fs';
+import { writeFileSync, readdirSync, statSync, existsSync, mkdirSync, openSync, readSync, closeSync } from 'fs';
 import { join } from 'path';
 import { parseSessionLines }  from './parse-session.mjs';
 import { scanCodexSessions }  from './parse-codex.mjs';
 import { scanCursorSessions } from './parse-cursor.mjs';
 import { scanAiderProjects }  from './parse-aider.mjs';
+import { scanAntigravitySessions, DEFAULT_ANTIGRAVITY_DIR } from './parse-antigravity.mjs';
 
 const CLAUDE_DIR = join(process.env.HOME, '.claude', 'projects');
 const CODEX_DIR  = join(process.env.HOME, '.codex', 'sessions');
+// Google Antigravity agent sessions (~/.gemini/antigravity/brain/<uuid>/...).
+// Override the root with ANTIGRAVITY_DIR.
+const ANTIGRAVITY_DIR = process.env.ANTIGRAVITY_DIR || DEFAULT_ANTIGRAVITY_DIR;
+
+// Read a (possibly very large) JSONL file into an array of non-empty lines
+// without ever materializing the whole file as one JS string. Reading the
+// entire file with readFileSync + split risks Node's ~512 MB single-string
+// cap on long-running session logs; this chunked reader streams instead.
+function readJsonlLines(path) {
+  const CHUNK = 1 << 20; // 1 MiB
+  const fd = openSync(path, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(CHUNK);
+    const lines = [];
+    let leftover = '';
+    let bytes;
+    while ((bytes = readSync(fd, buf, 0, CHUNK, null)) > 0) {
+      const text = leftover + buf.toString('utf8', 0, bytes);
+      const parts = text.split('\n');
+      leftover = parts.pop() ?? '';
+      for (const p of parts) { if (p) lines.push(p); }
+    }
+    if (leftover) lines.push(leftover);
+    return lines;
+  } finally {
+    closeSync(fd);
+  }
+}
 
 // Optional extra sources — configure via env vars
 // CURSOR_LOGS_DIR  — path to Cursor logs dir, e.g. ~/.cursor/logs
@@ -61,21 +90,21 @@ function walkJsonl(dir, projectDir, isSubagent = false) {
       walkJsonl(full, projectDir, entry === 'subagents' || isSubagent);
     } else if (entry.endsWith('.jsonl')) {
       try {
-        const content = readFileSync(full, 'utf8');
-        const lines = content.split('\n').filter(Boolean);
+        const lines = readJsonlLines(full);
         const sessions = parseSessionLines(lines, projectDir);
         // Each file = one logical session entry. Make the session_id file-unique.
-        // For subagents, prefix with "agent-" so they're distinguishable.
+        // Keep the real session id in the key so two session ids in one
+        // subagent file can't collide into a single "agent-<file>" row.
         for (const s of sessions) {
           const fileKey = entry.replace('.jsonl', '');
-          s.session_id = isSubagent ? `agent-${fileKey}` : `${s.session_id}-${fileKey}`;
+          s.session_id = isSubagent ? `agent-${fileKey}-${s.session_id}` : `${s.session_id}-${fileKey}`;
           s.is_subagent = isSubagent;
           s.source = 'claude';
           if (isSubagent) s.entrypoint = 'subagent';
         }
         allSessions.push(...sessions);
         fileCount++;
-      } catch (e) {
+      } catch {
         errorCount++;
       }
     }
@@ -86,7 +115,7 @@ for (const dir of projectDirs) {
   const dirPath = join(CLAUDE_DIR, dir);
   try {
     walkJsonl(dirPath, dir);
-  } catch (e) {
+  } catch {
     errorCount++;
   }
 }
@@ -157,8 +186,32 @@ if (AIDER_PROJECT_DIRS.length > 0) {
   console.log('No Aider projects configured — skipping (set AIDER_PROJECTS=path1:path2 to enable)');
 }
 
-const allUnique = allSessions;
-console.log(`Total unique session entries: ${allUnique.length}`);
+// Merge Google Antigravity sessions. Time/tools/project are real; token, model,
+// and cost are not exposed by Antigravity locally, so those sessions carry
+// usage_available=false and are shown as "usage not available" (never faked).
+if (ANTIGRAVITY_DIR && existsSync(ANTIGRAVITY_DIR)) {
+  const agSessions = scanAntigravitySessions(ANTIGRAVITY_DIR);
+  if (agSessions.length > 0) {
+    console.log(`Found ${agSessions.length} Antigravity session(s) (usage not exposed by Antigravity)`);
+    allSessions.push(...agSessions);
+  } else {
+    console.log('Antigravity dir found but no sessions parsed — skipping');
+  }
+} else {
+  console.log('No Antigravity directory found — skipping (set ANTIGRAVITY_DIR to enable)');
+}
+
+// De-duplicate by session_id (real dedupe, not just a rename). A re-run or an
+// overlapping scan can surface the same id twice; keep the richer record
+// (more messages) so a partial re-read never shrinks a session.
+const byId = new Map();
+for (const s of allSessions) {
+  const prev = byId.get(s.session_id);
+  if (!prev || (s.message_count || 0) > (prev.message_count || 0)) byId.set(s.session_id, s);
+}
+const allUnique = [...byId.values()];
+const dupCount = allSessions.length - allUnique.length;
+console.log(`Total unique session entries: ${allUnique.length}${dupCount > 0 ? ` (deduped ${dupCount})` : ''}`);
 
 // Sort by most-recent activity (ended_at) descending.
 // This ensures long-running Claude sessions still active today aren't
@@ -174,9 +227,11 @@ const latest = allUnique.slice(0, MAX_SESSIONS);
 
 console.log(`Exporting latest ${latest.length} sessions\n`);
 
-// Stats
-const totalTokens = latest.reduce((a, s) => a + s.total_tokens, 0);
-const totalCost = latest.reduce((a, s) => a + s.estimated_cost_usd, 0);
+// Stats — totals are over ALL sessions (not the capped export slice), so the
+// headline numbers match cost-summary.json rather than under-reporting when
+// more than MAX_SESSIONS sessions exist.
+const totalTokens = allUnique.reduce((a, s) => a + (s.total_tokens || 0), 0);
+const totalCost = allUnique.reduce((a, s) => a + (s.estimated_cost_usd || 0), 0);
 const byProject = {};
 const byCat = {};
 const byModel = {};
@@ -209,10 +264,14 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
 // This lets the dashboard show accurate today/weekly/monthly/yearly spend
 // without needing to load thousands of sessions into the browser.
 {
-  const IST = 'Asia/Kolkata';
+  // Day/week/month boundaries use the operator's local timezone (what the
+  // laptop clock shows), overridable with MEOW_TZ. Previously hardcoded to IST.
+  const TZ = process.env.MEOW_TZ
+    || Intl.DateTimeFormat().resolvedOptions().timeZone
+    || 'UTC';
 
   function istDate(iso) {
-    return new Date(iso).toLocaleDateString('en-CA', { timeZone: IST });
+    return new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ });
   }
 
   function activityTs(s) { return s.ended_at || s.started_at; }
@@ -230,10 +289,10 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
   }
 
   const now      = new Date();
-  const todayStr = now.toLocaleDateString('en-CA', { timeZone: IST });
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: TZ });
 
-  // Calendar week start (Monday) in IST
-  const nowIST       = new Date(now.toLocaleString('en-US', { timeZone: IST }));
+  // Calendar week start (Monday) in the operator's timezone
+  const nowIST       = new Date(now.toLocaleString('en-US', { timeZone: TZ }));
   const dowIST       = nowIST.getDay(); // 0=Sun
   const daysToMon    = dowIST === 0 ? 6 : dowIST - 1;
   const thisWeekStart = new Date(nowIST);

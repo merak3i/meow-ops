@@ -1,49 +1,9 @@
-import { calculateCost } from './cost-calculator.mjs';
+import { calculateCostDetailed } from './cost-calculator.mjs';
+import { createSession, extractUserText, makeSnippet } from './session-utils.mjs';
 
-// ─── First-message snippet extraction ────────────────────────────────────────
-// Captures the first user-typed message per session, ~80 chars max, used by
-// the run-group dropdown to make near-identical project rows distinguishable
-// at a glance ("fix billing webhook" beats "backend 149.49g 4 roots x4").
-
-const FIRST_MSG_MAX = 80;
-
-/** Read the text payload from a user-message content field (string or block array). */
-function extractUserText(content) {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  for (const block of content) {
-    if (block && block.type === 'text' && typeof block.text === 'string') {
-      return block.text;
-    }
-  }
-  return '';
-}
-
-/** True when a user message is purely auto-injected (system-reminder, no real text). */
-function isAutoInjectedOnly(text) {
-  if (!text) return true;
-  const stripped = text
-    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '')
-    .replace(/<command-(name|message|args|stdout|stderr)>[\s\S]*?<\/command-\1>/g, '')
-    .replace(/<local-command-(stdout|stderr)>[\s\S]*?<\/local-command-\1>/g, '')
-    .trim();
-  return stripped.length === 0;
-}
-
-/** Compress raw user-message text into a single-line snippet of at most max chars. */
-function snippetize(text, max = FIRST_MSG_MAX) {
-  const cleaned = text
-    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, ' ')
-    .replace(/<command-name>([^<]*)<\/command-name>/g, '$1')
-    .replace(/<command-message>([^<]*)<\/command-message>/g, ' $1')
-    .replace(/<command-args>([^<]*)<\/command-args>/g, ' $1')
-    .replace(/<local-command-(stdout|stderr)>[\s\S]*?<\/local-command-\1>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!cleaned) return '';
-  if (cleaned.length <= max) return cleaned;
-  return cleaned.slice(0, max - 1) + '…';
-}
+// First-message snippet extraction, project decoding, and session classification.
+// Snippet/default-session helpers live in session-utils.mjs (shared by every
+// parser); this file keeps the Claude-specific JSONL walk and cat-type logic.
 
 export function classifyCatType(toolCounts) {
   if (!toolCounts || typeof toolCounts !== 'object') return 'ghost';
@@ -117,11 +77,16 @@ export function parseSessionLines(lines, projectDir) {
   const agentSlug       = firstEntry?.slug        ?? null;
   const isSidechain     = firstEntry?.isSidechain ?? false;
 
+  // Count lines we could not parse so a truncated/corrupt file leaves a signal
+  // instead of silently shipping a partial session.
+  let malformed = 0;
+
   for (const line of lines) {
     let entry;
     try {
       entry = JSON.parse(line);
     } catch {
+      malformed++;
       continue;
     }
 
@@ -129,39 +94,15 @@ export function parseSessionLines(lines, projectDir) {
     const sid = entry.sessionId;
 
     if (!sessions[sid]) {
-      sessions[sid] = {
+      sessions[sid] = createSession({
         session_id: sid,
+        source: 'claude',
         project: decodeProjectPath(projectDir),
-        cwd: null,
-        model: null,
-        entrypoint: null,
-        git_branch: null,
-        version: null,
-        started_at: null,
-        ended_at: null,
-        message_count: 0,
-        user_message_count: 0,
-        assistant_message_count: 0,
-        input_tokens: 0,
-        output_tokens: 0,
-        cache_creation_tokens: 0,
-        cache_read_tokens: 0,
-        total_tokens: 0,
-        estimated_cost_usd: 0,
-        cat_type: 'ghost',
-        is_ghost: false,
-        tools: {},
-        session_title: null,
-        // First user-typed message (~80 chars), used as a memorable label in
-        // the run-group dropdown. Null until we see a non-auto-injected user
-        // message in this session's log.
-        first_user_message: null,
-        // Hierarchy fields
         parent_session_id: parentSessionId,
         agent_id:          agentId,
         agent_slug:        agentSlug,
         is_sidechain:      isSidechain,
-      };
+      });
     }
 
     const s = sessions[sid];
@@ -182,11 +123,12 @@ export function parseSessionLines(lines, projectDir) {
 
       // Capture the first real user-typed message (skip auto-injected blocks
       // like <system-reminder> and tool-result echoes that aren't user intent).
+      // makeSnippet returns null when snippets are disabled (MEOW_NO_SNIPPETS).
       if (!s.first_user_message) {
-        const raw = extractUserText(entry.message?.content);
-        if (raw && !isAutoInjectedOnly(raw)) {
-          s.first_user_message = snippetize(raw);
-          s.session_title = s.first_user_message;
+        const snip = makeSnippet(extractUserText(entry.message?.content));
+        if (snip) {
+          s.first_user_message = snip;
+          s.session_title = snip;
         }
       }
     }
@@ -223,20 +165,28 @@ export function parseSessionLines(lines, projectDir) {
     // them caused the "Tokens" stat card to dramatically understate reality.
     s.total_tokens = s.input_tokens + s.output_tokens
       + s.cache_creation_tokens + s.cache_read_tokens;
-    s.estimated_cost_usd = calculateCost(
+    const priced = calculateCostDetailed(
       s.model, s.input_tokens, s.output_tokens,
       s.cache_creation_tokens, s.cache_read_tokens
     );
+    s.estimated_cost_usd = priced.cost;
+    s.pricing_source = priced.pricingSource;
     s.cat_type = classifyCatType(s.tools);
     s.is_ghost = s.cat_type === 'ghost' || s.message_count < 3;
 
     if (s.started_at && s.ended_at) {
-      s.duration_seconds = Math.floor(
+      // Clamp to >= 0: timestamps are chosen lexically, so a mixed-offset log
+      // could otherwise yield a negative duration that poisons summary buckets.
+      s.duration_seconds = Math.max(0, Math.floor(
         (new Date(s.ended_at).getTime() - new Date(s.started_at).getTime()) / 1000
-      );
+      ));
     } else {
       s.duration_seconds = 0;
     }
+  }
+
+  if (malformed > 0) {
+    console.warn(`  ⚠ ${projectDir}: skipped ${malformed} malformed JSONL line(s)`);
   }
 
   return Object.values(sessions).filter((s) => s.started_at);

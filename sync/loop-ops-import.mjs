@@ -297,7 +297,9 @@ async function main() {
 
   const specBlob = JSON.stringify(spec, null, 2);
   const gatesBlob = JSON.stringify(gates, null, 2);
-  const SECRET_RE = /sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{8,}|GOCSPX-[A-Za-z0-9_-]{8,}|AKIA[A-Z0-9]{12,}|[A-Za-z0-9+]{41,}={0,2}/;
+  // The eyJ... JWT alt catches Supabase service-role / anon keys, whose dotted
+  // segments are each under the 41-char base64 catch-all and would slip past it.
+  const SECRET_RE = /sk-[A-Za-z0-9_-]{8,}|ghp_[A-Za-z0-9]{8,}|GOCSPX-[A-Za-z0-9_-]{8,}|AKIA[A-Z0-9]{12,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}|[A-Za-z0-9+]{41,}={0,2}/;
   for (const [name, blob] of [['spec.json', specBlob], ['gates.json', gatesBlob]]) {
     const hit = blob.match(SECRET_RE);
     if (hit) {

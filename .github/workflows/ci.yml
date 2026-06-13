@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    name: Lint, typecheck, sync tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # Blocking gates: these are green today and catch real regressions.
+      - name: Sync pipeline tests
+        run: npm run test:sync
+      - name: Production build
+        run: npm run build
+
+      # Visible-but-non-blocking: the repo carries pre-existing lint/type debt
+      # (unused imports across src/, the 3902-line Sanctum file). These run so
+      # the count is visible on every PR and trends down; flip continue-on-error
+      # to false once the backlog is cleared.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+      - name: Typecheck
+        run: npm run typecheck
+        continue-on-error: true
+
+  e2e:
+    name: Playwright e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Build
+        run: npm run build
+      - name: Run e2e
+        run: npx playwright test

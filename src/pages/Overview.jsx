@@ -23,10 +23,11 @@ const SOURCE_OPTIONS = [
 ];
 
 const SOURCE_META = {
-  claude: { label: 'Claude', sigil: '◆', color: 'var(--accent)' },
-  codex:  { label: 'Codex',  sigil: '⬡', color: 'oklch(0.65 0.18 260)' },
-  cursor: { label: 'Cursor', sigil: '▣', color: 'var(--cyan)' },
-  aider:  { label: 'Aider',  sigil: '◇', color: 'var(--amber)' },
+  claude:      { label: 'Claude',      sigil: '◆', color: 'var(--accent)' },
+  codex:       { label: 'Codex',       sigil: '⬡', color: 'oklch(0.65 0.18 260)' },
+  cursor:      { label: 'Cursor',      sigil: '▣', color: 'var(--cyan)' },
+  aider:       { label: 'Aider',       sigil: '◇', color: 'var(--amber)' },
+  antigravity: { label: 'Antigravity', sigil: '✦', color: 'oklch(0.70 0.17 150)' },
 };
 
 function sourceMeta(src) {
@@ -63,7 +64,10 @@ function SourceComparisonPanel({ allSessions }) {
       codex:  { sessions: 0, cost: 0, tokens: 0, ghosts: 0 },
     };
     allSessions.forEach(s => {
-      const src = s.source === 'codex' ? 'codex' : 'claude';
+      // This panel compares Claude vs Codex specifically. Don't miscount other
+      // sources (cursor/aider/antigravity) as Claude — skip them here.
+      const src = s.source === 'codex' ? 'codex' : (!s.source || s.source === 'claude') ? 'claude' : null;
+      if (!src) return;
       acc[src].sessions++;
       acc[src].cost   += s.estimated_cost_usd || 0;
       acc[src].tokens += s.total_tokens || 0;

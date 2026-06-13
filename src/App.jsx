@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { PasswordGate } from './components/PasswordGate';
+import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import DateFilter from './components/DateFilter';
 import Overview from './pages/Overview';
@@ -22,7 +23,6 @@ const ScryingSanctum     = lazy(() => import('./pages/ScryingSanctum'));
 const LoopOps            = lazy(() => import('./pages/LoopOps'));
 // Local-only subscription, capacity, and GitHub Actions usage cockpit
 const CapacityUsage      = lazy(() => import('./pages/CapacityUsage'));
-// D3/Realtime visualizer kept at './scrying-sanctum/ScryingSanctum' for future use
 import {
   fetchSessions,
   fetchAllSessions,
@@ -194,7 +194,10 @@ export default function App() {
       codex:  { sessions: 0, cost: 0, tokens: 0, weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0 },
     };
     allSessions.forEach(s => {
-      const src = s.source === 'codex' ? 'codex' : 'claude';
+      // Preserve the real source (codex/cursor/aider/antigravity), don't fold
+      // everything non-codex into claude. Lazily init unseen sources.
+      const src = s.source || 'claude';
+      if (!acc[src]) acc[src] = { sessions: 0, cost: 0, tokens: 0, weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0 };
       const tok = s.total_tokens || 0;
       acc[src].sessions++;
       acc[src].cost   += s.estimated_cost_usd || 0;
@@ -339,7 +342,9 @@ export default function App() {
             Loading…
           </div>
         ) : (
-          renderPage()
+          <ErrorBoundary key={page}>
+            {renderPage()}
+          </ErrorBoundary>
         )}
       </main>
     </div>
