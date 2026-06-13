@@ -13,20 +13,8 @@
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
 import { join } from 'path';
-import { calculateCost } from './cost-calculator.mjs';
-
-const FIRST_MSG_MAX = 80;
-
-function snippetize(text, max = FIRST_MSG_MAX) {
-  const cleaned = String(text || '')
-    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!cleaned) return '';
-  if (cleaned.length <= max) return cleaned;
-  return cleaned.slice(0, max - 1).trimEnd() + '…';
-}
+import { calculateCostDetailed } from './cost-calculator.mjs';
+import { createSession, makeSnippet, snippetize, snippetsDisabled } from './session-utils.mjs';
 
 function extractTextDeep(value, depth = 0) {
   if (!value || depth > 4) return '';
@@ -121,34 +109,13 @@ export function parseCodexFile(filePath) {
   const content = readFileSync(filePath, 'utf8');
   const lines = content.split('\n').filter(Boolean);
 
-  const session = {
-    session_id: null,
+  const session = createSession({
     project: 'codex',
     source: 'codex',
-    cwd: null,
-    model: null,
     entrypoint: 'codex-desktop',
-    git_branch: null,
-    version: null,
-    started_at: null,
-    ended_at: null,
-    duration_seconds: 0,
-    message_count: 0,
-    user_message_count: 0,
-    assistant_message_count: 0,
-    input_tokens: 0,
-    output_tokens: 0,
-    cache_creation_tokens: 0,
-    cache_read_tokens: 0,
-    total_tokens: 0,
-    estimated_cost_usd: 0,
     // Codex sessions are always "architect" — plan-heavy agentic tasks
     cat_type: 'architect',
-    is_ghost: false,
-    tools: {},
-    session_title: null,
-    first_user_message: null,
-  };
+  });
 
   // Last non-null token_count info wins (cumulative totals at turn end).
   let lastTokenUsage = null;
@@ -178,8 +145,7 @@ export function parseCodexFile(filePath) {
         session.user_message_count++;
         session.message_count++;
         if (!session.first_user_message) {
-          const raw = extractTextDeep(p);
-          const snippet = snippetize(raw);
+          const snippet = makeSnippet(extractTextDeep(p));
           if (snippet) session.first_user_message = snippet;
         }
       }
@@ -211,32 +177,39 @@ export function parseCodexFile(filePath) {
   if (!session.started_at) return null;
 
   // Apply cumulative token totals from the last token_count event.
+  // OpenAI's `input_tokens` is INCLUSIVE of cached input tokens, so splitting
+  // out the cached subset (priced at the cheaper cache-read rate) and keeping
+  // only the non-cached remainder as `input_tokens` avoids both double-counting
+  // the total AND double-charging the cached tokens.
   if (lastTokenUsage) {
-    session.input_tokens     = lastTokenUsage.input_tokens            || 0;
-    session.cache_read_tokens = lastTokenUsage.cached_input_tokens    || 0;
-    session.output_tokens    = lastTokenUsage.output_tokens           || 0;
-    session.total_tokens     = lastTokenUsage.total_tokens
-      || session.input_tokens + session.output_tokens
+    const totalInput = Math.max(0, lastTokenUsage.input_tokens || 0);
+    const cached     = Math.max(0, lastTokenUsage.cached_input_tokens || 0);
+    session.cache_read_tokens = Math.min(cached, totalInput);
+    session.input_tokens      = totalInput - session.cache_read_tokens;
+    session.output_tokens     = Math.max(0, lastTokenUsage.output_tokens || 0);
+    session.total_tokens      = session.input_tokens + session.output_tokens
       + session.cache_creation_tokens + session.cache_read_tokens;
   }
 
   session.model = session.model || 'gpt-4o';
   session.project = projectFromCwd(session.cwd);
 
-  session.estimated_cost_usd = calculateCost(
+  const priced = calculateCostDetailed(
     session.model,
     session.input_tokens,
     session.output_tokens,
     session.cache_creation_tokens,
     session.cache_read_tokens,
   );
+  session.estimated_cost_usd = priced.cost;
+  session.pricing_source = priced.pricingSource;
 
   session.is_ghost = session.message_count < 2;
 
   if (session.started_at && session.ended_at) {
-    session.duration_seconds = Math.floor(
+    session.duration_seconds = Math.max(0, Math.floor(
       (new Date(session.ended_at) - new Date(session.started_at)) / 1000,
-    );
+    ));
   }
 
   return session;
@@ -251,12 +224,13 @@ export function scanCodexSessions(codexDir) {
       if (!s) continue;
       // Use rollout UUID from filename for a stable, unique session_id.
       const uuidMatch = filePath.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/);
+      const noSnip = snippetsDisabled();
       if (uuidMatch) {
         const id = uuidMatch[1];
         s.session_id = `codex-${id}`;
-        s.session_title = titleById.get(id) || s.first_user_message || null;
+        s.session_title = noSnip ? null : (titleById.get(id) || s.first_user_message || null);
       } else if (s.session_id) {
-        s.session_title = titleById.get(s.session_id) || s.first_user_message || null;
+        s.session_title = noSnip ? null : (titleById.get(s.session_id) || s.first_user_message || null);
       }
       sessions.push(s);
     } catch {

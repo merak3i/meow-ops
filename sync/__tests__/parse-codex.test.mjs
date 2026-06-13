@@ -31,16 +31,24 @@ test('fixture: tool-call transitions are counted once and clearly by tool name',
     tool_search_call: 1,
     web_search_call: 1,
   });
-  assert.equal(s.total_tokens, 195);
+  // OpenAI's input_tokens (120) is INCLUSIVE of cached_input_tokens (30), so
+  // the cached subset is split out (priced at the cheaper cache-read rate) and
+  // only the non-cached remainder counts as input. Total = 90 + 45 + 30 = 165,
+  // NOT 195 — adding cached on top of input was a double-count.
+  assert.equal(s.input_tokens, 90);
+  assert.equal(s.output_tokens, 45);
+  assert.equal(s.cache_read_tokens, 30);
+  assert.equal(s.total_tokens, 165);
 });
 
 test('fixture: turn_aborted still yields consistent token and tool state', () => {
   const s = parseCodexFile(fixturePath('rollout-turn-aborted.jsonl'));
   assert.ok(s);
-  assert.equal(s.input_tokens, 40);
+  // input_tokens 40 includes the 10 cached; non-cached input = 30.
+  assert.equal(s.input_tokens, 30);
   assert.equal(s.output_tokens, 15);
   assert.equal(s.cache_read_tokens, 10);
-  assert.equal(s.total_tokens, 65);
+  assert.equal(s.total_tokens, 55);
   assert.equal(s.tools.exec_command, 1);
   assert.equal(s.message_count, 2);
   assert.equal(s.duration_seconds, 5);

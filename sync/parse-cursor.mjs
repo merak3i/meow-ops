@@ -15,17 +15,10 @@
 
 import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { calculateCost } from './cost-calculator.mjs';
+import { calculateCostDetailed } from './cost-calculator.mjs';
+import { createSession, makeSnippet } from './session-utils.mjs';
 
 const DEFAULT_MODEL = 'gpt-4o';
-const FIRST_MSG_MAX = 80;
-
-function snippetize(text, max = FIRST_MSG_MAX) {
-  const cleaned = String(text || '').replace(/\s+/g, ' ').trim();
-  if (!cleaned) return '';
-  if (cleaned.length <= max) return cleaned;
-  return cleaned.slice(0, max - 1).trimEnd() + '…';
-}
 
 export function scanCursorSessions(cursorLogsDir) {
   if (!existsSync(cursorLogsDir)) return [];
@@ -66,51 +59,50 @@ function parseCursorLog(content, filePath, stat) {
   if (!tokenMatch) return null;
 
   const totalTokens = parseInt(tokenMatch[1], 10);
-  if (isNaN(totalTokens) || totalTokens === 0) return null;
+  if (isNaN(totalTokens) || totalTokens <= 0) return null;
 
-  // Estimate input/output split (Cursor doesn't always separate them)
+  // Estimate input/output split (Cursor doesn't always separate them).
+  // Clamp everything: a garbled line (prompt > total, missing completion)
+  // must never produce a negative output count that poisons the cost sums.
   const promptMatch     = content.match(/prompt:\s*(\d+)/i);
   const completionMatch = content.match(/completion:\s*(\d+)/i);
-  const inputTokens     = promptMatch     ? parseInt(promptMatch[1], 10)     : Math.floor(totalTokens * 0.7);
-  const outputTokens    = completionMatch ? parseInt(completionMatch[1], 10) : totalTokens - inputTokens;
+  const rawInput   = promptMatch ? parseInt(promptMatch[1], 10) : Math.floor(totalTokens * 0.7);
+  const inputTokens = Math.min(Math.max(0, Number.isFinite(rawInput) ? rawInput : 0), totalTokens);
+  const rawOutput  = completionMatch ? parseInt(completionMatch[1], 10) : totalTokens - inputTokens;
+  const outputTokens = Math.max(0, Number.isFinite(rawOutput) ? rawOutput : 0);
 
   // Try to detect model
   const modelMatch = content.match(/model['":\s]+([a-z0-9._-]{4,40})/i);
   const model      = modelMatch ? modelMatch[1] : DEFAULT_MODEL;
-  const title = snippetize(
+  const title = makeSnippet(
     content.match(/(?:title|name|summary)['":\s]+([^"\n]{6,160})/i)?.[1]
     || content.match(/(?:user|prompt|message)['":\s]+([^"\n]{6,160})/i)?.[1]
     || '',
   );
 
-  const sessionId = `cursor-${stat.ino || Date.now()}`;
-  const mtime     = stat.mtime.toISOString();
+  const mtime = stat.mtime.toISOString();
+  const priced = calculateCostDetailed(model, inputTokens, outputTokens, 0, 0);
 
-  return {
-    session_id:            sessionId,
+  return createSession({
+    session_id:            `cursor-${stat.ino || 'x'}-${Math.round(stat.mtimeMs || 0)}`,
+    source:                'cursor',
     project:               deriveProjectFromPath(filePath),
     model,
     entrypoint:            'cursor',
-    git_branch:            null,
     started_at:            mtime,
     ended_at:              mtime,
-    duration_seconds:      0,
     message_count:         1,
     user_message_count:    1,
     assistant_message_count: 1,
     input_tokens:          inputTokens,
     output_tokens:         outputTokens,
-    cache_creation_tokens: 0,
-    cache_read_tokens:     0,
-    total_tokens:          totalTokens,
-    estimated_cost_usd:    calculateCost(model, inputTokens, outputTokens, 0, 0),
+    total_tokens:          inputTokens + outputTokens,
+    estimated_cost_usd:    priced.cost,
+    pricing_source:        priced.pricingSource,
     cat_type:              'architect',   // Cursor usage is plan-heavy by nature
-    is_ghost:              false,
-    source:                'cursor',
-    tools:                 {},
     session_title:         title || null,
     first_user_message:    title || null,
-  };
+  });
 }
 
 function deriveProjectFromPath(filePath) {
