@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Meow Operations — auto-sync launchd template (macOS)
+  Meow Operations — hourly local export template (macOS)
 
   Replace YOUR_HOME and YOUR_REPO_PATH with your own paths, then:
     cp sync/launchd-example.plist ~/Library/LaunchAgents/com.meow-ops.sync.plist
-    launchctl load ~/Library/LaunchAgents/com.meow-ops.sync.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.meow-ops.sync.plist
 
   To unload:
-    launchctl unload ~/Library/LaunchAgents/com.meow-ops.sync.plist
+    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.meow-ops.sync.plist
 
   To force a run right now:
     launchctl kickstart gui/$(id -u)/com.meow-ops.sync
@@ -21,7 +21,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/opt/homebrew/bin/node</string>
-        <string>YOUR_REPO_PATH/sync/full-sync.mjs</string>
+        <string>YOUR_REPO_PATH/sync/export-local.mjs</string>
     </array>
 
     <key>WorkingDirectory</key>
@@ -46,6 +46,8 @@
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>HOME</key>
         <string>YOUR_HOME</string>
+        <key>MEOW_MAX_SESSIONS</key>
+        <string>1000</string>
     </dict>
 </dict>
 </plist>

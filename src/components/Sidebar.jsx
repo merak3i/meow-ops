@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   RefreshCw, Check, AlertCircle, Sun, Moon,
 } from 'lucide-react';
-import { triggerSync, getSyncStatus, invalidateRealSessions } from '../lib/queries';
+import { triggerSync, getSyncStatus, invalidateRealSessions, IS_PROD } from '../lib/queries';
 import { Eyebrow } from './ui/Eyebrow';
 import { NAV_SECTIONS } from './nav-config';
 
@@ -22,11 +22,18 @@ function SyncButton({ onReload }) {
   const [status, setStatus] = useState('idle');
   const [lastSync, setLastSync] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [mode, setMode] = useState(IS_PROD ? 'refresh' : 'sync');
+  const [, setTicker] = useState(0);
 
   useEffect(() => {
     let mounted = true;
-    getSyncStatus().then((s) => { if (mounted && s.ok) setLastSync(s.mtime); });
-    const tick = setInterval(() => setLastSync((v) => v), 30_000);
+    getSyncStatus().then((s) => {
+      if (!mounted) return;
+      if (s.mode === 'local-sync' || s.mode === 'dev-sync') setMode('sync');
+      else setMode('refresh');
+      if (s.ok) setLastSync(s.mtime);
+    });
+    const tick = setInterval(() => setTicker((n) => n + 1), 30_000);
     return () => { mounted = false; clearInterval(tick); };
   }, []);
 
@@ -34,29 +41,54 @@ function SyncButton({ onReload }) {
     if (status === 'syncing') return;
     setStatus('syncing');
     setErrorMsg(null);
+    let actionMode = mode;
+
+    if (actionMode === 'refresh' && IS_PROD) {
+      const nextStatus = await getSyncStatus();
+      if (nextStatus.mode === 'local-sync') {
+        setMode('sync');
+        actionMode = 'sync';
+      } else {
+        try {
+          invalidateRealSessions();
+          await onReload?.();
+          setStatus('success');
+          setTimeout(() => setStatus('idle'), 2000);
+        } catch {
+          setStatus('error');
+          setErrorMsg('Refresh failed');
+          setTimeout(() => setStatus('idle'), 3000);
+        }
+        return;
+      }
+    }
+
+    if (actionMode === 'refresh') {
+      try {
+        invalidateRealSessions();
+        await onReload?.();
+        setStatus('success');
+        setTimeout(() => setStatus('idle'), 2000);
+      } catch {
+        setStatus('error');
+        setErrorMsg('Refresh failed');
+        setTimeout(() => setStatus('idle'), 3000);
+      }
+      return;
+    }
+
     const result = await triggerSync();
     if (result.ok) {
       setStatus('success');
       setLastSync(result.mtime || Date.now());
-      onReload?.();
+      await onReload?.();
       setTimeout(() => setStatus('idle'), 2000);
     } else {
       setStatus('error');
-      const isLocalServerDown = (result.error || '').includes('Local sync server')
-        || (result.error || '').includes('fetch')
-        || (result.error || '').includes('Failed')
-        || (result.stderr || '').includes('spawn');
-      setErrorMsg(isLocalServerDown ? '__local_server__' : (result.error || result.stderr || 'Sync failed'));
-      setTimeout(() => setStatus('idle'), 8000);
+      setErrorMsg(result.error || result.stderr || 'Sync failed');
+      setTimeout(() => setStatus('idle'), 3000);
     }
   };
-
-  const [showPopup, setShowPopup] = useState(false);
-  const isLocalError = errorMsg === '__local_server__';
-
-  useEffect(() => {
-    if (status === 'error' && isLocalError) setShowPopup(true);
-  }, [status, isLocalError]);
 
   const Icon = status === 'success' ? Check : status === 'error' ? AlertCircle : RefreshCw;
   const accent =
@@ -77,7 +109,12 @@ function SyncButton({ onReload }) {
         }}
         onMouseEnter={(e) => { if (status === 'idle') e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
         onMouseLeave={(e) => { if (status === 'idle') e.currentTarget.style.borderColor = 'var(--border)'; }}
-        title={isLocalError ? 'Local sync server not running' : errorMsg || `Last sync: ${relativeTime(lastSync)}`}
+        title={
+          errorMsg
+          || (mode === 'sync'
+            ? `Last sync: ${relativeTime(lastSync)}`
+            : 'Reload the latest data already available to this dashboard')
+        }
       >
         <motion.span
           animate={status === 'syncing' ? { rotate: 360 } : { rotate: 0 }}
@@ -87,14 +124,17 @@ function SyncButton({ onReload }) {
           <Icon size={14} />
         </motion.span>
         <span style={{ flex: 1 }}>
-          {status === 'syncing' ? 'Syncing…' : status === 'success' ? 'Synced' : status === 'error' ? (isLocalError ? 'Server offline' : 'Failed') : 'Sync sessions'}
+          {status === 'syncing' ? (mode === 'sync' ? 'Syncing…' : 'Refreshing…')
+            : status === 'success' ? 'Synced'
+              : status === 'error' ? 'Failed'
+                : mode === 'sync' ? 'Sync sessions' : 'Refresh data'}
         </span>
-        {status === 'idle' && lastSync && (
+        {status === 'idle' && lastSync && mode === 'sync' && (
           <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{relativeTime(lastSync)}</span>
         )}
       </button>
       <AnimatePresence>
-        {status === 'error' && errorMsg && !isLocalError && (
+        {status === 'error' && errorMsg && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
@@ -107,59 +147,6 @@ function SyncButton({ onReload }) {
             }}
           >
             {errorMsg.slice(0, 60)}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Local sync server popup */}
-      <AnimatePresence>
-        {showPopup && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: -4 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -4 }}
-            style={{
-              position: 'fixed', bottom: 80, left: 16, zIndex: 999,
-              width: 320, padding: '16px 18px',
-              background: 'var(--bg-card, #1a1a2e)', border: '1px solid var(--border)',
-              borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,.5)',
-              fontFamily: 'inherit',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary, #e8e8e8)' }}>
-                Local sync server needed
-              </div>
-              <button
-                onClick={() => setShowPopup(false)}
-                style={{
-                  background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
-                  fontSize: 16, lineHeight: 1, padding: '0 2px',
-                }}
-              >x</button>
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-secondary, #a0a0b0)', lineHeight: 1.5, marginBottom: 12 }}>
-              Sync reads session data from your machine and pushes it to the cloud. Open a terminal and run:
-            </div>
-            <div
-              onClick={() => { navigator.clipboard.writeText('cd ~/repos/meow-ops && node sync/local-api.mjs'); }}
-              style={{
-                padding: '10px 12px', borderRadius: 8,
-                background: 'rgba(0,0,0,.4)', border: '1px solid var(--border)',
-                fontFamily: 'monospace', fontSize: 11, color: 'var(--green, #63f7b3)',
-                cursor: 'pointer', userSelect: 'all',
-                lineHeight: 1.6,
-              }}
-              title="Click to copy"
-            >
-              <div style={{ color: 'var(--text-muted)', fontSize: 10 }}>$</div>
-              <div>cd ~/repos/meow-ops</div>
-              <div>node sync/local-api.mjs</div>
-              <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 6, textAlign: 'right' }}>click to copy</div>
-            </div>
-            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.4 }}>
-              Keep it running while you use the dashboard. Then hit Sync again.
-            </div>
           </motion.div>
         )}
       </AnimatePresence>

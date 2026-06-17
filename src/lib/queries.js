@@ -1,27 +1,77 @@
-import { supabase } from './supabase';
-
 // ─── Source resolution ────────────────────────────────────────────────────────
-// Production: VITE_SESSIONS_URL points to Supabase Storage public bucket.
-// Development: /data/sessions.json served by Vite from public/.
-// Fallback: demo data so new users see something on first run.
+// Local-first default:
+// - localhost: read /data/*.json served by Vite from public/
+// - deployed app on the same machine: prefer localhost helper on 127.0.0.1
+// - public fallback: demo data only
 
 export const IS_PROD = typeof window !== 'undefined'
   && window.location.hostname !== 'localhost'
   && window.location.hostname !== '127.0.0.1';
 
-const REMOTE_SESSIONS_URL = import.meta.env.VITE_SESSIONS_URL || null;
+const LOCAL_SYNC_URLS = [
+  import.meta.env.VITE_LOCAL_SYNC_URL,
+  'http://127.0.0.1:7337',
+  'http://localhost:7337',
+].filter(Boolean);
+const LOCAL_SYNC_HEADERS = { 'x-meow-ops-local': '1' };
 
-// Derive cost-summary URL from sessions URL — same bucket, different file.
-// Override with VITE_COST_SUMMARY_URL if needed.
-function deriveCostSummaryUrl() {
-  const override = import.meta.env.VITE_COST_SUMMARY_URL;
-  if (override) return override;
-  if (IS_PROD && REMOTE_SESSIONS_URL) {
-    return REMOTE_SESSIONS_URL.replace(/sessions\.json(\?.*)?$/, 'cost-summary.json');
-  }
-  return null; // dev: use relative path
+let LOCAL_SYNC_BASE = null;
+let LOCAL_SYNC_PROBE = null;
+
+function withCacheBust(url) {
+  return url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
 }
-const REMOTE_COST_SUMMARY_URL = deriveCostSummaryUrl();
+
+async function fetchJson(url, init) {
+  try {
+    const r = await fetch(url, init);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
+async function resolveLocalSyncBase(force = false) {
+  if (!IS_PROD) return null;
+  if (!force && LOCAL_SYNC_BASE) return LOCAL_SYNC_BASE;
+  if (!force && LOCAL_SYNC_PROBE) return LOCAL_SYNC_PROBE;
+
+  LOCAL_SYNC_PROBE = (async () => {
+    for (const base of LOCAL_SYNC_URLS) {
+      const status = await fetchJson(withCacheBust(`${base}/sync/status`), {
+        headers: LOCAL_SYNC_HEADERS,
+        mode: 'cors',
+      });
+      if (status) {
+        LOCAL_SYNC_BASE = base;
+        return base;
+      }
+    }
+    LOCAL_SYNC_BASE = null;
+    return null;
+  })();
+
+  try {
+    return await LOCAL_SYNC_PROBE;
+  } finally {
+    LOCAL_SYNC_PROBE = null;
+  }
+}
+
+async function fetchLocalJson(path) {
+  const base = await resolveLocalSyncBase();
+  if (!base) return null;
+
+  const data = await fetchJson(withCacheBust(`${base}${path}`), {
+    headers: LOCAL_SYNC_HEADERS,
+    mode: 'cors',
+  });
+  if (data) return data;
+
+  if (LOCAL_SYNC_BASE === base) LOCAL_SYNC_BASE = null;
+  return null;
+}
 
 // ─── In-memory session cache ──────────────────────────────────────────────────
 let REAL_SESSIONS = null;
@@ -31,26 +81,17 @@ async function loadRealSessions() {
   if (REAL_SESSIONS) return REAL_SESSIONS;
   if (REAL_SESSIONS_PROMISE) return REAL_SESSIONS_PROMISE;
 
-  // In prod, try local API first (instant, no Vercel redeploy lag).
-  // Fall back to Vercel-served file if local server isn't running.
-  const urls = IS_PROD
-    ? [
-        `http://localhost:7337/data/sessions.json`,
-        REMOTE_SESSIONS_URL ? REMOTE_SESSIONS_URL + '?t=' + Date.now() : '/data/sessions.json?t=' + Date.now(),
-      ]
-    : ['/data/sessions.json?t=' + Date.now()];
-
   REAL_SESSIONS_PROMISE = (async () => {
-    for (const url of urls) {
-      try {
-        const r = await fetch(url);
-        if (!r.ok) continue;
-        const data = await r.json();
-        if (Array.isArray(data) && data.length > 0) {
-          REAL_SESSIONS = data;
-          return data;
-        }
-      } catch { /* try next */ }
+    const local = await fetchLocalJson('/data/sessions.json');
+    if (local && Array.isArray(local) && local.length > 0) {
+      REAL_SESSIONS = local;
+      return local;
+    }
+
+    const data = await fetchJson(withCacheBust('/data/sessions.json'));
+    if (data && Array.isArray(data) && data.length > 0) {
+      REAL_SESSIONS = data;
+      return data;
     }
     return null;
   })();
@@ -64,55 +105,58 @@ export function invalidateRealSessions() {
 
 // ─── Cost summary (covers ALL sessions, no cap) ───────────────────────────────
 export async function fetchCostSummary() {
-  const urls = IS_PROD
-    ? [
-        'http://localhost:7337/data/cost-summary.json',
-        REMOTE_COST_SUMMARY_URL
-          ? REMOTE_COST_SUMMARY_URL + '?t=' + Date.now()
-          : '/data/cost-summary.json?t=' + Date.now(),
-      ]
-    : ['/data/cost-summary.json?t=' + Date.now()];
-
-  for (const url of urls) {
-    try {
-      const r = await fetch(url);
-      if (r.ok) return await r.json();
-    } catch { /* try next */ }
-  }
-  return null;
+  const local = await fetchLocalJson('/data/cost-summary.json');
+  if (local) return local;
+  return fetchJson(withCacheBust('/data/cost-summary.json'));
 }
 
-// ─── Sync trigger ─────────────────────────────────────────────────────────────
-// Dev:  Vite plugin handles POST /api/sync locally.
-// Prod: Browser calls http://localhost:7337 — runs on the user's machine,
-//       not on Vercel — so it can read ~/.claude/projects/ and push to GitHub.
-const LOCAL_API = 'http://localhost:7337';
+// ─── Sync trigger / status ────────────────────────────────────────────────────
 
 export async function triggerSync() {
-  const url = IS_PROD ? `${LOCAL_API}/sync` : '/api/sync';
-  try {
-    const r = await fetch(url, { method: 'POST' });
-    const result = await r.json();
-    if (result.ok) invalidateRealSessions();
-    return result;
-  } catch (err) {
+  const url = !IS_PROD
+    ? '/api/sync'
+    : await resolveLocalSyncBase(true);
+
+  if (!url) {
     return {
       ok: false,
-      error: IS_PROD
-        ? 'Local sync server not running.\nStart it with: node sync/local-api.mjs'
-        : err.message,
+      error: 'Local sync helper is offline. Start `node sync/local-api.mjs` on this machine.',
     };
+  }
+
+  try {
+    const r = await fetch(IS_PROD ? `${url}/sync` : url, {
+      method: 'POST',
+      ...(IS_PROD ? { headers: LOCAL_SYNC_HEADERS, mode: 'cors' } : {}),
+    });
+    const result = await r.json();
+    if (result.ok) invalidateRealSessions();
+    else if (IS_PROD) LOCAL_SYNC_BASE = null;
+    return result;
+  } catch (err) {
+    if (IS_PROD) LOCAL_SYNC_BASE = null;
+    return { ok: false, error: err.message };
   }
 }
 
 export async function getSyncStatus() {
-  const url = IS_PROD ? `${LOCAL_API}/sync/status` : '/api/sync/status';
-  try {
-    const r = await fetch(url);
-    return await r.json();
-  } catch {
-    return { ok: false };
+  if (!IS_PROD) {
+    const result = await fetchJson('/api/sync/status');
+    return result ? { ...result, mode: 'dev-sync' } : { ok: false, mode: 'dev-sync' };
   }
+
+  const base = await resolveLocalSyncBase();
+  if (!base) return { ok: false, mode: 'refresh-only', error: 'Local sync helper unavailable' };
+
+  const result = await fetchJson(withCacheBust(`${base}/sync/status`), {
+    headers: LOCAL_SYNC_HEADERS,
+    mode: 'cors',
+  });
+  if (!result) {
+    LOCAL_SYNC_BASE = null;
+    return { ok: false, mode: 'refresh-only', error: 'Local sync helper unavailable' };
+  }
+  return { ...result, mode: 'local-sync' };
 }
 
 // ─── IST helpers ─────────────────────────────────────────────────────────────
@@ -166,7 +210,7 @@ function addSessionToBucket(acc, s) {
 }
 
 // ─── Demo data fallback ───────────────────────────────────────────────────────
-// Only shown if no sessions.json exists AND no Supabase is configured.
+// Only shown if no local sessions.json exists.
 const DEMO_SESSIONS = generateDemoData();
 
 function generateDemoData() {
@@ -222,17 +266,7 @@ function generateDemoData() {
 export async function fetchSessions(dateRange = 30) {
   const real = await loadRealSessions();
   if (real) return filterByDateRange(real, 'ended_at', dateRange);
-
-  if (!supabase) return filterByDateRange(DEMO_SESSIONS, 'ended_at', dateRange);
-
-  const cutoffTs = dateRangeCutoff(dateRange);
-  const cutoff   = cutoffTs ? cutoffTs.toISOString() : '2020-01-01';
-  const { data } = await supabase
-    .from('meow_ops_sessions')
-    .select('*')
-    .gte('ended_at', cutoff)
-    .order('ended_at', { ascending: false });
-  return (data && data.length > 0) ? data : filterByDateRange(DEMO_SESSIONS, 'ended_at', dateRange);
+  return filterByDateRange(DEMO_SESSIONS, 'ended_at', dateRange);
 }
 
 // Returns ALL sessions with no date filter — used for spend breakdown so that
@@ -241,12 +275,7 @@ export async function fetchSessions(dateRange = 30) {
 export async function fetchAllSessions() {
   const real = await loadRealSessions();
   if (real) return real;
-  if (!supabase) return DEMO_SESSIONS;
-  const { data } = await supabase
-    .from('meow_ops_sessions')
-    .select('*')
-    .order('ended_at', { ascending: false });
-  return (data && data.length > 0) ? data : DEMO_SESSIONS;
+  return DEMO_SESSIONS;
 }
 
 // Returns true when sessions.json is present but empty / missing

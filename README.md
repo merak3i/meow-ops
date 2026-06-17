@@ -66,7 +66,7 @@ That's it. Your real session data loads on first page hit.
 
 Run locally, then in Chrome: **address bar → install icon (⊕)** → the dashboard installs to your dock or desktop. Works offline via service worker.
 
-For remote access from any device (phone, iPad, second machine), see the **Deploy** section below.
+For a hosted shell that still reads local data from the same machine, see the **Hosted shell (still local-only for session data)** section below.
 
 ---
 
@@ -204,10 +204,10 @@ A native-feeling menu bar widget that auto-syncs your sessions in the background
 
 ```bash
 cp sync/launchd-example.plist ~/Library/LaunchAgents/com.meow-ops.sync.plist
-launchctl load ~/Library/LaunchAgents/com.meow-ops.sync.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.meow-ops.sync.plist
 ```
 
-Runs `export-local.mjs` every hour, keeping your deployed dashboard current without opening a terminal.
+Runs `export-local.mjs` every hour, keeping your local data files fresh without uploading them anywhere.
 
 ### How Sessions Are Classified
 
@@ -248,51 +248,52 @@ Unknown variants match by family fuzzy search.
 
 ---
 
-## Deploy as a PWA (access from any device)
+## Hosted shell (still local-only for session data)
 
-### 1. Supabase Storage setup (free tier)
+This is optional. The default Meow Ops setup is local-only.
 
-```bash
-# Create a public bucket
-curl -X POST "https://<your-project>.supabase.co/storage/v1/bucket" \
-  -H "Authorization: Bearer <service-role-key>" \
-  -H "Content-Type: application/json" \
-  -d '{"id":"meow-ops","name":"meow-ops","public":true}'
-```
-
-### 2. Configure `.env`
-
-```bash
-cp .env.example .env
-# Fill in:
-#   VITE_SUPABASE_URL
-#   VITE_SUPABASE_ANON_KEY
-#   VITE_SESSIONS_URL   (public bucket URL to sessions.json)
-#   SUPABASE_SERVICE_KEY  (local only — never deployed)
-```
-
-### 3. Sync and deploy
-
-```bash
-node sync/full-sync.mjs   # parse + upload in one shot
-npx vercel --prod
-```
-
-### 4. Auto-sync hourly (macOS)
+### 1. Keep hourly exports local
 
 ```bash
 cp sync/launchd-example.plist ~/Library/LaunchAgents/com.meow-ops.sync.plist
-# Edit the paths inside the plist to match your setup, then:
-launchctl load ~/Library/LaunchAgents/com.meow-ops.sync.plist
+# Edit YOUR_HOME and YOUR_REPO_PATH inside the plist, then:
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.meow-ops.sync.plist
+launchctl kickstart -k gui/$(id -u)/com.meow-ops.sync
 ```
 
-### 5. Install to dock
+This runs `sync/export-local.mjs` every hour and updates:
+
+- `public/data/sessions.json`
+- `public/data/cost-summary.json`
+
+### 2. Optional: keep the localhost helper running
+
+If you want the hosted `vercel.app` shell to read local data from the same machine, keep the helper alive with launchd:
+
+```bash
+cp sync/com.meowops.localapi.plist ~/Library/LaunchAgents/com.meowops.localapi.plist
+# Edit YOUR_REPO_PATH inside the plist, then:
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.meowops.localapi.plist
+launchctl kickstart -k gui/$(id -u)/com.meowops.localapi
+```
+
+The hosted shell will try `127.0.0.1:7337` first. If the helper is not running, it falls back to bundled demo data instead of pulling a public session feed.
+
+### 3. Optional: deploy the static shell to Vercel
+
+```bash
+npx vercel --prod
+```
+
+That deploy publishes the UI shell only. Session analytics remain local unless you intentionally rewire the app to use a remote store.
+
+### 4. Install to dock
 
 1. Open your Vercel URL in Chrome
 2. Address bar → install icon (⊕)
 3. Right-click dock icon → Options → Keep in Dock
 
-### 6. Scrying Sanctum (Supabase Realtime, optional)
+### 5. Scrying Sanctum (Supabase Realtime, optional)
 
 Run the migration to enable live agent pipeline visualization:
 
@@ -308,8 +309,8 @@ This creates `ss_pipelines`, `ss_nodes`, `ss_edges`, `ss_runestones` with multi-
 ## Architecture
 
 ```
-Local machine                                         Cloud (optional)
-─────────────                                         ────────────────
+Local machine                                         Hosted shell (optional)
+─────────────                                         ───────────────────────
 ~/.claude/projects/         ~/.codex/sessions/
   ├── <session>.jsonl          └── <session>.jsonl
   └── subagents/
@@ -319,18 +320,21 @@ Local machine                                         Cloud (optional)
       sync/export-local.mjs
       (parse · dedupe · classify · cost-calculate)
               │
-              ├──── public/data/sessions.json   (local dev)
+              ├──── public/data/sessions.json
+              │          │
+              │          ├──── localhost:5173 / preview
+              │          └──── sync/local-api.mjs ──► hosted shell on same machine
               │
-              └──── sync/upload-to-supabase.mjs ──► Supabase Storage
-                                                         │
-PWA on dock ──► vercel.app ──── fetch sessions.json ─────┘
+              └──── hourly launchd job keeps files fresh
+
+PWA on dock ──► vercel.app ──── local helper first, demo fallback
               React 19 + Vite 8 + Recharts + D3
               Three.js companion (WebGL)
               XState emotional state machine
               Supabase Realtime (Scrying Sanctum)
 ```
 
-**No backend. No server-side rendering.** The entire production build is a static bundle plus one JSON file. Supabase Realtime is opt-in for the Scrying Sanctum pipeline visualizer.
+**No backend. No server-side rendering.** The default setup is a static bundle plus local JSON exports. Supabase Realtime is opt-in for the Scrying Sanctum pipeline visualizer only.
 
 ---
 
@@ -345,7 +349,7 @@ PWA on dock ──► vercel.app ──── fetch sessions.json ────�
 | Pipeline visualizer | D3 (zoom/pan/SVG) |
 | Styling | Tailwind CSS 4 + OKLCH design tokens |
 | Data grid | AG-Grid (session analytics table) |
-| Storage | Supabase Storage (opt-in) |
+| Storage | Local JSON exports by default |
 | Realtime | Supabase Realtime (Scrying Sanctum, opt-in) |
 | Hosting | Vercel (or any static host) |
 | Sync | Node.js ESM scripts |
@@ -374,9 +378,10 @@ npx playwright test --reporter=list
 
 ## Privacy
 
-- **Local-first by default.** Nothing leaves your machine in dev mode.
-- **Sessions JSON contains metrics only** — token counts, tool counts, durations, model names, project names from `cwd`. No message content, no prompts, no code.
-- **Supabase upload is opt-in.** Your own bucket, your own credentials.
+- **Local-only by default.** Session analytics are loaded from local files or the localhost helper, not from a public cloud feed.
+- **Public deploys fall back to demo data.** If the localhost helper is unavailable, the hosted shell shows bundled demo data instead of your private sessions.
+- **Sessions JSON contains metrics only** — token counts, tool counts, durations, model names, and project labels. No message content, no prompts, no first-user-message snippets, no chat titles, no code, and no absolute `cwd` paths.
+- **Supabase is optional and scoped.** The default app no longer depends on Supabase Storage for session analytics. Supabase Realtime remains opt-in for Scrying Sanctum.
 - **Service key is local-only.** It never appears in the production bundle.
 - **No analytics, no telemetry, no tracking.** The app has no idea you exist.
 
@@ -499,9 +504,9 @@ meow-ops/
 │   ├── cost-calculator.mjs      30+ model pricing with fuzzy matching
 │   ├── export-local.mjs         All sources → sessions.json + cost-summary.json
 │   ├── fetch-claude-limits.mjs  Update rate-limits.json from claude.ai/settings/usage
-│   ├── upload-to-supabase.mjs   Push to Storage bucket
+│   ├── upload-to-supabase.mjs   Optional advanced Storage upload script
 │   ├── full-sync.mjs            export + upload in one shot
-│   └── launchd-example.plist    macOS hourly auto-sync template
+│   └── launchd-example.plist    macOS hourly local-export template
 ├── playwright.config.ts         Playwright configuration
 └── .env.example
 ```

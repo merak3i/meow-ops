@@ -121,6 +121,16 @@ function projectFromCwd(cwd) {
   return parenMatch ? parenMatch[1] : last;
 }
 
+function toPublicSession(session) {
+  const {
+    cwd,
+    session_title,
+    first_user_message,
+    ...safe
+  } = session;
+  return safe;
+}
+
 for (const s of allSessions) {
   const refined = projectFromCwd(s.cwd);
   if (refined) s.project = refined;
@@ -170,7 +180,7 @@ allUnique.sort((a, b) => {
 });
 
 // Take latest N (this is what the user asked for: "last 100")
-const latest = allUnique.slice(0, MAX_SESSIONS);
+const latest = allUnique.slice(0, MAX_SESSIONS).map(toPublicSession);
 
 console.log(`Exporting latest ${latest.length} sessions\n`);
 
