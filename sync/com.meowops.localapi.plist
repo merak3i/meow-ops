@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Meow Operations — local sync helper template (macOS)
+
+  Replace YOUR_REPO_PATH with your own repo path, then:
+    cp sync/com.meowops.localapi.plist ~/Library/LaunchAgents/com.meowops.localapi.plist
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.meowops.localapi.plist
+
+  To unload:
+    launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.meowops.localapi.plist
+-->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -8,11 +18,11 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/node</string>
-    <string>/Users/napster/Downloads/Meow Creative Haus/business/projects/meow-ops/sync/local-api.mjs</string>
+    <string>YOUR_REPO_PATH/sync/local-api.mjs</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/napster/Downloads/Meow Creative Haus/business/projects/meow-ops</string>
+  <string>YOUR_REPO_PATH</string>
 
   <key>RunAtLoad</key>
   <true/>
@@ -21,9 +31,15 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>/tmp/meowops-localapi.log</string>
+  <string>YOUR_REPO_PATH/sync/local-api.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/tmp/meowops-localapi.log</string>
+  <string>YOUR_REPO_PATH/sync/local-api.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
 </dict>
 </plist>

@@ -2,61 +2,63 @@
 // sync/local-api.mjs — local sync API server
 //
 // Lets the dashboard (local dev or the Vercel-hosted page) trigger local
-// work and read fresh local data. The browser calls http://localhost:7337
+// work and read fresh local data. The browser calls http://127.0.0.1:7337
 // — which runs on YOUR machine, not on Vercel — so it can read
-// ~/.claude/projects/ and the local Loop-Ops JSON.
+// ~/.claude/projects/, ~/.codex/sessions/, and other local-only exports.
 //
-// All endpoints are read/local-only: session data is gitignored since
-// 2026-06-12 and nothing here pushes anywhere.
+// All endpoints are read/local-only: session data is gitignored and no HTTP
+// path here ever pushes to git.
 //
 // Usage:
-//   node sync/local-api.mjs            # default port 7337
-//   MEOW_LOCAL_API_PORT=7437 node sync/local-api.mjs   # tests/parallel runs
+//   node sync/local-api.mjs
+//   MEOW_LOCAL_API_PORT=7437 node sync/local-api.mjs
+//   MEOW_SYNC_PORT=7437 node sync/local-api.mjs   # legacy alias
 
-import { createServer }   from 'node:http';
+import { createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
 import { statSync, existsSync, readFileSync } from 'node:fs';
-import { join, dirname }  from 'node:path';
-import { fileURLToPath }  from 'node:url';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
-const ROOT  = join(__dir, '..');
-const PORT  = Number(process.env.MEOW_LOCAL_API_PORT) || 7337;
-const NO_PUSH = process.argv.includes('--no-push');
+const ROOT = join(__dir, '..');
+const PORT = Number(process.env.MEOW_LOCAL_API_PORT || process.env.MEOW_SYNC_PORT || 7337);
+const LOCAL_ACCESS_HEADER = 'x-meow-ops-local';
 const LOOP_OPS_DIR = join(ROOT, 'public', 'data', 'loop-ops');
 const SUPERADMIN_USAGE_FILE = join(ROOT, 'public', 'data', 'superadmin-usage.json');
+const DEFAULT_ALLOWED_ORIGINS = [
+  'https://meow-ops.vercel.app',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
+  `http://localhost:${PORT}`,
+  `http://127.0.0.1:${PORT}`,
+];
+const EXTRA_ALLOWED_ORIGINS = (process.env.MEOW_DASHBOARD_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const ALLOWED_ORIGINS = new Set([...DEFAULT_ALLOWED_ORIGINS, ...EXTRA_ALLOWED_ORIGINS]);
 
-// launchd doesn't inherit shell PATH — resolve node's full path explicitly
+// launchd and background processes don't always inherit a useful PATH.
+// Prefer the exact Node binary running this file, then stable install locations.
 function resolveNode() {
   const candidates = [
-    process.execPath,                  // the node that's running THIS script
+    process.execPath,
     '/opt/homebrew/bin/node',
     '/usr/local/bin/node',
     '/usr/bin/node',
   ];
-  for (const p of candidates) {
-    if (p && existsSync(p)) return p;
+  for (const candidate of candidates) {
+    if (candidate && existsSync(candidate)) return candidate;
   }
-  // last resort: ask the shell
-  try { return execFileSync('/usr/bin/env', ['which', 'node'], { encoding: 'utf8' }).trim(); } catch {}
+  try {
+    return execFileSync('/usr/bin/env', ['which', 'node'], { encoding: 'utf8' }).trim();
+  } catch {}
   return 'node';
 }
 const NODE = resolveNode();
-
-// Origin allowlist. Reflecting an arbitrary Origin (the old behavior) let ANY
-// website the operator visited read this localhost server's responses and
-// trigger its POST endpoints. We now allowlist only local dev origins plus an
-// optional hosted dashboard origin (comma-separated MEOW_DASHBOARD_ORIGIN,
-// e.g. https://meow-ops.vercel.app) so the deployed PWA can still call home.
-const ALLOWED_ORIGINS = new Set([
-  'http://localhost:5173', 'http://127.0.0.1:5173',
-  'http://localhost:4173', 'http://127.0.0.1:4173',
-  `http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`,
-]);
-for (const o of (process.env.MEOW_DASHBOARD_ORIGIN || '').split(',')) {
-  const t = o.trim();
-  if (t) ALLOWED_ORIGINS.add(t);
-}
 
 // DNS-rebinding defense: a rebound attacker domain resolves to 127.0.0.1 but
 // still sends its own Host header. Only accept localhost Host values.
@@ -65,43 +67,62 @@ function hostIsLocal(req) {
   return host === 'localhost' || host === '127.0.0.1' || host === '::1';
 }
 
-function applyCors(res, origin) {
-  if (origin && ALLOWED_ORIGINS.has(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    // Required for Chrome Private Network Access (HTTPS page → http://localhost)
-    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+function applyCors(req, res) {
+  const origin = req.headers.origin;
+  if (!origin) return { ok: true };
+  if (!ALLOWED_ORIGINS.has(origin)) {
+    return { ok: false, statusCode: 403, error: 'Forbidden origin' };
   }
+
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', `Content-Type, ${LOCAL_ACCESS_HEADER}`);
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  res.setHeader('Access-Control-Max-Age', '600');
+  return { ok: true };
+}
+
+function requireBrowserHeader(req, res) {
+  if (!req.headers.origin) return true;
+  if (req.headers[LOCAL_ACCESS_HEADER] === '1') return true;
+  res.statusCode = 400;
+  res.end(JSON.stringify({ ok: false, error: 'Missing local access header' }));
+  return false;
 }
 
 const server = createServer((req, res) => {
-  const origin = req.headers.origin;
   res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
 
-  // Reject non-localhost Host headers outright (DNS-rebinding).
   if (!hostIsLocal(req)) {
     res.statusCode = 403;
     res.end(JSON.stringify({ ok: false, error: 'forbidden host' }));
     return;
   }
 
-  applyCors(res, origin);
-
-  if (req.method === 'OPTIONS') {
-    if (origin && !ALLOWED_ORIGINS.has(origin)) { res.writeHead(403); res.end(); return; }
-    res.writeHead(204); res.end(); return;
+  const cors = applyCors(req, res);
+  if (!cors.ok) {
+    res.statusCode = cors.statusCode;
+    res.end(JSON.stringify({ ok: false, error: cors.error }));
+    return;
   }
 
-  // Block cross-origin calls from any origin not on the allowlist.
-  if (origin && !ALLOWED_ORIGINS.has(origin)) {
-    res.statusCode = 403;
-    res.end(JSON.stringify({ ok: false, error: 'forbidden origin' }));
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
     return;
   }
 
   const path = new URL(req.url, `http://localhost:${PORT}`).pathname;
+  const needsBrowserHeader =
+    path === '/sync'
+    || path === '/sync/status'
+    || path === '/data/sessions.json'
+    || path === '/data/cost-summary.json';
+
+  if (needsBrowserHeader && !requireBrowserHeader(req, res)) return;
 
   // ── GET /sync/status ──────────────────────────────────────────────────────
   if (path === '/sync/status' && req.method === 'GET') {
@@ -115,8 +136,7 @@ const server = createServer((req, res) => {
   }
 
   // ── GET /data/sessions.json or /data/cost-summary.json ────────────────────
-  // Serve local files directly so the browser gets instant fresh data
-  // without waiting for Vercel to redeploy after a push.
+  // Serve local files directly so the browser gets instant fresh data.
   if (req.method === 'GET' && (path === '/data/sessions.json' || path === '/data/cost-summary.json')) {
     const filename = path === '/data/sessions.json' ? 'sessions.json' : 'cost-summary.json';
     const filePath = join(ROOT, 'public', 'data', filename);
@@ -125,7 +145,7 @@ const server = createServer((req, res) => {
       res.end(data);
     } catch {
       res.statusCode = 404;
-      res.end(JSON.stringify({ error: 'File not found — run a sync first' }));
+      res.end(JSON.stringify({ error: 'File not found - run a sync first' }));
     }
     return;
   }
@@ -133,8 +153,8 @@ const server = createServer((req, res) => {
   // ── POST /sync ────────────────────────────────────────────────────────────
   if (path === '/sync' && req.method === 'POST') {
     console.log(`\n[${new Date().toLocaleTimeString()}] Sync triggered from browser`);
-    // --push is retired (session data is local-only). Never pass it from an
-    // HTTP-triggered path so a browser request can never cause a git push.
+    // HTTP-triggered sync is export-only. A browser request should never be
+    // able to cause a git push, even if export-local supports manual flags.
     const child = spawn(NODE, [join(ROOT, 'sync', 'export-local.mjs')], {
       cwd: ROOT,
       env: { ...process.env },
@@ -142,16 +162,30 @@ const server = createServer((req, res) => {
 
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (c) => { stdout += c; process.stdout.write(c); });
-    child.stderr.on('data', (c) => { stderr += c; });
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk;
+      process.stdout.write(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+      process.stderr.write(chunk);
+    });
 
     const timer = setTimeout(() => child.kill(), 90_000);
 
     child.on('close', (code) => {
       clearTimeout(timer);
       let mtime = null;
-      try { mtime = statSync(join(ROOT, 'public', 'data', 'sessions.json')).mtimeMs; } catch {}
-      res.end(JSON.stringify({ ok: code === 0, code, stdout: stdout.slice(-2000), stderr: stderr.slice(-500), mtime }));
+      try {
+        mtime = statSync(join(ROOT, 'public', 'data', 'sessions.json')).mtimeMs;
+      } catch {}
+      res.end(JSON.stringify({
+        ok: code === 0,
+        code,
+        stdout: stdout.slice(-2000),
+        stderr: stderr.slice(-500),
+        mtime,
+      }));
     });
 
     child.on('error', (err) => {
@@ -173,7 +207,6 @@ const server = createServer((req, res) => {
       res.end(readFileSync(join(LOOP_OPS_DIR, file), 'utf8'));
     } catch {
       if (path === '/loop-ops/runs') {
-        // No runs recorded yet is a normal state, not an error.
         res.end('[]');
       } else {
         res.statusCode = 404;
@@ -289,16 +322,18 @@ const server = createServer((req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`🐱 Meow Ops local sync API`);
-  console.log(`   http://localhost:${PORT}`);
-  console.log(`   POST /sync            — export session data (local-only${NO_PUSH ? '' : '; --push retired'})`);
-  console.log(`   GET  /sync/status     — last sync timestamp`);
-  console.log(`   GET  /loop-ops/spec   — Loop-Ops entities (local import)`);
-  console.log(`   GET  /loop-ops/status — Loop-Ops file freshness`);
-  console.log(`   GET  /loop-ops/runs   — recorded loop runs`);
-  console.log(`   POST /loop-ops/sync   - re-import the Loop Ops workbook`);
-  console.log(`   GET  /superadmin-usage/data   — sanitized local usage snapshot`);
-  console.log(`   GET  /superadmin-usage/status — usage snapshot freshness`);
-  console.log(`   POST /superadmin-usage/sync   — refresh local usage snapshot`);
-  console.log(`\n   Keep this running while using the dashboard.\n`);
+  console.log('Meow Ops local sync API');
+  console.log(`  http://127.0.0.1:${PORT}`);
+  console.log('  POST /sync                    - export local sessions only');
+  console.log('  GET  /sync/status             - last export timestamp');
+  console.log('  GET  /data/sessions.json      - exported session metrics');
+  console.log('  GET  /data/cost-summary.json  - exported spend summary');
+  console.log('  GET  /loop-ops/spec           - Loop-Ops entities (local import)');
+  console.log('  GET  /loop-ops/status         - Loop-Ops file freshness');
+  console.log('  GET  /loop-ops/runs           - recorded loop runs');
+  console.log('  POST /loop-ops/sync           - re-import the Loop Ops workbook');
+  console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');
+  console.log('  GET  /superadmin-usage/status - usage snapshot freshness');
+  console.log('  POST /superadmin-usage/sync   - refresh local usage snapshot');
+  console.log(`\n  Allowed browser origins: ${Array.from(ALLOWED_ORIGINS).join(', ')}\n`);
 });
