@@ -388,6 +388,8 @@ node sync/fetch-claude-limits.mjs
 
 This is optional. The default Meow Ops setup is local-only.
 
+> **Privacy change:** hosted builds no longer rely on `VITE_SESSIONS_URL` or a public `sessions.json`. Older public-bucket setups exposed session metadata more broadly than intended, so the default path is now localhost helper first, demo fallback second.
+
 ### 1. Keep hourly exports local
 
 ```bash
@@ -516,6 +518,7 @@ npx playwright test --reporter=list
 ## Privacy
 
 - **Local-only by default.** Session analytics are loaded from local files or the localhost helper, not from a public cloud feed.
+- **Why this changed.** Public `sessions.json` links were too easy to expose accidentally, so the hosted shell now avoids public session feeds by default.
 - **Public deploys fall back to demo data.** If the localhost helper is unavailable, the hosted shell shows bundled demo data instead of your private sessions.
 - **Sessions JSON contains metrics only** — token counts, tool counts, durations, model names, and project labels. No message content, no prompts, no first-user-message snippets, no chat titles, no code, and no absolute `cwd` paths.
 - **Supabase is optional and scoped.** The default app no longer depends on Supabase Storage for session analytics. Supabase Realtime remains opt-in for Scrying Sanctum.
