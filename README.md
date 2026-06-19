@@ -234,6 +234,27 @@ These screens show the shape of the loop, the expanded waves, the inspector, the
 
 Local API endpoints (`sync/local-api.mjs`): `GET /loop-ops/spec|status|runs`, `POST /loop-ops/sync` re-runs the importer. Import manually with `node sync/loop-ops-import.mjs`.
 
+#### Live truth from Supabase (optional)
+
+The Excel workbook is the **structure** (which surfaces exist). The live **truth states** (which gate passed, the db status, last-verified time) come from a Supabase table — e.g. one an upstream system keeps current. They join through the importer's existing truth CSV, so nothing in the importer changes:
+
+```
+Supabase table  →  sync/loop-ops-supabase.mjs  →  truth.csv  →  loop-ops-import.mjs --truth  →  spec.json  →  The Loom
+(live state)        (this connector, opt-in)       (local)        (joins Excel + truth)            (local)       (renders)
+```
+
+The connector is **opt-in and a no-op until configured** (set `LOOP_OPS_SUPABASE_URL/_KEY/_TABLE` in `.env`; remap differing column names with `LOOP_OPS_SUPABASE_COLMAP`). Each row is keyed by `surface_key` — the same key the workbook uses. Only the cloud pull needs network; the importer, `spec.json`, and the Loom stay fully local/offline.
+
+**Three ways to keep it synced:**
+
+| Cadence | How | Freshness |
+|---|---|---|
+| **Manual** | `node sync/loop-ops-supabase.mjs && node sync/loop-ops-import.mjs --truth public/data/loop-ops/truth.csv` (or the Loom's **Refresh** button after a pull) | on demand |
+| **Near-real-time (pull)** | run that pair on a `launchd` / GitHub Actions cron every N minutes | minutes |
+| **Real-time (push)** | `node sync/loop-ops-supabase-watch.mjs` — subscribes to Supabase **Realtime** (`postgres_changes`) and regenerates on every table change | seconds |
+
+The real-time watcher needs Realtime enabled on the table: `ALTER PUBLICATION supabase_realtime ADD TABLE <your_table>;`.
+
 ### Capacity & Usage
 
 A local-first SuperAdmin cockpit for the operator's software stack: GitHub Actions run volume, cache and artifact footprint, SaaS subscription run rate, renewal pressure, and source wiring for private usage ledgers.
