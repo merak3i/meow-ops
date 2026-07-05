@@ -49,7 +49,7 @@ test('sidebar renders all nav buttons', async ({ page }) => {
   const expectedNav = [
     'Overview', 'Sessions', 'By Project', 'By Day', 'By Action',
     'Cost Tracker', 'Analytics', 'Agent Ops', 'Scrying Sanctum',
-    'The Loom', 'Companion', 'Focus Timer',
+    'The Loom', 'Review Deck', 'Companion', 'Focus Timer',
   ];
   for (const label of expectedNav) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -355,6 +355,15 @@ test('Loop Ops: run timeline renders a recorded run with joined session cost', a
   // Expanding surfaces the evidence contract: verified + not-verified lists.
   await card.getByRole('button').first().click();
   await expect(timeline.locator('text=/not verified:/').first()).toBeVisible();
+});
+
+test('Review Deck: empty state renders without local helper', async ({ page }) => {
+  await page.context().route('**/loop-eng/**', route => route.abort());
+  await page.goto('/#/loop-review');
+  await waitForApp(page);
+  await expect(page.getByRole('heading', { name: 'Review Deck', exact: true })).toBeVisible();
+  await expect(page.getByText('No proposals yet — run npm run loop:propose')).toBeVisible();
+  await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
 // ── 11. Companion ─────────────────────────────────────────────────────────────

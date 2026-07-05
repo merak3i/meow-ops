@@ -21,6 +21,8 @@ const AgentVisualizer    = lazy(() => import('./pages/AgentVisualizer'));
 const ScryingSanctum     = lazy(() => import('./pages/ScryingSanctum'));
 // Loop-Ops control room
 const LoopOps            = lazy(() => import('./pages/LoopOps'));
+// Owner approval deck for Loop Engineering proposals
+const LoopReview         = lazy(() => import('./pages/LoopReview'));
 // Local-only subscription, capacity, and GitHub Actions usage cockpit
 const CapacityUsage      = lazy(() => import('./pages/CapacityUsage'));
 import {
@@ -220,6 +222,13 @@ export default function App() {
         </Suspense>
       );
     }
+    if (page === 'loop-review') {
+      return (
+        <Suspense fallback={<PageLoader />}>
+          <LoopReview />
+        </Suspense>
+      );
+    }
     if (page === 'capacity-usage') {
       return (
         <Suspense fallback={<PageLoader />}>
@@ -334,7 +343,7 @@ export default function App() {
           </div>
         )}
 
-        {loading && page !== 'loop-ops' && page !== 'capacity-usage' ? (
+        {loading && page !== 'loop-ops' && page !== 'loop-review' && page !== 'capacity-usage' ? (
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             height: 400, color: 'var(--text-muted)', fontSize: 14,

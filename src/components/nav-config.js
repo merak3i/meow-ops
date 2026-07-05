@@ -6,7 +6,7 @@
 
 import {
   LayoutDashboard, List, FolderKanban, CalendarDays, Wrench, DollarSign,
-  Cat, Timer, BarChart3, GitBranch, Swords, Workflow, Gauge,
+  Cat, Timer, BarChart3, GitBranch, Swords, Workflow, Gauge, ClipboardCheck,
 } from 'lucide-react';
 
 export const NAV_SECTIONS = [
@@ -28,6 +28,7 @@ export const NAV_SECTIONS = [
       { id: 'agent-ops', label: 'Agent Ops',       icon: GitBranch, usesDateFilter: false                  },
       { id: 'sanctum',   label: 'Scrying Sanctum', icon: Swords,    usesDateFilter: false, fullBleed: true },
       { id: 'loop-ops',  label: 'The Loom',        icon: Workflow,  usesDateFilter: false, fullBleed: true },
+      { id: 'loop-review', label: 'Review Deck',   icon: ClipboardCheck, usesDateFilter: false             },
     ],
   },
   {
