@@ -17,11 +17,12 @@ dist-ssr
 sync/.meow-ops-sync-state.json
 sync/auto-sync.log
 public/data/*
-!public/data/rate-limits.json
-# sessions.json and cost-summary.json are LOCAL-ONLY since 2026-06-12: they
-# carry real session titles/messages and were purged from public git history.
-# The hosted demo serves demo-* files via vercel.json rewrites; the local API
-# (sync/local-api.mjs) serves the fresh local copies. Never re-allowlist them.
+# sessions.json, cost-summary.json and rate-limits.json are LOCAL-ONLY: they
+# carry real session data and personal usage/billing figures and were removed
+# from the public repo (history purge 2026-06-12; rate-limits untracked
+# 2026-07-06). The hosted demo serves demo-* files via vercel.json rewrites;
+# the local API (sync/local-api.mjs) serves the fresh local copies.
+# Never re-allowlist anything under public/data except demo-* files.
 !public/data/demo-sessions.json
 !public/data/demo-cost-summary.json
 !public/data/demo-superadmin-usage.json
