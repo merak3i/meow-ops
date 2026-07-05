@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "test:sync": "node --test sync/__tests__/*.test.mjs",
+    "loop:capture": "node sync/loop-capture.mjs",
+    "eval": "node sync/loop-eval.mjs",
     "sync:superadmin": "node sync/superadmin-usage.mjs",
     "gen:assets": "node scripts/generate-companion-assets.js",
     "gen:cats": "node scripts/generate-companion-assets.js --cats",

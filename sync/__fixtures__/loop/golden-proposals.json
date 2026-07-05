@@ -1,0 +1,106 @@
+[
+  {
+    "name": "valid draft proposal from the risk assistant",
+    "expect_fail": null,
+    "record": {
+      "schema_version": 1,
+      "proposal_id": "prop_golden_valid_1",
+      "loop_id": "demo-loop",
+      "run_id": "run_golden_after_1",
+      "created_at": "2026-07-02T00:10:00.000Z",
+      "created_by": "assistant:risk",
+      "category": "test",
+      "title": "Add a fixture test for the duplicated session id",
+      "one_percent_target": "Stop double-counted sessions from inflating loop metrics",
+      "diff": {
+        "target_path": "sync/__tests__/loop-ledger.test.mjs",
+        "before": "",
+        "after": "test asserting dedupe by session_id"
+      },
+      "rationale": "tool_error_count doubled vs baseline while sessions stayed flat",
+      "evidence": [
+        { "kind": "comparison", "ref": "cmp_golden_1", "value": "tool_error_count +100%" }
+      ],
+      "confidence": 0.7,
+      "risk": "low",
+      "risk_notes": "test-only change",
+      "expected_benefit": "trustworthy deltas for every later proposal",
+      "rollback": { "plan": "git checkout -- sync/__tests__/loop-ledger.test.mjs" },
+      "review_only": false,
+      "status": "draft"
+    }
+  },
+  {
+    "name": "must-fail: policy category without review_only",
+    "expect_fail": "review_only",
+    "record": {
+      "schema_version": 1,
+      "proposal_id": "prop_golden_bad_policy",
+      "loop_id": "demo-loop",
+      "created_at": "2026-07-02T00:11:00.000Z",
+      "created_by": "owner",
+      "category": "policy",
+      "title": "Loosen the approval gate",
+      "one_percent_target": "Fewer clicks",
+      "evidence": [{ "kind": "note", "ref": "none", "value": "n/a" }],
+      "rollback": { "plan": "revert the policy file" },
+      "review_only": false,
+      "status": "draft"
+    }
+  },
+  {
+    "name": "must-fail: assistant-authored proposal claiming approved status",
+    "expect_fail": "assistant-status",
+    "record": {
+      "schema_version": 1,
+      "proposal_id": "prop_golden_bad_forged",
+      "loop_id": "demo-loop",
+      "created_at": "2026-07-02T00:12:00.000Z",
+      "created_by": "assistant:loop",
+      "category": "prompt",
+      "title": "Self-approved improvement",
+      "one_percent_target": "Skip the human",
+      "evidence": [{ "kind": "note", "ref": "none", "value": "n/a" }],
+      "rollback": { "plan": "revert the prompt file" },
+      "review_only": false,
+      "status": "approved"
+    }
+  },
+  {
+    "name": "must-fail: summed cost field smuggled into metrics",
+    "expect_fail": "summed-cost",
+    "record": {
+      "schema_version": 1,
+      "proposal_id": "prop_golden_bad_sum",
+      "loop_id": "demo-loop",
+      "created_at": "2026-07-02T00:13:00.000Z",
+      "created_by": "assistant:risk",
+      "category": "ui",
+      "title": "Show one grand total",
+      "one_percent_target": "Simpler cost card",
+      "evidence": [
+        { "kind": "metric", "ref": "run_golden_after_1", "value": { "cost_usd_total": 74000 } }
+      ],
+      "rollback": { "plan": "revert the card" },
+      "review_only": false,
+      "status": "draft"
+    }
+  },
+  {
+    "name": "must-fail: proposal without a rollback plan",
+    "expect_fail": "rollback",
+    "record": {
+      "schema_version": 1,
+      "proposal_id": "prop_golden_bad_norollback",
+      "loop_id": "demo-loop",
+      "created_at": "2026-07-02T00:14:00.000Z",
+      "created_by": "assistant:loop",
+      "category": "workflow",
+      "title": "Irreversible workflow tweak",
+      "one_percent_target": "Speed",
+      "evidence": [{ "kind": "note", "ref": "none", "value": "n/a" }],
+      "review_only": false,
+      "status": "draft"
+    }
+  }
+]
