@@ -19,6 +19,11 @@ import { spawn, execFileSync } from 'node:child_process';
 import { statSync, existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
+
+import {
+  appendRecord, foldLatestById, newId, readLedger,
+} from './loop-ledger.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -40,6 +45,8 @@ const EXTRA_ALLOWED_ORIGINS = (process.env.MEOW_DASHBOARD_ORIGIN || '')
   .map((origin) => origin.trim())
   .filter(Boolean);
 const ALLOWED_ORIGINS = new Set([...DEFAULT_ALLOWED_ORIGINS, ...EXTRA_ALLOWED_ORIGINS]);
+const NONCES = [];
+const NONCE_SET = new Set();
 
 // launchd and background processes don't always inherit a useful PATH.
 // Prefer the exact Node binary running this file, then stable install locations.
@@ -91,7 +98,69 @@ function requireBrowserHeader(req, res) {
   return false;
 }
 
-const server = createServer((req, res) => {
+function sendJson(res, statusCode, payload) {
+  res.statusCode = statusCode;
+  res.end(JSON.stringify(payload));
+}
+
+function ruleError(res, statusCode, rule, message) {
+  sendJson(res, statusCode, { ok: false, error: `[${rule}] ${message}` });
+}
+
+function createNonce() {
+  const nonce = randomBytes(18).toString('hex');
+  NONCES.push(nonce);
+  NONCE_SET.add(nonce);
+  while (NONCES.length > 10) {
+    const old = NONCES.shift();
+    NONCE_SET.delete(old);
+  }
+  return nonce;
+}
+
+function consumeNonce(nonce) {
+  if (!nonce || !NONCE_SET.has(nonce)) return false;
+  NONCE_SET.delete(nonce);
+  const index = NONCES.indexOf(nonce);
+  if (index >= 0) NONCES.splice(index, 1);
+  return true;
+}
+
+function readJsonBody(req, limit = 10_000) {
+  return new Promise((resolve, reject) => {
+    let raw = '';
+    req.on('data', (chunk) => {
+      raw += chunk;
+      if (raw.length > limit) {
+        reject(new Error('[body-too-large] request body exceeds limit'));
+        req.destroy();
+      }
+    });
+    req.on('end', () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch {
+        reject(new Error('[json] invalid JSON body'));
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function proposalSummary() {
+  const proposals = foldLatestById(readLedger('proposal'), 'proposal_id');
+  const counts_by_status = {};
+  const open_per_loop = {};
+  for (const proposal of proposals) {
+    counts_by_status[proposal.status] = (counts_by_status[proposal.status] || 0) + 1;
+    if (!['approved', 'rejected'].includes(proposal.status)) {
+      open_per_loop[proposal.loop_id] = (open_per_loop[proposal.loop_id] || 0) + 1;
+    }
+  }
+  return { counts_by_status, open_per_loop, total: proposals.length };
+}
+
+const server = createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -120,7 +189,8 @@ const server = createServer((req, res) => {
     path === '/sync'
     || path === '/sync/status'
     || path === '/data/sessions.json'
-    || path === '/data/cost-summary.json';
+    || path === '/data/cost-summary.json'
+    || path.startsWith('/loop-eng/');
 
   if (needsBrowserHeader && !requireBrowserHeader(req, res)) return;
 
@@ -193,6 +263,94 @@ const server = createServer((req, res) => {
       res.statusCode = 500;
       res.end(JSON.stringify({ ok: false, error: err.message }));
     });
+    return;
+  }
+
+  // ── Loop Engineering API — local ledger read/write with owner decisions ──
+  // Every write still goes through appendRecord(), and browser-origin calls
+  // require the local helper header above.
+
+  if (path === '/loop-eng/runs' && req.method === 'GET') {
+    sendJson(res, 200, readLedger('run'));
+    return;
+  }
+
+  if (path === '/loop-eng/comparisons' && req.method === 'GET') {
+    sendJson(res, 200, readLedger('comparison'));
+    return;
+  }
+
+  if (path === '/loop-eng/proposals' && req.method === 'GET') {
+    sendJson(res, 200, foldLatestById(readLedger('proposal'), 'proposal_id'));
+    return;
+  }
+
+  if (path === '/loop-eng/decisions' && req.method === 'GET') {
+    sendJson(res, 200, readLedger('decision'));
+    return;
+  }
+
+  if (path === '/loop-eng/summary' && req.method === 'GET') {
+    sendJson(res, 200, proposalSummary());
+    return;
+  }
+
+  if (path === '/loop-eng/nonce' && req.method === 'GET') {
+    sendJson(res, 200, { nonce: createNonce() });
+    return;
+  }
+
+  if (path === '/loop-eng/decisions' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+
+    if (!['approved', 'rejected', 'deferred'].includes(body.decision)) {
+      ruleError(res, 400, 'decision', 'decision must be approved, rejected, or deferred');
+      return;
+    }
+
+    const proposals = foldLatestById(readLedger('proposal'), 'proposal_id');
+    const proposal = proposals.find((p) => p.proposal_id === body.proposal_id);
+    if (!proposal) {
+      ruleError(res, 404, 'proposal', 'proposal not found');
+      return;
+    }
+    if (proposal.status !== 'pending_approval') {
+      ruleError(res, 409, 'status-flow', 'proposal must be pending_approval before a decision');
+      return;
+    }
+    if (proposal.review_only === true && body.decision === 'approved') {
+      ruleError(res, 403, 'review_only', 'review-only proposals cannot be approved through the local API');
+      return;
+    }
+
+    const decision = appendRecord('decision', {
+      decision_id: newId('dec'),
+      proposal_id: proposal.proposal_id,
+      decided_at: new Date().toISOString(),
+      decision: body.decision,
+      decided_by: 'owner',
+      reason: String(body.reason || 'owner decision'),
+    });
+    let nextProposal = proposal;
+    if (body.decision === 'approved' || body.decision === 'rejected') {
+      nextProposal = appendRecord('proposal', {
+        ...proposal,
+        created_by: 'owner',
+        status: body.decision,
+      });
+    }
+    sendJson(res, 200, { ok: true, decision, proposal: nextProposal });
     return;
   }
 
@@ -332,6 +490,9 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /loop-ops/status         - Loop-Ops file freshness');
   console.log('  GET  /loop-ops/runs           - recorded loop runs');
   console.log('  POST /loop-ops/sync           - re-import the Loop Ops workbook');
+  console.log('  GET  /loop-eng/proposals      - Loop Engineering proposals');
+  console.log('  GET  /loop-eng/summary        - Loop Engineering queue summary');
+  console.log('  POST /loop-eng/decisions      - owner decision with nonce');
   console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');
   console.log('  GET  /superadmin-usage/status - usage snapshot freshness');
   console.log('  POST /superadmin-usage/sync   - refresh local usage snapshot');

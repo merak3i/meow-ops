@@ -99,7 +99,7 @@ function checkSessionsRedaction(repoRoot) {
   return 'local sessions.json carries no content-bearing keys';
 }
 
-function checkGitignore(repoRoot) {
+export function checkGitignore(repoRoot) {
   const raw = readFileSync(join(repoRoot, '.gitignore'), 'utf8');
   const lines = raw.split('\n').map((l) => l.trim());
   if (!lines.includes('public/data/*')) throw new Error('.gitignore lost the public/data/* rule');
