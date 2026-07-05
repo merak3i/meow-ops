@@ -1,0 +1,92 @@
+[
+  {
+    "name": "regression pair: cost, errors and duration all spike",
+    "baseline": {
+      "schema_version": 1,
+      "run_id": "run_golden_base_1",
+      "loop_id": "demo-loop",
+      "captured_at": "2026-07-01T00:00:00.000Z",
+      "sources": ["claude"],
+      "session_ids": ["demo-1", "demo-2"],
+      "metrics": {
+        "sessions": 4,
+        "duration_seconds": 1000,
+        "total_tokens": 50000,
+        "cost_usd_real": 1.0,
+        "cost_usd_notional": 2.0,
+        "message_count": 100,
+        "tool_error_count": 4
+      }
+    },
+    "after": {
+      "schema_version": 1,
+      "run_id": "run_golden_after_1",
+      "loop_id": "demo-loop",
+      "captured_at": "2026-07-02T00:00:00.000Z",
+      "sources": ["claude"],
+      "session_ids": ["demo-3", "demo-dup"],
+      "metrics": {
+        "sessions": 4,
+        "duration_seconds": 1300,
+        "total_tokens": 60000,
+        "cost_usd_real": 1.3,
+        "cost_usd_notional": 2.0,
+        "message_count": 110,
+        "tool_error_count": 8
+      }
+    },
+    "expected_delta_pct": {
+      "sessions": 0,
+      "duration_seconds": 30,
+      "total_tokens": 20,
+      "cost_usd_real": 30,
+      "cost_usd_notional": 0,
+      "message_count": 10,
+      "tool_error_count": 100
+    },
+    "expected_flags": ["cost_spike", "error_spike", "slower"]
+  },
+  {
+    "name": "improvement pair: cheaper and faster earns the improved flag",
+    "baseline": {
+      "schema_version": 1,
+      "run_id": "run_golden_base_2",
+      "loop_id": "demo-loop",
+      "captured_at": "2026-07-01T00:00:00.000Z",
+      "sources": ["claude"],
+      "session_ids": ["demo-1"],
+      "metrics": {
+        "sessions": 2,
+        "duration_seconds": 1000,
+        "total_tokens": 40000,
+        "cost_usd_real": 2.0,
+        "cost_usd_notional": 0,
+        "message_count": 50,
+        "tool_error_count": 2
+      }
+    },
+    "after": {
+      "schema_version": 1,
+      "run_id": "run_golden_after_2",
+      "loop_id": "demo-loop",
+      "captured_at": "2026-07-02T00:00:00.000Z",
+      "sources": ["claude"],
+      "session_ids": ["demo-2"],
+      "metrics": {
+        "sessions": 2,
+        "duration_seconds": 900,
+        "total_tokens": 40000,
+        "cost_usd_real": 1.5,
+        "cost_usd_notional": 0,
+        "message_count": 50,
+        "tool_error_count": 2
+      }
+    },
+    "expected_delta_pct": {
+      "duration_seconds": -10,
+      "cost_usd_real": -25,
+      "total_tokens": 0
+    },
+    "expected_flags": ["improved"]
+  }
+]
