@@ -194,6 +194,103 @@ test('POST /loop-eng/decisions approves a pending proposal with a fresh nonce', 
   assert.equal(latest.status, 'approved');
 });
 
+test('POST /loop-eng/decisions can undo an approval then re-approve with a fresh nonce', async () => {
+  const firstDecision = readLedger('decision')
+    .find((decision) => decision.proposal_id === pendingProposal.proposal_id);
+  assert.equal(firstDecision.decision, 'approved');
+
+  const undo = await postDecision({
+    proposal_id: pendingProposal.proposal_id,
+    decision: 'undone',
+    undo_of: firstDecision.decision_id,
+    reason: 'synthetic undo path',
+    nonce: await nonce(),
+  });
+  assert.equal(undo.status, 200);
+  assert.equal(undo.body.ok, true);
+  assert.equal(undo.body.decision.decision, 'undone');
+  assert.equal(undo.body.decision.undo_of, firstDecision.decision_id);
+  assert.equal(undo.body.proposal.status, 'pending_approval');
+
+  const reopened = foldLatestById(readLedger('proposal'), 'proposal_id')
+    .find((proposal) => proposal.proposal_id === pendingProposal.proposal_id);
+  assert.equal(reopened.status, 'pending_approval');
+
+  const reapprove = await postDecision({
+    proposal_id: pendingProposal.proposal_id,
+    decision: 'approved',
+    reason: 'synthetic re-approval path',
+    nonce: await nonce(),
+  });
+  assert.equal(reapprove.status, 200);
+  assert.equal(reapprove.body.ok, true);
+  assert.equal(reapprove.body.decision.decision, 'approved');
+  assert.equal(reapprove.body.proposal.status, 'approved');
+});
+
+test('POST /loop-eng/decisions rejects unknown undo_of', async () => {
+  const res = await postDecision({
+    proposal_id: pendingProposal.proposal_id,
+    decision: 'undone',
+    undo_of: 'dec_missing',
+    reason: 'unknown undo target',
+    nonce: await nonce(),
+  });
+  assert.equal(res.status, 404);
+  assert.match(res.body.error, /\[undo_of\]/);
+});
+
+test('POST /loop-eng/decisions rejects non-latest undo_of', async () => {
+  const firstDecision = readLedger('decision')
+    .find((decision) => decision.proposal_id === pendingProposal.proposal_id && decision.decision === 'approved');
+  const res = await postDecision({
+    proposal_id: pendingProposal.proposal_id,
+    decision: 'undone',
+    undo_of: firstDecision.decision_id,
+    reason: 'stale undo target',
+    nonce: await nonce(),
+  });
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /\[undo_of\]/);
+});
+
+test('POST /loop-eng/decisions rejects undo when status is not approved or rejected', async () => {
+  const deferred = await postDecision({
+    proposal_id: reviewOnlyProposal.proposal_id,
+    decision: 'deferred',
+    reason: 'leave review-only proposal pending',
+    nonce: await nonce(),
+  });
+  assert.equal(deferred.status, 200);
+  assert.equal(deferred.body.decision.decision, 'deferred');
+  assert.equal(deferred.body.proposal.status, 'pending_approval');
+
+  const undo = await postDecision({
+    proposal_id: reviewOnlyProposal.proposal_id,
+    decision: 'undone',
+    undo_of: deferred.body.decision.decision_id,
+    reason: 'status is still pending',
+    nonce: await nonce(),
+  });
+  assert.equal(undo.status, 409);
+  assert.match(undo.body.error, /\[status-flow\]/);
+});
+
+test('POST /loop-eng/decisions rejects undo_of with decision other than undone', async () => {
+  const latestDecision = readLedger('decision')
+    .filter((decision) => decision.proposal_id === pendingProposal.proposal_id)
+    .at(-1);
+  const res = await postDecision({
+    proposal_id: pendingProposal.proposal_id,
+    decision: 'approved',
+    undo_of: latestDecision.decision_id,
+    reason: 'wrong decision enum for undo',
+    nonce: await nonce(),
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /\[decision\]/);
+});
+
 test('POST /loop-eng/decisions rejects a bad nonce', async () => {
   const res = await postDecision({
     proposal_id: reviewOnlyProposal.proposal_id,

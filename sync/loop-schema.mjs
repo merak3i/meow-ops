@@ -16,8 +16,8 @@ export const STATUS_FLOW = {
   draft: ['simulated'],
   simulated: ['pending_approval'],
   pending_approval: ['approved', 'rejected'],
-  approved: ['applied'],
-  rejected: [],
+  approved: ['applied', 'pending_approval'],
+  rejected: ['pending_approval'],
   applied: ['rolled_back'],
   rolled_back: [],
 };
@@ -180,8 +180,8 @@ export function validateDecision(record) {
   req(record, 'decided_at', 'string', 'decision');
   const decision = req(record, 'decision', 'string', 'decision');
   req(record, 'decided_by', 'string', 'decision');
-  if (!['approved', 'rejected', 'deferred'].includes(decision)) {
-    fail('missing-field', `decision.decision "${decision}" must be approved/rejected/deferred`);
+  if (!['approved', 'rejected', 'deferred', 'undone'].includes(decision)) {
+    fail('missing-field', `decision.decision "${decision}" must be approved/rejected/deferred/undone`);
   }
   return record;
 }
