@@ -314,17 +314,64 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (!['approved', 'rejected', 'deferred'].includes(body.decision)) {
-      ruleError(res, 400, 'decision', 'decision must be approved, rejected, or deferred');
-      return;
-    }
-
     const proposals = foldLatestById(readLedger('proposal'), 'proposal_id');
     const proposal = proposals.find((p) => p.proposal_id === body.proposal_id);
     if (!proposal) {
       ruleError(res, 404, 'proposal', 'proposal not found');
       return;
     }
+
+    if (body.undo_of) {
+      if (body.decision !== 'undone') {
+        ruleError(res, 400, 'decision', 'undo_of requires decision "undone"');
+        return;
+      }
+
+      const decisions = readLedger('decision');
+      const referenced = decisions.find((decision) => decision.decision_id === body.undo_of);
+      if (!referenced || referenced.proposal_id !== proposal.proposal_id) {
+        ruleError(res, 404, 'undo_of', 'referenced decision not found for proposal');
+        return;
+      }
+      const latest = decisions
+        .filter((decision) => decision.proposal_id === proposal.proposal_id)
+        .at(-1);
+      if (!latest || latest.decision_id !== referenced.decision_id) {
+        ruleError(res, 409, 'undo_of', 'referenced decision is not the latest decision for proposal');
+        return;
+      }
+      if (referenced.decision === 'undone') {
+        ruleError(res, 409, 'undo_of', 'undone decisions cannot be undone again');
+        return;
+      }
+      if (!['approved', 'rejected'].includes(proposal.status)) {
+        ruleError(res, 409, 'status-flow', 'proposal must be approved or rejected before undo');
+        return;
+      }
+
+      const decision = appendRecord('decision', {
+        decision_id: newId('dec'),
+        proposal_id: proposal.proposal_id,
+        decided_at: new Date().toISOString(),
+        decision: 'undone',
+        decided_by: 'owner',
+        reason: String(body.reason || 'undo'),
+        undo_of: referenced.decision_id,
+      });
+      const nextProposal = appendRecord('proposal', {
+        ...proposal,
+        created_by: 'owner',
+        status: 'pending_approval',
+      });
+      sendJson(res, 200, { ok: true, decision, proposal: nextProposal });
+      return;
+    }
+
+    if (!['approved', 'rejected', 'deferred'].includes(body.decision)) {
+      ruleError(res, 400, 'decision', 'decision must be approved, rejected, deferred, or undone with undo_of');
+      return;
+    }
+
     if (proposal.status !== 'pending_approval') {
       ruleError(res, 409, 'status-flow', 'proposal must be pending_approval before a decision');
       return;

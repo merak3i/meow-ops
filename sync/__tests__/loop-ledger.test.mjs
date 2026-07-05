@@ -141,6 +141,10 @@ test('status machine: draft cannot skip to approved', () => {
   assert.throws(() => validateStatusTransition('draft', 'approved'), /\[status-flow\]/);
   assert.equal(validateStatusTransition('draft', 'simulated'), true);
   assert.equal(validateStatusTransition('pending_approval', 'approved'), true);
+  assert.equal(validateStatusTransition('approved', 'pending_approval'), true);
+  assert.equal(validateStatusTransition('rejected', 'pending_approval'), true);
+  assert.throws(() => validateStatusTransition('applied', 'pending_approval'), /\[status-flow\]/);
+  assert.throws(() => validateStatusTransition('rejected', 'approved'), /\[status-flow\]/);
 });
 
 test('write choke point: assistant non-draft proposal cannot reach the ledger', () => {
@@ -204,6 +208,61 @@ test('write choke point: draft can be superseded by another draft append', () =>
     assert.equal(back.length, 2);
     assert.equal(back[1].status, 'draft');
     assert.equal(back[1].title, 'Superseded draft title');
+  });
+});
+
+test('write choke point: approved proposal can rewind to pending_approval', () => {
+  withTempLedger(() => {
+    const draft = validDraftProposal({ created_by: 'owner' });
+    appendRecord('proposal', draft);
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'simulated' });
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'pending_approval' });
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'approved' });
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'pending_approval' });
+    const back = readLedger('proposal');
+    assert.equal(back.at(-1).status, 'pending_approval');
+  });
+});
+
+test('write choke point: rejected proposal can rewind to pending_approval', () => {
+  withTempLedger(() => {
+    const draft = validDraftProposal({ created_by: 'owner' });
+    appendRecord('proposal', draft);
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'simulated' });
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'pending_approval' });
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'rejected' });
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'pending_approval' });
+    const back = readLedger('proposal');
+    assert.equal(back.at(-1).status, 'pending_approval');
+  });
+});
+
+test('write choke point: applied proposal cannot rewind to pending_approval', () => {
+  withTempLedger(() => {
+    const draft = validDraftProposal({ created_by: 'owner' });
+    appendRecord('proposal', draft);
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'simulated' });
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'pending_approval' });
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'approved' });
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'applied' });
+    assert.throws(
+      () => appendRecord('proposal', { ...draft, created_by: 'owner', status: 'pending_approval' }),
+      /\[status-flow\]/,
+    );
+  });
+});
+
+test('write choke point: rejected proposal cannot skip to approved', () => {
+  withTempLedger(() => {
+    const draft = validDraftProposal({ created_by: 'owner' });
+    appendRecord('proposal', draft);
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'simulated' });
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'pending_approval' });
+    appendRecord('proposal', { ...draft, created_by: 'owner', status: 'rejected' });
+    assert.throws(
+      () => appendRecord('proposal', { ...draft, created_by: 'owner', status: 'approved' }),
+      /\[status-flow\]/,
+    );
   });
 });
 
