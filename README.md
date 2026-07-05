@@ -505,6 +505,7 @@ npx playwright test   # runs all 15 tests against npm run preview
 ```
 
 Tests cover all 12 pages, key interactions, PWA manifest, and data endpoints. The `playwright.config.ts` uses a single Chromium project against `http://localhost:4173` (Vite preview port).
+`npm run eval` is the blocking privacy + loop-integrity gate.
 
 To run a single test file or test by name:
 

@@ -30,6 +30,8 @@ jobs:
       # Blocking gates: these are green today and catch real regressions.
       - name: Sync pipeline tests
         run: npm run test:sync
+      - name: Loop eval gate
+        run: npm run eval
       - name: Production build
         run: npm run build
 
