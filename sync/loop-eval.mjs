@@ -120,6 +120,7 @@ function checkStatusMachine() {
     if (!threw) throw new Error(`illegal transition ${from} → ${to} was allowed`);
   }
   validateStatusTransition('draft', 'simulated');
+  validateStatusTransition('draft', 'rejected');
   validateStatusTransition('pending_approval', 'approved');
   return 'status machine rejects every skip, allows the legal walk';
 }

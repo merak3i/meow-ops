@@ -234,6 +234,43 @@ These screens show the shape of the loop, the expanded waves, the inspector, the
 
 Local API endpoints (`sync/local-api.mjs`): `GET /loop-ops/spec|status|runs`, `POST /loop-ops/sync` re-runs the importer. Import manually with `node sync/loop-ops-import.mjs`.
 
+### Loop Engineering
+
+Loop Engineering is the weekly review habit for improving the tool without letting automation approve itself.
+
+The five-minute ritual:
+
+1. Capture the current loop state.
+2. Generate deterministic proposals from local facts.
+3. Open the Review Deck and read the Ship Next tab.
+4. Approve, reject, defer, or undo from the owner surface.
+5. Apply approved changes manually, then let the next capture measure the outcome.
+
+Commands:
+
+```bash
+npm run loop:capture -- --loop <LOOP_ID> --since <ISO_TIME>
+npm run loop:propose
+npm run loop:simulate -- --proposal <PROPOSAL_ID>
+node sync/local-api.mjs
+npm run dev
+```
+
+Open `http://localhost:5173/#/loop-review` and use:
+
+- Proposals for the five-beat review card.
+- Runs for real and notional cost, duration warnings, and comparison deltas.
+- Ship Next for ranked pending work plus approved items waiting for manual apply.
+
+Guarantees:
+
+- Assistants can only create drafts. They cannot self-approve.
+- Owner approvals happen through the local Review Deck or nonce-protected local API.
+- Every ledger write goes through `appendRecord()`, field allowlists, validators, and redaction checks.
+- The ledger lives outside the git worktree at `~/.meow-ops/loop-ledger/`.
+- Real session data, secrets, local paths, and transcript content do not belong in tracked fixtures or PRs.
+- Expired drafts are marked by `system:expire`, leave the active queue, and stay visible under the expired filter.
+
 ### Capacity & Usage
 
 A local-first SuperAdmin cockpit for the operator's software stack: GitHub Actions run volume, cache and artifact footprint, SaaS subscription run rate, renewal pressure, and source wiring for private usage ledgers.

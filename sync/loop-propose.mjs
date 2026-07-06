@@ -22,6 +22,9 @@ export { hasOpenProposalForLoop, hasOpenProposalForRule } from './loop-proposal-
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..');
 const LOOP_ID = 'meow-ops-guardrails';
+const DAY_MS = 86_400_000;
+const STALE_DRAFT_DAYS = 14;
+const Z_THRESHOLD = 2.5;
 const FLAG_METRICS = {
   cost_spike: 'cost_usd_real',
   error_spike: 'tool_error_count',
@@ -48,18 +51,23 @@ function safeReadJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
+function numberOrNull(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function hasProposalForComparison(comparisonId, records = readLedger('proposal')) {
   return latestProposals(records)
     .some((proposal) => proposal.comparison_id === comparisonId);
 }
 
 function baseProposal({
-  ruleId, now, category, title, onePercentTarget, diff, rationale, evidence,
+  ruleId, loopId = LOOP_ID, now, category, title, onePercentTarget, diff, rationale, evidence,
   confidence, risk, riskNotes, expectedBenefit, rollbackPlan, reviewOnly,
 }) {
   const record = {
     proposal_id: newId('prop'),
-    loop_id: LOOP_ID,
+    loop_id: loopId,
     created_at: iso(now),
     created_by: 'assistant:risk',
     category,
@@ -81,6 +89,149 @@ function baseProposal({
   };
   assertRedacted(record, 'proposal');
   return record;
+}
+
+function costSummaryRows(repoRoot) {
+  const path = join(repoRoot, 'public', 'data', 'cost-summary.json');
+  if (!existsSync(path)) return [];
+  let parsed;
+  try {
+    parsed = safeReadJson(path);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed.daily_summary)) return [];
+  return parsed.daily_summary
+    .filter((row) => row && typeof row.date === 'string')
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function latestWithTrailing(rows, metric) {
+  const candidates = rows
+    .map((row) => ({ row, value: numberOrNull(row[metric]) }))
+    .filter((item) => item.value !== null);
+  if (candidates.length < 2) return null;
+  const latest = candidates.at(-1);
+  const trailing = candidates.slice(Math.max(0, candidates.length - 15), -1);
+  if (!latest || trailing.length === 0) return null;
+  return { latest, trailing };
+}
+
+function mean(values) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function zScore(value, values) {
+  const avg = mean(values);
+  const variance = values.reduce((sum, item) => sum + (item - avg) ** 2, 0) / values.length;
+  const std = Math.sqrt(variance);
+  return { mean: avg, std, z: std > 0 ? (value - avg) / std : 0 };
+}
+
+export function spendVelocityProposal({ repoRoot = REPO_ROOT, now = new Date() } = {}) {
+  const sample = latestWithTrailing(costSummaryRows(repoRoot), 'estimated_cost_usd');
+  if (!sample) return null;
+  const trailingCosts = sample.trailing.map((item) => item.value);
+  const stats = zScore(sample.latest.value, trailingCosts);
+  if (!(stats.z > Z_THRESHOLD)) return null;
+  return baseProposal({
+    ruleId: 'spend-velocity',
+    now,
+    category: 'workflow',
+    title: 'Review spend velocity spike',
+    onePercentTarget: 'Catch a daily spend spike before it becomes the new operating baseline',
+    diff: {
+      target_path: 'public/data/cost-summary.json',
+      date: sample.latest.row.date,
+      estimated_cost_usd: sample.latest.value,
+      trailing_14_day_mean: Number(stats.mean.toFixed(4)),
+      z_score: Number(stats.z.toFixed(2)),
+    },
+    rationale: `latest daily estimated_cost_usd is ${Number(stats.z.toFixed(2))} standard deviations above the trailing 14-day mean`,
+    evidence: [
+      { kind: 'metric', ref: 'estimated_cost_usd', value: Number(sample.latest.value.toFixed(4)) },
+      { kind: 'metric', ref: 'trailing-14-day-mean', value: Number(stats.mean.toFixed(4)) },
+      { kind: 'metric', ref: 'z-score', value: Number(stats.z.toFixed(2)) },
+    ],
+    confidence: 0.78,
+    risk: 'medium',
+    riskNotes: 'local daily_summary spend only; no session content inspected',
+    expectedBenefit: 'focuses the weekly review on real spend velocity before manual changes compound it',
+    rollbackPlan: 'Reject this alert if the spike maps to intentional operator work',
+    reviewOnly: false,
+  });
+}
+
+export function ghostSpikeProposal({ repoRoot = REPO_ROOT, now = new Date() } = {}) {
+  const sample = latestWithTrailing(costSummaryRows(repoRoot), 'ghost_count');
+  if (!sample) return null;
+  const trailingGhosts = sample.trailing.map((item) => item.value);
+  const trailingMean = mean(trailingGhosts);
+  const threshold = Math.max(5, trailingMean * 3);
+  if (!(sample.latest.value > threshold)) return null;
+  return baseProposal({
+    ruleId: 'ghost-spike',
+    now,
+    category: 'workflow',
+    title: 'Investigate ghost session spike',
+    onePercentTarget: 'Stop empty or low-signal sessions from crowding out useful operator context',
+    diff: {
+      target_path: 'public/data/cost-summary.json',
+      date: sample.latest.row.date,
+      ghost_count: sample.latest.value,
+      trailing_14_day_mean: Number(trailingMean.toFixed(2)),
+      threshold: Number(threshold.toFixed(2)),
+    },
+    rationale: `latest ghost_count is ${sample.latest.value}, above max(5, 3x trailing mean ${Number(trailingMean.toFixed(2))})`,
+    evidence: [
+      { kind: 'metric', ref: 'ghost_count', value: sample.latest.value },
+      { kind: 'metric', ref: 'trailing-14-day-mean', value: Number(trailingMean.toFixed(2)) },
+    ],
+    confidence: 0.74,
+    risk: 'medium',
+    riskNotes: 'local daily_summary ghost counts only; no session content inspected',
+    expectedBenefit: 'keeps the review queue pointed at useful work instead of empty sessions',
+    rollbackPlan: 'Reject this alert if the ghost spike is a known one-off import artifact',
+    reviewOnly: false,
+  });
+}
+
+function isRecentWarnRun(run, now) {
+  if (!run || typeof run.notes !== 'string' || !run.notes.startsWith('WARN:')) return false;
+  const captured = Date.parse(run.captured_at || '');
+  if (!Number.isFinite(captured)) return false;
+  const ageMs = new Date(now).getTime() - captured;
+  return ageMs >= 0 && ageMs <= 7 * DAY_MS;
+}
+
+export function durationAnomalyProposal({ now = new Date(), runs = readLedger('run') } = {}) {
+  const run = runs
+    .filter((candidate) => isRecentWarnRun(candidate, now))
+    .sort((a, b) => b.captured_at.localeCompare(a.captured_at))[0] || null;
+  if (!run) return null;
+  return baseProposal({
+    ruleId: 'duration-anomaly',
+    loopId: run.loop_id,
+    now,
+    category: 'workflow',
+    title: `${run.loop_id}: investigate duration sanity warning`,
+    onePercentTarget: 'Keep loop duration metrics trustworthy by checking suspected double-counted sessions',
+    diff: {
+      run_id: run.run_id,
+      captured_at: run.captured_at,
+      summary: 'Review session dedupe and capture window logic for this warned run',
+    },
+    rationale: `run ${run.run_id} tripped the capture duration WARN bound in the last 7 days`,
+    evidence: [
+      { kind: 'run', ref: run.run_id },
+    ],
+    confidence: 0.8,
+    risk: 'medium',
+    riskNotes: 'duration sanity warning from ledger run notes; no session content inspected',
+    expectedBenefit: 'prevents bad duration deltas from driving the weekly operator queue',
+    rollbackPlan: 'Reject this alert if the WARN was expected for this run window',
+    reviewOnly: false,
+  });
 }
 
 export function staleRateLimitsProposal({ repoRoot = REPO_ROOT, now = new Date() } = {}) {
@@ -266,6 +417,9 @@ export function collectCandidates(options = {}) {
     ['stale-rate-limits', staleRateLimitsProposal],
     ['tracked-data-regression', trackedDataRegressionProposal],
     ['dangling-automation-paths', danglingAutomationProposal],
+    ['spend-velocity', spendVelocityProposal],
+    ['ghost-spike', ghostSpikeProposal],
+    ['duration-anomaly', durationAnomalyProposal],
   ];
   return rules.map(([ruleId, fn]) => ({ ruleId, proposal: fn(options) }));
 }
@@ -383,8 +537,41 @@ function advanceDeterministicProposal(draft) {
   return { draft, simulated, pending };
 }
 
+export function expireStaleDrafts({ now = new Date(), proposals = readLedger('proposal') } = {}) {
+  const results = [];
+  const cutoff = new Date(now).getTime() - STALE_DRAFT_DAYS * DAY_MS;
+  for (const proposal of latestProposals(proposals)) {
+    if (proposal.status !== 'draft') continue;
+    const created = Date.parse(proposal.created_at || '');
+    if (!Number.isFinite(created) || created > cutoff) continue;
+
+    // This is the one non-owner decision author: loop:propose may expire
+    // untouched stale drafts so they leave the active owner queue without
+    // pretending a human rejected them.
+    const decision = appendRecord('decision', {
+      decision_id: newId('dec'),
+      proposal_id: proposal.proposal_id,
+      decided_at: iso(now),
+      decision: 'rejected',
+      decided_by: 'system:expire',
+      created_by: 'system:expire',
+      reason: 'expired stale draft',
+    });
+    const expired = appendRecord('proposal', {
+      ...proposal,
+      created_by: 'system:expire',
+      status: 'rejected',
+    });
+    results.push({ proposal_id: proposal.proposal_id, decision_id: decision.decision_id, status: expired.status });
+  }
+  return results;
+}
+
 export function runProposer(options = {}) {
   const results = [];
+  for (const expired of expireStaleDrafts({ now: options.now })) {
+    results.push({ ruleId: `expire:${expired.proposal_id}`, status: 'expired', proposal_id: expired.proposal_id });
+  }
   for (const { ruleId, proposal } of collectCandidates(options)) {
     if (!proposal) {
       results.push({ ruleId, status: 'clear', proposal_id: null });
