@@ -17,10 +17,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   appendRecord, foldLatestById, newId, readLedger, resolveLedgerDir,
 } from './loop-ledger.mjs';
+import { loadEnv } from './load-env.mjs';
 import { hasOpenProposalForLoop } from './loop-proposal-helpers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SESSIONS_PATH = join(HERE, '..', 'public', 'data', 'sessions.json');
+const REPO_ROOT = join(HERE, '..');
+const SESSIONS_PATH = join(REPO_ROOT, 'public', 'data', 'sessions.json');
 
 // Deltas beyond these thresholds get a flag on the comparison; the UI turns
 // flags into pre-filled proposal skeletons later (Phase 3).
@@ -328,5 +330,6 @@ function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  loadEnv(REPO_ROOT);
   main();
 }

@@ -16,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   appendRecord, foldLatestById, newId, readLedger,
 } from './loop-ledger.mjs';
+import { loadEnv } from './load-env.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..');
@@ -233,5 +234,6 @@ function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  loadEnv(REPO_ROOT);
   main();
 }
