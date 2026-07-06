@@ -7,7 +7,6 @@ import {
   getSessionRunGroups,
   modelColor,
   modelLabel,
-  efficiencyIndex,
   cacheHitRate,
 } from '@/lib/agent-tree';
 import type { AgentTreeNode, SessionRunGroup } from '@/lib/agent-tree';

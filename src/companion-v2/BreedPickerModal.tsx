@@ -68,6 +68,7 @@ export function BreedPickerModal({ onAdopt }: BreedPickerModalProps) {
   const [name,     setName]     = useState('');
 
   const breedKeys = Object.keys(COMPANION_BREEDS);
+  const selectedBreed = COMPANION_BREEDS[selected];
 
   const handleAdopt = () => {
     const trimmed = name.trim() || 'Kitten';
@@ -151,7 +152,7 @@ export function BreedPickerModal({ onAdopt }: BreedPickerModalProps) {
         </div>
 
         {/* Selected breed info */}
-        {selected && COMPANION_BREEDS[selected as keyof typeof COMPANION_BREEDS] && (
+        {selectedBreed && (
           <div style={{
             padding:      '10px 14px',
             background:   'var(--bg-page)',
@@ -161,10 +162,10 @@ export function BreedPickerModal({ onAdopt }: BreedPickerModalProps) {
             lineHeight:   1.5,
           }}>
             <strong style={{ color: 'var(--text-primary)' }}>
-              {COMPANION_BREEDS[selected as keyof typeof COMPANION_BREEDS].label}
+              {selectedBreed.label}
             </strong>
             {' · '}
-            {COMPANION_BREEDS[selected as keyof typeof COMPANION_BREEDS].traits}
+            {selectedBreed.traits}
           </div>
         )}
 

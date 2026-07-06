@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 
 const STORED_KEY = 'meow-ops-gate';
-const PASSWORD   = (import.meta as Record<string, unknown> & { env: Record<string, string> }).env.VITE_ACCESS_PASSWORD as string | undefined;
+const PASSWORD   = import.meta.env.VITE_ACCESS_PASSWORD as string | undefined;
 
 interface Props { children: React.ReactNode }
 
