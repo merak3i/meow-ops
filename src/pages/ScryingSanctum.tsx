@@ -9,7 +9,7 @@ import { Activity, RefreshCw, Zap } from 'lucide-react';
 import * as THREE from 'three';
 import type { Session } from '@/types/session';
 import { getSessionRunGroups } from '@/lib/agent-tree';
-import type { AgentTreeNode, SessionRunGroup } from '@/lib/agent-tree';
+import type { SessionRunGroup } from '@/lib/agent-tree';
 import { formatRelativeTime, ageMinutes } from '@/lib/format-time';
 import { toISTDate } from '@/lib/format';
 
@@ -23,23 +23,21 @@ import { toISTDate } from '@/lib/format';
 // that needs its own reviewable PR.
 
 import type {
-  PerfStats, ClassConfig, SessionIdentifier, EternalStats,
-  MovementProfile, QuoteFn, SignatureMove, PositionedNode,
+  PerfLevel, PerfStats, ClassConfig, EternalStats, PositionedNode,
 } from './sanctum/types';
 import {
-  CLASS_MAP, FALLBACK_CLASS, SESSION_ACCENTS, AURA_PROFILES, DEFAULT_AURA,
-  PIPELINE_ROLES, EXTRA_ROLES, MOVEMENT_PROFILES, DEFAULT_MOVEMENT,
-  CHARACTER_QUOTES, SIGNATURE_MOVES, pickQuote,
-  getPipelineRole, getChampionName,
+  AURA_PROFILES, DEFAULT_AURA,
+  MOVEMENT_PROFILES, DEFAULT_MOVEMENT,
+  SIGNATURE_MOVES, pickQuote,
 } from './sanctum/classes';
 import {
-  sessionHash, sessionIdentifier, deriveEternal, blendHex,
-  hpPercent, formatGold, formatGoldShort, dayPrefixLabel, formatRunGroupLabel,
+  sessionIdentifier, deriveEternal, blendHex,
+  hpPercent, formatGold, dayPrefixLabel, formatRunGroupLabel,
   formatDur, formatSessionDisplayName, sessionFolderLabel, layoutNodes, WAYPOINTS,
 } from './sanctum/helpers';
 import {
   getShadowTexture, getMarbleTexture, getStainedGlassTexture,
-  getLichKingTexture, buildClassTexture,
+  buildClassTexture,
 } from './sanctum/textures';
 import {
   PerfContext, usePerfLevel, SceneErrorBoundary,
@@ -59,7 +57,6 @@ export type { PerfStats };
 
 function FloatingParticles() {
   const perf  = usePerfLevel();
-  const count = 55; // 40 floating + 15 ground motes
   const refs = useRef<(THREE.Mesh | null)[]>([]);
   const data = useMemo(() => {
     const particles = [];
@@ -665,332 +662,6 @@ function CenterPortal() {
   );
 }
 
-// ─── Buildings ───────────────────────────────────────────────────────────────
-
-// Windows get desynchronized phase + speed offsets so the tower feels inhabited
-// rather than blinking in unison. Each window picks once from a handful of
-// styles: steady warm, slow breathe, quick flicker (candle), or dark.
-const WINDOW_STYLES = [
-  { base: 0.55, amp: 0.15, speed: 1.2,  color: '#f0b858' },  // warm, slow breathe
-  { base: 0.70, amp: 0.08, speed: 0.8,  color: '#ffc870' },  // brighter, calmer
-  { base: 0.35, amp: 0.30, speed: 3.4,  color: '#f0a040' },  // candle flicker
-  { base: 0.08, amp: 0.04, speed: 0.6,  color: '#6a5a40' },  // mostly dark
-];
-
-function MageTower() {
-  const orbRef = useRef<THREE.Mesh>(null);
-  const windowRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const flagRef = useRef<THREE.Mesh>(null);
-  const windowStyles = useMemo(
-    () => Array.from({ length: 3 }, (_, i) => {
-      const s = WINDOW_STYLES[i % WINDOW_STYLES.length]!;
-      return { ...s, phase: Math.random() * Math.PI * 2 };
-    }),
-    [],
-  );
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (orbRef.current) {
-      orbRef.current.position.y = 4.8 + Math.sin(t * 1.2) * 0.15;
-      orbRef.current.rotation.y = t * 0.5;
-    }
-    windowRefs.current.forEach((ref, i) => {
-      if (!ref) return;
-      const s = windowStyles[i];
-      if (!s) return;
-      (ref.material as THREE.MeshBasicMaterial).opacity = Math.max(0, s.base + Math.sin(t * s.speed + s.phase) * s.amp);
-    });
-    if (flagRef.current) flagRef.current.rotation.z = Math.sin(t * 1.2) * 0.08;
-  });
-  return (
-    <group position={[7.5, 0, -7.5]}>
-      {/* Stone base ring */}
-      <mesh position={[0, 0.15, 0]}>
-        <cylinderGeometry args={[0.9, 0.95, 0.3, 8]} />
-        <meshBasicMaterial color="#2a2040" />
-      </mesh>
-      {/* Tower body */}
-      <mesh position={[0, 1.4, 0]}>
-        <cylinderGeometry args={[0.7, 0.8, 2.8, 8]} />
-        <meshBasicMaterial color="#1e1832" />
-      </mesh>
-      {/* Balcony ledge */}
-      <mesh position={[0, 2.4, 0]}>
-        <torusGeometry args={[0.78, 0.04, 4, 8]} />
-        <meshBasicMaterial color="#2a2040" />
-      </mesh>
-      {/* Balcony railing posts */}
-      {[0, (Math.PI * 2) / 3, (Math.PI * 4) / 3].map((angle, i) => (
-        <mesh key={`bp${i}`} position={[Math.cos(angle) * 0.78, 2.5, Math.sin(angle) * 0.78]}>
-          <boxGeometry args={[0.04, 0.2, 0.04]} />
-          <meshBasicMaterial color="#241a38" />
-        </mesh>
-      ))}
-      {/* Roof cone */}
-      <mesh position={[0, 3.4, 0]}>
-        <coneGeometry args={[0.85, 1.2, 8]} />
-        <meshBasicMaterial color="#3a1848" />
-      </mesh>
-      {/* Roof tip */}
-      <mesh position={[0, 4.1, 0]}>
-        <coneGeometry args={[0.15, 0.4, 4]} />
-        <meshBasicMaterial color="#8b5cf6" />
-      </mesh>
-      {/* Roof flag */}
-      <mesh ref={flagRef} position={[0.2, 4.2, 0]}>
-        <planeGeometry args={[0.2, 0.15]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.5} side={THREE.DoubleSide} />
-      </mesh>
-      {/* Door */}
-      <mesh position={[0, 0.3, 0.82]}>
-        <planeGeometry args={[0.25, 0.5]} />
-        <meshBasicMaterial color="#1a1008" />
-      </mesh>
-      {/* Doorstep */}
-      <mesh position={[0, 0.03, 0.9]}>
-        <boxGeometry args={[0.5, 0.06, 0.2]} />
-        <meshBasicMaterial color="#2a2040" />
-      </mesh>
-      {/* Window slits — each randomizes style/phase via windowStyles */}
-      {[0, (Math.PI * 2) / 3, (Math.PI * 4) / 3].map((angle, i) => {
-        const s = windowStyles[i]!;
-        return (
-          <mesh key={i} ref={(el) => { windowRefs.current[i] = el; }}
-            position={[Math.cos(angle) * 0.72, 2.0, Math.sin(angle) * 0.72]}
-            rotation={[0, -angle, 0]}>
-            <planeGeometry args={[0.1, 0.3]} />
-            <meshBasicMaterial color={s.color} transparent opacity={s.base} side={THREE.DoubleSide} />
-          </mesh>
-        );
-      })}
-      {/* Floating arcane orb */}
-      <mesh ref={orbRef} position={[0, 4.8, 0]}>
-        <sphereGeometry args={[0.2, 8, 8]} />
-        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.7} />
-      </mesh>
-    </group>
-  );
-}
-
-function Armory() {
-  const perf      = usePerfLevel();
-  const flameRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const smokeRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const windowRef = useRef<THREE.Mesh>(null);
-  const smokeState = useRef([0, 0.3, 0.6].map((p) => ({ y: 2.4 + p, opacity: 0.3 })));
-  const windowPhase = useMemo(() => Math.random() * Math.PI * 2, []);
-
-  useFrame((state, delta) => {
-    const t = state.clock.elapsedTime;
-    flameRefs.current.forEach((ref, i) => {
-      if (ref) ref.scale.y = 0.8 + Math.sin(t * 6 + i * 2) * 0.2;
-    });
-    // Forge-fire lit window — faster flicker to mimic active forge
-    if (windowRef.current) {
-      const mat = windowRef.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = Math.max(0.15, 0.55 + Math.sin(t * 4.5 + windowPhase) * 0.25 + Math.sin(t * 11 + windowPhase) * 0.08);
-    }
-    // Smoke rising from chimney — skipped in low perf mode
-    if (perf !== 'low') {
-      smokeState.current.forEach((s, i) => {
-        const ref = smokeRefs.current[i];
-        if (!ref) return;
-        s.y += delta * 0.4;
-        s.opacity = Math.max(0, 0.3 - (s.y - 2.4) * 0.15);
-        if (s.y > 3.8) { s.y = 2.4; s.opacity = 0.3; }
-        ref.position.y = s.y;
-        ref.scale.setScalar(0.5 + (s.y - 2.4) * 0.6);
-        (ref.material as THREE.MeshBasicMaterial).opacity = s.opacity;
-      });
-    }
-  });
-  return (
-    <group position={[-7.5, 0, 7.5]}>
-      {/* Building body */}
-      <mesh position={[0, 0.7, 0]}>
-        <boxGeometry args={[2.0, 1.4, 1.4]} />
-        <meshBasicMaterial color="#2a1e18" />
-      </mesh>
-      {/* Pyramid roof */}
-      <mesh position={[0, 1.8, 0]}>
-        <coneGeometry args={[1.2, 0.8, 4]} />
-        <meshBasicMaterial color="#3a2a18" />
-      </mesh>
-      {/* Chimney */}
-      <mesh position={[0.6, 1.9, -0.3]}>
-        <boxGeometry args={[0.25, 0.6, 0.25]} />
-        <meshBasicMaterial color="#2a1e18" />
-      </mesh>
-      <mesh position={[0.6, 2.25, -0.3]}>
-        <boxGeometry args={[0.32, 0.06, 0.32]} />
-        <meshBasicMaterial color="#1a1008" />
-      </mesh>
-      {/* Smoke particles — skipped in low perf mode */}
-      {perf !== 'low' && [0, 1, 2].map((i) => (
-        <mesh key={`sm${i}`} ref={(el) => { smokeRefs.current[i] = el; }}
-          position={[0.6, 2.4 + i * 0.3, -0.3]}>
-          <sphereGeometry args={[0.06, 4, 4]} />
-          <meshBasicMaterial color="#888888" transparent opacity={0.2} />
-        </mesh>
-      ))}
-      {/* Door */}
-      <mesh position={[0, 0.4, 0.71]}>
-        <planeGeometry args={[0.4, 0.6]} />
-        <meshBasicMaterial color="#1a1008" />
-      </mesh>
-      {/* Doorstep */}
-      <mesh position={[0, 0.03, 0.82]}>
-        <boxGeometry args={[0.6, 0.06, 0.2]} />
-        <meshBasicMaterial color="#3a2a18" />
-      </mesh>
-      {/* Side window — lit from forge fire inside */}
-      <mesh ref={windowRef} position={[1.01, 0.85, 0]}>
-        <planeGeometry args={[0.2, 0.15]} />
-        <meshBasicMaterial color="#ff9540" transparent opacity={0.6} side={THREE.DoubleSide} />
-      </mesh>
-      {/* Weapon rack */}
-      <mesh position={[1.01, 0.6, 0.35]}>
-        <boxGeometry args={[0.05, 0.8, 0.6]} />
-        <meshBasicMaterial color="#4a3a2a" />
-      </mesh>
-      {/* Torch brackets + flames */}
-      {[-0.35, 0.35].map((xOff, i) => (
-        <group key={i} position={[xOff, 0, 0.71]}>
-          <mesh position={[0, 0.8, 0]}>
-            <boxGeometry args={[0.08, 0.3, 0.08]} />
-            <meshBasicMaterial color="#8b7a5e" />
-          </mesh>
-          <mesh ref={(el) => { flameRefs.current[i] = el; }} position={[0, 1.0, 0]}>
-            <sphereGeometry args={[0.06, 4, 4]} />
-            <meshBasicMaterial color="#ff8c22" transparent opacity={0.8} />
-          </mesh>
-        </group>
-      ))}
-    </group>
-  );
-}
-
-function SceneryProps() {
-  const crystalBallRef = useRef<THREE.Mesh>(null);
-  useFrame((state) => {
-    if (crystalBallRef.current) crystalBallRef.current.scale.setScalar(1 + Math.sin(state.clock.elapsedTime * 1.5) * 0.08);
-  });
-  return (
-    <>
-      {/* Crate cluster near Armory */}
-      <group position={[-6.0, 0, 8.5]}>
-        <mesh position={[0, 0.25, 0]}>
-          <boxGeometry args={[0.5, 0.5, 0.5]} />
-          <meshBasicMaterial color="#4a3820" />
-        </mesh>
-        <mesh position={[0, 0.65, 0]}>
-          <boxGeometry args={[0.4, 0.3, 0.4]} />
-          <meshBasicMaterial color="#3a2a18" />
-        </mesh>
-        <mesh position={[0.55, 0.2, 0]}>
-          <boxGeometry args={[0.6, 0.4, 0.3]} />
-          <meshBasicMaterial color="#4a3820" />
-        </mesh>
-        <mesh position={[-0.45, 0.25, 0]}>
-          <cylinderGeometry args={[0.2, 0.22, 0.5, 8]} />
-          <meshBasicMaterial color="#3a2a18" />
-        </mesh>
-      </group>
-      {/* Bookshelf near Mage Tower */}
-      <group position={[8.5, 0, -6.0]}>
-        <mesh position={[0, 0.5, 0]}>
-          <boxGeometry args={[0.8, 1.0, 0.25]} />
-          <meshBasicMaterial color="#2a1e18" />
-        </mesh>
-        {[
-          { y: 0.25, color: '#8b5cf6' },
-          { y: 0.50, color: '#c8a855' },
-          { y: 0.75, color: '#dc3545' },
-        ].map((row, i) => (
-          <mesh key={i} position={[0, row.y, 0.05]}>
-            <boxGeometry args={[0.7, 0.15, 0.18]} />
-            <meshBasicMaterial color={row.color} />
-          </mesh>
-        ))}
-        <mesh ref={crystalBallRef} position={[0, 1.1, 0]}>
-          <sphereGeometry args={[0.1, 8, 8]} />
-          <meshBasicMaterial color="#60a5fa" transparent opacity={0.6} />
-        </mesh>
-      </group>
-    </>
-  );
-}
-
-// ─── Perimeter Wall ─────────────────────────────────────────────────────────
-
-function PerimeterWall() {
-  const WALL_R = 11.5;
-  const SEGMENTS = 32;
-  const GATE_ANGLES = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]; // N, E, S, W
-  const GATE_WIDTH = 0.35; // radians to skip per gate
-
-  const walls = useMemo(() => {
-    const segs: { angle: number; skip: boolean }[] = [];
-    for (let i = 0; i < SEGMENTS; i++) {
-      const angle = (i / SEGMENTS) * Math.PI * 2;
-      const skip = GATE_ANGLES.some((ga) => Math.abs(((angle - ga + Math.PI) % (Math.PI * 2)) - Math.PI) < GATE_WIDTH);
-      segs.push({ angle, skip });
-    }
-    return segs;
-  }, []);
-
-  const gates = useMemo(() => GATE_ANGLES.map((ga) => {
-    const lAngle = ga - GATE_WIDTH;
-    const rAngle = ga + GATE_WIDTH;
-    return {
-      left: [Math.cos(lAngle) * WALL_R, 0.5, Math.sin(lAngle) * WALL_R] as [number, number, number],
-      right: [Math.cos(rAngle) * WALL_R, 0.5, Math.sin(rAngle) * WALL_R] as [number, number, number],
-      lintel: [Math.cos(ga) * WALL_R, 1.0, Math.sin(ga) * WALL_R] as [number, number, number],
-      angle: ga,
-    };
-  }), []);
-
-  return (
-    <>
-      {/* Wall segments */}
-      {walls.filter((w) => !w.skip).map((w, i) => (
-        <mesh key={i}
-          position={[Math.cos(w.angle) * WALL_R, 0.3, Math.sin(w.angle) * WALL_R]}
-          rotation={[0, -w.angle, 0]}>
-          <boxGeometry args={[1.5, 0.6, 0.35]} />
-          <meshBasicMaterial color="#2a2040" />
-        </mesh>
-      ))}
-      {/* Crenellations */}
-      {walls.filter((w) => !w.skip).map((w, i) => (
-        <mesh key={`c${i}`}
-          position={[Math.cos(w.angle) * WALL_R, 0.7, Math.sin(w.angle) * WALL_R]}
-          rotation={[0, -w.angle, 0]}>
-          <boxGeometry args={[0.3, 0.2, 0.35]} />
-          <meshBasicMaterial color="#241a38" />
-        </mesh>
-      ))}
-      {/* Gate pillars + lintels */}
-      {gates.map((g, i) => (
-        <group key={i}>
-          <mesh position={g.left} rotation={[0, -g.angle, 0]}>
-            <boxGeometry args={[0.4, 1.0, 0.4]} />
-            <meshBasicMaterial color="#2a2040" />
-          </mesh>
-          <mesh position={g.right} rotation={[0, -g.angle, 0]}>
-            <boxGeometry args={[0.4, 1.0, 0.4]} />
-            <meshBasicMaterial color="#2a2040" />
-          </mesh>
-          <mesh position={g.lintel} rotation={[0, -g.angle, 0]}>
-            <boxGeometry args={[1.8, 0.25, 0.4]} />
-            <meshBasicMaterial color="#241a38" />
-          </mesh>
-        </group>
-      ))}
-    </>
-  );
-}
-
 // ─── Ground Paths (radial walkways from gates to center) ────────────────────
 
 function ArcanePaths() {
@@ -1028,183 +699,6 @@ function ArcanePaths() {
         </mesh>
       ))}
     </>
-  );
-}
-
-// ─── Dalaran D2 — Architecture silhouette ────────────────────────────────────
-//
-// Three procedural layers that turn the Sanctum into a Dalaran-shaped plaza
-// without any external assets:
-//
-//   1. DalaranSkyline — eight mage-tower spires evenly placed at radius 14
-//      (outside the existing ward wall at 11.5). Varied heights 7..12 give
-//      the city a real skyline; warm gold windows pulse against the violet
-//      stone. Pure background — never interferes with agent movement.
-//   2. VioletCitadel — central focal tower behind the LLM Sun. Three tiers
-//      (base / mid / spire) at [-8, 0, -8]; the sun appears to crown its
-//      pinnacle from the camera angle.
-//   3. GothicColonnade — a ring of 12 columns at radius 10.5, between the
-//      agent floor and the wall. Marks the inner plaza and reads as
-//      Dalaran's iconic covered walkways without blocking champion sight.
-
-const D2_SPIRE_STONE   = '#1f1230';   // deep violet stone
-const D2_SPIRE_WINDOW  = '#f5c518';   // warm gold window glow (on-brand)
-const D2_SPIRE_ROOF    = '#0d0820';   // near-silhouette dark roof
-const D2_CITADEL_CROWN = '#7c5acc';   // subtle purple-gold accent ring
-
-function DalaranSpire({ position, height, radius, twin = false }: {
-  position: [number, number, number];
-  height: number;
-  radius: number;
-  twin?: boolean;
-}) {
-  const windowRef = useRef<THREE.Mesh>(null);
-  const phase = useMemo(() => Math.random() * Math.PI * 2, []);
-
-  useFrame((state) => {
-    if (windowRef.current) {
-      const t = state.clock.elapsedTime;
-      (windowRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.55 + Math.sin(t * 0.7 + phase) * 0.18;
-    }
-  });
-
-  return (
-    <group position={position}>
-      {/* Tower body — slightly tapered cylinder */}
-      <mesh position={[0, height / 2, 0]}>
-        <cylinderGeometry args={[radius * 0.82, radius, height, 8]} />
-        <meshBasicMaterial color={D2_SPIRE_STONE} />
-      </mesh>
-      {/* Mid-tier band */}
-      <mesh position={[0, height * 0.55, 0]}>
-        <cylinderGeometry args={[radius * 0.92, radius * 0.92, 0.22, 8]} />
-        <meshBasicMaterial color="#2a1a3e" />
-      </mesh>
-      {/* Spire roof — tall cone */}
-      <mesh position={[0, height + radius * 1.3, 0]}>
-        <coneGeometry args={[radius * 0.95, radius * 2.6, 8]} />
-        <meshBasicMaterial color={D2_SPIRE_ROOF} />
-      </mesh>
-      {/* Roof crown ring */}
-      <mesh position={[0, height + 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[radius * 0.95, radius * 1.08, 12]} />
-        <meshBasicMaterial color={D2_CITADEL_CROWN} transparent opacity={0.45}
-          side={THREE.DoubleSide} blending={THREE.AdditiveBlending}
-          depthWrite={false} fog={false} />
-      </mesh>
-      {/* Glowing stained-glass window — multi-band texture (gold/violet/
-          indigo/rose) at upper third, additive so the panes glow against
-          the violet stone. Per-spire phase animates the overall opacity. */}
-      <mesh ref={windowRef} position={[0, height * 0.7, radius * 0.85]}>
-        <planeGeometry args={[radius * 0.45, radius * 0.65]} />
-        <meshBasicMaterial map={getStainedGlassTexture()} transparent opacity={0.65}
-          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
-      </mesh>
-      {twin && (
-        <mesh position={[0, height * 0.7, -radius * 0.85]} rotation={[0, Math.PI, 0]}>
-          <planeGeometry args={[radius * 0.45, radius * 0.65]} />
-          <meshBasicMaterial map={getStainedGlassTexture()} transparent opacity={0.45}
-            blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
-        </mesh>
-      )}
-      {/* Tiny crown pinnacle */}
-      <mesh position={[0, height + radius * 2.6, 0]}>
-        <sphereGeometry args={[0.14, 8, 8]} />
-        <meshBasicMaterial color={D2_CITADEL_CROWN} transparent opacity={0.85}
-          blending={THREE.AdditiveBlending} fog={false} />
-      </mesh>
-    </group>
-  );
-}
-
-function DalaranSkyline() {
-  // Eight spires placed evenly around radius 14 (outside the ward wall at
-  // 11.5). Varied heights + radii give the skyline a hand-shaped silhouette.
-  const spires = useMemo(() => {
-    const out: { x: number; z: number; h: number; r: number; twin: boolean }[] = [];
-    const N = 8;
-    for (let i = 0; i < N; i++) {
-      const a   = (i / N) * Math.PI * 2 + 0.2;
-      const r   = 14 + Math.sin(i * 1.7) * 0.7;
-      const h   = 7 + ((i * 13) % 5) * 1.1;     // 7..11.4
-      const rad = 0.55 + ((i * 7) % 3) * 0.10;
-      out.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, h, r: rad, twin: i % 2 === 0 });
-    }
-    return out;
-  }, []);
-  return (
-    <>
-      {spires.map((s, i) => (
-        <DalaranSpire key={i}
-          position={[s.x, 0, s.z]} height={s.h} radius={s.r} twin={s.twin} />
-      ))}
-    </>
-  );
-}
-
-function VioletCitadel() {
-  // Central Dalaran citadel silhouette behind the LLM Sun. Three-tier
-  // (base / mid / spire) at [-8, 0, -8] so it reads as the building the
-  // sun is rising in front of from the camera's [14, 12, 14] vantage.
-  const orbRef = useRef<THREE.Mesh>(null);
-  useFrame((state) => {
-    if (orbRef.current) {
-      const t = state.clock.elapsedTime;
-      (orbRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.55 + Math.sin(t * 0.55) * 0.12;
-    }
-  });
-  return (
-    <group position={[-8, 0, -8]}>
-      {/* Base tier — widest */}
-      <mesh position={[0, 1.5, 0]}>
-        <cylinderGeometry args={[1.6, 1.85, 3, 12]} />
-        <meshBasicMaterial color={D2_SPIRE_STONE} />
-      </mesh>
-      {/* Mid tier */}
-      <mesh position={[0, 4.5, 0]}>
-        <cylinderGeometry args={[1.2, 1.4, 3, 10]} />
-        <meshBasicMaterial color="#241638" />
-      </mesh>
-      {/* Crown ring at base of upper spire */}
-      <mesh position={[0, 6.0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[1.25, 1.5, 16]} />
-        <meshBasicMaterial color={D2_CITADEL_CROWN} transparent opacity={0.55}
-          side={THREE.DoubleSide} blending={THREE.AdditiveBlending}
-          depthWrite={false} fog={false} />
-      </mesh>
-      {/* Upper tower */}
-      <mesh position={[0, 9.0, 0]}>
-        <cylinderGeometry args={[0.5, 1.1, 5, 8]} />
-        <meshBasicMaterial color="#1a0f28" />
-      </mesh>
-      {/* Tall spire roof */}
-      <mesh position={[0, 13.0, 0]}>
-        <coneGeometry args={[0.55, 2.5, 8]} />
-        <meshBasicMaterial color={D2_SPIRE_ROOF} />
-      </mesh>
-      {/* Glow orb at the spire's pinnacle — sells "Citadel hosts the API
-          source" framing under the LLM Sun. */}
-      <mesh ref={orbRef} position={[0, 14.4, 0]}>
-        <sphereGeometry args={[0.28, 12, 12]} />
-        <meshBasicMaterial color={D2_CITADEL_CROWN} transparent opacity={0.65}
-          blending={THREE.AdditiveBlending} fog={false} />
-      </mesh>
-      {/* Stained-glass window at mid tier (faces the plaza) — D3 texture
-          gives multi-band gold/violet/indigo panes with lead lines. */}
-      <mesh position={[0, 4.3, 1.41]}>
-        <planeGeometry args={[1.0, 1.6]} />
-        <meshBasicMaterial map={getStainedGlassTexture()} transparent opacity={0.7}
-          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
-      </mesh>
-      {/* Stained-glass at base — wider, dimmer, larger pane count via uv repeat */}
-      <mesh position={[0, 1.3, 1.86]}>
-        <planeGeometry args={[1.5, 2.0]} />
-        <meshBasicMaterial map={getStainedGlassTexture()} transparent opacity={0.55}
-          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
-      </mesh>
-    </group>
   );
 }
 
@@ -1251,47 +745,6 @@ function RunicGlyphs() {
         );
       })}
     </group>
-  );
-}
-
-function GothicColonnade() {
-  // A ring of 12 slim columns at radius 10.5 — between the agent floor and
-  // the perimeter wall. Reads as Dalaran's iconic covered walkways without
-  // blocking the camera's view of champions.
-  const N = 12;
-  const RADIUS = 10.5;
-  const HEIGHT = 4.2;
-  const positions = useMemo(() => {
-    const out: [number, number, number][] = [];
-    for (let i = 0; i < N; i++) {
-      // Half-step offset so columns sit between the existing wall gates.
-      const a = (i / N) * Math.PI * 2 + Math.PI / N;
-      out.push([Math.cos(a) * RADIUS, 0, Math.sin(a) * RADIUS]);
-    }
-    return out;
-  }, []);
-  return (
-    <>
-      {positions.map((p, i) => (
-        <group key={i} position={p}>
-          {/* Column shaft */}
-          <mesh position={[0, HEIGHT / 2, 0]}>
-            <cylinderGeometry args={[0.15, 0.18, HEIGHT, 8]} />
-            <meshBasicMaterial color="#2a1a3e" />
-          </mesh>
-          {/* Capital (decorated top) */}
-          <mesh position={[0, HEIGHT - 0.10, 0]}>
-            <boxGeometry args={[0.42, 0.18, 0.42]} />
-            <meshBasicMaterial color={D2_CITADEL_CROWN} transparent opacity={0.8} />
-          </mesh>
-          {/* Base */}
-          <mesh position={[0, 0.10, 0]}>
-            <boxGeometry args={[0.36, 0.20, 0.36]} />
-            <meshBasicMaterial color="#1a0f28" />
-          </mesh>
-        </group>
-      ))}
-    </>
   );
 }
 
@@ -1647,7 +1100,7 @@ function ScatteredDetailProps() {
           </mesh>
           <mesh ref={(el) => { pedestalRefs.current[i] = el; }} position={[0, 0.55, 0]}>
             <octahedronGeometry args={[0.1, 0]} />
-            <meshBasicMaterial color={PEDESTAL_COLORS[i]} transparent opacity={0.7} />
+            <meshBasicMaterial color={PEDESTAL_COLORS[i] ?? '#c8a855'} transparent opacity={0.7} />
           </mesh>
         </group>
       ))}
@@ -2177,11 +1630,12 @@ function CharacterTrail({ color, isMoving }: { color: string; isMoving: React.Mu
   const ages = useRef(Array.from({ length: TRAIL_COUNT }, () => 99));
 
   useFrame((_, delta) => {
-    ages.current.forEach((age, i) => {
+    ages.current.forEach((currentAge, i) => {
       const mesh = refs.current[i];
       if (!mesh) return;
-      ages.current[i] += delta;
-      if (isMoving.current && ages.current[i] > 0.12 * (i + 1)) {
+      const nextAge = currentAge + delta;
+      ages.current[i] = nextAge;
+      if (isMoving.current && nextAge > 0.12 * (i + 1)) {
         // Spawn at origin (parent group position)
         mesh.position.set(
           (Math.random() - 0.5) * 0.6,
@@ -2190,7 +1644,7 @@ function CharacterTrail({ color, isMoving }: { color: string; isMoving: React.Mu
         );
         ages.current[i] = 0;
       }
-      const life = ages.current[i];
+      const life = ages.current[i] ?? 0;
       const fade = Math.max(0, 1 - life * 2.5);
       mesh.position.y += delta * 0.5;
       mesh.scale.setScalar(fade * 0.6);
@@ -2220,13 +1674,14 @@ function FootstepDust({ isMoving }: { isMoving: React.MutableRefObject<boolean> 
 
   useFrame((_, delta) => {
     nextSpawn.current -= delta;
-    ages.current.forEach((age, i) => {
+    ages.current.forEach((currentAge, i) => {
       const mesh = refs.current[i];
       if (!mesh) return;
-      ages.current[i] += delta;
+      const nextAge = currentAge + delta;
+      ages.current[i] = nextAge;
 
       // Spawn new puff at ground level when moving
-      if (isMoving.current && nextSpawn.current <= 0 && ages.current[i] > 0.6) {
+      if (isMoving.current && nextSpawn.current <= 0 && nextAge > 0.6) {
         mesh.position.set(
           (Math.random() - 0.5) * 0.5,
           0.05,
@@ -2237,7 +1692,7 @@ function FootstepDust({ isMoving }: { isMoving: React.MutableRefObject<boolean> 
         nextSpawn.current = 0.12; // stagger spawns
       }
 
-      const life = ages.current[i];
+      const life = ages.current[i] ?? 0;
       const fade = Math.max(0, 1 - life * 1.8);
       // Rise slowly, expand, fade
       mesh.position.y += delta * 0.25;
