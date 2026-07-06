@@ -15,8 +15,9 @@ import {
 } from './loop-ledger.mjs';
 import { checkGitignore } from './loop-eval.mjs';
 import { callLlm } from './llm-gateway.mjs';
+import { loadSessionMetadata, minePromptPatterns } from './loop-prompt-miner.mjs';
 import {
-  hasOpenProposalForLoop, latestProposals,
+  hasNonRejectedProposalForEvidenceRef, hasOpenProposalForLoop, latestProposals,
 } from './loop-proposal-helpers.mjs';
 
 export { hasOpenProposalForLoop, hasOpenProposalForRule } from './loop-proposal-helpers.mjs';
@@ -27,6 +28,8 @@ const LOOP_ID = 'meow-ops-guardrails';
 const DAY_MS = 86_400_000;
 const STALE_DRAFT_DAYS = 14;
 const IMPROVE_TEMPLATE = join(REPO_ROOT, 'prompts', 'loop', 'improve.md');
+const PROMPTSMITH_TEMPLATE = join(REPO_ROOT, 'prompts', 'loop', 'promptsmith.md');
+const PROMPT_LOOP_ID = 'meow-ops-prompts';
 const Z_THRESHOLD = 2.5;
 const FLAG_METRICS = {
   cost_spike: 'cost_usd_real',
@@ -532,6 +535,255 @@ function withLlmDraft(proposal, draft) {
   };
 }
 
+function evidenceLines(pattern) {
+  return pattern.evidence
+    .map((item) => `- ${item.ref}: ${item.value}`)
+    .join('\n');
+}
+
+function deterministicPromptBody(pattern) {
+  return [
+    `# ${pattern.title}`,
+    '',
+    '## Use When',
+    `Session metadata shows ${pattern.session_count} recent session(s) matching this pattern.`,
+    '',
+    '## Evidence',
+    evidenceLines(pattern),
+    '',
+    '## Prompt',
+    'You are improving this workflow from metadata only. Before changing anything, read the relevant local files, name the smallest safe improvement, and keep the work inside the requested surface.',
+    '',
+    'Checklist:',
+    '- Confirm the source data is metadata only.',
+    '- Read before editing.',
+    '- Make one scoped change.',
+    '- Run the cheapest relevant gate first.',
+    '- Leave a rollback note.',
+  ].join('\n');
+}
+
+function promptBodyFromDraft(pattern, draft) {
+  return [
+    `# ${pattern.title}`,
+    '',
+    '## Use When',
+    draft.one_percent_target,
+    '',
+    '## Evidence',
+    evidenceLines(pattern),
+    '',
+    '## Prompt',
+    draft.rationale,
+    '',
+    '## Success Check',
+    draft.expected_benefit,
+  ].join('\n');
+}
+
+function promptPatternVars(pattern) {
+  return {
+    pattern_id: pattern.pattern_id,
+    title: pattern.title,
+    session_count: pattern.session_count,
+    evidence: pattern.evidence,
+  };
+}
+
+export function promptPatternProposal(pattern, {
+  now = new Date(),
+  body = deterministicPromptBody(pattern),
+  llmDrafted = false,
+} = {}) {
+  const targetPath = targetPathForPattern(pattern);
+  const record = {
+    proposal_id: newId('prop'),
+    loop_id: PROMPT_LOOP_ID,
+    created_at: iso(now),
+    created_by: 'assistant:prompt',
+    category: 'prompt',
+    title: pattern.title,
+    one_percent_target: `Turn ${pattern.title} into a reusable prompt template`,
+    diff: {
+      target_path: targetPath,
+      before: '',
+      after: body,
+    },
+    rationale: `miner found ${pattern.session_count} recent metadata-only session(s) for ${pattern.pattern_id}`,
+    evidence: [
+      { kind: 'pattern', ref: pattern.pattern_id },
+      ...pattern.evidence,
+      ...(llmDrafted ? [{ kind: 'llm', ref: 'deepseek:deepseek-chat' }] : []),
+    ],
+    confidence: 0.68,
+    risk: 'low',
+    risk_notes: 'metadata-only prompt template draft; no session content inspected',
+    expected_benefit: 'makes recurring operator work easier to repeat with read-before-write discipline',
+    rollback: { plan: `delete ${targetPath}` },
+    review_only: false,
+    status: 'draft',
+  };
+  assertRedacted(record, 'proposal');
+  return record;
+}
+
+function promptPatternsFromRepo(repoRoot, now) {
+  return minePromptPatterns(loadSessionMetadata(repoRoot), { now });
+}
+
+function targetPathForPattern(pattern) {
+  return `prompts/library/${pattern.pattern_id}.md`;
+}
+
+function clearPromptResult() {
+  return {
+    pattern_id: 'prompt-miners',
+    loop_id: PROMPT_LOOP_ID,
+    status: 'clear',
+    proposal_id: null,
+    target_path: null,
+  };
+}
+
+function promptSkipResult(pattern, status) {
+  return {
+    pattern_id: pattern.pattern_id,
+    loop_id: PROMPT_LOOP_ID,
+    status,
+    proposal_id: null,
+    target_path: targetPathForPattern(pattern),
+  };
+}
+
+function shouldSkipPromptPattern(pattern) {
+  if (hasNonRejectedProposalForEvidenceRef('pattern', pattern.pattern_id)) {
+    return 'skipped-existing';
+  }
+  if (hasOpenProposalForLoop(PROMPT_LOOP_ID)) {
+    return 'skipped-open';
+  }
+  return null;
+}
+
+export function appendPromptProposals({
+  now = new Date(),
+  repoRoot = REPO_ROOT,
+  patterns = promptPatternsFromRepo(repoRoot, now),
+} = {}) {
+  const results = [];
+  for (const pattern of patterns) {
+    const skip = shouldSkipPromptPattern(pattern);
+    if (skip) {
+      results.push(promptSkipResult(pattern, skip));
+      continue;
+    }
+    const stored = appendRecord('proposal', promptPatternProposal(pattern, { now }));
+    results.push({
+      pattern_id: pattern.pattern_id,
+      loop_id: PROMPT_LOOP_ID,
+      status: 'prompt',
+      proposal_id: stored.proposal_id,
+      target_path: stored.diff.target_path,
+      llm_status: 'disabled',
+    });
+  }
+  if (patterns.length === 0) results.push(clearPromptResult());
+  return results;
+}
+
+export async function appendPromptProposalsWithAi({
+  now = new Date(),
+  repoRoot = REPO_ROOT,
+  patterns = promptPatternsFromRepo(repoRoot, now),
+  ai = false,
+  noAi = false,
+  env = process.env,
+  transport = globalThis.fetch,
+} = {}) {
+  return appendPromptProposalsFromPatterns({
+    now,
+    patterns,
+    ai,
+    noAi,
+    env,
+    transport,
+    template: ai && noAi !== true ? safeReadText(PROMPTSMITH_TEMPLATE) : null,
+  });
+}
+
+async function appendPromptProposalsFromPatterns({
+  now,
+  patterns,
+  ai,
+  noAi,
+  env,
+  transport,
+  template,
+}) {
+  const results = [];
+  const shouldUseAi = ai === true && noAi !== true;
+  for (const pattern of patterns) {
+    const skip = shouldSkipPromptPattern(pattern);
+    if (skip) {
+      results.push(promptSkipResult(pattern, skip));
+      continue;
+    }
+
+    let enriched = null;
+    let llmStatus = shouldUseAi ? 'skipped' : 'disabled';
+    if (shouldUseAi) {
+      const llm = await callLlm({
+        template,
+        vars: promptPatternVars(pattern),
+        env,
+        transport,
+        now,
+      });
+      if (llm?.draft) {
+        try {
+          enriched = promptPatternProposal(pattern, {
+            now,
+            body: promptBodyFromDraft(pattern, llm.draft),
+            llmDrafted: true,
+          });
+          llmStatus = 'drafted';
+        } catch {
+          llmStatus = 'rejected';
+        }
+      }
+    }
+
+    if (enriched) {
+      try {
+        const stored = appendRecord('proposal', enriched);
+        results.push({
+          pattern_id: pattern.pattern_id,
+          loop_id: PROMPT_LOOP_ID,
+          status: 'prompt-enriched',
+          proposal_id: stored.proposal_id,
+          target_path: stored.diff.target_path,
+          llm_status: llmStatus,
+        });
+        continue;
+      } catch {
+        llmStatus = 'rejected';
+      }
+    }
+
+    const stored = appendRecord('proposal', promptPatternProposal(pattern, { now }));
+    results.push({
+      pattern_id: pattern.pattern_id,
+      loop_id: PROMPT_LOOP_ID,
+      status: 'prompt',
+      proposal_id: stored.proposal_id,
+      target_path: stored.diff.target_path,
+      llm_status: llmStatus,
+    });
+  }
+  if (patterns.length === 0) results.push(clearPromptResult());
+  return results;
+}
+
 export function appendComparisonSkeletons({ now = new Date(), comparisons = readLedger('comparison') } = {}) {
   const results = [];
   for (const comparison of comparisons) {
@@ -686,6 +938,18 @@ export function runProposer(options = {}) {
       proposal_id: result.proposal_id,
     });
   }
+  for (const result of appendPromptProposals({
+    now: options.now,
+    repoRoot: options.repoRoot || REPO_ROOT,
+  })) {
+    results.push({
+      ruleId: `prompt:${result.pattern_id}`,
+      status: result.status,
+      proposal_id: result.proposal_id,
+      target_path: result.target_path,
+      llm_status: result.llm_status,
+    });
+  }
   return results;
 }
 
@@ -720,6 +984,22 @@ export async function runProposerWithAi(options = {}) {
       proposal_id: result.proposal_id,
     });
   }
+  for (const result of await appendPromptProposalsWithAi({
+    now: options.now,
+    repoRoot: options.repoRoot || REPO_ROOT,
+    ai: options.ai,
+    noAi: options.noAi,
+    env: options.env,
+    transport: options.transport,
+  })) {
+    results.push({
+      ruleId: `prompt:${result.pattern_id}`,
+      status: result.status,
+      proposal_id: result.proposal_id,
+      target_path: result.target_path,
+      llm_status: result.llm_status,
+    });
+  }
   return results;
 }
 
@@ -739,7 +1019,11 @@ async function main() {
     ? await runProposerWithAi(opts)
     : runProposer({});
   for (const result of results) {
-    const suffix = result.proposal_id ? ` ${result.proposal_id}` : '';
+    const suffixParts = [];
+    if (result.proposal_id) suffixParts.push(result.proposal_id);
+    if (result.target_path) suffixParts.push(`target_path=${result.target_path}`);
+    if (result.llm_status) suffixParts.push(`llm_status=${result.llm_status}`);
+    const suffix = suffixParts.length > 0 ? ` ${suffixParts.join(' ')}` : '';
     console.log(`${result.ruleId}: ${result.status}${suffix}`);
   }
 }

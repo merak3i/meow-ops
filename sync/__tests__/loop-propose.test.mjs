@@ -11,6 +11,8 @@ import {
 } from '../loop-ledger.mjs';
 import { validateProposal } from '../loop-schema.mjs';
 import {
+  appendPromptProposals,
+  appendPromptProposalsWithAi,
   appendComparisonSkeletons,
   appendComparisonSkeletonsWithAi,
   collectCandidates,
@@ -211,6 +213,19 @@ function validDraftProposal(overrides = {}) {
   };
 }
 
+function promptPattern(overrides = {}) {
+  return {
+    pattern_id: 'read-before-edit-discipline',
+    title: 'read-before-edit discipline',
+    evidence: [
+      { kind: 'metric', ref: 'sessions-with-edit-before-read-imbalance', value: 8 },
+      { kind: 'metric', ref: 'edit-write-to-read-ratio', value: 3 },
+    ],
+    session_count: 8,
+    ...overrides,
+  };
+}
+
 test('proposer rule matrix: each rule fires and stays redaction-clean', () => {
   withTempLedger(() => {
     appendRecord('run', validRun({
@@ -330,6 +345,125 @@ test('comparison skeletons can be enriched by a stubbed LLM and meter the call',
     const meterRuns = readLedger('run').filter((run) => run.loop_id === 'meow-ops-assistant');
     assert.equal(meterRuns.length, 1);
     assert.equal(meterRuns[0].metrics.cost_usd_real, 0.00049);
+  });
+});
+
+test('prompt proposals are draft-only new-file diffs, validate, and throttle open prompt work', () => {
+  withTempLedger(() => {
+    const results = appendPromptProposals({
+      now: NOW,
+      patterns: [
+        promptPattern(),
+        promptPattern({ pattern_id: 'recurring-demo-prompt-app-edit-read-write-workflow', title: 'recurring demo-prompt-app workflow' }),
+      ],
+    });
+    assert.equal(results[0].status, 'prompt');
+    assert.equal(results[0].target_path, 'prompts/library/read-before-edit-discipline.md');
+    assert.equal(results[1].status, 'skipped-open');
+
+    const proposals = readLedger('proposal');
+    assert.equal(proposals.length, 1);
+    const proposal = proposals[0];
+    assert.equal(proposal.loop_id, 'meow-ops-prompts');
+    assert.equal(proposal.created_by, 'assistant:prompt');
+    assert.equal(proposal.category, 'prompt');
+    assert.equal(proposal.status, 'draft');
+    assert.equal(proposal.diff.target_path, 'prompts/library/read-before-edit-discipline.md');
+    assert.equal(proposal.diff.before, '');
+    assert.match(proposal.diff.after, /Session metadata shows 8 recent session/);
+    assert.equal(proposal.rollback.plan, 'delete prompts/library/read-before-edit-discipline.md');
+    assert.ok(proposal.evidence.some((item) => item.kind === 'pattern' && item.ref === 'read-before-edit-discipline'));
+    assert.equal(validateProposal(proposal), proposal);
+    assert.doesNotThrow(() => assertRedacted(JSON.parse(JSON.stringify(proposal))));
+
+    const second = appendPromptProposals({ now: NOW, patterns: [promptPattern()] });
+    assert.equal(second[0].status, 'skipped-existing');
+    assert.equal(readLedger('proposal').length, 1);
+  });
+});
+
+test('prompt proposals can be enriched by a stubbed gateway and share the LLM meter', async () => {
+  await withTempLedgerAsync(async () => {
+    const results = await appendPromptProposalsWithAi({
+      now: NOW,
+      patterns: [promptPattern()],
+      ai: true,
+      env: {
+        DEEPSEEK_API_KEY: fakeKey(),
+        MEOW_LLM_WEEKLY_USD: '1.00',
+        MEOW_LLM_CALLS_PER_CYCLE: '25',
+      },
+      transport: async () => llmResponse(JSON.stringify({
+        one_percent_target: 'Use this prompt when edits outrun reads in recent metadata.',
+        rationale: 'Start by reading the local surface, then make one scoped change.',
+        expected_benefit: 'The operator leaves a reusable checklist and rollback note.',
+      })),
+    });
+
+    assert.equal(results[0].status, 'prompt-enriched');
+    assert.equal(results[0].llm_status, 'drafted');
+    const proposal = readLedger('proposal')[0];
+    assert.equal(proposal.created_by, 'assistant:prompt');
+    assert.equal(proposal.status, 'draft');
+    assert.match(proposal.diff.after, /Start by reading the local surface/);
+    assert.ok(proposal.evidence.some((item) => item.kind === 'llm' && item.ref === 'deepseek:deepseek-chat'));
+    assert.equal(validateProposal(proposal), proposal);
+
+    const meterRuns = readLedger('run').filter((run) => run.loop_id === 'meow-ops-assistant');
+    assert.equal(meterRuns.length, 1);
+  });
+});
+
+test('prompt proposals use deterministic fallback when budget skips before transport', async () => {
+  await withTempLedgerAsync(async () => {
+    let calls = 0;
+    const results = await appendPromptProposalsWithAi({
+      now: NOW,
+      patterns: [promptPattern()],
+      ai: true,
+      env: {},
+      transport: async () => {
+        calls += 1;
+        return llmResponse('{}');
+      },
+    });
+
+    assert.equal(calls, 0);
+    assert.equal(results[0].status, 'prompt');
+    assert.equal(results[0].llm_status, 'skipped');
+    const proposal = readLedger('proposal')[0];
+    assert.equal(proposal.evidence.some((item) => item.kind === 'llm'), false);
+    assert.match(proposal.diff.after, /Session metadata shows 8 recent session/);
+    assert.equal(validateProposal(proposal), proposal);
+    assert.equal(readLedger('run').length, 0);
+  });
+});
+
+test('malicious prompt LLM output is rejected and the fallback body ships cleanly', async () => {
+  await withTempLedgerAsync(async () => {
+    const runtimeSecret = fakeKey();
+    const results = await appendPromptProposalsWithAi({
+      now: NOW,
+      patterns: [promptPattern()],
+      ai: true,
+      env: {
+        DEEPSEEK_API_KEY: fakeKey(),
+        MEOW_LLM_WEEKLY_USD: '1.00',
+        MEOW_LLM_CALLS_PER_CYCLE: '25',
+      },
+      transport: async () => llmResponse(JSON.stringify({
+        one_percent_target: `Leaked ${runtimeSecret}`,
+        rationale: 'This should never persist.',
+        expected_benefit: 'This should never persist.',
+      })),
+    });
+
+    assert.equal(results[0].status, 'prompt');
+    assert.equal(results[0].llm_status, 'rejected');
+    const proposal = readLedger('proposal')[0];
+    assert.equal(JSON.stringify(proposal).includes(runtimeSecret), false);
+    assert.equal(proposal.evidence.some((item) => item.kind === 'llm'), false);
+    assert.equal(validateProposal(proposal), proposal);
   });
 });
 

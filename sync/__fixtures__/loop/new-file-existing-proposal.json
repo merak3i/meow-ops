@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "proposal_id": "prop_fixture_new_file_existing",
+  "loop_id": "meow-ops-prompts",
+  "created_at": "2026-07-02T00:20:00.000Z",
+  "created_by": "assistant:prompt",
+  "category": "prompt",
+  "title": "Synthetic prompt file collision",
+  "one_percent_target": "Prove new-file simulation refuses existing prompt targets",
+  "diff": {
+    "target_path": "prompts/loop/improve.md",
+    "before": "",
+    "after": "# Synthetic prompt body\n\nMetadata-only fixture."
+  },
+  "rationale": "synthetic new-file collision fixture",
+  "evidence": [
+    { "kind": "pattern", "ref": "synthetic-existing-prompt-file" },
+    { "kind": "metric", "ref": "fixture-count", "value": 1 }
+  ],
+  "confidence": 0.5,
+  "risk": "low",
+  "risk_notes": "synthetic only",
+  "expected_benefit": "keeps prompt proposal simulation honest",
+  "rollback": { "plan": "delete prompts/loop/improve.md" },
+  "review_only": false,
+  "status": "draft"
+}
