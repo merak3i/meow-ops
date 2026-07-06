@@ -3,7 +3,8 @@
 //
 // This is the first assistant layer: it reads only local repo/ledger facts,
 // emits complete draft proposals, and advances deterministic rules to
-// pending_approval. No LLM calls, no network, no real transcript content.
+// pending_approval. LLM enrichment is explicit via --ai, budget-capped, and
+// still reads/writes only metadata through the ledger choke point.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
@@ -13,6 +14,7 @@ import {
   appendRecord, assertRedacted, newId, readLedger,
 } from './loop-ledger.mjs';
 import { checkGitignore } from './loop-eval.mjs';
+import { callLlm } from './llm-gateway.mjs';
 import {
   hasOpenProposalForLoop, hasOpenProposalForRule, latestProposals,
 } from './loop-proposal-helpers.mjs';
@@ -24,6 +26,7 @@ const REPO_ROOT = join(HERE, '..');
 const LOOP_ID = 'meow-ops-guardrails';
 const DAY_MS = 86_400_000;
 const STALE_DRAFT_DAYS = 14;
+const IMPROVE_TEMPLATE = join(REPO_ROOT, 'prompts', 'loop', 'improve.md');
 const Z_THRESHOLD = 2.5;
 const FLAG_METRICS = {
   cost_spike: 'cost_usd_real',
@@ -49,6 +52,10 @@ function relativePath(repoRoot, target) {
 
 function safeReadJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+function safeReadText(path) {
+  return readFileSync(path, 'utf8');
 }
 
 function numberOrNull(value) {
@@ -496,6 +503,35 @@ export function comparisonSkeletonProposal(comparison, { now = new Date() } = {}
   return record;
 }
 
+function comparisonLlmVars(comparison) {
+  const top = topFlaggedDelta(comparison);
+  const metrics = top ? {
+    primary_metric: top.metric,
+    before: top.delta.before,
+    after: top.delta.after,
+    delta_pct: top.delta.delta_pct,
+  } : {};
+  return {
+    loop_id: comparison.loop_id,
+    metrics,
+    deltas: comparison.deltas || {},
+    flags: comparison.flags || [],
+  };
+}
+
+function withLlmDraft(proposal, draft) {
+  return {
+    ...proposal,
+    one_percent_target: draft.one_percent_target,
+    rationale: draft.rationale,
+    expected_benefit: draft.expected_benefit,
+    evidence: [
+      ...proposal.evidence,
+      { kind: 'llm', ref: 'deepseek:deepseek-chat' },
+    ],
+  };
+}
+
 export function appendComparisonSkeletons({ now = new Date(), comparisons = readLedger('comparison') } = {}) {
   const results = [];
   for (const comparison of comparisons) {
@@ -518,6 +554,64 @@ export function appendComparisonSkeletons({ now = new Date(), comparisons = read
     }
     const stored = appendRecord('proposal', proposal);
     results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'skeleton', proposal_id: stored.proposal_id });
+  }
+  return results;
+}
+
+export async function appendComparisonSkeletonsWithAi({
+  now = new Date(),
+  comparisons = readLedger('comparison'),
+  ai = false,
+  noAi = false,
+  env = process.env,
+  transport = globalThis.fetch,
+} = {}) {
+  const results = [];
+  const shouldUseAi = ai === true && noAi !== true;
+  const template = shouldUseAi ? safeReadText(IMPROVE_TEMPLATE) : null;
+  for (const comparison of comparisons) {
+    if (!Array.isArray(comparison.flags) || comparison.flags.length === 0) {
+      results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'clear', proposal_id: null });
+      continue;
+    }
+    if (hasProposalForComparison(comparison.comparison_id)) {
+      results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'skipped-existing', proposal_id: null });
+      continue;
+    }
+    if (hasOpenProposalForLoop(comparison.loop_id)) {
+      results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'skipped-open', proposal_id: null });
+      continue;
+    }
+    const proposal = comparisonSkeletonProposal(comparison, { now });
+    if (!proposal) {
+      results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'clear', proposal_id: null });
+      continue;
+    }
+    let enriched = null;
+    let llmStatus = null;
+    if (shouldUseAi) {
+      const llm = await callLlm({
+        template,
+        vars: comparisonLlmVars(comparison),
+        env,
+        transport,
+        now,
+      });
+      if (llm?.draft) enriched = withLlmDraft(proposal, llm.draft);
+    }
+    if (enriched) {
+      try {
+        const stored = appendRecord('proposal', enriched);
+        results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'skeleton-enriched', proposal_id: stored.proposal_id });
+        continue;
+      } catch {
+        // Malicious or malformed LLM text must die at appendRecord(). The
+        // deterministic skeleton still ships, with no LLM output persisted.
+        llmStatus = 'rejected';
+      }
+    }
+    const stored = appendRecord('proposal', proposal);
+    results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'skeleton', proposal_id: stored.proposal_id, llm_status: llmStatus });
   }
   return results;
 }
@@ -595,8 +689,55 @@ export function runProposer(options = {}) {
   return results;
 }
 
-function main() {
-  const results = runProposer({});
+export async function runProposerWithAi(options = {}) {
+  const results = [];
+  for (const expired of expireStaleDrafts({ now: options.now })) {
+    results.push({ ruleId: `expire:${expired.proposal_id}`, status: 'expired', proposal_id: expired.proposal_id });
+  }
+  for (const { ruleId, proposal } of collectCandidates(options)) {
+    if (!proposal) {
+      results.push({ ruleId, status: 'clear', proposal_id: null });
+      continue;
+    }
+    if (hasOpenProposalForLoop(proposal.loop_id)) {
+      results.push({ ruleId, status: 'skipped-open', proposal_id: null });
+      continue;
+    }
+    const draft = appendRecord('proposal', proposal);
+    const { pending } = advanceDeterministicProposal(draft);
+    results.push({ ruleId, status: 'fired', proposal_id: pending.proposal_id });
+  }
+  for (const result of await appendComparisonSkeletonsWithAi({
+    now: options.now,
+    ai: options.ai,
+    noAi: options.noAi,
+    env: options.env,
+    transport: options.transport,
+  })) {
+    results.push({
+      ruleId: `comparison:${result.comparison_id}`,
+      status: result.status,
+      proposal_id: result.proposal_id,
+    });
+  }
+  return results;
+}
+
+function parseCliArgs(argv) {
+  const opts = { ai: false, noAi: false };
+  for (const arg of argv) {
+    if (arg === '--ai') opts.ai = true;
+    else if (arg === '--no-ai') opts.noAi = true;
+    else throw new Error(`unknown flag ${arg}`);
+  }
+  return opts;
+}
+
+async function main() {
+  const opts = parseCliArgs(process.argv.slice(2));
+  const results = opts.ai || opts.noAi
+    ? await runProposerWithAi(opts)
+    : runProposer({});
   for (const result of results) {
     const suffix = result.proposal_id ? ` ${result.proposal_id}` : '';
     console.log(`${result.ruleId}: ${result.status}${suffix}`);
@@ -604,5 +745,8 @@ function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main();
+  main().catch((err) => {
+    console.error(err.message);
+    process.exitCode = 1;
+  });
 }

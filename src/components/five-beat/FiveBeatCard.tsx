@@ -123,6 +123,15 @@ function simulationStatus(proposal: Proposal, simulation: Simulation | null) {
   return 'not-required';
 }
 
+function hasLlmEvidence(proposal: Proposal) {
+  return proposal.evidence.some((item) => (
+    item
+    && typeof item === 'object'
+    && 'kind' in item
+    && (item as { kind?: unknown }).kind === 'llm'
+  ));
+}
+
 export function FiveBeatCard({
   proposal,
   latestDecision,
@@ -149,6 +158,7 @@ export function FiveBeatCard({
     && (!latestDecision || latestDecision.decision === 'undone')
     && !skeleton;
   const reviewOnly = proposal.review_only === true;
+  const llmDrafted = hasLlmEvidence(proposal);
   const simulation = simulationStatus(proposal, latestSimulation);
   const decisionLine = latestDecision
     ? `${latestDecision.decision} by ${latestDecision.decided_by} at ${new Date(latestDecision.decided_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`
@@ -166,6 +176,7 @@ export function FiveBeatCard({
           <span style={styles.chip}>simulation {simulation}</span>
           {outcome && <span style={styles.chip}>outcome {outcome.verdict}</span>}
           {skeleton && <span style={styles.chip}>skeleton — complete manually</span>}
+          {llmDrafted && <span style={styles.chip}>llm-drafted</span>}
           {reviewOnly && <span style={styles.chip}>review only</span>}
         </div>
         <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.65 }}>

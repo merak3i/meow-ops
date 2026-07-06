@@ -230,6 +230,15 @@ function isSkeleton(proposal: Proposal) {
   return proposal.created_by === 'assistant:loop';
 }
 
+function hasLlmEvidence(proposal: Proposal) {
+  return proposal.evidence.some((item) => (
+    item
+    && typeof item === 'object'
+    && 'kind' in item
+    && (item as { kind?: unknown }).kind === 'llm'
+  ));
+}
+
 function metricNumber(run: LoopRun, key: string) {
   const value = run.metrics[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -527,6 +536,7 @@ export default function LoopReview() {
                         {outcome && <span>outcome {outcome.verdict}</span>}
                         <span>{Math.round(confidenceValue(proposal) * 100)}%</span>
                         {isSkeleton(proposal) && <span>skeleton — complete manually</span>}
+                        {hasLlmEvidence(proposal) && <span>llm-drafted</span>}
                       </div>
                     </button>
                   );
@@ -571,6 +581,7 @@ export default function LoopReview() {
                   <span>{proposal.loop_id}</span>
                   <span>{formatDate(proposal.created_at)}</span>
                   <span>{proposal.status}</span>
+                  {hasLlmEvidence(proposal) && <span>llm-drafted</span>}
                 </div>
               </button>
             ))}
@@ -596,6 +607,7 @@ export default function LoopReview() {
                 <div style={styles.shipMeta}>
                   <span>{proposal.loop_id}</span>
                   <span>approved, awaiting manual apply</span>
+                  {hasLlmEvidence(proposal) && <span>llm-drafted</span>}
                 </div>
               </button>
             ))}
