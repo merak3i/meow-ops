@@ -59,6 +59,10 @@ function isTestTarget(repoRoot, resolved) {
   return isInside(resolve(repoRoot, 'sync', '__tests__'), resolved);
 }
 
+function isPromptsTarget(repoRoot, resolved) {
+  return isInside(resolve(repoRoot, 'prompts'), resolved);
+}
+
 function sha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
@@ -113,9 +117,31 @@ function testRunResults(repoRoot, target) {
   return results;
 }
 
+function isNewFileDiff(proposal) {
+  return proposal.diff
+    && typeof proposal.diff === 'object'
+    && proposal.diff.before === '';
+}
+
 function checklistResults(proposal, repoRoot, target) {
   const results = [];
-  if (target) {
+  if (isNewFileDiff(proposal)) {
+    results.push({
+      check: 'new target path',
+      pass: Boolean(target),
+      note: target?.rel || 'missing',
+    });
+    results.push({
+      check: 'target under prompts',
+      pass: Boolean(target && isPromptsTarget(repoRoot, target.resolved)),
+      note: target?.rel || 'missing',
+    });
+    results.push({
+      check: 'target absent',
+      pass: Boolean(target && !existsSync(target.resolved)),
+      note: target?.rel || 'missing',
+    });
+  } else if (target) {
     results.push({
       check: 'target exists',
       pass: existsSync(target.resolved),
