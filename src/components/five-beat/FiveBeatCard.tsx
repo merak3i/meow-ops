@@ -128,8 +128,10 @@ export function FiveBeatCard({ proposal, latestDecision, busy, error, onDecision
   const risk = proposal.risk || 'unknown';
   const riskStyle = { color: riskColor[risk] || 'var(--text-secondary)' };
   const diff = diffText(proposal.diff);
+  const skeleton = proposal.created_by === 'assistant:loop';
   const pending = proposal.status === 'pending_approval'
-    && (!latestDecision || latestDecision.decision === 'undone');
+    && (!latestDecision || latestDecision.decision === 'undone')
+    && !skeleton;
   const reviewOnly = proposal.review_only === true;
   const decisionLine = latestDecision
     ? `${latestDecision.decision} by ${latestDecision.decided_by} at ${new Date(latestDecision.decided_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`
@@ -144,6 +146,7 @@ export function FiveBeatCard({ proposal, latestDecision, busy, error, onDecision
           <span style={styles.chip}>{proposal.loop_id}</span>
           <span style={styles.chip}>{creatorKind(proposal.created_by)}: {proposal.created_by}</span>
           <span style={styles.chip}>{latestDecision ? latestDecision.decision : proposal.status}</span>
+          {skeleton && <span style={styles.chip}>skeleton — complete manually</span>}
           {reviewOnly && <span style={styles.chip}>review only</span>}
         </div>
         <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.65 }}>
@@ -190,7 +193,9 @@ export function FiveBeatCard({ proposal, latestDecision, busy, error, onDecision
 
       <section style={styles.section}>
         <h3 style={styles.sectionTitle}>Approve</h3>
-        {pending ? (
+        {skeleton ? (
+          <p style={styles.muted}>Skeleton proposal — complete manually before owner approval.</p>
+        ) : pending ? (
           <div style={styles.row}>
             {reviewOnly ? (
               <button type="button" disabled={busy} style={styles.button} onClick={() => onDecision('deferred', { reason: 'acknowledged review-only proposal' })}>
@@ -219,7 +224,7 @@ export function FiveBeatCard({ proposal, latestDecision, busy, error, onDecision
       <section style={styles.section}>
         <h3 style={styles.sectionTitle}>Undo / Archive</h3>
         <p style={styles.muted}>{decisionLine}</p>
-        {latestDecision && latestDecision.decision !== 'undone' && (
+        {!skeleton && latestDecision && latestDecision.decision !== 'undone' && (
           <button
             type="button"
             disabled={busy}

@@ -1,7 +1,11 @@
-import type { Decision, DecisionResult, LoopSummary, Proposal } from '@/types/loop';
+import type {
+  Comparison, Decision, DecisionResult, LoopRun, LoopSummary, Proposal,
+} from '@/types/loop';
 
 export function fetchLoopProposals(): Promise<Proposal[]>;
 export function fetchLoopDecisions(): Promise<Decision[]>;
+export function fetchLoopRuns(): Promise<LoopRun[]>;
+export function fetchLoopComparisons(): Promise<Comparison[]>;
 export function fetchLoopSummary(): Promise<LoopSummary>;
 export function fetchLoopNonce(): Promise<string | null>;
 export function postLoopDecision(input: {

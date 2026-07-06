@@ -28,17 +28,21 @@ export interface LoopRun {
   captured_at: string;
   sources: string[];
   session_ids: string[];
-  correlation_id?: string;
-  project?: string;
-  git_branch?: string;
+  correlation_id?: string | null;
+  project?: string | null;
+  git_branch?: string | null;
   metrics: {
+    sessions?: number;
     duration_seconds: number;
     total_tokens: number;
     message_count: number;
+    cost_usd_real?: number;
+    cost_usd_notional?: number;
+    tool_error_count?: number;
     [key: string]: unknown;
   };
   artifacts?: unknown;
-  notes?: string;
+  notes?: string | null;
 }
 
 export interface Comparison {
@@ -48,8 +52,14 @@ export interface Comparison {
   baseline_run_id: string;
   loop_id: string;
   computed_at?: string;
-  deltas: Record<string, unknown>;
+  deltas: Record<string, ComparisonDelta | unknown>;
   flags: unknown[];
+}
+
+export interface ComparisonDelta {
+  before: number;
+  after: number;
+  delta_pct: number;
 }
 
 export interface ProposalDiff {

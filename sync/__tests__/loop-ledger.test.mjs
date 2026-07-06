@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync, readFileSync, rmSync, writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,7 +11,9 @@ import {
   appendRecord, assertRedacted, foldLatestById, newId, readLedger, resolveLedgerDir,
 } from '../loop-ledger.mjs';
 import { validateProposal, validateStatusTransition } from '../loop-schema.mjs';
-import { compareRuns, selectSessions, summarize } from '../loop-capture.mjs';
+import {
+  compareRuns, readLoopAliases, resolveLoopId, selectSessions, summarize,
+} from '../loop-capture.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, '..', '__fixtures__', 'loop');
@@ -306,4 +310,36 @@ test('compareRuns reproduces the golden deltas and flags', () => {
     }
     assert.deepEqual(flags, [...pair.expected_flags].sort(), pair.name);
   }
+});
+
+test('capture aliases resolve explicit loop first, then longest correlation prefix', () => {
+  withTempLedger((dir) => {
+    writeFileSync(join(dir, 'aliases.json'), JSON.stringify({
+      'branch:fix/': 'general-fix-loop',
+      'branch:fix/qa-': 'patherle-qa',
+    }, null, 2));
+    assert.equal(
+      resolveLoopId({ loop: 'explicit-loop', correlation: 'branch:fix/qa-123' }),
+      'explicit-loop',
+    );
+    assert.equal(
+      resolveLoopId({ loop: null, correlation: 'branch:fix/qa-123' }),
+      'patherle-qa',
+    );
+    assert.equal(
+      resolveLoopId({ loop: null, correlation: 'branch:fix/other' }),
+      'general-fix-loop',
+    );
+    assert.throws(
+      () => resolveLoopId({ loop: null, correlation: 'branch:feature/other' }),
+      /--loop <loop_id> is required/,
+    );
+  });
+});
+
+test('capture aliases fail loud on malformed files', () => {
+  withTempLedger((dir) => {
+    writeFileSync(join(dir, 'aliases.json'), JSON.stringify([{ bad: 'shape' }]));
+    assert.throws(() => readLoopAliases(), /\[aliases\]/);
+  });
 });

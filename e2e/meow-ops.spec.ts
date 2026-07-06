@@ -366,6 +366,15 @@ test('Review Deck: empty state renders without local helper', async ({ page }) =
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
+test('Review Deck: Runs tab renders empty state without local helper', async ({ page }) => {
+  await page.context().route('**/loop-eng/**', route => route.abort());
+  await page.goto('/#/loop-review');
+  await waitForApp(page);
+  await page.getByRole('button', { name: 'Runs', exact: true }).click();
+  await expect(page.getByText('No runs yet — run npm run loop:capture')).toBeVisible();
+  await expect(page.locator('[data-vite-error]')).toHaveCount(0);
+});
+
 // ── 11. Companion ─────────────────────────────────────────────────────────────
 
 test('Companion: lazy chunk loads and WebGL canvas mounts', async ({ page }) => {

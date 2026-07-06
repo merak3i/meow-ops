@@ -18,6 +18,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..');
 const LOOP_ID = 'meow-ops-guardrails';
 const OPEN_TERMINAL = new Set(['approved', 'rejected']);
+const FLAG_METRICS = {
+  cost_spike: 'cost_usd_real',
+  error_spike: 'tool_error_count',
+  slower: 'duration_seconds',
+};
 const PUBLIC_DATA_RULE = 'public/data/*';
 const DEMO_NEGATIONS = [
   '!public/data/demo-cost-summary.json',
@@ -51,6 +56,16 @@ function evidenceHasRule(proposal, ruleRef) {
 export function hasOpenProposalForRule(ruleRef, records = readLedger('proposal')) {
   return latestProposals(records)
     .some((proposal) => !OPEN_TERMINAL.has(proposal.status) && evidenceHasRule(proposal, ruleRef));
+}
+
+export function hasOpenProposalForLoop(loopId, records = readLedger('proposal')) {
+  return latestProposals(records)
+    .some((proposal) => proposal.loop_id === loopId && !OPEN_TERMINAL.has(proposal.status));
+}
+
+function hasProposalForComparison(comparisonId, records = readLedger('proposal')) {
+  return latestProposals(records)
+    .some((proposal) => proposal.comparison_id === comparisonId);
 }
 
 function baseProposal({
@@ -270,6 +285,104 @@ export function collectCandidates(options = {}) {
   return rules.map(([ruleId, fn]) => ({ ruleId, proposal: fn(options) }));
 }
 
+function numericDelta(delta) {
+  if (!delta || typeof delta !== 'object') return null;
+  const before = Number(delta.before);
+  const after = Number(delta.after);
+  const deltaPct = Number(delta.delta_pct);
+  if (![before, after, deltaPct].every(Number.isFinite)) return null;
+  return { before, after, delta_pct: deltaPct };
+}
+
+function topFlaggedDelta(comparison) {
+  const flaggedMetrics = (comparison.flags || [])
+    .map((flag) => FLAG_METRICS[String(flag)])
+    .filter((metric) => metric && comparison.deltas?.[metric]);
+  const metricNames = flaggedMetrics.length > 0
+    ? flaggedMetrics
+    : Object.keys(comparison.deltas || {});
+  return metricNames
+    .map((metric) => ({ metric, delta: numericDelta(comparison.deltas[metric]) }))
+    .filter((item) => item.delta)
+    .sort((a, b) => Math.abs(b.delta.delta_pct) - Math.abs(a.delta.delta_pct) || a.metric.localeCompare(b.metric))[0] || null;
+}
+
+function topFlagForMetric(flags, metric) {
+  return (flags || []).find((flag) => FLAG_METRICS[String(flag)] === metric)
+    || String((flags || [])[0] || 'flagged');
+}
+
+export function comparisonSkeletonProposal(comparison, { now = new Date() } = {}) {
+  if (!Array.isArray(comparison.flags) || comparison.flags.length === 0) return null;
+  const top = topFlaggedDelta(comparison);
+  if (!top) return null;
+  const topFlag = topFlagForMetric(comparison.flags, top.metric);
+  const record = {
+    proposal_id: newId('prop'),
+    loop_id: comparison.loop_id,
+    run_id: comparison.run_id,
+    comparison_id: comparison.comparison_id,
+    created_at: iso(now),
+    created_by: 'assistant:loop',
+    category: 'workflow',
+    title: `${comparison.loop_id}: ${topFlag} vs baseline`,
+    one_percent_target: `${top.metric} moved ${top.delta.delta_pct}% vs baseline; investigate whether a 1% loop improvement is available`,
+    diff: {
+      summary: 'Draft comparison skeleton; complete the recommended action manually before owner approval.',
+      before: top.delta.before,
+      after: top.delta.after,
+      metric: top.metric,
+      delta_pct: top.delta.delta_pct,
+    },
+    rationale: `comparison ${comparison.comparison_id} emitted ${comparison.flags.length} flag(s): ${comparison.flags.join(', ')}`,
+    evidence: [
+      { kind: 'comparison', ref: comparison.comparison_id },
+      {
+        kind: 'metric',
+        ref: top.metric,
+        before: top.delta.before,
+        after: top.delta.after,
+        delta_pct: top.delta.delta_pct,
+      },
+    ],
+    confidence: 0.4,
+    risk: 'low',
+    risk_notes: 'draft context only; operator must complete the proposal before approval',
+    expected_benefit: 'turns flagged run deltas into visible review context without auto-advancing a decision',
+    rollback: { plan: 'n/a — investigation skeleton' },
+    review_only: false,
+    status: 'draft',
+  };
+  assertRedacted(record, 'proposal');
+  return record;
+}
+
+export function appendComparisonSkeletons({ now = new Date(), comparisons = readLedger('comparison') } = {}) {
+  const results = [];
+  for (const comparison of comparisons) {
+    if (!Array.isArray(comparison.flags) || comparison.flags.length === 0) {
+      results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'clear', proposal_id: null });
+      continue;
+    }
+    if (hasProposalForComparison(comparison.comparison_id)) {
+      results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'skipped-existing', proposal_id: null });
+      continue;
+    }
+    if (hasOpenProposalForLoop(comparison.loop_id)) {
+      results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'skipped-open', proposal_id: null });
+      continue;
+    }
+    const proposal = comparisonSkeletonProposal(comparison, { now });
+    if (!proposal) {
+      results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'clear', proposal_id: null });
+      continue;
+    }
+    const stored = appendRecord('proposal', proposal);
+    results.push({ comparison_id: comparison.comparison_id, loop_id: comparison.loop_id, status: 'skeleton', proposal_id: stored.proposal_id });
+  }
+  return results;
+}
+
 function advanceDeterministicProposal(draft) {
   const simulated = appendRecord('proposal', {
     ...draft,
@@ -292,13 +405,20 @@ export function runProposer(options = {}) {
       results.push({ ruleId, status: 'clear', proposal_id: null });
       continue;
     }
-    if (hasOpenProposalForRule(ruleId)) {
+    if (hasOpenProposalForLoop(proposal.loop_id)) {
       results.push({ ruleId, status: 'skipped-open', proposal_id: null });
       continue;
     }
     const draft = appendRecord('proposal', proposal);
     const { pending } = advanceDeterministicProposal(draft);
     results.push({ ruleId, status: 'fired', proposal_id: pending.proposal_id });
+  }
+  for (const result of appendComparisonSkeletons({ now: options.now })) {
+    results.push({
+      ruleId: `comparison:${result.comparison_id}`,
+      status: result.status,
+      proposal_id: result.proposal_id,
+    });
   }
   return results;
 }

@@ -7,11 +7,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-  assertRedacted, readLedger,
+  appendRecord, assertRedacted, readLedger,
 } from '../loop-ledger.mjs';
 import { validateProposal } from '../loop-schema.mjs';
 import {
+  appendComparisonSkeletons,
   collectCandidates,
+  hasOpenProposalForLoop,
   runProposer,
   scanDanglingAutomationPaths,
 } from '../loop-propose.mjs';
@@ -90,6 +92,22 @@ function candidateByRule(candidates, ruleId) {
   return candidates.find((candidate) => candidate.ruleId === ruleId).proposal;
 }
 
+function validComparison(overrides = {}) {
+  return {
+    comparison_id: overrides.comparison_id || `cmp-${Math.random().toString(36).slice(2)}`,
+    run_id: 'run-after',
+    baseline_run_id: 'run-before',
+    loop_id: 'demo-loop',
+    computed_at: NOW.toISOString(),
+    deltas: {
+      duration_seconds: { before: 100, after: 150, delta_pct: 50 },
+      cost_usd_real: { before: 2, after: 2.2, delta_pct: 10 },
+    },
+    flags: ['slower'],
+    ...overrides,
+  };
+}
+
 test('proposer rule matrix: each rule fires and stays redaction-clean', () => {
   withRepoFixture((repoRoot) => {
     writeRateLimits(repoRoot, '2026-05-01T00:00:00.000Z');
@@ -133,6 +151,41 @@ test('loop:propose appends draft, simulated, pending_approval then throttles ope
       const second = runProposer({ repoRoot, now: NOW });
       assert.equal(second.find((r) => r.ruleId === 'stale-rate-limits').status, 'skipped-open');
       assert.equal(readLedger('proposal').length, 3);
+    });
+  });
+});
+
+test('comparison skeletons are draft-only, validate, and throttle to one open proposal per loop', () => {
+  withTempLedger(() => {
+    appendRecord('comparison', validComparison({ comparison_id: 'cmp-one' }));
+    appendRecord('comparison', validComparison({ comparison_id: 'cmp-two' }));
+
+    const first = appendComparisonSkeletons({ now: NOW });
+    assert.equal(first.filter((result) => result.status === 'skeleton').length, 1);
+    assert.equal(first.find((result) => result.comparison_id === 'cmp-two').status, 'skipped-open');
+
+    const proposals = readLedger('proposal');
+    assert.equal(proposals.length, 1);
+    assert.equal(proposals[0].created_by, 'assistant:loop');
+    assert.equal(proposals[0].status, 'draft');
+    assert.equal(proposals[0].comparison_id, 'cmp-one');
+    assert.equal(validateProposal(proposals[0]), proposals[0]);
+    assert.equal(hasOpenProposalForLoop('demo-loop'), true);
+
+    const second = appendComparisonSkeletons({ now: NOW });
+    assert.equal(second.filter((result) => result.status === 'skeleton').length, 0);
+    assert.equal(readLedger('proposal').length, 1);
+  });
+});
+
+test('loop:propose runs comparison skeleton generation when guardrail rules are clear', () => {
+  withTempLedger(() => {
+    appendRecord('comparison', validComparison({ comparison_id: 'cmp-loop-propose' }));
+    withRepoFixture(() => {}, (repoRoot) => {
+      const results = runProposer({ repoRoot, now: NOW });
+      const skeleton = results.find((result) => result.ruleId === 'comparison:cmp-loop-propose');
+      assert.equal(skeleton.status, 'skeleton');
+      assert.equal(readLedger('proposal').length, 1);
     });
   });
 });
