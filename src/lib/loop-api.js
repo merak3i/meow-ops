@@ -95,6 +95,16 @@ export async function fetchLoopDecisions() {
   return Array.isArray(data) ? data : [];
 }
 
+export async function fetchLoopRuns() {
+  const data = await fetchLoopJson('/loop-eng/runs');
+  return Array.isArray(data) ? data : [];
+}
+
+export async function fetchLoopComparisons() {
+  const data = await fetchLoopJson('/loop-eng/comparisons');
+  return Array.isArray(data) ? data : [];
+}
+
 export async function fetchLoopSummary() {
   const data = await fetchLoopJson('/loop-eng/summary');
   return data && typeof data === 'object' ? data : EMPTY_SUMMARY;

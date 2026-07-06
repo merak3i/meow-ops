@@ -10,11 +10,13 @@
 // appends it to the ledger. With --baseline it also appends a RunComparison
 // with per-metric delta_pct and flags.
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { appendRecord, newId, readLedger } from './loop-ledger.mjs';
+import {
+  appendRecord, newId, readLedger, resolveLedgerDir,
+} from './loop-ledger.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SESSIONS_PATH = join(HERE, '..', 'public', 'data', 'sessions.json');
@@ -37,11 +39,41 @@ export function parseArgs(argv) {
     opts[name] = argv[i + 1];
     i++;
   }
-  if (!opts.loop) throw new Error('--loop <loop_id> is required');
   if (!opts.sessions && !opts.since && !opts.correlation) {
     throw new Error('select sessions with --sessions, --since, or --correlation');
   }
   return opts;
+}
+
+export function readLoopAliases(path = join(resolveLedgerDir(), 'aliases.json')) {
+  if (!existsSync(path)) return {};
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (err) {
+    throw new Error(`[aliases] aliases.json is malformed JSON: ${err.message}`);
+  }
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+    throw new Error('[aliases] aliases.json must be an object mapping correlation prefixes to loop_id strings');
+  }
+  for (const [prefix, loopId] of Object.entries(parsed)) {
+    if (!prefix || typeof loopId !== 'string' || loopId.length === 0) {
+      throw new Error('[aliases] aliases.json must map non-empty correlation prefixes to non-empty loop_id strings');
+    }
+  }
+  return parsed;
+}
+
+export function resolveLoopId(opts, aliases = null) {
+  if (opts.loop) return opts.loop;
+  const loadedAliases = aliases ?? readLoopAliases();
+  if (opts.correlation) {
+    const match = Object.keys(loadedAliases)
+      .filter((prefix) => opts.correlation.startsWith(prefix))
+      .sort((a, b) => b.length - a.length || a.localeCompare(b))[0];
+    if (match) return loadedAliases[match];
+  }
+  throw new Error('--loop <loop_id> is required unless --correlation matches aliases.json');
 }
 
 export function selectSessions(all, opts) {
@@ -133,6 +165,7 @@ export function durationWarning(metrics, opts) {
 
 export function buildRun(sessions, opts) {
   const { metrics, sources } = summarize(sessions);
+  const warning = durationWarning(metrics, opts);
   return {
     run_id: newId('run'),
     loop_id: opts.loop,
@@ -144,12 +177,19 @@ export function buildRun(sessions, opts) {
     git_branch: null,
     metrics,
     artifacts: [],
-    notes: null,
+    notes: warning,
   };
 }
 
 function main() {
-  const opts = parseArgs(process.argv.slice(2));
+  let opts;
+  try {
+    opts = parseArgs(process.argv.slice(2));
+    opts.loop = resolveLoopId(opts);
+  } catch (err) {
+    console.error(err.message);
+    process.exit(1);
+  }
   const all = JSON.parse(readFileSync(SESSIONS_PATH, 'utf8'));
   const sessions = selectSessions(all, opts);
   if (sessions.length === 0) {
@@ -157,8 +197,7 @@ function main() {
     process.exit(1);
   }
   const run = appendRecord('run', buildRun(sessions, opts));
-  const warning = durationWarning(run.metrics, opts);
-  if (warning) console.warn(warning);
+  if (run.notes) console.warn(run.notes);
   console.log(`captured ${run.run_id} (${run.loop_id}): ${JSON.stringify(run.metrics)}`);
 
   if (opts.baseline) {
