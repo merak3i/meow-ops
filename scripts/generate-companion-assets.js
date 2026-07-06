@@ -83,7 +83,7 @@ const ACCESSORIES = {
   crown_of_embers:     { label: 'Crown of Nine Embers', desc: 'miniature golden crown with nine ruby gemstones glowing with inner fire, regal ornate detail, warm ember light' },
   crimson_mantle:      { label: 'Crimson Mantle', desc: 'deep crimson red velvet cloak cape, fur-trimmed edges, dramatic flowing fabric, medieval noble aesthetic' },
   ironwolf_helm:       { label: 'Ironwolf War Helm', desc: 'small wolf-shaped iron helm for a cat, Stark direwolf design, hammered metal, battle-worn, fierce' },
-  ravens_pauldron:     { label: "Raven's Pauldron", desc: 'single black metal shoulder pauldron with a perched raven decoration, dark iron, Night's Watch aesthetic' },
+  ravens_pauldron:     { label: "Raven's Pauldron", desc: "single black metal shoulder pauldron with a perched raven decoration, dark iron, Night's Watch aesthetic" },
   halo_of_the_first_sun: { label: 'Halo of the First Sun', desc: 'glowing golden halo ring, carved with ancient god runes, warm divine light emanating, floating ethereal' },
   gilded_wings:        { label: 'Gilded Wings of Valyria', desc: 'ornate golden wings, hammered Valyrian gold, large feathered spread, ancient dragonlord craftsmanship' },
   dragon_wings:        { label: 'Wings of Balerion', desc: 'massive black leathery dragon wings, Balerion the Black Dread scale, dark and imposing, membrane with red veins' },

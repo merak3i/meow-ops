@@ -107,7 +107,9 @@ function persist({ silent = false } = {}) {
   }
   if (silent) return;
   listeners.forEach((fn) => {
-    try { fn(cached); } catch {}
+    try { fn(cached); } catch {
+      // Listener failures should not prevent other subscribers from running.
+    }
   });
 }
 

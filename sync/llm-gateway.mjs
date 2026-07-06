@@ -23,11 +23,6 @@ function note(notes, value) {
   if (Array.isArray(notes)) notes.push(value);
 }
 
-function finiteNumber(value, fallback) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 function nonNegativeNumber(value) {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;

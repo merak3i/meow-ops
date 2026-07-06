@@ -16,7 +16,7 @@ import {
 import { checkGitignore } from './loop-eval.mjs';
 import { callLlm } from './llm-gateway.mjs';
 import {
-  hasOpenProposalForLoop, hasOpenProposalForRule, latestProposals,
+  hasOpenProposalForLoop, latestProposals,
 } from './loop-proposal-helpers.mjs';
 
 export { hasOpenProposalForLoop, hasOpenProposalForRule } from './loop-proposal-helpers.mjs';

@@ -113,7 +113,7 @@ async function main() {
 
   const shouldPush = process.argv.includes('--push');
 
-  const chromeSession = await tryReadChromeSession();
+  await tryReadChromeSession();
 
   const { sessionPct, weeklyAllPct, weeklySonnetPct, resetsLabel, codexWeeklyRemainingPct, codexResetsLabel } = promptManual();
 

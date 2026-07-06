@@ -5,6 +5,7 @@
 // Spins up the dev server context (assumes it's already running on :5176),
 // loads each page, forces animations to complete, captures a 1440x900 PNG.
 
+/* global document */
 import { chromium } from 'playwright';
 import { mkdir } from 'fs/promises';
 import { join } from 'path';

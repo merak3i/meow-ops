@@ -52,7 +52,7 @@ function meowSyncPlugin() {
             mtime: stat.mtimeMs,
             size: stat.size,
           }));
-        } catch (err) {
+        } catch {
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ ok: false, error: 'No data file yet' }));
         }
