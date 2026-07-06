@@ -23,7 +23,7 @@ export default function SessionTable({ sessions }) {
     else { setSortField(field); setSortAsc(false); }
   };
 
-  const Th = ({ field, label, children }) => (
+  const renderHeader = (field, children) => (
     <th
       onClick={() => toggleSort(field)}
       style={{
@@ -39,7 +39,7 @@ export default function SessionTable({ sessions }) {
         userSelect: 'none',
       }}
     >
-      {children || label}
+      {children}
       {sortField === field && (
         <span style={{ marginLeft: 4, opacity: 0.6 }}>{sortAsc ? '↑' : '↓'}</span>
       )}
@@ -64,13 +64,13 @@ export default function SessionTable({ sessions }) {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr>
-            <Th field="cat_type">Cat</Th>
-            <Th field="project">Project</Th>
-            <Th field="model">Model</Th>
-            <Th field="duration_seconds">Duration</Th>
-            <Th field="total_tokens">Tokens</Th>
-            <Th field="estimated_cost_usd">Cost</Th>
-            <Th field="ended_at">Last Active</Th>
+            {renderHeader('cat_type', 'Cat')}
+            {renderHeader('project', 'Project')}
+            {renderHeader('model', 'Model')}
+            {renderHeader('duration_seconds', 'Duration')}
+            {renderHeader('total_tokens', 'Tokens')}
+            {renderHeader('estimated_cost_usd', 'Cost')}
+            {renderHeader('ended_at', 'Last Active')}
           </tr>
         </thead>
         <tbody>

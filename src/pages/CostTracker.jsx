@@ -43,6 +43,7 @@ export default function CostTracker({ dailyData, modelData, stats, costSummary }
   const projectedMonthly = useMemo(() => {
     const IST = 'Asia/Kolkata';
     const today = new Date().toLocaleDateString('en-CA', { timeZone: IST });
+    // eslint-disable-next-line react-hooks/purity -- Projection intentionally uses the current wall-clock date.
     const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toLocaleDateString('en-CA', { timeZone: IST });
     const last7 = dailyData.filter((d) => d.date >= sevenDaysAgo && d.date <= today);
     const activeDays = last7.filter((d) => d.estimated_cost_usd > 0);

@@ -22,7 +22,10 @@ function getModelInfo(modelId) {
 function AgentCatCard({ session, onClick, isSelected }) {
   const cat = getCatMeta(session.cat_type);
   const model = getModelInfo(session.model);
+  // eslint-disable-next-line react-hooks/purity -- Recency badge intentionally compares against the current wall clock.
   const isRecent = session.ended_at && (Date.now() - new Date(session.ended_at).getTime()) < 3600000;
+  // eslint-disable-next-line react-hooks/purity -- Animation phase intentionally starts at a random offset.
+  const floatDelay = Math.random() * 2;
 
   return (
     <motion.div
@@ -53,7 +56,7 @@ function AgentCatCard({ session, onClick, isSelected }) {
       <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
         <motion.div
           animate={{ y: [0, -3, 0] }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', delay: Math.random() * 2 }}
+          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', delay: floatDelay }}
           style={{
             fontSize: 28,
             filter: session.is_ghost ? 'grayscale(1)' : 'none',

@@ -9,7 +9,7 @@ import {
   PHASES, CAT_BREEDS,
   getSettings, saveSettings,
   addSession, getTodayStats,
-  pickRandomBreed, getUnlockedBreeds,
+  pickRandomBreed,
   createChimeSound, checkShinyDrop, addShiny,
 } from '../lib/pomodoro-store';
 
@@ -378,9 +378,8 @@ export default function Pomodoro() {
     }
   }, [isRunning]);
 
-  const progress = totalDurationRef.current > 0
-    ? 1 - (timeRemaining / totalDurationRef.current)
-    : 0;
+  // eslint-disable-next-line react-hooks/refs -- Timer progress intentionally reads the duration ref for render-only math.
+  const progress = totalDurationRef.current > 0 ? 1 - (timeRemaining / totalDurationRef.current) : 0;
 
   return (
     <div style={{ position: 'relative', minHeight: 'calc(100vh - 100px)' }}>

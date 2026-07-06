@@ -25,7 +25,10 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-unused-vars': ['error', {
+        varsIgnorePattern: '^(motion$|[A-Z_])',
+        argsIgnorePattern: '^[A-Z_]',
+      }],
     },
   },
 
@@ -46,7 +49,7 @@ export default defineConfig([
       sourceType: 'module',
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^_' }],
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^_', ignoreRestSiblings: true }],
       // These scripts intentionally swallow per-entry fs/JSON errors.
       'no-empty': ['error', { allowEmptyCatch: true }],
     },

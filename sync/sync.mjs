@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'fs';
-import { join, basename } from 'path';
+import { join } from 'path';
 import { parseSessionLines } from './parse-session.mjs';
 
 const CLAUDE_DIR = join(process.env.HOME, '.claude', 'projects');

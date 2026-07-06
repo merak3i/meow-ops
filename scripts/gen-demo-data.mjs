@@ -15,7 +15,6 @@ function uuid() {
 }
 
 function ri(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
-function rf(min, max) { return Math.random() * (max - min) + min; }
 function pick(arr)    { return arr[Math.floor(Math.random() * arr.length)]; }
 
 // Days ago → ISO string at a random hour
