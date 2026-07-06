@@ -89,6 +89,13 @@ function simulationMode(proposal, repoRoot) {
 
 function testRunResults(repoRoot, target) {
   const results = [];
+  // node --test exit codes for a missing file differ across node majors
+  // (20 exits 0, 25 exits 1) — resolve existence here so the simulation
+  // verdict never depends on the runner version.
+  if (!existsSync(target.resolved)) {
+    results.push({ check: 'target exists', pass: false, note: `${target.rel} not found` });
+    return results;
+  }
   try {
     execFileSync(process.execPath, ['--test', target.rel], {
       cwd: repoRoot,
