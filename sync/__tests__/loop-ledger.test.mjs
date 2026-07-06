@@ -172,6 +172,7 @@ test('foldLatestById keeps the superseding record', () => {
 test('status machine: draft cannot skip to approved', () => {
   assert.throws(() => validateStatusTransition('draft', 'approved'), /\[status-flow\]/);
   assert.equal(validateStatusTransition('draft', 'simulated'), true);
+  assert.equal(validateStatusTransition('draft', 'rejected'), true);
   assert.equal(validateStatusTransition('pending_approval', 'approved'), true);
   assert.equal(validateStatusTransition('approved', 'pending_approval'), true);
   assert.equal(validateStatusTransition('rejected', 'pending_approval'), true);

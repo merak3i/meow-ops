@@ -13,7 +13,7 @@ export const ENTITIES = ['run', 'comparison', 'proposal', 'decision', 'simulatio
 // draft→approved without simulated + pending_approval is rejected at write
 // time, which is what keeps "assistants are draft-only" structurally true.
 export const STATUS_FLOW = {
-  draft: ['simulated'],
+  draft: ['simulated', 'rejected'],
   simulated: ['pending_approval'],
   pending_approval: ['approved', 'rejected'],
   approved: ['applied', 'pending_approval'],
@@ -58,7 +58,7 @@ export const ALLOWED_FIELDS = {
   ],
   decision: [
     'schema_version', 'decision_id', 'proposal_id', 'decided_at', 'decision',
-    'decided_by', 'reason', 'undo_of',
+    'decided_by', 'created_by', 'reason', 'undo_of',
   ],
   simulation: [
     'schema_version', 'simulation_id', 'proposal_id', 'ran_at', 'mode',

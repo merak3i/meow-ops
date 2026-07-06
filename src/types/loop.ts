@@ -105,6 +105,7 @@ export interface Decision {
   decided_at: string;
   decision: DecisionValue;
   decided_by: string;
+  created_by?: string;
   reason?: string;
   undo_of?: string;
 }

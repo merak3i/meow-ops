@@ -48,6 +48,35 @@ function writeRateLimits(repoRoot, updated) {
   writeFileSync(join(repoRoot, 'public', 'data', 'rate-limits.json'), JSON.stringify({ _updated: updated }, null, 2));
 }
 
+function dateDaysBefore(days) {
+  const date = new Date(NOW.getTime() - days * 86_400_000);
+  return date.toISOString().slice(0, 10);
+}
+
+function writeCostSummary(repoRoot, {
+  latestCost = 11,
+  latestGhost = 1,
+  trailingCosts = [9, 10, 11, 9, 10, 11, 9, 10, 11, 9, 10, 11, 9, 10],
+  trailingGhosts = Array(14).fill(1),
+} = {}) {
+  mkdirSync(join(repoRoot, 'public', 'data'), { recursive: true });
+  const daily_summary = trailingCosts.map((cost, index) => ({
+    date: dateDaysBefore(14 - index),
+    session_count: 10,
+    estimated_cost_usd: cost,
+    total_duration_seconds: 1000,
+    ghost_count: trailingGhosts[index] ?? 0,
+  }));
+  daily_summary.push({
+    date: dateDaysBefore(0),
+    session_count: 10,
+    estimated_cost_usd: latestCost,
+    total_duration_seconds: 1000,
+    ghost_count: latestGhost,
+  });
+  writeFileSync(join(repoRoot, 'public', 'data', 'cost-summary.json'), JSON.stringify({ daily_summary }, null, 2));
+}
+
 function writeAutomationFiles(repoRoot, { missingScript = false } = {}) {
   mkdirSync(join(repoRoot, 'sync'), { recursive: true });
   if (missingScript) rmSync(join(repoRoot, 'sync', 'export-local.mjs'), { force: true });
@@ -79,6 +108,7 @@ function withRepoFixture(setup, fn) {
   const repoRoot = mkdtempSync(join(tmpdir(), 'meow-loop-propose-repo-'));
   writeGoodGitignore(repoRoot);
   writeRateLimits(repoRoot, '2026-07-05T00:00:00.000Z');
+  writeCostSummary(repoRoot);
   writeAutomationFiles(repoRoot);
   setup(repoRoot);
   try {
@@ -108,31 +138,91 @@ function validComparison(overrides = {}) {
   };
 }
 
+function validRun(overrides = {}) {
+  return {
+    run_id: overrides.run_id || `run-${Math.random().toString(36).slice(2)}`,
+    loop_id: overrides.loop_id || 'demo-loop',
+    captured_at: overrides.captured_at || NOW.toISOString(),
+    sources: ['test'],
+    session_ids: ['demo-session'],
+    metrics: {
+      sessions: 1,
+      duration_seconds: 10,
+      total_tokens: 100,
+      message_count: 2,
+    },
+    ...overrides,
+  };
+}
+
+function validDraftProposal(overrides = {}) {
+  return {
+    proposal_id: overrides.proposal_id || `prop-${Math.random().toString(36).slice(2)}`,
+    loop_id: 'demo-loop',
+    created_at: NOW.toISOString(),
+    created_by: 'assistant:risk',
+    category: 'workflow',
+    title: 'Synthetic draft',
+    one_percent_target: 'Exercise stale draft expiry',
+    diff: { summary: 'synthetic' },
+    rationale: 'synthetic test fixture',
+    evidence: [{ kind: 'rule', ref: 'synthetic' }],
+    confidence: 0.5,
+    risk: 'low',
+    risk_notes: 'synthetic only',
+    expected_benefit: 'keeps tests focused',
+    rollback: { plan: 'remove the synthetic fixture' },
+    review_only: false,
+    status: 'draft',
+    ...overrides,
+  };
+}
+
 test('proposer rule matrix: each rule fires and stays redaction-clean', () => {
-  withRepoFixture((repoRoot) => {
-    writeRateLimits(repoRoot, '2026-05-01T00:00:00.000Z');
-    writeFileSync(join(repoRoot, '.gitignore'), 'public/data/*\n!public/data/sessions.json\n');
-    writeAutomationFiles(repoRoot, { missingScript: true });
-  }, (repoRoot) => {
-    const candidates = collectCandidates({ repoRoot, now: NOW });
-    for (const ruleId of ['stale-rate-limits', 'tracked-data-regression', 'dangling-automation-paths']) {
-      const proposal = candidateByRule(candidates, ruleId);
-      assert.ok(proposal, `${ruleId} should fire`);
-      assert.equal(validateProposal(proposal), proposal);
-      assert.doesNotThrow(() => assertRedacted(JSON.parse(JSON.stringify(proposal))));
-    }
+  withTempLedger(() => {
+    appendRecord('run', validRun({
+      run_id: 'run-duration-warn',
+      notes: 'WARN: duration_seconds (100) exceeds 5x the selection window (10s) - synthetic',
+    }));
+    withRepoFixture((repoRoot) => {
+      writeRateLimits(repoRoot, '2026-05-01T00:00:00.000Z');
+      writeFileSync(join(repoRoot, '.gitignore'), 'public/data/*\n!public/data/sessions.json\n');
+      writeAutomationFiles(repoRoot, { missingScript: true });
+      writeCostSummary(repoRoot, { latestCost: 14, latestGhost: 6 });
+    }, (repoRoot) => {
+      const candidates = collectCandidates({ repoRoot, now: NOW });
+      for (const ruleId of [
+        'stale-rate-limits',
+        'tracked-data-regression',
+        'dangling-automation-paths',
+        'spend-velocity',
+        'ghost-spike',
+        'duration-anomaly',
+      ]) {
+        const proposal = candidateByRule(candidates, ruleId);
+        assert.ok(proposal, `${ruleId} should fire`);
+        assert.ok(proposal.evidence.some((item) => item.kind === 'rule' && item.ref === ruleId));
+        assert.equal(validateProposal(proposal), proposal);
+        assert.doesNotThrow(() => assertRedacted(JSON.parse(JSON.stringify(proposal))));
+      }
+    });
   });
 });
 
 test('proposer rule matrix: each rule stays clear when inputs are healthy', () => {
-  withRepoFixture(() => {}, (repoRoot) => {
-    const candidates = collectCandidates({ repoRoot, now: NOW });
-    assert.deepEqual(candidates.map((candidate) => [candidate.ruleId, Boolean(candidate.proposal)]), [
-      ['stale-rate-limits', false],
-      ['tracked-data-regression', false],
-      ['dangling-automation-paths', false],
-    ]);
-    assert.deepEqual(scanDanglingAutomationPaths({ repoRoot }), []);
+  withTempLedger(() => {
+    withRepoFixture(() => {}, (repoRoot) => {
+      const candidates = collectCandidates({ repoRoot, now: NOW });
+      assert.deepEqual(candidates.map((candidate) => [candidate.ruleId, Boolean(candidate.proposal)]), [
+        ['stale-rate-limits', false],
+        ['tracked-data-regression', false],
+        ['dangling-automation-paths', false],
+        ['spend-velocity', false],
+        ['ghost-spike', false],
+        ['duration-anomaly', false],
+      ]);
+      assert.deepEqual(scanDanglingAutomationPaths({ repoRoot }), []);
+    });
   });
 });
 
@@ -186,6 +276,43 @@ test('loop:propose runs comparison skeleton generation when guardrail rules are 
       const skeleton = results.find((result) => result.ruleId === 'comparison:cmp-loop-propose');
       assert.equal(skeleton.status, 'skeleton');
       assert.equal(readLedger('proposal').length, 1);
+    });
+  });
+});
+
+test('loop:propose expires stale drafts at 14 days with a system expiry decision', () => {
+  withTempLedger(() => {
+    const draft = appendRecord('proposal', validDraftProposal({
+      proposal_id: 'prop-stale-draft',
+      created_at: '2026-06-22T00:00:00.000Z',
+    }));
+    withRepoFixture(() => {}, (repoRoot) => {
+      const results = runProposer({ repoRoot, now: NOW });
+      assert.equal(results.find((result) => result.ruleId === `expire:${draft.proposal_id}`).status, 'expired');
+      const decision = readLedger('decision').find((record) => record.proposal_id === draft.proposal_id);
+      assert.equal(decision.decision, 'rejected');
+      assert.equal(decision.created_by, 'system:expire');
+      assert.equal(decision.decided_by, 'system:expire');
+      assert.equal(decision.reason, 'expired stale draft');
+      const latest = readLedger('proposal').at(-1);
+      assert.equal(latest.proposal_id, draft.proposal_id);
+      assert.equal(latest.status, 'rejected');
+      assert.equal(latest.created_by, 'system:expire');
+    });
+  });
+});
+
+test('loop:propose does not expire a 13-day draft', () => {
+  withTempLedger(() => {
+    const draft = appendRecord('proposal', validDraftProposal({
+      proposal_id: 'prop-fresh-draft',
+      created_at: '2026-06-23T00:00:01.000Z',
+    }));
+    withRepoFixture(() => {}, (repoRoot) => {
+      const results = runProposer({ repoRoot, now: NOW });
+      assert.equal(results.some((result) => result.ruleId === `expire:${draft.proposal_id}`), false);
+      assert.equal(readLedger('decision').length, 0);
+      assert.equal(readLedger('proposal').at(-1).status, 'draft');
     });
   });
 });

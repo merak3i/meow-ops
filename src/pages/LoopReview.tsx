@@ -24,18 +24,20 @@ import type {
   Simulation,
 } from '@/types/loop';
 
-type View = 'proposals' | 'runs';
-type Filter = 'pending' | 'drafts' | 'decided' | 'all';
+type View = 'proposals' | 'runs' | 'ship-next';
+type Filter = 'pending' | 'drafts' | 'decided' | 'expired' | 'all';
 
 const VIEWS: { value: View; label: string }[] = [
   { value: 'proposals', label: 'Proposals' },
   { value: 'runs', label: 'Runs' },
+  { value: 'ship-next', label: 'Ship Next' },
 ];
 
 const FILTERS: { value: Filter; label: string }[] = [
   { value: 'pending', label: 'Pending' },
   { value: 'drafts', label: 'Drafts' },
   { value: 'decided', label: 'Decided' },
+  { value: 'expired', label: 'Expired' },
   { value: 'all', label: 'All' },
 ];
 
@@ -92,6 +94,19 @@ const styles: Record<string, CSSProperties> = {
     fontSize: 14,
   },
   runsShell: { display: 'flex', flexDirection: 'column', gap: 14 },
+  shipShell: { display: 'grid', gridTemplateColumns: 'minmax(0, 1.2fr) minmax(280px, 0.8fr)', gap: 18, alignItems: 'start' },
+  shipSection: { display: 'flex', flexDirection: 'column', gap: 10 },
+  shipRow: {
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    padding: 14,
+    background: 'var(--bg-card)',
+    color: 'var(--text-primary)',
+    textAlign: 'left',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  },
+  shipMeta: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, color: 'var(--text-muted)', fontSize: 11 },
   loopFilters: { display: 'flex', flexWrap: 'wrap', gap: 8 },
   loopChip: {
     border: '1px solid var(--border)',
@@ -193,8 +208,22 @@ function confidenceValue(proposal: Proposal) {
 }
 
 function isDecided(proposal: Proposal, latest: Decision | undefined) {
+  if (isExpiredDecision(latest)) return false;
   if (latest?.decision === 'undone') return false;
   return Boolean(latest) || ['approved', 'rejected', 'applied', 'rolled_back'].includes(proposal.status);
+}
+
+function isExpiredDecision(decision: Decision | undefined | null) {
+  return Boolean(
+    decision
+    && decision.decision === 'rejected'
+    && decision.reason === 'expired stale draft'
+    && (decision.created_by === 'system:expire' || decision.decided_by === 'system:expire'),
+  );
+}
+
+function isExpiredProposal(proposal: Proposal, latest: Decision | undefined) {
+  return proposal.status === 'rejected' && isExpiredDecision(latest);
 }
 
 function isSkeleton(proposal: Proposal) {
@@ -328,12 +357,37 @@ export default function LoopReview() {
     });
   }, [proposals]);
 
+  const shipRankedPending = useMemo(() => {
+    return proposals
+      .filter((proposal) => {
+        const latest = latestByProposal.get(proposal.proposal_id);
+        return proposal.status === 'pending_approval' && (!latest || latest.decision === 'undone');
+      })
+      .sort((a, b) => {
+        const riskDelta = riskValue(a) - riskValue(b);
+        if (riskDelta !== 0) return riskDelta;
+        const confidenceDelta = confidenceValue(b) - confidenceValue(a);
+        if (confidenceDelta !== 0) return confidenceDelta;
+        return a.created_at.localeCompare(b.created_at);
+      });
+  }, [latestByProposal, proposals]);
+
+  const approvedAwaitingApply = useMemo(() => {
+    return proposals
+      .filter((proposal) => {
+        const latest = latestByProposal.get(proposal.proposal_id);
+        return proposal.status === 'approved' && !isExpiredProposal(proposal, latest);
+      })
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  }, [latestByProposal, proposals]);
+
   const filtered = useMemo(() => {
     return sorted.filter((proposal) => {
       const latest = latestByProposal.get(proposal.proposal_id);
       if (filter === 'all') return true;
       if (filter === 'pending') return proposal.status === 'pending_approval' && (!latest || latest.decision === 'undone');
       if (filter === 'drafts') return proposal.status === 'draft' || proposal.status === 'simulated';
+      if (filter === 'expired') return isExpiredProposal(proposal, latest);
       return isDecided(proposal, latest);
     });
   }, [filter, latestByProposal, sorted]);
@@ -490,6 +544,63 @@ export default function LoopReview() {
             />
           </div>
         )
+      ) : view === 'ship-next' ? (
+        <section style={styles.shipShell}>
+          <div style={styles.shipSection}>
+            <h2 style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>Pending owner decisions</h2>
+            {shipRankedPending.length === 0 ? (
+              <div style={styles.empty}>No pending proposals. Run npm run loop:propose after the next capture.</div>
+            ) : shipRankedPending.map((proposal, index) => (
+              <button
+                key={proposal.proposal_id}
+                type="button"
+                style={styles.shipRow}
+                onClick={() => {
+                  setView('proposals');
+                  setFilter('pending');
+                  setSelectedId(proposal.proposal_id);
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                  <strong>#{index + 1} {proposal.title}</strong>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{proposal.risk || 'risk n/a'} - {Math.round(confidenceValue(proposal) * 100)}%</span>
+                </div>
+                <p style={styles.muted}>{proposal.one_percent_target}</p>
+                {proposal.expected_benefit && <p style={styles.muted}>{proposal.expected_benefit}</p>}
+                <div style={styles.shipMeta}>
+                  <span>{proposal.loop_id}</span>
+                  <span>{formatDate(proposal.created_at)}</span>
+                  <span>{proposal.status}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+          <div style={styles.shipSection}>
+            <h2 style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>Approved, awaiting manual apply</h2>
+            {approvedAwaitingApply.length === 0 ? (
+              <div style={styles.empty}>No approved manual-apply items.</div>
+            ) : approvedAwaitingApply.map((proposal) => (
+              <button
+                key={proposal.proposal_id}
+                type="button"
+                style={styles.shipRow}
+                onClick={() => {
+                  setView('proposals');
+                  setFilter('decided');
+                  setSelectedId(proposal.proposal_id);
+                }}
+              >
+                <strong>{proposal.title}</strong>
+                <p style={styles.muted}>{proposal.one_percent_target}</p>
+                {proposal.expected_benefit && <p style={styles.muted}>{proposal.expected_benefit}</p>}
+                <div style={styles.shipMeta}>
+                  <span>{proposal.loop_id}</span>
+                  <span>approved, awaiting manual apply</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
       ) : (
         <section style={styles.runsShell}>
           {runs.length === 0 ? (

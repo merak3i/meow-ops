@@ -149,10 +149,14 @@ function readJsonBody(req, limit = 10_000) {
 
 function proposalSummary() {
   const proposals = foldLatestById(readLedger('proposal'), 'proposal_id');
+  const expiredIds = new Set(readLedger('decision')
+    .filter((decision) => decision.created_by === 'system:expire' || decision.decided_by === 'system:expire')
+    .map((decision) => decision.proposal_id));
   const counts_by_status = {};
   const open_per_loop = {};
   for (const proposal of proposals) {
-    counts_by_status[proposal.status] = (counts_by_status[proposal.status] || 0) + 1;
+    const status = expiredIds.has(proposal.proposal_id) ? 'expired' : proposal.status;
+    counts_by_status[status] = (counts_by_status[status] || 0) + 1;
     if (!['approved', 'rejected'].includes(proposal.status)) {
       open_per_loop[proposal.loop_id] = (open_per_loop[proposal.loop_id] || 0) + 1;
     }

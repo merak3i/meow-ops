@@ -197,6 +197,33 @@ test('GET /loop-eng endpoints return ledger-backed JSON shapes', async () => {
   assert.equal(summary.body.open_per_loop['api-test-loop'], 4);
 });
 
+test('GET /loop-eng/summary reports system-expired drafts outside rejected counts', async () => {
+  const draft = appendRecord('proposal', baseProposal({
+    proposal_id: newId('prop'),
+    title: 'Expired system draft',
+    created_at: '2026-06-01T00:00:00.000Z',
+  }));
+  appendRecord('decision', {
+    decision_id: newId('dec'),
+    proposal_id: draft.proposal_id,
+    decided_at: '2026-07-06T00:00:00.000Z',
+    decision: 'rejected',
+    decided_by: 'system:expire',
+    created_by: 'system:expire',
+    reason: 'expired stale draft',
+  });
+  appendRecord('proposal', {
+    ...draft,
+    created_by: 'system:expire',
+    status: 'rejected',
+  });
+
+  const summary = await getJson('/loop-eng/summary');
+  assert.equal(summary.status, 200);
+  assert.equal(summary.body.counts_by_status.expired, 1);
+  assert.equal(summary.body.counts_by_status.rejected || 0, 0);
+});
+
 test('POST /loop-eng/decisions approves a pending proposal with a fresh nonce', async () => {
   usedNonce = await nonce();
   const res = await postDecision({
@@ -211,8 +238,9 @@ test('POST /loop-eng/decisions approves a pending proposal with a fresh nonce', 
   assert.equal(res.body.proposal.status, 'approved');
 
   const decisions = readLedger('decision');
-  assert.equal(decisions.length, 1);
-  assert.equal(decisions[0].proposal_id, pendingProposal.proposal_id);
+  assert.ok(decisions.find((decision) => (
+    decision.proposal_id === pendingProposal.proposal_id && decision.decision === 'approved'
+  )));
   const latest = foldLatestById(readLedger('proposal'), 'proposal_id')
     .find((proposal) => proposal.proposal_id === pendingProposal.proposal_id);
   assert.equal(latest.status, 'approved');

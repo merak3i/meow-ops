@@ -292,6 +292,37 @@ async function loopSpecPresent(page: import('@playwright/test').Page): Promise<b
   }
 }
 
+async function mockLoopEng(
+  page: import('@playwright/test').Page,
+  data: {
+    proposals?: unknown[];
+    decisions?: unknown[];
+    summary?: Record<string, unknown>;
+    runs?: unknown[];
+    comparisons?: unknown[];
+    simulations?: unknown[];
+    outcomes?: unknown[];
+  },
+) {
+  await page.context().route('**/loop-eng/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const payloadByPath: Record<string, unknown> = {
+      '/loop-eng/summary': data.summary ?? { counts_by_status: {}, open_per_loop: {}, total: data.proposals?.length ?? 0 },
+      '/loop-eng/proposals': data.proposals ?? [],
+      '/loop-eng/decisions': data.decisions ?? [],
+      '/loop-eng/runs': data.runs ?? [],
+      '/loop-eng/comparisons': data.comparisons ?? [],
+      '/loop-eng/simulations': data.simulations ?? [],
+      '/loop-eng/outcomes': data.outcomes ?? [],
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(payloadByPath[path] ?? {}),
+    });
+  });
+}
+
 test('The Loom: safety badge renders with or without spec data', async ({ page }) => {
   await nav(page, 'The Loom');
   // The safety invariant badge is part of the page contract from Phase 1 on,
@@ -372,6 +403,125 @@ test('Review Deck: Runs tab renders empty state without local helper', async ({ 
   await waitForApp(page);
   await page.getByRole('button', { name: 'Runs', exact: true }).click();
   await expect(page.getByText('No runs yet — run npm run loop:capture')).toBeVisible();
+  await expect(page.locator('[data-vite-error]')).toHaveCount(0);
+});
+
+test('Review Deck: Ship Next ranks pending work and lists approved manual apply', async ({ page }) => {
+  const base = {
+    schema_version: 1,
+    loop_id: 'demo-loop',
+    created_by: 'system:propose',
+    category: 'workflow',
+    evidence: [{ kind: 'rule', ref: 'test' }],
+    rollback: { plan: 'synthetic rollback' },
+    review_only: false,
+  };
+  await mockLoopEng(page, {
+    proposals: [
+      {
+        ...base,
+        proposal_id: 'prop-medium',
+        created_at: '2026-06-20T00:00:00.000Z',
+        title: 'Medium older but lower priority',
+        one_percent_target: 'Medium risk should sort below low risk',
+        expected_benefit: 'Keeps operator focus conservative',
+        confidence: 0.99,
+        risk: 'medium',
+        status: 'pending_approval',
+      },
+      {
+        ...base,
+        proposal_id: 'prop-low-new',
+        created_at: '2026-07-05T00:00:00.000Z',
+        title: 'Low same newer',
+        one_percent_target: 'Newer same-rank item should appear after older same-rank item',
+        expected_benefit: 'Proves age desc within equal risk and confidence',
+        confidence: 0.8,
+        risk: 'low',
+        status: 'pending_approval',
+      },
+      {
+        ...base,
+        proposal_id: 'prop-low-old',
+        created_at: '2026-06-30T00:00:00.000Z',
+        title: 'Low same older',
+        one_percent_target: 'Older same-rank item should ship first',
+        expected_benefit: 'Proves the Ship Next ranking contract',
+        confidence: 0.8,
+        risk: 'low',
+        status: 'pending_approval',
+      },
+      {
+        ...base,
+        proposal_id: 'prop-approved',
+        created_at: '2026-06-25T00:00:00.000Z',
+        title: 'Approved awaiting apply',
+        one_percent_target: 'Approved items wait below the pending queue',
+        expected_benefit: 'Owner can apply manually after approval',
+        confidence: 0.7,
+        risk: 'low',
+        status: 'approved',
+      },
+    ],
+    decisions: [{
+      schema_version: 1,
+      decision_id: 'dec-approved',
+      proposal_id: 'prop-approved',
+      decided_at: '2026-07-06T00:00:00.000Z',
+      decision: 'approved',
+      decided_by: 'owner',
+    }],
+    summary: { counts_by_status: { pending_approval: 3, approved: 1 }, open_per_loop: { 'demo-loop': 3 }, total: 4 },
+  });
+
+  await page.goto('/#/loop-review');
+  await waitForApp(page);
+  await page.getByRole('button', { name: 'Ship Next', exact: true }).click();
+  await expect(page.getByText('Pending owner decisions')).toBeVisible();
+  const text = await page.locator('body').innerText();
+  expect(text.indexOf('Low same older')).toBeLessThan(text.indexOf('Low same newer'));
+  expect(text.indexOf('Low same newer')).toBeLessThan(text.indexOf('Medium older but lower priority'));
+  expect(text.indexOf('Approved, awaiting manual apply')).toBeLessThan(text.indexOf('Approved awaiting apply'));
+  await expect(page.getByText('Owner can apply manually after approval')).toBeVisible();
+});
+
+test('Review Deck: expired drafts leave queue but remain under expired filter', async ({ page }) => {
+  await mockLoopEng(page, {
+    proposals: [{
+      schema_version: 1,
+      proposal_id: 'prop-expired',
+      loop_id: 'demo-loop',
+      created_at: '2026-06-20T00:00:00.000Z',
+      created_by: 'system:expire',
+      category: 'workflow',
+      title: 'Expired stale draft',
+      one_percent_target: 'Expired drafts should not sit in the owner queue',
+      evidence: [{ kind: 'rule', ref: 'expired-test' }],
+      confidence: 0.4,
+      risk: 'low',
+      expected_benefit: 'Keeps the queue current',
+      rollback: { plan: 'synthetic rollback' },
+      review_only: false,
+      status: 'rejected',
+    }],
+    decisions: [{
+      schema_version: 1,
+      decision_id: 'dec-expired',
+      proposal_id: 'prop-expired',
+      decided_at: '2026-07-06T00:00:00.000Z',
+      decision: 'rejected',
+      decided_by: 'system:expire',
+      created_by: 'system:expire',
+      reason: 'expired stale draft',
+    }],
+    summary: { counts_by_status: { expired: 1 }, open_per_loop: {}, total: 1 },
+  });
+
+  await page.goto('/#/loop-review');
+  await waitForApp(page);
+  await expect(page.getByText('Expired stale draft')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Expired', exact: true }).click();
+  await expect(page.getByText('Expired stale draft')).toBeVisible();
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
