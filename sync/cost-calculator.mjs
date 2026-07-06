@@ -26,6 +26,7 @@ const PRICING = {
   'llama-3.3-70b':            { input: 0,    output: 0,    cacheCreate: 0,     cacheRead: 0     },
 
   // DeepSeek (deepseek.com) — as of April 2026
+  'deepseek-chat':            { input: 0.27, output: 1.10, cacheCreate: 0,     cacheRead: 0.07  },
   'deepseek-v3':              { input: 0.27, output: 1.10, cacheCreate: 0,     cacheRead: 0.07  },
   'deepseek-r1':              { input: 0.55, output: 2.19, cacheCreate: 0,     cacheRead: 0.14  },
 

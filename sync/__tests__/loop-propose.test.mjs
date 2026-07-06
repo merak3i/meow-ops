@@ -12,11 +12,13 @@ import {
 import { validateProposal } from '../loop-schema.mjs';
 import {
   appendComparisonSkeletons,
+  appendComparisonSkeletonsWithAi,
   collectCandidates,
   hasOpenProposalForLoop,
   runProposer,
   scanDanglingAutomationPaths,
 } from '../loop-propose.mjs';
+import { resetLlmBudgetForTests } from '../llm-gateway.mjs';
 
 const NOW = new Date('2026-07-06T00:00:00.000Z');
 
@@ -29,6 +31,21 @@ function withTempLedger(fn) {
   } finally {
     if (prev === undefined) delete process.env.MEOW_LOOP_DIR;
     else process.env.MEOW_LOOP_DIR = prev;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function withTempLedgerAsync(fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-loop-propose-ledger-'));
+  const prev = process.env.MEOW_LOOP_DIR;
+  process.env.MEOW_LOOP_DIR = dir;
+  resetLlmBudgetForTests();
+  try {
+    return await fn(dir);
+  } finally {
+    if (prev === undefined) delete process.env.MEOW_LOOP_DIR;
+    else process.env.MEOW_LOOP_DIR = prev;
+    resetLlmBudgetForTests();
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -135,6 +152,22 @@ function validComparison(overrides = {}) {
     },
     flags: ['slower'],
     ...overrides,
+  };
+}
+
+function fakeKey() {
+  return ['sk', 'b'.repeat(24)].join('-');
+}
+
+function llmResponse(content, usage = { prompt_tokens: 1000, completion_tokens: 200, total_tokens: 1200 }) {
+  return {
+    ok: true,
+    async json() {
+      return {
+        choices: [{ message: { content } }],
+        usage,
+      };
+    },
   };
 }
 
@@ -265,6 +298,97 @@ test('comparison skeletons are draft-only, validate, and throttle to one open pr
     const second = appendComparisonSkeletons({ now: NOW });
     assert.equal(second.filter((result) => result.status === 'skeleton').length, 0);
     assert.equal(readLedger('proposal').length, 1);
+  });
+});
+
+test('comparison skeletons can be enriched by a stubbed LLM and meter the call', async () => {
+  await withTempLedgerAsync(async () => {
+    appendRecord('comparison', validComparison({ comparison_id: 'cmp-ai' }));
+    const results = await appendComparisonSkeletonsWithAi({
+      now: NOW,
+      ai: true,
+      env: {
+        DEEPSEEK_API_KEY: fakeKey(),
+        MEOW_LLM_WEEKLY_USD: '1.00',
+        MEOW_LLM_CALLS_PER_CYCLE: '25',
+      },
+      transport: async () => llmResponse(JSON.stringify({
+        one_percent_target: 'Reduce duration anomaly review time by one percent',
+        rationale: 'Local deltas show duration_seconds moved sharply versus baseline.',
+        expected_benefit: 'Turns the flagged run into a focused owner review.',
+      })),
+    });
+
+    assert.equal(results[0].status, 'skeleton-enriched');
+    const proposal = readLedger('proposal')[0];
+    assert.equal(proposal.created_by, 'assistant:loop');
+    assert.equal(proposal.status, 'draft');
+    assert.equal(proposal.one_percent_target, 'Reduce duration anomaly review time by one percent');
+    assert.ok(proposal.evidence.some((item) => item.kind === 'llm' && item.ref === 'deepseek:deepseek-chat'));
+    assert.equal(validateProposal(proposal), proposal);
+
+    const meterRuns = readLedger('run').filter((run) => run.loop_id === 'meow-ops-assistant');
+    assert.equal(meterRuns.length, 1);
+    assert.equal(meterRuns[0].metrics.cost_usd_real, 0.00049);
+  });
+});
+
+test('malicious LLM output is rejected by appendRecord and deterministic skeleton ships', async () => {
+  await withTempLedgerAsync(async () => {
+    const runtimeSecret = fakeKey();
+    appendRecord('comparison', validComparison({ comparison_id: 'cmp-malicious' }));
+    const results = await appendComparisonSkeletonsWithAi({
+      now: NOW,
+      ai: true,
+      env: {
+        DEEPSEEK_API_KEY: fakeKey(),
+        MEOW_LLM_WEEKLY_USD: '1.00',
+        MEOW_LLM_CALLS_PER_CYCLE: '25',
+      },
+      transport: async () => llmResponse(JSON.stringify({
+        one_percent_target: `Leaked ${runtimeSecret}`,
+        rationale: 'This should never persist.',
+        expected_benefit: 'This should never persist.',
+      })),
+    });
+
+    assert.equal(results[0].status, 'skeleton');
+    assert.equal(results[0].llm_status, 'rejected');
+    const proposals = readLedger('proposal');
+    assert.equal(proposals.length, 1);
+    assert.equal(proposals[0].comparison_id, 'cmp-malicious');
+    assert.equal(proposals[0].created_by, 'assistant:loop');
+    assert.equal(proposals[0].status, 'draft');
+    assert.equal(proposals[0].evidence.some((item) => item.kind === 'llm'), false);
+    assert.equal(JSON.stringify(proposals).includes(runtimeSecret), false);
+    assert.equal(validateProposal(proposals[0]), proposals[0]);
+  });
+});
+
+test('malformed LLM output retries once then keeps deterministic skeleton', async () => {
+  await withTempLedgerAsync(async () => {
+    let calls = 0;
+    appendRecord('comparison', validComparison({ comparison_id: 'cmp-malformed' }));
+    const results = await appendComparisonSkeletonsWithAi({
+      now: NOW,
+      ai: true,
+      env: {
+        DEEPSEEK_API_KEY: fakeKey(),
+        MEOW_LLM_WEEKLY_USD: '1.00',
+        MEOW_LLM_CALLS_PER_CYCLE: '25',
+      },
+      transport: async () => {
+        calls += 1;
+        return llmResponse('not-json');
+      },
+    });
+
+    assert.equal(calls, 2);
+    assert.equal(results[0].status, 'skeleton');
+    assert.equal(readLedger('run').length, 0);
+    const proposal = readLedger('proposal')[0];
+    assert.equal(proposal.comparison_id, 'cmp-malformed');
+    assert.equal(proposal.evidence.some((item) => item.kind === 'llm'), false);
   });
 });
 
