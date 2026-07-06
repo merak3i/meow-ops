@@ -10,14 +10,18 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
-  appendRecord, assertRedacted, foldLatestById, newId, readLedger,
+  appendRecord, assertRedacted, newId, readLedger,
 } from './loop-ledger.mjs';
 import { checkGitignore } from './loop-eval.mjs';
+import {
+  hasOpenProposalForLoop, hasOpenProposalForRule, latestProposals,
+} from './loop-proposal-helpers.mjs';
+
+export { hasOpenProposalForLoop, hasOpenProposalForRule } from './loop-proposal-helpers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..');
 const LOOP_ID = 'meow-ops-guardrails';
-const OPEN_TERMINAL = new Set(['approved', 'rejected']);
 const FLAG_METRICS = {
   cost_spike: 'cost_usd_real',
   error_spike: 'tool_error_count',
@@ -42,25 +46,6 @@ function relativePath(repoRoot, target) {
 
 function safeReadJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
-}
-
-function latestProposals(records = readLedger('proposal')) {
-  return foldLatestById(records, 'proposal_id');
-}
-
-function evidenceHasRule(proposal, ruleRef) {
-  return Array.isArray(proposal.evidence)
-    && proposal.evidence.some((item) => item && item.kind === 'rule' && item.ref === ruleRef);
-}
-
-export function hasOpenProposalForRule(ruleRef, records = readLedger('proposal')) {
-  return latestProposals(records)
-    .some((proposal) => !OPEN_TERMINAL.has(proposal.status) && evidenceHasRule(proposal, ruleRef));
-}
-
-export function hasOpenProposalForLoop(loopId, records = readLedger('proposal')) {
-  return latestProposals(records)
-    .some((proposal) => proposal.loop_id === loopId && !OPEN_TERMINAL.has(proposal.status));
 }
 
 function hasProposalForComparison(comparisonId, records = readLedger('proposal')) {

@@ -37,7 +37,7 @@ test('eval gate passes on pristine fixtures and repo state', () => {
   const results = runChecks({});
   const failed = results.filter((r) => !r.ok);
   assert.deepEqual(failed, [], `unexpected failures: ${failed.map((r) => `${r.id}: ${r.note}`).join(' | ')}`);
-  assert.equal(results.length, 6, 'all six checks ran');
+  assert.equal(results.length, 8, 'all eight checks ran');
 });
 
 test('eval gate fails when a must-fail fixture stops failing', () => {
@@ -82,6 +82,36 @@ test('eval gate fails when negative coverage disappears entirely', () => {
     const check = results.find((r) => r.id === 'golden-proposals');
     assert.equal(check.ok, false);
     assert.match(check.note, /negative coverage is mandatory/);
+  });
+});
+
+test('eval gate counts simulation must-fail fixtures', () => {
+  withTamperedFixtures((dir) => {
+    const path = join(dir, 'golden-simulations.json');
+    const simulations = JSON.parse(readFileSync(path, 'utf8'));
+    const badMode = simulations.find((entry) => entry.expect_fail === 'simulation-mode');
+    badMode.record.mode = 'checklist';
+    writeFileSync(path, JSON.stringify(simulations, null, 2));
+  }, (dir) => {
+    const results = runChecks({ fixturesDir: dir });
+    const check = results.find((r) => r.id === 'golden-simulations');
+    assert.equal(check.ok, false);
+    assert.match(check.note, /expected \[simulation-mode\] rejection/);
+  });
+});
+
+test('eval gate counts outcome must-fail fixtures', () => {
+  withTamperedFixtures((dir) => {
+    const path = join(dir, 'golden-outcomes.json');
+    const outcomes = JSON.parse(readFileSync(path, 'utf8'));
+    const badVerdict = outcomes.find((entry) => entry.expect_fail === 'outcome-verdict');
+    badVerdict.record.verdict = 'neutral';
+    writeFileSync(path, JSON.stringify(outcomes, null, 2));
+  }, (dir) => {
+    const results = runChecks({ fixturesDir: dir });
+    const check = results.find((r) => r.id === 'golden-outcomes');
+    assert.equal(check.ok, false);
+    assert.match(check.note, /expected \[outcome-verdict\] rejection/);
   });
 });
 

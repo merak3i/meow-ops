@@ -1,0 +1,52 @@
+[
+  {
+    "name": "valid improved outcome",
+    "expect_fail": null,
+    "record": {
+      "schema_version": 1,
+      "outcome_id": "out_golden_valid_1",
+      "decision_id": "dec_golden_valid_1",
+      "loop_id": "demo-loop",
+      "recorded_at": "2026-07-02T00:20:00.000Z",
+      "baseline_run_id": "run_golden_before_1",
+      "next_run_id": "run_golden_after_1",
+      "verdict": "improved",
+      "deltas": {
+        "duration_seconds": { "before": 100, "after": 90, "delta_pct": -10 },
+        "cost_usd_real": { "before": 10, "after": 9, "delta_pct": -10 }
+      }
+    }
+  },
+  {
+    "name": "must-fail: unknown outcome verdict",
+    "expect_fail": "outcome-verdict",
+    "record": {
+      "schema_version": 1,
+      "outcome_id": "out_golden_bad_verdict",
+      "decision_id": "dec_golden_valid_1",
+      "loop_id": "demo-loop",
+      "recorded_at": "2026-07-02T00:21:00.000Z",
+      "baseline_run_id": "run_golden_before_1",
+      "next_run_id": "run_golden_after_1",
+      "verdict": "better-ish",
+      "deltas": {}
+    }
+  },
+  {
+    "name": "must-fail: summed cost field in outcome deltas",
+    "expect_fail": "summed-cost",
+    "record": {
+      "schema_version": 1,
+      "outcome_id": "out_golden_bad_sum",
+      "decision_id": "dec_golden_valid_1",
+      "loop_id": "demo-loop",
+      "recorded_at": "2026-07-02T00:22:00.000Z",
+      "baseline_run_id": "run_golden_before_1",
+      "next_run_id": "run_golden_after_1",
+      "verdict": "regressed",
+      "deltas": {
+        "cost_usd_total": { "before": 10, "after": 20, "delta_pct": 100 }
+      }
+    }
+  }
+]

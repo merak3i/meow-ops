@@ -1,0 +1,47 @@
+[
+  {
+    "name": "valid test-run simulation",
+    "expect_fail": null,
+    "record": {
+      "schema_version": 1,
+      "simulation_id": "sim_golden_valid_1",
+      "proposal_id": "prop_golden_valid_1",
+      "ran_at": "2026-07-02T00:15:00.000Z",
+      "mode": "test-run",
+      "results": [
+        { "check": "node --test", "pass": true, "note": "sync/__tests__/loop-ledger.test.mjs passed" }
+      ],
+      "pass": true
+    }
+  },
+  {
+    "name": "must-fail: unknown simulation mode",
+    "expect_fail": "simulation-mode",
+    "record": {
+      "schema_version": 1,
+      "simulation_id": "sim_golden_bad_mode",
+      "proposal_id": "prop_golden_valid_1",
+      "ran_at": "2026-07-02T00:16:00.000Z",
+      "mode": "dry-run",
+      "results": [
+        { "check": "node --test", "pass": true, "note": "synthetic" }
+      ],
+      "pass": true
+    }
+  },
+  {
+    "name": "must-fail: summed cost field in simulation result",
+    "expect_fail": "summed-cost",
+    "record": {
+      "schema_version": 1,
+      "simulation_id": "sim_golden_bad_sum",
+      "proposal_id": "prop_golden_valid_1",
+      "ran_at": "2026-07-02T00:17:00.000Z",
+      "mode": "checklist",
+      "results": [
+        { "check": "budget", "pass": false, "note": "synthetic", "cost_usd_total": 10 }
+      ],
+      "pass": false
+    }
+  }
+]

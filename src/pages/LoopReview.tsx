@@ -5,8 +5,10 @@ import { FiveBeatCard } from '@/components/five-beat/FiveBeatCard';
 import {
   fetchLoopComparisons,
   fetchLoopDecisions,
+  fetchLoopOutcomes,
   fetchLoopProposals,
   fetchLoopRuns,
+  fetchLoopSimulations,
   fetchLoopSummary,
   postLoopDecision,
 } from '@/lib/loop-api';
@@ -17,7 +19,9 @@ import type {
   DecisionValue,
   LoopRun,
   LoopSummary,
+  Outcome,
   Proposal,
+  Simulation,
 } from '@/types/loop';
 
 type View = 'proposals' | 'runs';
@@ -156,6 +160,28 @@ function latestDecisionByProposal(decisions: Decision[]) {
   return latest;
 }
 
+function latestSimulationByProposal(simulations: Simulation[]) {
+  const latest = new Map<string, Simulation>();
+  for (const simulation of simulations) {
+    const existing = latest.get(simulation.proposal_id);
+    if (!existing || simulation.ran_at > existing.ran_at) {
+      latest.set(simulation.proposal_id, simulation);
+    }
+  }
+  return latest;
+}
+
+function outcomeByDecision(outcomes: Outcome[]) {
+  const latest = new Map<string, Outcome>();
+  for (const outcome of outcomes) {
+    const existing = latest.get(outcome.decision_id);
+    if (!existing || outcome.recorded_at > existing.recorded_at) {
+      latest.set(outcome.decision_id, outcome);
+    }
+  }
+  return latest;
+}
+
 function riskValue(proposal: Proposal) {
   return riskRank[proposal.risk || ''] ?? 2;
 }
@@ -244,6 +270,8 @@ export default function LoopReview() {
   const [decisions, setDecisions] = useState<Decision[]>([]);
   const [runs, setRuns] = useState<LoopRun[]>([]);
   const [comparisons, setComparisons] = useState<Comparison[]>([]);
+  const [simulations, setSimulations] = useState<Simulation[]>([]);
+  const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [summary, setSummary] = useState<LoopSummary>({ counts_by_status: {}, open_per_loop: {}, total: 0 });
   const [filter, setFilter] = useState<Filter>('pending');
   const [loopFilter, setLoopFilter] = useState('all');
@@ -255,18 +283,30 @@ export default function LoopReview() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [nextProposals, nextDecisions, nextSummary, nextRuns, nextComparisons] = await Promise.all([
+    const [
+      nextProposals,
+      nextDecisions,
+      nextSummary,
+      nextRuns,
+      nextComparisons,
+      nextSimulations,
+      nextOutcomes,
+    ] = await Promise.all([
       fetchLoopProposals(),
       fetchLoopDecisions(),
       fetchLoopSummary(),
       fetchLoopRuns(),
       fetchLoopComparisons(),
+      fetchLoopSimulations(),
+      fetchLoopOutcomes(),
     ]);
     setProposals(nextProposals);
     setDecisions(nextDecisions);
     setSummary(nextSummary);
     setRuns(nextRuns);
     setComparisons(nextComparisons);
+    setSimulations(nextSimulations);
+    setOutcomes(nextOutcomes);
     setLoading(false);
   }, []);
 
@@ -275,6 +315,8 @@ export default function LoopReview() {
   }, [load]);
 
   const latestByProposal = useMemo(() => latestDecisionByProposal(decisions), [decisions]);
+  const latestSimulationByProposalId = useMemo(() => latestSimulationByProposal(simulations), [simulations]);
+  const outcomeByDecisionId = useMemo(() => outcomeByDecision(outcomes), [outcomes]);
 
   const sorted = useMemo(() => {
     return [...proposals].sort((a, b) => {
@@ -332,6 +374,8 @@ export default function LoopReview() {
 
   const selected = filtered.find((proposal) => proposal.proposal_id === selectedId) ?? null;
   const selectedDecision = selected ? latestByProposal.get(selected.proposal_id) ?? null : null;
+  const selectedSimulation = selected ? latestSimulationByProposalId.get(selected.proposal_id) ?? null : null;
+  const selectedOutcome = selectedDecision ? outcomeByDecisionId.get(selectedDecision.decision_id) ?? null : null;
   const selectedRun = filteredRuns.find((run) => run.run_id === selectedRunId) ?? null;
   const selectedComparison = selectedRun
     ? comparisons.find((comparison) => comparison.run_id === selectedRun.run_id) ?? null
@@ -407,6 +451,7 @@ export default function LoopReview() {
                   <div style={styles.empty}>No proposals match this filter.</div>
                 ) : filtered.map((proposal) => {
                   const latest = latestByProposal.get(proposal.proposal_id);
+                  const outcome = latest ? outcomeByDecisionId.get(latest.decision_id) : null;
                   const active = proposal.proposal_id === selectedId;
                   return (
                     <button
@@ -425,6 +470,7 @@ export default function LoopReview() {
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5 }}>
                         <span>{proposal.loop_id}</span>
                         <span>{latest ? latest.decision : proposal.status}</span>
+                        {outcome && <span>outcome {outcome.verdict}</span>}
                         <span>{Math.round(confidenceValue(proposal) * 100)}%</span>
                         {isSkeleton(proposal) && <span>skeleton — complete manually</span>}
                       </div>
@@ -436,6 +482,8 @@ export default function LoopReview() {
             <FiveBeatCard
               proposal={selected}
               latestDecision={selectedDecision}
+              latestSimulation={selectedSimulation}
+              outcome={selectedOutcome}
               busy={busy}
               error={error}
               onDecision={handleDecision}

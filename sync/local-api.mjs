@@ -160,6 +160,15 @@ function proposalSummary() {
   return { counts_by_status, open_per_loop, total: proposals.length };
 }
 
+function simulationExemptProposal(proposal, proposalRecords = readLedger('proposal')) {
+  if (proposal.simulation_id) return true;
+  return proposalRecords.some((record) => (
+    record.proposal_id === proposal.proposal_id
+    && record.created_by === 'system:propose'
+    && ['simulated', 'pending_approval'].includes(record.status)
+  ));
+}
+
 const server = createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store');
@@ -290,6 +299,16 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/loop-eng/simulations' && req.method === 'GET') {
+    sendJson(res, 200, readLedger('simulation'));
+    return;
+  }
+
+  if (path === '/loop-eng/outcomes' && req.method === 'GET') {
+    sendJson(res, 200, readLedger('outcome'));
+    return;
+  }
+
   if (path === '/loop-eng/summary' && req.method === 'GET') {
     sendJson(res, 200, proposalSummary());
     return;
@@ -314,7 +333,8 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    const proposals = foldLatestById(readLedger('proposal'), 'proposal_id');
+    const proposalRecords = readLedger('proposal');
+    const proposals = foldLatestById(proposalRecords, 'proposal_id');
     const proposal = proposals.find((p) => p.proposal_id === body.proposal_id);
     if (!proposal) {
       ruleError(res, 404, 'proposal', 'proposal not found');
@@ -378,6 +398,10 @@ const server = createServer(async (req, res) => {
     }
     if (proposal.review_only === true && body.decision === 'approved') {
       ruleError(res, 403, 'review_only', 'review-only proposals cannot be approved through the local API');
+      return;
+    }
+    if (body.decision === 'approved' && !simulationExemptProposal(proposal, proposalRecords)) {
+      ruleError(res, 409, 'simulation', 'proposal must pass simulation before approval');
       return;
     }
 
@@ -538,6 +562,8 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /loop-ops/runs           - recorded loop runs');
   console.log('  POST /loop-ops/sync           - re-import the Loop Ops workbook');
   console.log('  GET  /loop-eng/proposals      - Loop Engineering proposals');
+  console.log('  GET  /loop-eng/simulations    - Loop Engineering simulations');
+  console.log('  GET  /loop-eng/outcomes       - Loop Engineering outcomes');
   console.log('  GET  /loop-eng/summary        - Loop Engineering queue summary');
   console.log('  POST /loop-eng/decisions      - owner decision with nonce');
   console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');

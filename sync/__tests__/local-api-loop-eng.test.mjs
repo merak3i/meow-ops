@@ -22,6 +22,7 @@ let previousLoopDir;
 let pendingProposal;
 let draftProposal;
 let reviewOnlyProposal;
+let unsimulatedPendingProposal;
 let usedNonce;
 
 function validRun() {
@@ -77,6 +78,20 @@ function seedPendingProposal(overrides = {}) {
   });
 }
 
+function seedUnsimulatedPendingProposal(overrides = {}) {
+  const draft = appendRecord('proposal', baseProposal(overrides));
+  const simulated = appendRecord('proposal', {
+    ...draft,
+    created_by: 'owner',
+    status: 'simulated',
+  });
+  return appendRecord('proposal', {
+    ...simulated,
+    created_by: 'owner',
+    status: 'pending_approval',
+  });
+}
+
 async function waitForServer() {
   for (let i = 0; i < 40; i++) {
     try {
@@ -127,6 +142,7 @@ before(async () => {
   });
   pendingProposal = seedPendingProposal();
   draftProposal = appendRecord('proposal', baseProposal({ title: 'Still a draft' }));
+  unsimulatedPendingProposal = seedUnsimulatedPendingProposal({ title: 'Owner advanced without simulation' });
   reviewOnlyProposal = seedPendingProposal({
     category: 'policy',
     title: 'Review-only policy proposal',
@@ -166,11 +182,19 @@ test('GET /loop-eng endpoints return ledger-backed JSON shapes', async () => {
   assert.equal(decisions.status, 200);
   assert.deepEqual(decisions.body, []);
 
+  const simulations = await getJson('/loop-eng/simulations');
+  assert.equal(simulations.status, 200);
+  assert.deepEqual(simulations.body, []);
+
+  const outcomes = await getJson('/loop-eng/outcomes');
+  assert.equal(outcomes.status, 200);
+  assert.deepEqual(outcomes.body, []);
+
   const summary = await getJson('/loop-eng/summary');
   assert.equal(summary.status, 200);
-  assert.equal(summary.body.counts_by_status.pending_approval, 2);
+  assert.equal(summary.body.counts_by_status.pending_approval, 3);
   assert.equal(summary.body.counts_by_status.draft, 1);
-  assert.equal(summary.body.open_per_loop['api-test-loop'], 3);
+  assert.equal(summary.body.open_per_loop['api-test-loop'], 4);
 });
 
 test('POST /loop-eng/decisions approves a pending proposal with a fresh nonce', async () => {
@@ -333,6 +357,17 @@ test('POST /loop-eng/decisions rejects approval on review_only proposals', async
   });
   assert.equal(res.status, 403);
   assert.match(res.body.error, /\[review_only\]/);
+});
+
+test('POST /loop-eng/decisions rejects approval without simulation unless system:propose advanced it', async () => {
+  const res = await postDecision({
+    proposal_id: unsimulatedPendingProposal.proposal_id,
+    decision: 'approved',
+    reason: 'missing simulation',
+    nonce: await nonce(),
+  });
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /\[simulation\]/);
 });
 
 test('browser-origin loop-eng calls require the local helper header', async () => {

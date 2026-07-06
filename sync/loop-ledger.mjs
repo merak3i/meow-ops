@@ -24,6 +24,8 @@ const ENTITY_FILES = {
   comparison: 'comparisons.jsonl',
   proposal: 'proposals.jsonl',
   decision: 'decisions.jsonl',
+  simulation: 'simulations.jsonl',
+  outcome: 'outcomes.jsonl',
 };
 
 // Content-bearing session fields must never enter the ledger under any key.
