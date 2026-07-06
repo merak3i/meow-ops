@@ -7,7 +7,7 @@
 
 export const SCHEMA_VERSION = 1;
 
-export const ENTITIES = ['run', 'comparison', 'proposal', 'decision'];
+export const ENTITIES = ['run', 'comparison', 'proposal', 'decision', 'simulation', 'outcome'];
 
 // The only legal status walk. A proposal cannot skip states — in particular
 // draft→approved without simulated + pending_approval is rejected at write
@@ -59,6 +59,14 @@ export const ALLOWED_FIELDS = {
   decision: [
     'schema_version', 'decision_id', 'proposal_id', 'decided_at', 'decision',
     'decided_by', 'reason', 'undo_of',
+  ],
+  simulation: [
+    'schema_version', 'simulation_id', 'proposal_id', 'ran_at', 'mode',
+    'results', 'pass',
+  ],
+  outcome: [
+    'schema_version', 'outcome_id', 'decision_id', 'loop_id', 'recorded_at',
+    'baseline_run_id', 'next_run_id', 'verdict', 'deltas',
   ],
 };
 
@@ -186,9 +194,58 @@ export function validateDecision(record) {
   return record;
 }
 
+export function validateSimulation(record) {
+  req(record, 'simulation_id', 'string', 'simulation');
+  req(record, 'proposal_id', 'string', 'simulation');
+  req(record, 'ran_at', 'string', 'simulation');
+  const mode = req(record, 'mode', 'string', 'simulation');
+  const results = req(record, 'results', 'array', 'simulation');
+  req(record, 'pass', 'boolean', 'simulation');
+  if (!['test-run', 'checklist'].includes(mode)) {
+    fail('simulation-mode', `simulation.mode "${mode}" must be test-run/checklist`);
+  }
+  if (results.length === 0) {
+    fail('missing-field', 'simulation.results must contain at least one result');
+  }
+  for (const [index, result] of results.entries()) {
+    if (!result || typeof result !== 'object') {
+      fail('missing-field', `simulation.results[${index}] must be an object`);
+    }
+    if (typeof result.check !== 'string' || result.check.length === 0) {
+      fail('missing-field', `simulation.results[${index}].check must be a string`);
+    }
+    if (typeof result.pass !== 'boolean') {
+      fail('missing-field', `simulation.results[${index}].pass must be a boolean`);
+    }
+    if (result.note !== undefined && typeof result.note !== 'string') {
+      fail('missing-field', `simulation.results[${index}].note must be a string`);
+    }
+  }
+  rejectSummedCost(record, 'simulation');
+  return record;
+}
+
+export function validateOutcome(record) {
+  req(record, 'outcome_id', 'string', 'outcome');
+  req(record, 'decision_id', 'string', 'outcome');
+  req(record, 'loop_id', 'string', 'outcome');
+  req(record, 'recorded_at', 'string', 'outcome');
+  req(record, 'baseline_run_id', 'string', 'outcome');
+  req(record, 'next_run_id', 'string', 'outcome');
+  const verdict = req(record, 'verdict', 'string', 'outcome');
+  req(record, 'deltas', 'object', 'outcome');
+  if (!['improved', 'regressed', 'neutral', 'unknown'].includes(verdict)) {
+    fail('outcome-verdict', `outcome.verdict "${verdict}" must be improved/regressed/neutral/unknown`);
+  }
+  rejectSummedCost(record, 'outcome');
+  return record;
+}
+
 export const VALIDATORS = {
   run: validateLoopRun,
   comparison: validateComparison,
   proposal: validateProposal,
   decision: validateDecision,
+  simulation: validateSimulation,
+  outcome: validateOutcome,
 };

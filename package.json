@@ -12,6 +12,7 @@
     "test:sync": "node --test sync/__tests__/*.test.mjs",
     "loop:capture": "node sync/loop-capture.mjs",
     "loop:propose": "node sync/loop-propose.mjs",
+    "loop:simulate": "node sync/loop-simulate.mjs",
     "eval": "node sync/loop-eval.mjs",
     "sync:superadmin": "node sync/superadmin-usage.mjs",
     "gen:assets": "node scripts/generate-companion-assets.js",

@@ -11,7 +11,13 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { validateLoopRun, validateProposal, validateStatusTransition } from './loop-schema.mjs';
+import {
+  validateLoopRun,
+  validateOutcome,
+  validateProposal,
+  validateSimulation,
+  validateStatusTransition,
+} from './loop-schema.mjs';
 import { assertRedacted } from './loop-ledger.mjs';
 import { compareRuns } from './loop-capture.mjs';
 
@@ -50,17 +56,28 @@ function checkGoldenRuns(fixturesDir) {
 }
 
 function checkGoldenProposals(fixturesDir) {
-  const entries = JSON.parse(readFileSync(join(fixturesDir, 'golden-proposals.json'), 'utf8'));
+  return checkGoldenRecords({
+    fixturesDir,
+    file: 'golden-proposals.json',
+    label: 'proposals',
+    validate: validateProposal,
+  });
+}
+
+function checkGoldenRecords({
+  fixturesDir, file, label, validate,
+}) {
+  const entries = JSON.parse(readFileSync(join(fixturesDir, file), 'utf8'));
   let mustFail = 0;
   for (const entry of entries) {
     if (!entry.expect_fail) {
-      validateProposal(entry.record);
+      validate(entry.record);
       continue;
     }
     mustFail++;
     let failedAs = null;
     try {
-      validateProposal(entry.record);
+      validate(entry.record);
     } catch (err) {
       failedAs = err.message;
     }
@@ -70,7 +87,25 @@ function checkGoldenProposals(fixturesDir) {
     }
   }
   if (mustFail === 0) throw new Error('no must-fail fixtures found — negative coverage is mandatory');
-  return `${entries.length} proposals checked, ${mustFail} must-fail case(s) failed for the right reason`;
+  return `${entries.length} ${label} checked, ${mustFail} must-fail case(s) failed for the right reason`;
+}
+
+function checkGoldenSimulations(fixturesDir) {
+  return checkGoldenRecords({
+    fixturesDir,
+    file: 'golden-simulations.json',
+    label: 'simulations',
+    validate: validateSimulation,
+  });
+}
+
+function checkGoldenOutcomes(fixturesDir) {
+  return checkGoldenRecords({
+    fixturesDir,
+    file: 'golden-outcomes.json',
+    label: 'outcomes',
+    validate: validateOutcome,
+  });
 }
 
 function checkStatusMachine() {
@@ -134,6 +169,8 @@ export function runChecks({ fixturesDir = DEFAULT_FIXTURES, repoRoot = REPO_ROOT
   const checks = [
     ['golden-runs', () => checkGoldenRuns(fixturesDir)],
     ['golden-proposals', () => checkGoldenProposals(fixturesDir)],
+    ['golden-simulations', () => checkGoldenSimulations(fixturesDir)],
+    ['golden-outcomes', () => checkGoldenOutcomes(fixturesDir)],
     ['status-machine', checkStatusMachine],
     ['sessions-redaction', () => checkSessionsRedaction(repoRoot)],
     ['gitignore-guard', () => checkGitignore(repoRoot)],

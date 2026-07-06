@@ -15,8 +15,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
-  appendRecord, newId, readLedger, resolveLedgerDir,
+  appendRecord, foldLatestById, newId, readLedger, resolveLedgerDir,
 } from './loop-ledger.mjs';
+import { hasOpenProposalForLoop } from './loop-proposal-helpers.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SESSIONS_PATH = join(HERE, '..', 'public', 'data', 'sessions.json');
@@ -181,6 +182,108 @@ export function buildRun(sessions, opts) {
   };
 }
 
+function latestRunBefore(runs, loopId, beforeIso, excludeRunId) {
+  const before = Date.parse(beforeIso);
+  return runs
+    .filter((candidate) => {
+      if (candidate.run_id === excludeRunId || candidate.loop_id !== loopId) return false;
+      const captured = Date.parse(candidate.captured_at || '');
+      return Number.isFinite(captured) && captured < before;
+    })
+    .sort((a, b) => b.captured_at.localeCompare(a.captured_at))[0] || null;
+}
+
+function outcomeVerdict(deltas) {
+  const cost = deltas.cost_usd_real?.delta_pct;
+  const duration = deltas.duration_seconds?.delta_pct;
+  if (typeof cost !== 'number' || typeof duration !== 'number') return 'unknown';
+  if (cost < 0 && duration < 0) return 'improved';
+  if (cost > 10 || duration > 10) return 'regressed';
+  return 'neutral';
+}
+
+function hasUndoneDecision(decision, decisions) {
+  return decisions.some((candidate) => (
+    candidate.decision === 'undone' && candidate.undo_of === decision.decision_id
+  ));
+}
+
+function appendRegressionProposal({ outcome, decision, proposal, run }) {
+  const proposals = readLedger('proposal');
+  if (hasOpenProposalForLoop(outcome.loop_id, proposals)) return null;
+  return appendRecord('proposal', {
+    proposal_id: newId('prop'),
+    loop_id: outcome.loop_id,
+    run_id: run.run_id,
+    created_at: new Date().toISOString(),
+    created_by: 'assistant:risk',
+    category: 'workflow',
+    title: `${outcome.loop_id}: review rollback for regressed outcome`,
+    one_percent_target: 'Review the approved loop decision because the measured outcome regressed beyond the 10% threshold',
+    diff: {
+      summary: 'Review-only rollback recommendation; no rollback is applied automatically.',
+      decision_id: decision.decision_id,
+      outcome_id: outcome.outcome_id,
+      proposal_id: proposal.proposal_id,
+    },
+    rationale: `approved decision ${decision.decision_id} regressed on run ${run.run_id}`,
+    evidence: [
+      { kind: 'rule', ref: 'outcome-regression' },
+      { kind: 'outcome', ref: outcome.outcome_id, value: outcome.verdict },
+      { kind: 'decision', ref: decision.decision_id },
+    ],
+    confidence: 0.72,
+    risk: 'medium',
+    risk_notes: 'review-only rollback draft; owner must decide any follow-up action',
+    expected_benefit: 'prevents measured regressions from silently staying approved',
+    rollback: { plan: 'Close this review-only draft if the owner rejects the rollback recommendation' },
+    review_only: true,
+    status: 'draft',
+  });
+}
+
+export function recordOutcomesForRun(run) {
+  const runs = readLedger('run');
+  const proposals = foldLatestById(readLedger('proposal'), 'proposal_id');
+  const decisions = readLedger('decision');
+  const outcomes = readLedger('outcome');
+  const existingOutcomeDecisionIds = new Set(outcomes.map((outcome) => outcome.decision_id));
+  const recorded = [];
+
+  for (const decision of decisions) {
+    if (decision.decision !== 'approved') continue;
+    if (existingOutcomeDecisionIds.has(decision.decision_id)) continue;
+    if (hasUndoneDecision(decision, decisions)) continue;
+
+    const proposal = proposals.find((candidate) => candidate.proposal_id === decision.proposal_id);
+    if (!proposal || proposal.loop_id !== run.loop_id) continue;
+    if (!['approved', 'applied', 'rolled_back'].includes(proposal.status)) continue;
+
+    const baseline = proposal.run_id
+      ? runs.find((candidate) => candidate.run_id === proposal.run_id)
+      : latestRunBefore(runs, run.loop_id, decision.decided_at, run.run_id);
+    const comparison = baseline ? compareRuns(baseline, run) : { deltas: {}, flags: [] };
+    const outcome = appendRecord('outcome', {
+      outcome_id: newId('out'),
+      decision_id: decision.decision_id,
+      loop_id: run.loop_id,
+      recorded_at: new Date().toISOString(),
+      baseline_run_id: baseline?.run_id || 'unknown',
+      next_run_id: run.run_id,
+      verdict: baseline ? outcomeVerdict(comparison.deltas) : 'unknown',
+      deltas: comparison.deltas,
+    });
+    existingOutcomeDecisionIds.add(decision.decision_id);
+    const rollbackProposal = outcome.verdict === 'regressed'
+      ? appendRegressionProposal({
+        outcome, decision, proposal, run,
+      })
+      : null;
+    recorded.push({ outcome, rollbackProposal });
+  }
+  return recorded;
+}
+
 function main() {
   let opts;
   try {
@@ -199,6 +302,10 @@ function main() {
   const run = appendRecord('run', buildRun(sessions, opts));
   if (run.notes) console.warn(run.notes);
   console.log(`captured ${run.run_id} (${run.loop_id}): ${JSON.stringify(run.metrics)}`);
+  for (const result of recordOutcomesForRun(run)) {
+    const suffix = result.rollbackProposal ? ` rollback_proposal=${result.rollbackProposal.proposal_id}` : '';
+    console.log(`outcome ${result.outcome.outcome_id}: ${result.outcome.verdict}${suffix}`);
+  }
 
   if (opts.baseline) {
     const baseline = readLedger('run').find((r) => r.run_id === opts.baseline);

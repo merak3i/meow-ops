@@ -10,9 +10,11 @@ import { fileURLToPath } from 'node:url';
 import {
   appendRecord, assertRedacted, foldLatestById, newId, readLedger, resolveLedgerDir,
 } from '../loop-ledger.mjs';
-import { validateProposal, validateStatusTransition } from '../loop-schema.mjs';
 import {
-  compareRuns, readLoopAliases, resolveLoopId, selectSessions, summarize,
+  validateOutcome, validateProposal, validateSimulation, validateStatusTransition,
+} from '../loop-schema.mjs';
+import {
+  compareRuns, readLoopAliases, recordOutcomesForRun, resolveLoopId, selectSessions, summarize,
 } from '../loop-capture.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -52,6 +54,32 @@ function validDraftProposal(overrides = {}) {
     ...clone(proposals.find((p) => p.expect_fail === null).record),
     proposal_id: newId('prop'),
     created_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+function validSimulation(overrides = {}) {
+  return {
+    simulation_id: newId('sim'),
+    proposal_id: 'prop-demo',
+    ran_at: '2026-07-06T00:00:00.000Z',
+    mode: 'checklist',
+    results: [{ check: 'evidence', pass: true, note: 'present' }],
+    pass: true,
+    ...overrides,
+  };
+}
+
+function validOutcome(overrides = {}) {
+  return {
+    outcome_id: newId('out'),
+    decision_id: 'dec-demo',
+    loop_id: 'demo-loop',
+    recorded_at: '2026-07-06T00:00:00.000Z',
+    baseline_run_id: 'run-before',
+    next_run_id: 'run-after',
+    verdict: 'neutral',
+    deltas: { duration_seconds: { before: 10, after: 10, delta_pct: 0 } },
     ...overrides,
   };
 }
@@ -169,6 +197,17 @@ test('write choke point: valid draft proposal round-trips', () => {
     assert.equal(back.length, 1);
     assert.equal(back[0].proposal_id, stored.proposal_id);
     assert.equal(back[0].status, 'draft');
+  });
+});
+
+test('write choke point: valid simulation and outcome records round-trip', () => {
+  withTempLedger(() => {
+    const simulation = appendRecord('simulation', validSimulation());
+    const outcome = appendRecord('outcome', validOutcome());
+    assert.equal(readLedger('simulation')[0].simulation_id, simulation.simulation_id);
+    assert.equal(readLedger('outcome')[0].outcome_id, outcome.outcome_id);
+    assert.equal(validateSimulation(simulation), simulation);
+    assert.equal(validateOutcome(outcome), outcome);
   });
 });
 
@@ -341,5 +380,107 @@ test('capture aliases fail loud on malformed files', () => {
   withTempLedger((dir) => {
     writeFileSync(join(dir, 'aliases.json'), JSON.stringify([{ bad: 'shape' }]));
     assert.throws(() => readLoopAliases(), /\[aliases\]/);
+  });
+});
+
+test('outcomes: approved regressed decision appends one review-only rollback draft', () => {
+  withTempLedger(() => {
+    const baseline = appendRecord('run', {
+      ...validRun(),
+      run_id: 'run-outcome-before',
+      loop_id: 'outcome-loop',
+      captured_at: '2026-07-06T00:00:00.000Z',
+      metrics: {
+        sessions: 1,
+        duration_seconds: 100,
+        total_tokens: 100,
+        cost_usd_real: 10,
+        cost_usd_notional: 0,
+        message_count: 2,
+      },
+    });
+    const draft = appendRecord('proposal', validDraftProposal({
+      proposal_id: 'prop-outcome-regression',
+      loop_id: 'outcome-loop',
+      run_id: baseline.run_id,
+    }));
+    appendRecord('proposal', { ...draft, created_by: 'system:simulate', simulation_id: 'sim-ok', status: 'simulated' });
+    appendRecord('proposal', { ...draft, created_by: 'system:simulate', simulation_id: 'sim-ok', status: 'pending_approval' });
+    const decision = appendRecord('decision', {
+      decision_id: 'dec-outcome-regression',
+      proposal_id: draft.proposal_id,
+      decided_at: '2026-07-06T00:01:00.000Z',
+      decision: 'approved',
+      decided_by: 'owner',
+    });
+    appendRecord('proposal', { ...draft, created_by: 'owner', simulation_id: 'sim-ok', status: 'approved' });
+    const next = appendRecord('run', {
+      ...validRun(),
+      run_id: 'run-outcome-after',
+      loop_id: 'outcome-loop',
+      captured_at: '2026-07-06T00:02:00.000Z',
+      metrics: {
+        sessions: 1,
+        duration_seconds: 120,
+        total_tokens: 100,
+        cost_usd_real: 12,
+        cost_usd_notional: 0,
+        message_count: 2,
+      },
+    });
+
+    const recorded = recordOutcomesForRun(next);
+    assert.equal(recorded.length, 1);
+    assert.equal(recorded[0].outcome.decision_id, decision.decision_id);
+    assert.equal(recorded[0].outcome.verdict, 'regressed');
+    assert.equal(recorded[0].rollbackProposal.review_only, true);
+    assert.equal(recorded[0].rollbackProposal.created_by, 'assistant:risk');
+    assert.ok(recorded[0].rollbackProposal.evidence.some((item) => item.ref === 'outcome-regression'));
+
+    const second = recordOutcomesForRun(next);
+    assert.equal(second.length, 0, 'existing outcome throttles repeats for the same decision');
+  });
+});
+
+test('outcomes: approved decisions with an undo reference are skipped', () => {
+  withTempLedger(() => {
+    const baseline = appendRecord('run', {
+      ...validRun(),
+      run_id: 'run-undone-before',
+      loop_id: 'undone-loop',
+      captured_at: '2026-07-06T00:00:00.000Z',
+    });
+    const draft = appendRecord('proposal', validDraftProposal({
+      proposal_id: 'prop-undone-outcome',
+      loop_id: 'undone-loop',
+      run_id: baseline.run_id,
+    }));
+    appendRecord('proposal', { ...draft, created_by: 'system:simulate', simulation_id: 'sim-ok', status: 'simulated' });
+    appendRecord('proposal', { ...draft, created_by: 'system:simulate', simulation_id: 'sim-ok', status: 'pending_approval' });
+    const approved = appendRecord('decision', {
+      decision_id: 'dec-undone-approved',
+      proposal_id: draft.proposal_id,
+      decided_at: '2026-07-06T00:01:00.000Z',
+      decision: 'approved',
+      decided_by: 'owner',
+    });
+    appendRecord('proposal', { ...draft, created_by: 'owner', simulation_id: 'sim-ok', status: 'approved' });
+    appendRecord('decision', {
+      decision_id: 'dec-undone-reference',
+      proposal_id: draft.proposal_id,
+      decided_at: '2026-07-06T00:02:00.000Z',
+      decision: 'undone',
+      decided_by: 'owner',
+      undo_of: approved.decision_id,
+    });
+    const next = appendRecord('run', {
+      ...validRun(),
+      run_id: 'run-undone-after',
+      loop_id: 'undone-loop',
+      captured_at: '2026-07-06T00:03:00.000Z',
+    });
+
+    assert.deepEqual(recordOutcomesForRun(next), []);
+    assert.equal(readLedger('outcome').length, 0);
   });
 });

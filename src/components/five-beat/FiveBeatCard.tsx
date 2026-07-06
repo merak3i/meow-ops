@@ -1,10 +1,12 @@
 import { RotateCcw } from 'lucide-react';
 import type { CSSProperties } from 'react';
-import type { Decision, DecisionValue, Proposal } from '@/types/loop';
+import type { Decision, DecisionValue, Outcome, Proposal, Simulation } from '@/types/loop';
 
 interface FiveBeatCardProps {
   proposal: Proposal | null;
   latestDecision: Decision | null;
+  latestSimulation: Simulation | null;
+  outcome: Outcome | null;
   busy: boolean;
   error: string | null;
   onDecision: (decision: DecisionValue, options?: { undoOf?: string; reason?: string }) => void;
@@ -115,7 +117,21 @@ function diffText(diff: Proposal['diff']) {
   return JSON.stringify(diff, null, 2);
 }
 
-export function FiveBeatCard({ proposal, latestDecision, busy, error, onDecision }: FiveBeatCardProps) {
+function simulationStatus(proposal: Proposal, simulation: Simulation | null) {
+  if (simulation) return simulation.pass ? 'passed' : 'failed';
+  if (proposal.simulation_id) return 'passed';
+  return 'not-required';
+}
+
+export function FiveBeatCard({
+  proposal,
+  latestDecision,
+  latestSimulation,
+  outcome,
+  busy,
+  error,
+  onDecision,
+}: FiveBeatCardProps) {
   if (!proposal) {
     return (
       <div style={{ ...styles.shell, justifyContent: 'center', alignItems: 'center' }}>
@@ -133,6 +149,7 @@ export function FiveBeatCard({ proposal, latestDecision, busy, error, onDecision
     && (!latestDecision || latestDecision.decision === 'undone')
     && !skeleton;
   const reviewOnly = proposal.review_only === true;
+  const simulation = simulationStatus(proposal, latestSimulation);
   const decisionLine = latestDecision
     ? `${latestDecision.decision} by ${latestDecision.decided_by} at ${new Date(latestDecision.decided_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`
     : 'No owner decision recorded yet.';
@@ -146,6 +163,8 @@ export function FiveBeatCard({ proposal, latestDecision, busy, error, onDecision
           <span style={styles.chip}>{proposal.loop_id}</span>
           <span style={styles.chip}>{creatorKind(proposal.created_by)}: {proposal.created_by}</span>
           <span style={styles.chip}>{latestDecision ? latestDecision.decision : proposal.status}</span>
+          <span style={styles.chip}>simulation {simulation}</span>
+          {outcome && <span style={styles.chip}>outcome {outcome.verdict}</span>}
           {skeleton && <span style={styles.chip}>skeleton — complete manually</span>}
           {reviewOnly && <span style={styles.chip}>review only</span>}
         </div>
@@ -224,6 +243,11 @@ export function FiveBeatCard({ proposal, latestDecision, busy, error, onDecision
       <section style={styles.section}>
         <h3 style={styles.sectionTitle}>Undo / Archive</h3>
         <p style={styles.muted}>{decisionLine}</p>
+        {outcome && (
+          <span style={{ ...styles.chip, width: 'fit-content' }}>
+            outcome {outcome.verdict}
+          </span>
+        )}
         {!skeleton && latestDecision && latestDecision.decision !== 'undone' && (
           <button
             type="button"

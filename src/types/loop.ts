@@ -109,6 +109,35 @@ export interface Decision {
   undo_of?: string;
 }
 
+export interface SimulationResultItem {
+  check: string;
+  pass: boolean;
+  note?: string;
+  [key: string]: unknown;
+}
+
+export interface Simulation {
+  schema_version: number;
+  simulation_id: string;
+  proposal_id: string;
+  ran_at: string;
+  mode: 'test-run' | 'checklist';
+  results: SimulationResultItem[];
+  pass: boolean;
+}
+
+export interface Outcome {
+  schema_version: number;
+  outcome_id: string;
+  decision_id: string;
+  loop_id: string;
+  recorded_at: string;
+  baseline_run_id: string;
+  next_run_id: string;
+  verdict: 'improved' | 'regressed' | 'neutral' | 'unknown';
+  deltas: Record<string, ComparisonDelta | unknown>;
+}
+
 export interface LoopSummary {
   counts_by_status: Record<string, number>;
   open_per_loop: Record<string, number>;
