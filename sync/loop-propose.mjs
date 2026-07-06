@@ -15,6 +15,7 @@ import {
 } from './loop-ledger.mjs';
 import { checkGitignore } from './loop-eval.mjs';
 import { callLlm } from './llm-gateway.mjs';
+import { loadEnv } from './load-env.mjs';
 import { loadSessionMetadata, minePromptPatterns } from './loop-prompt-miner.mjs';
 import {
   hasNonRejectedProposalForEvidenceRef, hasOpenProposalForLoop, latestProposals,
@@ -1029,6 +1030,7 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  loadEnv(REPO_ROOT);
   main().catch((err) => {
     console.error(err.message);
     process.exitCode = 1;
