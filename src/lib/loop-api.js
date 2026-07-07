@@ -130,6 +130,14 @@ export async function fetchLoopDigestHistory() {
   return Array.isArray(data) ? data : [];
 }
 
+export async function postLoopRunDigest() {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+
+  const result = await postJson(`${base}/loop-eng/digest`, {});
+  return result && typeof result === 'object' ? result : null;
+}
+
 export async function fetchLoopNonce() {
   const data = await fetchLoopJson('/loop-eng/nonce');
   return typeof data?.nonce === 'string' ? data.nonce : null;

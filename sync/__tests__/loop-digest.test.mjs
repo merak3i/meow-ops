@@ -66,6 +66,20 @@ test('digest assembles correct shape', async () => {
   assert.deepEqual(digest.proposals, { new_drafts: 1, pending: 1, total: 2 });
 });
 
+test('runDigest returns a valid digest object with no sessions', async () => {
+  const fixture = deps({
+    readSessions: () => [],
+    appendRun: () => {
+      throw new Error('appendRun should not run without sessions');
+    },
+  });
+  const digest = await runDigest({ repoRoot: '/repo', now: NOW, deps: fixture.deps });
+  assert.deepEqual(Object.keys(digest).filter((key) => key !== 'notes').sort(), ['capture', 'generated_at', 'health', 'intake', 'period', 'proposals']);
+  assert.deepEqual(digest.capture, { run_id: null, sessions: 0 });
+  assert.equal(digest.health.agents_total, 2);
+  assert.equal(digest.proposals.total, 2);
+});
+
 test('--no-intake skips intake', async () => {
   const fixture = deps();
   const digest = await runDigest({ repoRoot: '/repo', now: NOW, noIntake: true, deps: fixture.deps });
