@@ -17,6 +17,7 @@ import { checkGitignore } from './loop-eval.mjs';
 import { callLlm } from './llm-gateway.mjs';
 import { loadEnv } from './load-env.mjs';
 import { resolveIntakeDir } from './intake-local.mjs';
+import { runIntakeMiners } from './intake-miners.mjs';
 import { loadSessionMetadata, minePromptPatterns } from './loop-prompt-miner.mjs';
 import {
   hasNonRejectedProposalForEvidenceRef, hasOpenProposalForLoop, latestProposals,
@@ -489,6 +490,15 @@ export function appendAutomationHealthProposals(options = {}) {
       const stored = appendRecord('proposal', proposal);
       results.push({ ruleId, status: 'draft', proposal_id: stored.proposal_id });
     }
+  }
+  return results;
+}
+
+export function appendIntakeMinerProposals(options = {}) {
+  const results = [];
+  for (const proposal of runIntakeMiners(options)) {
+    const stored = appendRecord('proposal', proposal);
+    results.push({ ruleId: 'intake-miner', status: 'draft', proposal_id: stored.proposal_id });
   }
   return results;
 }
@@ -1003,6 +1013,7 @@ export function runProposer(options = {}) {
     results.push({ ruleId, status: 'fired', proposal_id: pending.proposal_id });
   }
   results.push(...appendAutomationHealthProposals(options));
+  results.push(...appendIntakeMinerProposals(options));
   for (const result of appendComparisonSkeletons({ now: options.now })) {
     results.push({
       ruleId: `comparison:${result.comparison_id}`,
@@ -1044,6 +1055,7 @@ export async function runProposerWithAi(options = {}) {
     results.push({ ruleId, status: 'fired', proposal_id: pending.proposal_id });
   }
   results.push(...appendAutomationHealthProposals(options));
+  results.push(...appendIntakeMinerProposals(options));
   for (const result of await appendComparisonSkeletonsWithAi({
     now: options.now,
     ai: options.ai,
