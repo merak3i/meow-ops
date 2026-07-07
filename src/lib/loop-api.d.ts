@@ -14,8 +14,20 @@ export interface DigestData {
   period: { since: string; until: string };
   capture: { run_id: string | null; sessions: number };
   intake: { processed: number; stored: number; dropped: number; skipped: number };
-  health: { agents_total: number; flagged: number; flags: string[] };
+  health: {
+    agents_total: number;
+    flagged: number;
+    flags: string[];
+    agents: Array<{
+      label: string;
+      running: boolean;
+      last_exit_status: number | null;
+      log_staleness_hours: number | null;
+      flags: string[];
+    }>;
+  };
   proposals: { new_drafts: number; pending: number; total: number };
+  notes?: string[];
 }
 export function fetchLoopDigest(): Promise<DigestData | null>;
 export function fetchLoopNonce(): Promise<string | null>;

@@ -668,10 +668,41 @@ export default function LoopReview() {
                 <span style={styles.digestLabel}>Health</span>
                 <span>{digest.health.agents_total} agents · {digest.health.flagged} flagged · {digest.health.flags.length ? digest.health.flags.join(', ') : 'no flags'}</span>
               </div>
+              {digest.health.agents?.length ? (
+                <div style={styles.digestRow}>
+                  <span style={styles.digestLabel}>Agents</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {digest.health.agents.map((agent) => {
+                      const stale = typeof agent.log_staleness_hours === 'number' && agent.log_staleness_hours > 24;
+                      const failed = typeof agent.last_exit_status === 'number' && agent.last_exit_status !== 0;
+                      return (
+                        <span key={agent.label} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'baseline' }}>
+                          <span style={{ color: agent.running ? 'var(--success, #22c55e)' : 'var(--danger, #fb7185)' }}>●</span>
+                          <strong>{agent.label}</strong>
+                          <span>{agent.running ? 'running' : 'stopped'}</span>
+                          {failed && <span style={{ color: 'var(--danger, #fb7185)' }}>exit {agent.last_exit_status}</span>}
+                          {stale && <span style={{ color: 'var(--warning)' }}>{agent.log_staleness_hours}h stale</span>}
+                          {agent.flags.length > 0 && <span>{agent.flags.join(', ')}</span>}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
               <div style={styles.digestRow}>
                 <span style={styles.digestLabel}>Proposals</span>
                 <span>{digest.proposals.new_drafts} new / {digest.proposals.pending} pending / {digest.proposals.total} total</span>
               </div>
+              {digest.notes?.length ? (
+                <div style={styles.digestRow}>
+                  <span style={styles.digestLabel}>Notes</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {digest.notes.map((note, index) => (
+                      <span key={`${note}-${index}`} style={{ color: 'var(--text-muted)' }}>· {note}</span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           )}
         </section>

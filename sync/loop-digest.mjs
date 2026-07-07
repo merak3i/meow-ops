@@ -41,6 +41,13 @@ export function assembleDigest({
       agents_total: health.agents.length,
       flagged: health.agents.filter((agent) => agent.flags.length > 0).length,
       flags: [...new Set(health.agents.flatMap((agent) => agent.flags))].sort(),
+      agents: health.agents.map((agent) => ({
+        label: agent.label,
+        running: agent.running,
+        last_exit_status: agent.last_exit_status,
+        log_staleness_hours: agent.log_staleness_hours,
+        flags: agent.flags,
+      })),
     },
     proposals: {
       new_drafts: newDraftCount,

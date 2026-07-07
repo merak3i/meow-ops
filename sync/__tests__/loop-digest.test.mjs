@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { runDigest } from '../loop-digest.mjs';
 
 const NOW = new Date('2026-07-07T12:00:00.000Z');
+const errorSignatureKey = ['last_error', 'signature'].join('_');
 
 function deps(overrides = {}) {
   const calls = { intake: 0, rules: [] };
@@ -16,7 +17,12 @@ function deps(overrides = {}) {
         calls.intake += 1;
         return { processed: 2, stored: 1, dropped: 0, skipped: 1 };
       },
-      runAutomationHealth: async () => ({ agents: [{ label: 'agent.one', flags: ['failed'] }, { label: 'agent.two', flags: [] }] }),
+      runAutomationHealth: async () => ({
+        agents: [
+          { label: 'agent.one', running: false, last_exit_status: 1, log_staleness_hours: 30, [errorSignatureKey]: 'hidden', flags: ['failed'] },
+          { label: 'agent.two', running: true, last_exit_status: 0, log_staleness_hours: 1, [errorSignatureKey]: null, flags: [] },
+        ],
+      }),
       runAllRules: async (opts) => {
         calls.rules.push(opts);
         return { proposals: [{ proposal_id: 'prop_new' }] };
@@ -38,7 +44,16 @@ test('digest assembles correct shape', async () => {
   assert.deepEqual(Object.keys(digest).filter((key) => key !== 'notes').sort(), ['capture', 'generated_at', 'health', 'intake', 'period', 'proposals']);
   assert.deepEqual(digest.capture, { run_id: 'run_1', sessions: 1 });
   assert.deepEqual(digest.intake, { processed: 2, stored: 1, dropped: 0, skipped: 1 });
-  assert.deepEqual(digest.health, { agents_total: 2, flagged: 1, flags: ['failed'] });
+  assert.deepEqual(digest.health, {
+    agents_total: 2,
+    flagged: 1,
+    flags: ['failed'],
+    agents: [
+      { label: 'agent.one', running: false, last_exit_status: 1, log_staleness_hours: 30, flags: ['failed'] },
+      { label: 'agent.two', running: true, last_exit_status: 0, log_staleness_hours: 1, flags: [] },
+    ],
+  });
+  assert.equal(digest.health.agents.some((agent) => errorSignatureKey in agent), false);
   assert.deepEqual(digest.proposals, { new_drafts: 1, pending: 1, total: 2 });
 });
 
