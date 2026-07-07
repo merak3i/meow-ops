@@ -14,6 +14,7 @@ import {
   fetchLoopSummary,
   postLoopDecision,
   postLoopExecute,
+  postLoopRunDigest,
 } from '@/lib/loop-api';
 import type { DigestData } from '@/lib/loop-api';
 import type {
@@ -333,6 +334,7 @@ export default function LoopReview() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [digestBusy, setDigestBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -513,6 +515,21 @@ export default function LoopReview() {
     }, mode === 'push' ? 10000 : 3000);
   }, [load]);
 
+  const handleRunDigest = useCallback(async () => {
+    setDigestBusy(true);
+    setError(null);
+    try {
+      const result = await postLoopRunDigest();
+      if (!result?.ok) {
+        setError(result?.error || 'Local helper unavailable. Start node sync/local-api.mjs.');
+        return;
+      }
+      await load();
+    } finally {
+      setDigestBusy(false);
+    }
+  }, [load]);
+
   return (
     <div style={styles.shell}>
       <header style={styles.header}>
@@ -653,6 +670,27 @@ export default function LoopReview() {
         </section>
       ) : view === 'digest' ? (
         <section style={styles.runsShell}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              onClick={() => void handleRunDigest()}
+              disabled={digestBusy}
+              style={{
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: '6px 14px',
+                fontSize: 12,
+                background: 'var(--bg-card)',
+                color: 'var(--text-secondary)',
+                cursor: digestBusy ? 'wait' : 'pointer',
+                fontFamily: 'inherit',
+                opacity: digestBusy ? 0.6 : 1,
+              }}
+            >
+              {digestBusy ? 'Running...' : 'Run digest'}
+            </button>
+          </div>
+          {error ? <div style={{ ...styles.empty, color: 'var(--danger, #fb7185)' }}>{error}</div> : null}
           {!digest ? (
             <div style={styles.empty}>No digest available — run `npm run digest` first.</div>
           ) : (

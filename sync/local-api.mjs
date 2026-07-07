@@ -24,6 +24,7 @@ import { randomBytes } from 'node:crypto';
 import {
   appendRecord, foldLatestById, newId, readLedger,
 } from './loop-ledger.mjs';
+import { runDigest } from './loop-digest.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -328,6 +329,16 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/loop-eng/digest' && req.method === 'POST') {
+    try {
+      const digest = await runDigest();
+      sendJson(res, 200, { ok: true, digest });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
   if (path === '/loop-eng/digest/history' && req.method === 'GET') {
     try {
       const lines = readFileSync(join(ROOT, 'public', 'data', 'loop-engineering', 'digest-history.jsonl'), 'utf8')
@@ -623,6 +634,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /loop-eng/outcomes       - Loop Engineering outcomes');
   console.log('  GET  /loop-eng/summary        - Loop Engineering queue summary');
   console.log('  GET  /loop-eng/digest         - last Loop Engineering digest');
+  console.log('  POST /loop-eng/digest         - run Loop Engineering digest');
   console.log('  GET  /loop-eng/digest/history - Loop Engineering digest history');
   console.log('  POST /loop-eng/decisions      - owner decision with nonce');
   console.log('  POST /loop-eng/execute        - dry-run/push executor with nonce');
