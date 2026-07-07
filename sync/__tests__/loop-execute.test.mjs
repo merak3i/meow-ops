@@ -6,6 +6,7 @@ import { join } from 'node:path';
 
 import { appendRecord, foldLatestById, newId, readLedger } from '../loop-ledger.mjs';
 import { executeProposal, validateExecutableProposal } from '../loop-execute.mjs';
+import { AUTO_MERGE_CATEGORIES } from '../loop-schema.mjs';
 
 const NOW = new Date('2026-07-07T00:00:00.000Z');
 
@@ -54,7 +55,12 @@ function approvedProposal(overrides = {}) {
   return advance(p, 'approved', 'owner');
 }
 
-function mockExec({ failGate = null, failPush = false, prUrl = 'https://github.com/merak3i/meow-ops/pull/99' } = {}) {
+function mockExec({
+  failGate = null,
+  failPush = false,
+  failMerge = false,
+  prUrl = 'https://github.com/merak3i/meow-ops/pull/99',
+} = {}) {
   const calls = [];
   const execSync = (cmd, args, opts = {}) => {
     calls.push({ cmd, args, cwd: opts.cwd });
@@ -66,6 +72,12 @@ function mockExec({ failGate = null, failPush = false, prUrl = 'https://github.c
       throw err;
     }
     if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'create') return `${prUrl}\n`;
+    if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'merge' && failMerge) {
+      const err = new Error('merge failed');
+      err.stdout = '';
+      err.stderr = 'merge failed';
+      throw err;
+    }
     if (cmd === 'npm' && args[0] === 'run' && args[1] === failGate) {
       const err = new Error(`${failGate} failed`);
       err.stdout = '';
@@ -229,3 +241,56 @@ test('PR URL captured in evidence', () => withTempLedger(() => {
     assert.equal(evidence.pr_url, 'https://github.com/merak3i/meow-ops/pull/99');
   });
 }));
+
+test('workflow category does not auto-merge even with green CI', () => withTempLedger(() => {
+  withTempRepo((repoRoot) => {
+    const proposal = approvedProposal({ category: 'workflow' });
+    const mocked = mockExec();
+    executeProposal({ proposalId: proposal.proposal_id, mode: 'push', repoRoot, now: NOW, env: { MEOW_EXECUTOR_ENABLED: '1' }, execSync: mocked.execSync });
+    const evidence = foldLatestById(readLedger('proposal'), 'proposal_id')[0].evidence.find((item) => item.kind === 'execution' && item.mode === 'push');
+    assert.equal(mocked.calls.some((call) => call.cmd === 'gh' && call.args[0] === 'pr' && call.args[1] === 'merge'), false);
+    assert.equal(evidence.auto_merged, false);
+  });
+}));
+
+test('test category triggers auto-merge', () => withTempLedger(() => {
+  withTempRepo((repoRoot) => {
+    const proposal = approvedProposal({ category: 'test' });
+    const mocked = mockExec();
+    executeProposal({ proposalId: proposal.proposal_id, mode: 'push', repoRoot, now: NOW, env: { MEOW_EXECUTOR_ENABLED: '1' }, execSync: mocked.execSync });
+    const evidence = foldLatestById(readLedger('proposal'), 'proposal_id')[0].evidence.find((item) => item.kind === 'execution' && item.mode === 'push');
+    assert.ok(mocked.calls.some((call) => call.cmd === 'gh' && call.args.join(' ') === 'pr merge https://github.com/merak3i/meow-ops/pull/99 --squash --delete-branch'));
+    assert.equal(evidence.auto_merged, true);
+  });
+}));
+
+test('prompt category triggers auto-merge', () => withTempLedger(() => {
+  withTempRepo((repoRoot) => {
+    const proposal = approvedProposal({ category: 'prompt' });
+    const mocked = mockExec();
+    executeProposal({ proposalId: proposal.proposal_id, mode: 'push', repoRoot, now: NOW, env: { MEOW_EXECUTOR_ENABLED: '1' }, execSync: mocked.execSync });
+    const evidence = foldLatestById(readLedger('proposal'), 'proposal_id')[0].evidence.find((item) => item.kind === 'execution' && item.mode === 'push');
+    assert.ok(mocked.calls.some((call) => call.cmd === 'gh' && call.args[1] === 'merge'));
+    assert.equal(evidence.auto_merged, true);
+  });
+}));
+
+test('auto-merge failure records error and does not retry', () => withTempLedger(() => {
+  withTempRepo((repoRoot) => {
+    const proposal = approvedProposal({ category: 'test' });
+    const mocked = mockExec({ failMerge: true });
+    const result = executeProposal({ proposalId: proposal.proposal_id, mode: 'push', repoRoot, now: NOW, env: { MEOW_EXECUTOR_ENABLED: '1' }, execSync: mocked.execSync });
+    const evidence = foldLatestById(readLedger('proposal'), 'proposal_id')[0].evidence.find((item) => item.kind === 'execution' && item.mode === 'push');
+    const merges = mocked.calls.filter((call) => call.cmd === 'gh' && call.args[1] === 'merge');
+    assert.equal(result.pass, true);
+    assert.equal(merges.length, 1);
+    assert.equal(evidence.auto_merged, false);
+    assert.match(evidence.auto_merge_error, /merge failed/);
+  });
+}));
+
+test('AUTO_MERGE_CATEGORIES is exactly test and prompt', () => {
+  assert.equal(AUTO_MERGE_CATEGORIES.size, 2);
+  assert.equal(AUTO_MERGE_CATEGORIES.has('test'), true);
+  assert.equal(AUTO_MERGE_CATEGORIES.has('prompt'), true);
+});

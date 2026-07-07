@@ -462,7 +462,7 @@ const server = createServer(async (req, res) => {
       stdio: 'pipe',
     });
     child.stdout.on('data', () => {}); child.stderr.on('data', () => {});
-    const timer = setTimeout(() => child.kill(), 300_000);
+    const timer = setTimeout(() => child.kill(), 600_000);
     child.on('close', () => clearTimeout(timer)); child.on('error', () => clearTimeout(timer));
     sendJson(res, 202, { ok: true, status: 'started', proposal_id: body.proposal_id, mode });
     return;
