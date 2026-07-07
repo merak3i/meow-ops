@@ -466,7 +466,9 @@ export default function CapacityUsage() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void Promise.resolve().then(load);
+  }, [load]);
 
   async function syncNow() {
     if (syncing) return;
