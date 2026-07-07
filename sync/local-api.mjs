@@ -25,6 +25,7 @@ import {
   appendRecord, foldLatestById, newId, readLedger,
 } from './loop-ledger.mjs';
 import { runDigest } from './loop-digest.mjs';
+import { ask } from './ask-engine.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -353,6 +354,32 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/loop-eng/ask' && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req);
+      const question = typeof body.question === 'string' ? body.question.trim() : '';
+      if (!question || question.length > 500) {
+        sendJson(res, 400, { ok: false, error: 'question must be a non-empty string <= 500 chars' });
+        return;
+      }
+      let digest = null;
+      try {
+        const data = readFileSync(join(ROOT, 'public', 'data', 'loop-engineering', 'digest.json'), 'utf8');
+        digest = JSON.parse(data);
+      } catch {}
+      const result = ask(question, {
+        proposals: readLedger('proposal'),
+        decisions: readLedger('decision'),
+        runs: readLedger('run'),
+        digest,
+      });
+      sendJson(res, 200, { ok: true, answer: result.answer });
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+    return;
+  }
+
   if (path === '/loop-eng/nonce' && req.method === 'GET') {
     sendJson(res, 200, { nonce: createNonce() });
     return;
@@ -636,6 +663,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /loop-eng/digest         - last Loop Engineering digest');
   console.log('  POST /loop-eng/digest         - run Loop Engineering digest');
   console.log('  GET  /loop-eng/digest/history - Loop Engineering digest history');
+  console.log('  POST /loop-eng/ask            - deterministic Review Deck query');
   console.log('  POST /loop-eng/decisions      - owner decision with nonce');
   console.log('  POST /loop-eng/execute        - dry-run/push executor with nonce');
   console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');
