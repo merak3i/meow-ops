@@ -27,4 +27,5 @@ export function postLoopDecision(input: {
 }): Promise<DecisionResult | null>;
 export function postLoopExecute(opts: {
   proposal_id: string;
+  mode?: 'dry-run' | 'push';
 }): Promise<{ ok: boolean; status?: string; error?: string } | null>;

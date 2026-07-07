@@ -10,7 +10,7 @@ interface FiveBeatCardProps {
   busy: boolean;
   error: string | null;
   onDecision: (decision: DecisionValue, options?: { undoOf?: string; reason?: string }) => void;
-  onExecute?: (() => void | Promise<void>) | undefined;
+  onExecute?: ((mode: 'dry-run' | 'push') => void | Promise<void>) | undefined;
 }
 
 const riskColor: Record<string, string> = {
@@ -133,7 +133,13 @@ function hasLlmEvidence(proposal: Proposal) {
   ));
 }
 
-interface ExecutionEvidence { kind: 'execution'; pass?: boolean; gates?: { gate?: string; pass?: boolean }[] }
+interface ExecutionEvidence {
+  kind: 'execution';
+  mode?: string;
+  pass?: boolean;
+  pr_url?: string;
+  gates?: { gate?: string; pass?: boolean }[];
+}
 
 function isExecutionEvidence(item: unknown): item is ExecutionEvidence {
   return Boolean(
@@ -146,6 +152,16 @@ function isExecutionEvidence(item: unknown): item is ExecutionEvidence {
 
 function executionResult(proposal: Proposal) {
   return [...proposal.evidence].reverse().find(isExecutionEvidence) || null;
+}
+
+function isPushExecutionEvidence(item: unknown): item is ExecutionEvidence {
+  return (
+    isExecutionEvidence(item) && item.mode === 'push' && item.pass === true
+  );
+}
+
+function pushEvidence(proposal: Proposal) {
+  return [...proposal.evidence].reverse().find(isPushExecutionEvidence) || null;
 }
 
 export function FiveBeatCard({
@@ -177,6 +193,7 @@ export function FiveBeatCard({
   const reviewOnly = proposal.review_only === true;
   const llmDrafted = hasLlmEvidence(proposal);
   const execution = executionResult(proposal);
+  const pushed = pushEvidence(proposal);
   const simulation = simulationStatus(proposal, latestSimulation);
   const decisionLine = latestDecision
     ? `${latestDecision.decision} by ${latestDecision.decided_by} at ${new Date(latestDecision.decided_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`
@@ -266,18 +283,28 @@ export function FiveBeatCard({
         ) : (
           <p style={styles.muted}>Proposal is not waiting for approval.</p>
         )}
-        {proposal.status === 'approved' && !reviewOnly && !execution && onExecute && (
+        {proposal.status === 'approved' && !reviewOnly && onExecute && (
           <div style={{ ...styles.row, marginTop: 8 }}>
-            <button type="button" disabled={busy} style={styles.button} onClick={onExecute}>
+            <button type="button" disabled={busy} style={styles.button} onClick={() => onExecute('dry-run')}>
               Dry Run
             </button>
+            {!pushed && (
+              <button type="button" disabled={busy} style={{ ...styles.button, ...styles.primaryButton }} onClick={() => onExecute('push')}>
+                Execute → PR
+              </button>
+            )}
           </div>
         )}
         {execution && (
           <p style={styles.muted}>
-            Dry run: {execution.pass ? 'passed' : 'failed'}
+            Execution {execution.mode || 'dry-run'}: {execution.pass ? 'passed' : 'failed'}
             {' - '}
             {(execution.gates || []).map((gate) => `${gate.gate || 'gate'}=${gate.pass ? 'ok' : 'FAIL'}`).join(', ')}
+          </p>
+        )}
+        {pushed?.pr_url && (
+          <p style={styles.muted}>
+            PR created: <a href={pushed.pr_url} target="_blank" rel="noopener" style={{ color: 'var(--accent)' }}>{pushed.pr_url}</a>
           </p>
         )}
         {error && <p style={{ ...styles.muted, color: '#fb7185' }}>{error}</p>}

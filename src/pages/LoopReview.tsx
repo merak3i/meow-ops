@@ -493,10 +493,10 @@ export default function LoopReview() {
     setBusy(false);
   }, [load, selected]);
 
-  const handleExecute = useCallback(async (proposalId: string) => {
+  const handleExecute = useCallback(async (proposalId: string, mode: 'dry-run' | 'push' = 'dry-run') => {
     setBusy(true);
     setError(null);
-    const result = await postLoopExecute({ proposal_id: proposalId });
+    const result = await postLoopExecute({ proposal_id: proposalId, mode });
     if (!result?.ok) {
       setError(result?.error || 'Local helper unavailable. Start node sync/local-api.mjs with MEOW_EXECUTOR_ENABLED=1.');
       setBusy(false);
@@ -505,7 +505,7 @@ export default function LoopReview() {
     setBusy(false);
     window.setTimeout(() => {
       void load();
-    }, 3000);
+    }, mode === 'push' ? 10000 : 3000);
   }, [load]);
 
   return (
@@ -583,7 +583,7 @@ export default function LoopReview() {
               busy={busy}
               error={error}
               onDecision={handleDecision}
-              onExecute={selected ? () => handleExecute(selected.proposal_id) : undefined}
+              onExecute={selected ? (mode) => handleExecute(selected.proposal_id, mode) : undefined}
             />
           </div>
         )

@@ -455,7 +455,8 @@ const server = createServer(async (req, res) => {
       ruleError(res, 403, 'nonce', 'invalid or already used nonce');
       return;
     }
-    const child = spawn(NODE, [join(ROOT, 'sync', 'loop-execute.mjs'), '--proposal', body.proposal_id], {
+    const mode = body.mode === 'push' ? 'push' : 'dry-run';
+    const child = spawn(NODE, [join(ROOT, 'sync', 'loop-execute.mjs'), '--proposal', body.proposal_id, '--mode', mode], {
       cwd: ROOT,
       env: { ...process.env, MEOW_EXECUTOR_ENABLED: '1' },
       stdio: 'pipe',
@@ -463,7 +464,7 @@ const server = createServer(async (req, res) => {
     child.stdout.on('data', () => {}); child.stderr.on('data', () => {});
     const timer = setTimeout(() => child.kill(), 300_000);
     child.on('close', () => clearTimeout(timer)); child.on('error', () => clearTimeout(timer));
-    sendJson(res, 202, { ok: true, status: 'started', proposal_id: body.proposal_id });
+    sendJson(res, 202, { ok: true, status: 'started', proposal_id: body.proposal_id, mode });
     return;
   }
 
@@ -609,7 +610,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /loop-eng/summary        - Loop Engineering queue summary');
   console.log('  GET  /loop-eng/digest         - last Loop Engineering digest');
   console.log('  POST /loop-eng/decisions      - owner decision with nonce');
-  console.log('  POST /loop-eng/execute        - dry-run executor with nonce');
+  console.log('  POST /loop-eng/execute        - dry-run/push executor with nonce');
   console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');
   console.log('  GET  /superadmin-usage/status - usage snapshot freshness');
   console.log('  POST /superadmin-usage/sync   - refresh local usage snapshot');

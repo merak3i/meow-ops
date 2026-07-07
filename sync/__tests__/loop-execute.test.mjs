@@ -54,11 +54,18 @@ function approvedProposal(overrides = {}) {
   return advance(p, 'approved', 'owner');
 }
 
-function mockExec({ failGate = null } = {}) {
+function mockExec({ failGate = null, failPush = false, prUrl = 'https://github.com/merak3i/meow-ops/pull/99' } = {}) {
   const calls = [];
   const execSync = (cmd, args, opts = {}) => {
     calls.push({ cmd, args, cwd: opts.cwd });
     if (cmd === 'git' && args[0] === 'worktree' && args[1] === 'add') mkdirSync(args[2], { recursive: true });
+    if (cmd === 'git' && args[0] === 'push' && failPush) {
+      const err = new Error('push failed');
+      err.stdout = '';
+      err.stderr = 'push failed';
+      throw err;
+    }
+    if (cmd === 'gh' && args[0] === 'pr' && args[1] === 'create') return `${prUrl}\n`;
     if (cmd === 'npm' && args[0] === 'run' && args[1] === failGate) {
       const err = new Error(`${failGate} failed`);
       err.stdout = '';
@@ -162,5 +169,63 @@ test('execution evidence records gate failure', () => withTempLedger(() => {
     const evidence = foldLatestById(readLedger('proposal'), 'proposal_id')[0].evidence.find((item) => item.kind === 'execution');
     assert.equal(evidence.pass, false);
     assert.deepEqual(evidence.gates.map((gate) => [gate.gate, gate.pass]), [['test:sync', true], ['eval', false], ['build', true]]);
+  });
+}));
+
+test('push mode commits and creates PR', () => withTempLedger(() => {
+  withTempRepo((repoRoot) => {
+    const proposal = approvedProposal();
+    const mocked = mockExec();
+    executeProposal({ proposalId: proposal.proposal_id, mode: 'push', repoRoot, now: NOW, env: { MEOW_EXECUTOR_ENABLED: '1' }, execSync: mocked.execSync });
+    const commands = mocked.calls.map((call) => `${call.cmd} ${call.args.join(' ')}`);
+    assert.ok(commands.some((cmd) => cmd.includes('git checkout -b executor/')));
+    assert.ok(commands.includes('git add -A'));
+    assert.ok(commands.some((cmd) => cmd.startsWith('git commit -m docs: Executor synthetic proposal')));
+    assert.ok(commands.some((cmd) => cmd.includes('git push origin executor/')));
+    assert.ok(commands.some((cmd) => cmd.startsWith('gh pr create')));
+  });
+}));
+
+test('push mode advances proposal to applied', () => withTempLedger(() => {
+  withTempRepo((repoRoot) => {
+    const proposal = approvedProposal();
+    executeProposal({ proposalId: proposal.proposal_id, mode: 'push', repoRoot, now: NOW, env: { MEOW_EXECUTOR_ENABLED: '1' }, execSync: mockExec().execSync });
+    const latest = foldLatestById(readLedger('proposal'), 'proposal_id')[0];
+    const evidence = latest.evidence.find((item) => item.kind === 'execution' && item.mode === 'push');
+    const decision = readLedger('decision').find((item) => item.created_by === 'system:executor');
+    assert.equal(latest.status, 'applied');
+    assert.equal(evidence.pass, true);
+    assert.equal(decision.decided_by, 'system:executor');
+  });
+}));
+
+test('push failure does not advance status', () => withTempLedger(() => {
+  withTempRepo((repoRoot) => {
+    const proposal = approvedProposal();
+    executeProposal({ proposalId: proposal.proposal_id, mode: 'push', repoRoot, now: NOW, env: { MEOW_EXECUTOR_ENABLED: '1' }, execSync: mockExec({ failPush: true }).execSync });
+    const latest = foldLatestById(readLedger('proposal'), 'proposal_id')[0];
+    const evidence = latest.evidence.find((item) => item.kind === 'execution' && item.mode === 'push');
+    assert.equal(latest.status, 'approved');
+    assert.equal(evidence.pass, false);
+    assert.equal(readLedger('decision').some((item) => item.created_by === 'system:executor'), false);
+  });
+}));
+
+test('mode defaults to dry-run', () => withTempLedger(() => {
+  withTempRepo((repoRoot) => {
+    const proposal = approvedProposal();
+    const mocked = mockExec();
+    executeProposal({ proposalId: proposal.proposal_id, repoRoot, now: NOW, env: { MEOW_EXECUTOR_ENABLED: '1' }, execSync: mocked.execSync });
+    assert.equal(mocked.calls.some((call) => call.cmd === 'git' && call.args[0] === 'push'), false);
+    assert.equal(mocked.calls.some((call) => call.cmd === 'gh'), false);
+  });
+}));
+
+test('PR URL captured in evidence', () => withTempLedger(() => {
+  withTempRepo((repoRoot) => {
+    const proposal = approvedProposal();
+    executeProposal({ proposalId: proposal.proposal_id, mode: 'push', repoRoot, now: NOW, env: { MEOW_EXECUTOR_ENABLED: '1' }, execSync: mockExec({ prUrl: 'https://github.com/merak3i/meow-ops/pull/99' }).execSync });
+    const evidence = foldLatestById(readLedger('proposal'), 'proposal_id')[0].evidence.find((item) => item.kind === 'execution' && item.mode === 'push');
+    assert.equal(evidence.pr_url, 'https://github.com/merak3i/meow-ops/pull/99');
   });
 }));
