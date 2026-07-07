@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Daily Loop Engineering digest: capture, intake, health, propose, summarize.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -63,6 +63,10 @@ function writeDigest(path, digest) {
   writeFileSync(path, `${JSON.stringify(digest, null, 2)}\n`);
 }
 
+function appendDigestHistory(dir, digest) {
+  appendFileSync(join(dir, 'digest-history.jsonl'), `${JSON.stringify(digest)}\n`);
+}
+
 export async function runDigest({
   repoRoot = REPO_ROOT,
   now = new Date(),
@@ -108,7 +112,9 @@ export async function runDigest({
     proposals,
     notes,
   });
-  (deps.writeDigest || writeDigest)(join(repoRoot, 'public', 'data', 'loop-engineering', 'digest.json'), digest);
+  const digestDir = join(repoRoot, 'public', 'data', 'loop-engineering');
+  (deps.writeDigest || writeDigest)(join(digestDir, 'digest.json'), digest);
+  (deps.appendDigestHistory || appendDigestHistory)(digestDir, digest);
   return digest;
 }
 

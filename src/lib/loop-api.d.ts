@@ -30,6 +30,7 @@ export interface DigestData {
   notes?: string[];
 }
 export function fetchLoopDigest(): Promise<DigestData | null>;
+export function fetchLoopDigestHistory(): Promise<DigestData[]>;
 export function fetchLoopNonce(): Promise<string | null>;
 export function postLoopDecision(input: {
   proposal_id: string;
