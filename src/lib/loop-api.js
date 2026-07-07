@@ -138,6 +138,14 @@ export async function postLoopRunDigest() {
   return result && typeof result === 'object' ? result : null;
 }
 
+export async function postLoopAsk(question) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+
+  const result = await postJson(`${base}/loop-eng/ask`, { question });
+  return result && typeof result === 'object' ? result : null;
+}
+
 export async function fetchLoopNonce() {
   const data = await fetchLoopJson('/loop-eng/nonce');
   return typeof data?.nonce === 'string' ? data.nonce : null;
