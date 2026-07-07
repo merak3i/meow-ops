@@ -521,7 +521,7 @@ test('Review Deck: expired drafts leave queue but remain under expired filter', 
   await waitForApp(page);
   await expect(page.getByText('Expired stale draft')).toHaveCount(0);
   await page.getByRole('button', { name: 'Expired', exact: true }).click();
-  await expect(page.getByText('Expired stale draft')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Expired stale draft/ })).toBeVisible();
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
