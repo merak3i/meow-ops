@@ -318,6 +318,16 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/loop-eng/digest' && req.method === 'GET') {
+    try {
+      const data = readFileSync(join(ROOT, 'public', 'data', 'loop-engineering', 'digest.json'), 'utf8');
+      sendJson(res, 200, JSON.parse(data));
+    } catch {
+      sendJson(res, 404, { ok: false, error: 'No digest available' });
+    }
+    return;
+  }
+
   if (path === '/loop-eng/nonce' && req.method === 'GET') {
     sendJson(res, 200, { nonce: createNonce() });
     return;
@@ -569,6 +579,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /loop-eng/simulations    - Loop Engineering simulations');
   console.log('  GET  /loop-eng/outcomes       - Loop Engineering outcomes');
   console.log('  GET  /loop-eng/summary        - Loop Engineering queue summary');
+  console.log('  GET  /loop-eng/digest         - last Loop Engineering digest');
   console.log('  POST /loop-eng/decisions      - owner decision with nonce');
   console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');
   console.log('  GET  /superadmin-usage/status - usage snapshot freshness');

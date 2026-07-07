@@ -120,6 +120,11 @@ export async function fetchLoopSummary() {
   return data && typeof data === 'object' ? data : EMPTY_SUMMARY;
 }
 
+export async function fetchLoopDigest() {
+  const data = await fetchLoopJson('/loop-eng/digest');
+  return data && typeof data === 'object' && !data.error ? data : null;
+}
+
 export async function fetchLoopNonce() {
   const data = await fetchLoopJson('/loop-eng/nonce');
   return typeof data?.nonce === 'string' ? data.nonce : null;

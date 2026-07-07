@@ -5,6 +5,7 @@ import { FiveBeatCard } from '@/components/five-beat/FiveBeatCard';
 import {
   fetchLoopComparisons,
   fetchLoopDecisions,
+  fetchLoopDigest,
   fetchLoopOutcomes,
   fetchLoopProposals,
   fetchLoopRuns,
@@ -12,6 +13,7 @@ import {
   fetchLoopSummary,
   postLoopDecision,
 } from '@/lib/loop-api';
+import type { DigestData } from '@/lib/loop-api';
 import type {
   Comparison,
   ComparisonDelta,
@@ -24,13 +26,14 @@ import type {
   Simulation,
 } from '@/types/loop';
 
-type View = 'proposals' | 'runs' | 'ship-next';
+type View = 'proposals' | 'runs' | 'ship-next' | 'digest';
 type Filter = 'pending' | 'drafts' | 'decided' | 'expired' | 'all';
 
 const VIEWS: { value: View; label: string }[] = [
   { value: 'proposals', label: 'Proposals' },
   { value: 'runs', label: 'Runs' },
   { value: 'ship-next', label: 'Ship Next' },
+  { value: 'digest', label: 'Digest' },
 ];
 
 const FILTERS: { value: Filter; label: string }[] = [
@@ -151,6 +154,15 @@ const styles: Record<string, CSSProperties> = {
     flexDirection: 'column',
     gap: 12,
   },
+  digestRow: {
+    display: 'grid',
+    gridTemplateColumns: '120px minmax(0, 1fr)',
+    gap: 12,
+    alignItems: 'baseline',
+    color: 'var(--text-secondary)',
+    fontSize: 13,
+  },
+  digestLabel: { color: 'var(--text-muted)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8 },
   detailTitle: { margin: 0, fontSize: 13, color: 'var(--text-primary)' },
   deltaGrid: { display: 'flex', flexWrap: 'wrap', gap: 8 },
   deltaChip: {
@@ -310,6 +322,7 @@ export default function LoopReview() {
   const [comparisons, setComparisons] = useState<Comparison[]>([]);
   const [simulations, setSimulations] = useState<Simulation[]>([]);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
+  const [digest, setDigest] = useState<DigestData | null>(null);
   const [summary, setSummary] = useState<LoopSummary>({ counts_by_status: {}, open_per_loop: {}, total: 0 });
   const [filter, setFilter] = useState<Filter>('pending');
   const [loopFilter, setLoopFilter] = useState('all');
@@ -329,6 +342,7 @@ export default function LoopReview() {
       nextComparisons,
       nextSimulations,
       nextOutcomes,
+      nextDigest,
     ] = await Promise.all([
       fetchLoopProposals(),
       fetchLoopDecisions(),
@@ -337,6 +351,7 @@ export default function LoopReview() {
       fetchLoopComparisons(),
       fetchLoopSimulations(),
       fetchLoopOutcomes(),
+      fetchLoopDigest(),
     ]);
     setProposals(nextProposals);
     setDecisions(nextDecisions);
@@ -345,6 +360,7 @@ export default function LoopReview() {
     setComparisons(nextComparisons);
     setSimulations(nextSimulations);
     setOutcomes(nextOutcomes);
+    setDigest(nextDigest);
     setLoading(false);
   }, []);
 
@@ -612,6 +628,35 @@ export default function LoopReview() {
               </button>
             ))}
           </div>
+        </section>
+      ) : view === 'digest' ? (
+        <section style={styles.runsShell}>
+          {!digest ? (
+            <div style={styles.empty}>No digest available — run `npm run digest` first.</div>
+          ) : (
+            <div style={styles.detail}>
+              <div style={styles.digestRow}>
+                <span style={styles.digestLabel}>Period</span>
+                <span>{formatDate(digest.period.since)} - {formatDate(digest.period.until)}</span>
+              </div>
+              <div style={styles.digestRow}>
+                <span style={styles.digestLabel}>Capture</span>
+                <span>{formatNumber(digest.capture.sessions)} sessions · {digest.capture.run_id || 'no new run'}</span>
+              </div>
+              <div style={styles.digestRow}>
+                <span style={styles.digestLabel}>Intake</span>
+                <span>{digest.intake.processed} processed / {digest.intake.stored} stored / {digest.intake.dropped} dropped / {digest.intake.skipped} skipped</span>
+              </div>
+              <div style={styles.digestRow}>
+                <span style={styles.digestLabel}>Health</span>
+                <span>{digest.health.agents_total} agents · {digest.health.flagged} flagged · {digest.health.flags.length ? digest.health.flags.join(', ') : 'no flags'}</span>
+              </div>
+              <div style={styles.digestRow}>
+                <span style={styles.digestLabel}>Proposals</span>
+                <span>{digest.proposals.new_drafts} new / {digest.proposals.pending} pending / {digest.proposals.total} total</span>
+              </div>
+            </div>
+          )}
         </section>
       ) : (
         <section style={styles.runsShell}>
