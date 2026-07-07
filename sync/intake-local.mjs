@@ -10,11 +10,12 @@ import { pathToFileURL } from 'node:url';
 import { assertOutsideWorktree, assertRedacted } from './loop-ledger.mjs';
 import { callLmStudioJson } from './lmstudio-client.mjs';
 
-const DEFAULT_LIMIT = 10;
+export const DEFAULT_LIMIT = 10;
 const MAX_CHUNK_CHARS = 16_000;
 const TASK_KINDS = new Set(['build', 'debug', 'refactor', 'research', 'content', 'ops', 'other']);
 const OUTCOMES = new Set(['completed', 'partial', 'abandoned', 'unknown']);
-const ALLOWED_FIELDS = [
+export const INTAKE_SOURCES = new Set(['claude', 'codex', 'antigravity']);
+export const INTAKE_SUMMARY_FIELDS = [
   'intake_id', 'session_id', 'source', 'summarized_at', 'task_kind', 'outcome',
   'failure_signatures', 'waste_indicators', 'friction_score', 'model_calls',
 ];
@@ -30,7 +31,7 @@ const FIELD_TYPES = {
   friction_score: 'number',
   model_calls: 'number',
 };
-const GENERIC_LABEL_RE = /^[a-z0-9][a-z0-9 -]{0,47}$/;
+const GENERIC_LABEL_RE = /^[A-Za-z0-9][A-Za-z0-9 _.:@-]{0,79}$/;
 
 function defaultClaudeProjectsDir() {
   return join(homedir(), '.claude', 'projects');
@@ -42,11 +43,11 @@ export function resolveIntakeDir(env = process.env) {
   return dir;
 }
 
-function intakeId() {
+export function newIntakeId() {
   return `intake_${Date.now().toString(36)}${randomBytes(6).toString('hex')}`;
 }
 
-function readJson(path, fallback) {
+export function readJson(path, fallback) {
   if (!existsSync(path)) return fallback;
   try {
     return JSON.parse(readFileSync(path, 'utf8'));
@@ -55,25 +56,35 @@ function readJson(path, fallback) {
   }
 }
 
-function readCursor(intakeDir) {
+export function readIntakeCursor(intakeDir) {
   const cursor = readJson(join(intakeDir, 'cursor.json'), { processed_session_ids: [] });
-  const ids = Array.isArray(cursor.processed_session_ids)
-    ? cursor.processed_session_ids.map(String).filter(Boolean)
-    : [];
-  return { processed_session_ids: [...new Set(ids)] };
+  return cursor && typeof cursor === 'object' && !Array.isArray(cursor) ? cursor : {};
 }
 
-function writeCursor(intakeDir, cursor) {
+export function cursorIds(cursor, field) {
+  const ids = Array.isArray(cursor[field]) ? cursor[field].map(String).filter(Boolean) : [];
+  return [...new Set(ids)];
+}
+
+export function writeIntakeCursor(intakeDir, cursor) {
   mkdirSync(intakeDir, { recursive: true });
   writeFileSync(join(intakeDir, 'cursor.json'), `${JSON.stringify({
-    processed_session_ids: cursor.processed_session_ids,
+    ...cursor,
     updated_at: new Date().toISOString(),
   }, null, 2)}\n`);
 }
 
-function appendSummary(intakeDir, summary) {
+export function appendIntakeSummary(intakeDir, summary) {
   mkdirSync(intakeDir, { recursive: true });
   appendFileSync(join(intakeDir, 'summaries.jsonl'), `${JSON.stringify(summary)}\n`, 'utf8');
+  return summary;
+}
+
+export function writeIntakeJson(intakeDir, fileName, record) {
+  mkdirSync(intakeDir, { recursive: true });
+  assertRedacted(record, fileName);
+  writeFileSync(join(intakeDir, fileName), `${JSON.stringify(record, null, 2)}\n`);
+  return record;
 }
 
 function walkJsonl(dir) {
@@ -129,7 +140,7 @@ function chunkText(text, maxChars = MAX_CHUNK_CHARS) {
 
 function serializeAllowed(record) {
   const out = {};
-  for (const field of ALLOWED_FIELDS) {
+  for (const field of INTAKE_SUMMARY_FIELDS) {
     if (record[field] !== undefined) out[field] = record[field];
   }
   return out;
@@ -172,7 +183,7 @@ export function cleanIntakeSummary(raw, { expectedSessionId, now, modelCalls } =
   if (expectedSessionId && sessionId !== expectedSessionId) {
     fail('session-id', 'intake summary session_id does not match the source session');
   }
-  if (req(clean, 'source', 'string') !== 'claude') fail('source', 'intake summary source must be claude');
+  if (!INTAKE_SOURCES.has(req(clean, 'source', 'string'))) fail('source', 'intake summary source is not allowed');
   if (!TASK_KINDS.has(req(clean, 'task_kind', 'string'))) fail('task-kind', 'intake summary task_kind is not allowed');
   if (!OUTCOMES.has(req(clean, 'outcome', 'string'))) fail('outcome', 'intake summary outcome is not allowed');
   validateLabels(req(clean, 'failure_signatures', 'array'), 'failure_signatures');
@@ -198,7 +209,7 @@ function summaryPrompt({ sessionId, intakeId: id, summarizedAt, chunk, chunkInde
     'Summarize the transcript into content-free operational metadata.',
     'Never quote user text, file paths, code, commands, secrets, project names, or personal names.',
     'Use only short generic labels like edit-before-read or context-compaction.',
-    `Schema fields: ${ALLOWED_FIELDS.join(', ')}.`,
+    `Schema fields: ${INTAKE_SUMMARY_FIELDS.join(', ')}.`,
     `Allowed task_kind: ${[...TASK_KINDS].join('|')}.`,
     `Allowed outcome: ${[...OUTCOMES].join('|')}.`,
     `Required constants: intake_id=${id}, session_id=${sessionId}, source=claude, summarized_at=${summarizedAt}.`,
@@ -213,7 +224,7 @@ function finalPrompt({ sessionId, intakeId: id, summarizedAt, partials }) {
     'You are a local-only intake classifier. Return JSON only.',
     'Combine these content-free chunk summaries into one content-free operational record.',
     'Never add quotes, file paths, code, commands, secrets, project names, or personal names.',
-    `Schema fields: ${ALLOWED_FIELDS.join(', ')}.`,
+    `Schema fields: ${INTAKE_SUMMARY_FIELDS.join(', ')}.`,
     `Allowed task_kind: ${[...TASK_KINDS].join('|')}.`,
     `Allowed outcome: ${[...OUTCOMES].join('|')}.`,
     `Required constants: intake_id=${id}, session_id=${sessionId}, source=claude, summarized_at=${summarizedAt}.`,
@@ -234,7 +245,7 @@ async function callSummary({ prompt, env, transport, notes }) {
 async function summarizeTranscript({ sessionId, text, env, transport, notes, now }) {
   const chunks = chunkText(text);
   const summarizedAt = new Date(now).toISOString();
-  const id = intakeId();
+  const id = newIntakeId();
   let modelCalls = 0;
   const partials = [];
 
@@ -293,8 +304,8 @@ export async function runIntake(options = {}) {
   const transport = options.transport || globalThis.fetch;
   const now = options.now || new Date();
   const notes = options.notes || [];
-  const cursor = readCursor(intakeDir);
-  const seen = new Set(cursor.processed_session_ids);
+  const cursor = readIntakeCursor(intakeDir);
+  const seen = new Set(cursorIds(cursor, 'processed_session_ids'));
   const files = walkJsonl(sourceDir);
   const stats = {
     scanned: 0,
@@ -334,14 +345,14 @@ export async function runIntake(options = {}) {
       if (notes.slice(noteCount).includes('intake skipped: no local model')) break;
       continue;
     }
-    appendSummary(intakeDir, summary);
+    appendIntakeSummary(intakeDir, summary);
     seen.add(transcript.sessionId);
     stats.processed += 1;
     stats.stored += 1;
   }
 
   if (stats.processed > 0) {
-    writeCursor(intakeDir, { processed_session_ids: [...seen] });
+    writeIntakeCursor(intakeDir, { ...cursor, processed_session_ids: [...seen] });
   }
   return stats;
 }
