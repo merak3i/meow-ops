@@ -147,13 +147,13 @@ export async function postLoopDecision({ proposal_id, decision, reason, undo_of 
   return result && typeof result === 'object' ? result : null;
 }
 
-export async function postLoopExecute({ proposal_id }) {
+export async function postLoopExecute({ proposal_id, mode = 'dry-run' }) {
   const base = await resolveLoopApiBase(true);
   if (!base) return null;
 
   const nonce = await fetchLoopNonce();
   if (!nonce) return null;
 
-  const result = await postJson(`${base}/loop-eng/execute`, { nonce, proposal_id });
+  const result = await postJson(`${base}/loop-eng/execute`, { nonce, proposal_id, mode });
   return result && typeof result === 'object' ? result : null;
 }

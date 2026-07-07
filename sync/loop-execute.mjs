@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { appendRecord, foldLatestById, readLedger } from './loop-ledger.mjs';
+import {
+  appendRecord, foldLatestById, newId, readLedger,
+} from './loop-ledger.mjs';
 import { loadEnv } from './load-env.mjs';
 import { REVIEW_ONLY_PATH_RE } from './loop-schema.mjs';
 
@@ -25,13 +27,15 @@ export function isInside(parent, child) {
 
 export function parseArgs(argv) {
   let proposal = null;
+  let mode = 'dry-run';
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] !== '--proposal') throw new Error(`unknown flag ${argv[i]}`);
-    proposal = argv[i + 1];
-    i++;
+    if (argv[i] === '--proposal') { proposal = argv[i + 1]; i++; }
+    else if (argv[i] === '--mode') { mode = argv[i + 1]; i++; }
+    else throw new Error(`unknown flag ${argv[i]}`);
   }
   if (!proposal) throw new Error('--proposal <proposal_id> is required');
-  return { proposal };
+  if (!['dry-run', 'push'].includes(mode)) throw new Error('--mode must be dry-run or push');
+  return { proposal, mode };
 }
 
 function tail(value) {
@@ -85,22 +89,58 @@ function applyDiff(proposal, worktreeDir, execSync) {
   return { pass: false, note: '[diff] proposal diff has no applicable patch or before/after content' };
 }
 
-function appendExecutionEvidence(proposal, gateResults, now = new Date()) {
+function commitPrefix(category) {
+  return { test: 'test', prompt: 'docs', skill: 'docs', rubric: 'docs' }[category] || 'feat';
+}
+
+function parsePrUrl(output) {
+  return String(output || '').match(/https:\/\/\S+/)?.[0] || '';
+}
+
+function pushProposal(proposal, worktreeDir, gateResults, execSync, now) {
+  const branchName = `executor/${proposal.proposal_id}`;
+  const prefix = commitPrefix(proposal.category);
+  try {
+    execSync('git', ['checkout', '-b', branchName], { cwd: worktreeDir, stdio: 'pipe' });
+    execSync('git', ['add', '-A'], { cwd: worktreeDir, stdio: 'pipe' });
+    execSync('git', ['commit', '-m', `${prefix}: ${proposal.title}\n\nProposal: ${proposal.proposal_id}\nExecuted-By: system:executor`], { cwd: worktreeDir, stdio: 'pipe' });
+    execSync('git', ['push', 'origin', branchName], { cwd: worktreeDir, stdio: 'pipe' });
+    const prBody = `## Executor\n\nProposal: \`${proposal.proposal_id}\`\nCategory: ${proposal.category}\nLoop: ${proposal.loop_id}\n\n${proposal.one_percent_target}\n\n---\n_Created by meow-ops executor (system:executor)_`;
+    const prUrl = parsePrUrl(execSync('gh', ['pr', 'create', '--title', `${prefix}: ${proposal.title}`, '--body', prBody, '--head', branchName], { cwd: worktreeDir, encoding: 'utf8', stdio: 'pipe' }));
+    if (!prUrl) throw new Error('gh pr create did not return a PR URL');
+    appendRecord('decision', {
+      decision_id: newId('dec'),
+      proposal_id: proposal.proposal_id,
+      decided_at: now.toISOString(),
+      decision: 'approved',
+      decided_by: 'system:executor',
+      created_by: 'system:executor',
+      reason: `executed and PR created: ${prUrl}`,
+    });
+    return { pass: true, branchName, prUrl };
+  } catch (err) {
+    gateResults.push({ gate: 'push', pass: false, note: tail(`${err.stdout || ''}\n${err.stderr || ''}`.trim() || err.message) });
+    return { pass: false, branchName };
+  }
+}
+
+function appendExecutionEvidence(proposal, gateResults, now = new Date(), mode = 'dry-run', extra = {}) {
   const pass = gateResults.every((gate) => gate.pass);
+  const status = mode === 'push' && pass ? 'applied' : 'approved';
   const stored = appendRecord('proposal', {
     ...proposal,
     created_by: 'system:executor',
     evidence: [
       ...proposal.evidence,
-      { kind: 'execution', ref: `dry-run-${Date.now().toString(36)}`, pass, gates: gateResults, executed_at: now.toISOString(), mode: 'dry-run' },
+      { kind: 'execution', ref: `${mode}-${Date.now().toString(36)}`, pass, gates: gateResults, executed_at: now.toISOString(), mode, ...extra },
     ],
-    status: 'approved',
+    status,
   });
   return { pass, proposal: stored, gateResults };
 }
 
 export function executeProposal({
-  proposalId, repoRoot = REPO_ROOT, env = process.env, execSync = execFileSync, now = new Date(), tmpBase = tmpdir(),
+  proposalId, mode = 'dry-run', repoRoot = REPO_ROOT, env = process.env, execSync = execFileSync, now = new Date(), tmpBase = tmpdir(),
 } = {}) {
   const { proposal } = validateExecutableProposal(proposalId, { env, repoRoot });
   const worktreeDir = join(tmpBase, `meow-exec-${randomBytes(4).toString('hex')}`);
@@ -114,7 +154,11 @@ export function executeProposal({
       if (!install.pass) gateResults.push({ gate: 'npm ci', pass: false, note: install.note });
       else for (const [gate, args] of GATES) gateResults.push({ gate, ...run(execSync, 'npm', args, worktreeDir) });
     }
-    return appendExecutionEvidence(proposal, gateResults, now);
+    if (mode === 'push' && gateResults.every((gate) => gate.pass)) {
+      const pushed = pushProposal(proposal, worktreeDir, gateResults, execSync, now);
+      return appendExecutionEvidence(proposal, gateResults, now, 'push', { pr_url: pushed.prUrl, branch: pushed.branchName });
+    }
+    return appendExecutionEvidence(proposal, gateResults, now, mode);
   } finally {
     try { execSync('git', ['worktree', 'remove', worktreeDir, '--force'], { cwd: repoRoot, stdio: 'pipe' }); } catch {}
     rmSync(worktreeDir, { recursive: true, force: true });
@@ -122,9 +166,9 @@ export function executeProposal({
 }
 
 export function main(argv = process.argv.slice(2)) {
-  const { proposal } = parseArgs(argv);
-  const result = executeProposal({ proposalId: proposal });
-  console.log(`execution dry-run ${result.pass ? 'passed' : 'failed'}: ${result.gateResults.map((g) => `${g.gate}=${g.pass ? 'ok' : 'FAIL'}`).join(', ')}`);
+  const { proposal, mode } = parseArgs(argv);
+  const result = executeProposal({ proposalId: proposal, mode });
+  console.log(`execution ${mode} ${result.pass ? 'passed' : 'failed'}: ${result.gateResults.map((g) => `${g.gate}=${g.pass ? 'ok' : 'FAIL'}`).join(', ')}`);
   if (!result.pass) process.exitCode = 1;
 }
 
