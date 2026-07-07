@@ -29,7 +29,7 @@ import type {
   Simulation,
 } from '@/types/loop';
 
-type View = 'proposals' | 'runs' | 'ship-next' | 'digest';
+type View = 'proposals' | 'runs' | 'ship-next' | 'digest' | 'activity';
 type Filter = 'pending' | 'drafts' | 'decided' | 'expired' | 'all';
 
 const VIEWS: { value: View; label: string }[] = [
@@ -37,6 +37,7 @@ const VIEWS: { value: View; label: string }[] = [
   { value: 'runs', label: 'Runs' },
   { value: 'ship-next', label: 'Ship Next' },
   { value: 'digest', label: 'Digest' },
+  { value: 'activity', label: 'Activity' },
 ];
 
 const FILTERS: { value: Filter; label: string }[] = [
@@ -254,6 +255,36 @@ function hasLlmEvidence(proposal: Proposal) {
   ));
 }
 
+interface ExecutionEvidence {
+  kind: 'execution';
+  mode?: string;
+  pr_url?: string;
+}
+
+function isExecutionEvidence(item: unknown): item is ExecutionEvidence {
+  return Boolean(
+    item
+    && typeof item === 'object'
+    && 'kind' in item
+    && (item as { kind?: unknown }).kind === 'execution',
+  );
+}
+
+function latestExecutionEvidence(proposal: Proposal | null) {
+  return proposal ? [...proposal.evidence].reverse().find(isExecutionEvidence) || null : null;
+}
+
+function decisionTone(decision: DecisionValue) {
+  if (decision === 'approved') return 'var(--success, #22c55e)';
+  if (decision === 'rejected') return 'var(--danger, #fb7185)';
+  return 'var(--text-muted)';
+}
+
+function truncateReason(reason?: string) {
+  if (!reason) return null;
+  return reason.length > 80 ? `${reason.slice(0, 77)}...` : reason;
+}
+
 function metricNumber(run: LoopRun, key: string) {
   const value = run.metrics[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -428,6 +459,14 @@ export default function LoopReview() {
   const sortedRuns = useMemo(() => {
     return [...runs].sort((a, b) => b.captured_at.localeCompare(a.captured_at));
   }, [runs]);
+
+  const activityItems = useMemo(() => {
+    const proposalById = new Map(proposals.map((proposal) => [proposal.proposal_id, proposal]));
+    return [...decisions]
+      .sort((a, b) => b.decided_at.localeCompare(a.decided_at))
+      .slice(0, 50)
+      .map((decision) => ({ decision, proposal: proposalById.get(decision.proposal_id) ?? null }));
+  }, [decisions, proposals]);
 
   const loopOptions = useMemo(() => {
     return [...new Set(sortedRuns.map((run) => run.loop_id))].sort();
@@ -779,6 +818,56 @@ export default function LoopReview() {
               </div>
             </>
           ) : null}
+        </section>
+      ) : view === 'activity' ? (
+        <section style={styles.runsShell}>
+          {activityItems.length === 0 ? (
+            <div style={styles.empty}>No activity yet — decisions appear here after approving or rejecting proposals.</div>
+          ) : (
+            <div style={{ ...styles.detail, padding: 0, gap: 0 }}>
+              {activityItems.map(({ decision, proposal }) => {
+                const execution = latestExecutionEvidence(proposal);
+                const reason = truncateReason(decision.reason);
+                return (
+                  <div
+                    key={decision.decision_id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      gap: 12,
+                      padding: '8px 12px',
+                      borderBottom: '1px solid var(--border)',
+                      fontSize: 12,
+                      color: 'var(--text-secondary)',
+                    }}
+                  >
+                    <span style={{ color: 'var(--text-muted)' }}>{formatDate(decision.decided_at)}</span>
+                    <span style={{ color: decisionTone(decision.decision), fontWeight: 600 }}>{decision.decision}</span>
+                    {execution?.pr_url ? (
+                      <a href={execution.pr_url} target="_blank" rel="noopener noreferrer" style={styles.loopChip}>
+                        executed ({execution.mode || 'dry-run'})
+                      </a>
+                    ) : execution ? (
+                      <span style={styles.loopChip}>executed ({execution.mode || 'dry-run'})</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      style={styles.loopChip}
+                      onClick={() => {
+                        setView('proposals');
+                        setFilter('all');
+                        setSelectedId(decision.proposal_id);
+                      }}
+                    >
+                      {proposal?.title || decision.proposal_id}
+                    </button>
+                    {reason ? <span style={{ color: 'var(--text-muted)' }}>— {reason}</span> : null}
+                    <span style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: 11 }}>by {decision.decided_by}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
       ) : (
         <section style={styles.runsShell}>
