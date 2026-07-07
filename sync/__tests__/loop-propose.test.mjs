@@ -13,12 +13,14 @@ import { validateProposal } from '../loop-schema.mjs';
 import {
   appendPromptProposals,
   appendPromptProposalsWithAi,
+  brokenAgentProposal,
   appendComparisonSkeletons,
   appendComparisonSkeletonsWithAi,
   collectCandidates,
   hasOpenProposalForLoop,
   runProposer,
   scanDanglingAutomationPaths,
+  staleAgentProposal,
 } from '../loop-propose.mjs';
 import { resetLlmBudgetForTests } from '../llm-gateway.mjs';
 
@@ -27,12 +29,16 @@ const NOW = new Date('2026-07-06T00:00:00.000Z');
 function withTempLedger(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'meow-loop-propose-ledger-'));
   const prev = process.env.MEOW_LOOP_DIR;
+  const prevIntake = process.env.MEOW_INTAKE_DIR;
   process.env.MEOW_LOOP_DIR = dir;
+  process.env.MEOW_INTAKE_DIR = join(dir, 'intake');
   try {
     return fn(dir);
   } finally {
     if (prev === undefined) delete process.env.MEOW_LOOP_DIR;
     else process.env.MEOW_LOOP_DIR = prev;
+    if (prevIntake === undefined) delete process.env.MEOW_INTAKE_DIR;
+    else process.env.MEOW_INTAKE_DIR = prevIntake;
     rmSync(dir, { recursive: true, force: true });
   }
 }
@@ -40,13 +46,17 @@ function withTempLedger(fn) {
 async function withTempLedgerAsync(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'meow-loop-propose-ledger-'));
   const prev = process.env.MEOW_LOOP_DIR;
+  const prevIntake = process.env.MEOW_INTAKE_DIR;
   process.env.MEOW_LOOP_DIR = dir;
+  process.env.MEOW_INTAKE_DIR = join(dir, 'intake');
   resetLlmBudgetForTests();
   try {
     return await fn(dir);
   } finally {
     if (prev === undefined) delete process.env.MEOW_LOOP_DIR;
     else process.env.MEOW_LOOP_DIR = prev;
+    if (prevIntake === undefined) delete process.env.MEOW_INTAKE_DIR;
+    else process.env.MEOW_INTAKE_DIR = prevIntake;
     resetLlmBudgetForTests();
     rmSync(dir, { recursive: true, force: true });
   }
@@ -224,6 +234,13 @@ function promptPattern(overrides = {}) {
     session_count: 8,
     ...overrides,
   };
+}
+
+function writeHealth(intakeDir, agents) {
+  writeFileSync(join(intakeDir, 'automation-health.json'), JSON.stringify({
+    generated_at: NOW.toISOString(),
+    agents,
+  }, null, 2));
 }
 
 test('proposer rule matrix: each rule fires and stays redaction-clean', () => {
@@ -596,4 +613,38 @@ test('dangling-automation-paths names missing script references without absolute
     assert.match(proposal.diff.before, /sync\/export-local\.mjs/);
     assert.ok(!proposal.diff.before.includes(repoRoot), 'proposal must not leak temp repo root');
   });
+});
+
+test('brokenAgentProposal fires on failed agent and skips duplicate', () => {
+  const intakeDir = mkdtempSync(join(tmpdir(), 'meow-intake-'));
+  try {
+    writeHealth(intakeDir, [{ label: 'agent.failed', flags: ['failed'], last_exit_status: 1 }]);
+    const proposal = brokenAgentProposal({ intakeDir, now: NOW, proposals: [] });
+    assert.equal(proposal.status, 'draft');
+    assert.equal(proposal.review_only, true);
+    assert.ok(proposal.evidence.some((item) => item.kind === 'automation-health' && item.ref === 'agent.failed'));
+    assert.equal(validateProposal(proposal), proposal);
+    assert.equal(brokenAgentProposal({ intakeDir, now: NOW, proposals: [proposal] }), null);
+  } finally {
+    rmSync(intakeDir, { recursive: true, force: true });
+  }
+});
+
+test('staleAgentProposal fires on stale-log and automation-health rules are review_only', () => {
+  const intakeDir = mkdtempSync(join(tmpdir(), 'meow-intake-'));
+  try {
+    writeHealth(intakeDir, [
+      { label: 'agent.failed', flags: ['failed'], last_exit_status: 1 },
+      { label: 'agent.stale', flags: ['stale-log'], log_staleness_hours: 49 },
+    ]);
+    const broken = brokenAgentProposal({ intakeDir, now: NOW, proposals: [] });
+    const stale = staleAgentProposal({ intakeDir, now: NOW, proposals: [] });
+    assert.equal(stale.status, 'draft');
+    assert.equal(stale.confidence, 0.6);
+    assert.ok(stale.evidence.some((item) => item.kind === 'automation-health' && item.ref === 'agent.stale:stale'));
+    assert.deepEqual([broken.review_only, stale.review_only], [true, true]);
+    assert.equal(validateProposal(stale), stale);
+  } finally {
+    rmSync(intakeDir, { recursive: true, force: true });
+  }
 });

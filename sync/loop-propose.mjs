@@ -16,6 +16,7 @@ import {
 import { checkGitignore } from './loop-eval.mjs';
 import { callLlm } from './llm-gateway.mjs';
 import { loadEnv } from './load-env.mjs';
+import { resolveIntakeDir } from './intake-local.mjs';
 import { loadSessionMetadata, minePromptPatterns } from './loop-prompt-miner.mjs';
 import {
   hasNonRejectedProposalForEvidenceRef, hasOpenProposalForLoop, latestProposals,
@@ -421,6 +422,75 @@ export function danglingAutomationProposal({ repoRoot = REPO_ROOT, now = new Dat
     rollbackPlan: 'Revert the automation reference edits if the operator confirms the path is intentionally external',
     reviewOnly: true,
   });
+}
+
+function readAutomationHealth({ intakeDir, env } = {}) {
+  const path = join(intakeDir || resolveIntakeDir(env || process.env), 'automation-health.json');
+  if (!existsSync(path)) return null;
+  try {
+    const snapshot = safeReadJson(path);
+    return Array.isArray(snapshot?.agents) ? snapshot : null;
+  } catch { return null; }
+}
+
+function automationHealthProposal({ ruleId, now, agent, stale = false }) {
+  const ref = stale ? `${agent.label}:stale` : agent.label;
+  const flag = stale ? 'stale-log' : 'failed';
+  return baseProposal({
+    ruleId,
+    now,
+    category: 'workflow',
+    title: `${stale ? 'Investigate stale' : 'Fix failing'} LaunchAgent: ${agent.label}`,
+    onePercentTarget: stale
+      ? 'Restore observability for a local automation before its drift becomes invisible'
+      : 'Restore a broken automation before its absence causes drift',
+    diff: { source: 'automation-health', label: agent.label, flag },
+    rationale: stale
+      ? `automation-health reports stale logs for ${agent.label}`
+      : `automation-health reports failed status for ${agent.label}`,
+    evidence: [{ kind: 'automation-health', ref, value: stale ? agent.log_staleness_hours : agent.last_exit_status }],
+    confidence: stale ? 0.6 : 0.7,
+    risk: stale ? 'low' : 'medium',
+    riskNotes: 'local LaunchAgent metadata only; owner investigates manually',
+    expectedBenefit: stale ? 'keeps automation logs fresh enough for daily review' : 'keeps local automation drift visible before it compounds',
+    rollbackPlan: `Reject this proposal if the agent ${stale ? 'stale log' : 'failure'} is expected or temporary`,
+    reviewOnly: true,
+  });
+}
+
+function automationHealthCandidates(options = {}, stale = false) {
+  const proposals = options.proposals || readLedger('proposal');
+  const flag = stale ? 'stale-log' : 'failed';
+  const ruleId = stale ? 'stale-agent' : 'broken-agent';
+  return (readAutomationHealth(options)?.agents || [])
+    .filter((agent) => agent.flags?.includes(flag)
+      && !hasNonRejectedProposalForEvidenceRef('automation-health', stale ? `${agent.label}:stale` : agent.label, proposals))
+    .map((agent) => automationHealthProposal({
+      ruleId, now: options.now || new Date(), agent, stale,
+    }));
+}
+
+export function brokenAgentProposal(options = {}) {
+  return automationHealthCandidates(options, false)[0] || null;
+}
+
+export function staleAgentProposal(options = {}) {
+  return automationHealthCandidates(options, true)[0] || null;
+}
+
+export function appendAutomationHealthProposals(options = {}) {
+  const results = [];
+  for (const [ruleId, proposals] of [['broken-agent', automationHealthCandidates(options)], ['stale-agent', automationHealthCandidates(options, true)]]) {
+    if (proposals.length === 0) {
+      results.push({ ruleId, status: 'clear', proposal_id: null });
+      continue;
+    }
+    for (const proposal of proposals) {
+      const stored = appendRecord('proposal', proposal);
+      results.push({ ruleId, status: 'draft', proposal_id: stored.proposal_id });
+    }
+  }
+  return results;
 }
 
 export function collectCandidates(options = {}) {
@@ -932,6 +1002,7 @@ export function runProposer(options = {}) {
     const { pending } = advanceDeterministicProposal(draft);
     results.push({ ruleId, status: 'fired', proposal_id: pending.proposal_id });
   }
+  results.push(...appendAutomationHealthProposals(options));
   for (const result of appendComparisonSkeletons({ now: options.now })) {
     results.push({
       ruleId: `comparison:${result.comparison_id}`,
@@ -972,6 +1043,7 @@ export async function runProposerWithAi(options = {}) {
     const { pending } = advanceDeterministicProposal(draft);
     results.push({ ruleId, status: 'fired', proposal_id: pending.proposal_id });
   }
+  results.push(...appendAutomationHealthProposals(options));
   for (const result of await appendComparisonSkeletonsWithAi({
     now: options.now,
     ai: options.ai,
@@ -1004,6 +1076,20 @@ export async function runProposerWithAi(options = {}) {
   return results;
 }
 
+export async function runAllRules({
+  repoRoot = REPO_ROOT, now = new Date(), ai = true, env = process.env, transport = globalThis.fetch, ...rest
+} = {}) {
+  const results = await runProposerWithAi({
+    ...rest, repoRoot, now, ai, noAi: !ai, env, transport,
+  });
+  const proposalIds = new Set(results.map((result) => result.proposal_id).filter(Boolean));
+  return {
+    proposals: latestProposals(readLedger('proposal')).filter((proposal) => proposalIds.has(proposal.proposal_id)),
+    expired: results.filter((result) => result.status === 'expired'),
+    results,
+  };
+}
+
 function parseCliArgs(argv) {
   const opts = { ai: false, noAi: false };
   for (const arg of argv) {
@@ -1016,9 +1102,10 @@ function parseCliArgs(argv) {
 
 async function main() {
   const opts = parseCliArgs(process.argv.slice(2));
-  const results = opts.ai || opts.noAi
-    ? await runProposerWithAi(opts)
-    : runProposer({});
+  const all = opts.ai || opts.noAi
+    ? await runAllRules({ ai: opts.ai && !opts.noAi })
+    : { results: runProposer({}) };
+  const { results } = all;
   for (const result of results) {
     const suffixParts = [];
     if (result.proposal_id) suffixParts.push(result.proposal_id);
