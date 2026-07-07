@@ -14,6 +14,7 @@
     "loop:propose": "node sync/loop-propose.mjs",
     "loop:simulate": "node sync/loop-simulate.mjs",
     "digest": "node sync/loop-digest.mjs",
+    "execute": "node sync/loop-execute.mjs",
     "intake": "node sync/intake-local.mjs",
     "intake:codex": "node sync/intake-codex.mjs",
     "intake:antigravity": "node sync/intake-antigravity.mjs",

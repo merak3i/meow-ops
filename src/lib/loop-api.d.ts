@@ -25,3 +25,6 @@ export function postLoopDecision(input: {
   reason?: string;
   undo_of?: string;
 }): Promise<DecisionResult | null>;
+export function postLoopExecute(opts: {
+  proposal_id: string;
+}): Promise<{ ok: boolean; status?: string; error?: string } | null>;

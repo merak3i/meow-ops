@@ -10,6 +10,7 @@ interface FiveBeatCardProps {
   busy: boolean;
   error: string | null;
   onDecision: (decision: DecisionValue, options?: { undoOf?: string; reason?: string }) => void;
+  onExecute?: (() => void | Promise<void>) | undefined;
 }
 
 const riskColor: Record<string, string> = {
@@ -132,6 +133,21 @@ function hasLlmEvidence(proposal: Proposal) {
   ));
 }
 
+interface ExecutionEvidence { kind: 'execution'; pass?: boolean; gates?: { gate?: string; pass?: boolean }[] }
+
+function isExecutionEvidence(item: unknown): item is ExecutionEvidence {
+  return Boolean(
+    item
+    && typeof item === 'object'
+    && 'kind' in item
+    && (item as { kind?: unknown }).kind === 'execution',
+  );
+}
+
+function executionResult(proposal: Proposal) {
+  return [...proposal.evidence].reverse().find(isExecutionEvidence) || null;
+}
+
 export function FiveBeatCard({
   proposal,
   latestDecision,
@@ -140,6 +156,7 @@ export function FiveBeatCard({
   busy,
   error,
   onDecision,
+  onExecute,
 }: FiveBeatCardProps) {
   if (!proposal) {
     return (
@@ -159,6 +176,7 @@ export function FiveBeatCard({
     && !skeleton;
   const reviewOnly = proposal.review_only === true;
   const llmDrafted = hasLlmEvidence(proposal);
+  const execution = executionResult(proposal);
   const simulation = simulationStatus(proposal, latestSimulation);
   const decisionLine = latestDecision
     ? `${latestDecision.decision} by ${latestDecision.decided_by} at ${new Date(latestDecision.decided_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`
@@ -247,6 +265,20 @@ export function FiveBeatCard({
           </div>
         ) : (
           <p style={styles.muted}>Proposal is not waiting for approval.</p>
+        )}
+        {proposal.status === 'approved' && !reviewOnly && !execution && onExecute && (
+          <div style={{ ...styles.row, marginTop: 8 }}>
+            <button type="button" disabled={busy} style={styles.button} onClick={onExecute}>
+              Dry Run
+            </button>
+          </div>
+        )}
+        {execution && (
+          <p style={styles.muted}>
+            Dry run: {execution.pass ? 'passed' : 'failed'}
+            {' - '}
+            {(execution.gates || []).map((gate) => `${gate.gate || 'gate'}=${gate.pass ? 'ok' : 'FAIL'}`).join(', ')}
+          </p>
         )}
         {error && <p style={{ ...styles.muted, color: '#fb7185' }}>{error}</p>}
       </section>

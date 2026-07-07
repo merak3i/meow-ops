@@ -12,6 +12,7 @@ import {
   fetchLoopSimulations,
   fetchLoopSummary,
   postLoopDecision,
+  postLoopExecute,
 } from '@/lib/loop-api';
 import type { DigestData } from '@/lib/loop-api';
 import type {
@@ -492,6 +493,21 @@ export default function LoopReview() {
     setBusy(false);
   }, [load, selected]);
 
+  const handleExecute = useCallback(async (proposalId: string) => {
+    setBusy(true);
+    setError(null);
+    const result = await postLoopExecute({ proposal_id: proposalId });
+    if (!result?.ok) {
+      setError(result?.error || 'Local helper unavailable. Start node sync/local-api.mjs with MEOW_EXECUTOR_ENABLED=1.');
+      setBusy(false);
+      return;
+    }
+    setBusy(false);
+    window.setTimeout(() => {
+      void load();
+    }, 3000);
+  }, [load]);
+
   return (
     <div style={styles.shell}>
       <header style={styles.header}>
@@ -567,6 +583,7 @@ export default function LoopReview() {
               busy={busy}
               error={error}
               onDecision={handleDecision}
+              onExecute={selected ? () => handleExecute(selected.proposal_id) : undefined}
             />
           </div>
         )

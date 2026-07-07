@@ -146,3 +146,14 @@ export async function postLoopDecision({ proposal_id, decision, reason, undo_of 
   });
   return result && typeof result === 'object' ? result : null;
 }
+
+export async function postLoopExecute({ proposal_id }) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+
+  const result = await postJson(`${base}/loop-eng/execute`, { nonce, proposal_id });
+  return result && typeof result === 'object' ? result : null;
+}

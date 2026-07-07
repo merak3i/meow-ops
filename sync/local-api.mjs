@@ -439,6 +439,34 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/loop-eng/execute' && req.method === 'POST') {
+    if (process.env.MEOW_EXECUTOR_ENABLED !== '1') {
+      ruleError(res, 404, 'executor-disabled', 'executor is not enabled');
+      return;
+    }
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    const child = spawn(NODE, [join(ROOT, 'sync', 'loop-execute.mjs'), '--proposal', body.proposal_id], {
+      cwd: ROOT,
+      env: { ...process.env, MEOW_EXECUTOR_ENABLED: '1' },
+      stdio: 'pipe',
+    });
+    child.stdout.on('data', () => {}); child.stderr.on('data', () => {});
+    const timer = setTimeout(() => child.kill(), 300_000);
+    child.on('close', () => clearTimeout(timer)); child.on('error', () => clearTimeout(timer));
+    sendJson(res, 202, { ok: true, status: 'started', proposal_id: body.proposal_id });
+    return;
+  }
+
   // ── Loop-Ops endpoints (spec §Phase 4) — read/local-only ─────────────────
   // GET /loop-ops/spec and /loop-ops/runs serve the gitignored local JSON;
   // POST /loop-ops/sync re-runs the workbook importer. No push path exists
@@ -581,6 +609,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /loop-eng/summary        - Loop Engineering queue summary');
   console.log('  GET  /loop-eng/digest         - last Loop Engineering digest');
   console.log('  POST /loop-eng/decisions      - owner decision with nonce');
+  console.log('  POST /loop-eng/execute        - dry-run executor with nonce');
   console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');
   console.log('  GET  /superadmin-usage/status - usage snapshot freshness');
   console.log('  POST /superadmin-usage/sync   - refresh local usage snapshot');
