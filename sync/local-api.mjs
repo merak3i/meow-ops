@@ -328,6 +328,20 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/loop-eng/digest/history' && req.method === 'GET') {
+    try {
+      const lines = readFileSync(join(ROOT, 'public', 'data', 'loop-engineering', 'digest-history.jsonl'), 'utf8')
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => { try { return JSON.parse(line); } catch { return null; } })
+        .filter(Boolean);
+      sendJson(res, 200, lines.slice(-30).reverse());
+    } catch {
+      sendJson(res, 200, []);
+    }
+    return;
+  }
+
   if (path === '/loop-eng/nonce' && req.method === 'GET') {
     sendJson(res, 200, { nonce: createNonce() });
     return;
@@ -609,6 +623,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /loop-eng/outcomes       - Loop Engineering outcomes');
   console.log('  GET  /loop-eng/summary        - Loop Engineering queue summary');
   console.log('  GET  /loop-eng/digest         - last Loop Engineering digest');
+  console.log('  GET  /loop-eng/digest/history - Loop Engineering digest history');
   console.log('  POST /loop-eng/decisions      - owner decision with nonce');
   console.log('  POST /loop-eng/execute        - dry-run/push executor with nonce');
   console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');

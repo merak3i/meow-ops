@@ -6,6 +6,7 @@ import {
   fetchLoopComparisons,
   fetchLoopDecisions,
   fetchLoopDigest,
+  fetchLoopDigestHistory,
   fetchLoopOutcomes,
   fetchLoopProposals,
   fetchLoopRuns,
@@ -324,6 +325,7 @@ export default function LoopReview() {
   const [simulations, setSimulations] = useState<Simulation[]>([]);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
   const [digest, setDigest] = useState<DigestData | null>(null);
+  const [digestHistory, setDigestHistory] = useState<DigestData[]>([]);
   const [summary, setSummary] = useState<LoopSummary>({ counts_by_status: {}, open_per_loop: {}, total: 0 });
   const [filter, setFilter] = useState<Filter>('pending');
   const [loopFilter, setLoopFilter] = useState('all');
@@ -344,6 +346,7 @@ export default function LoopReview() {
       nextSimulations,
       nextOutcomes,
       nextDigest,
+      nextDigestHistory,
     ] = await Promise.all([
       fetchLoopProposals(),
       fetchLoopDecisions(),
@@ -353,6 +356,7 @@ export default function LoopReview() {
       fetchLoopSimulations(),
       fetchLoopOutcomes(),
       fetchLoopDigest(),
+      fetchLoopDigestHistory(),
     ]);
     setProposals(nextProposals);
     setDecisions(nextDecisions);
@@ -362,6 +366,7 @@ export default function LoopReview() {
     setSimulations(nextSimulations);
     setOutcomes(nextOutcomes);
     setDigest(nextDigest);
+    setDigestHistory(nextDigestHistory);
     setLoading(false);
   }, []);
 
@@ -705,6 +710,37 @@ export default function LoopReview() {
               ) : null}
             </div>
           )}
+          {digestHistory.length > 0 ? (
+            <>
+              <h2 style={styles.detailTitle}>History</h2>
+              <div style={styles.tableWrap}>
+                <table style={styles.table}>
+                  <thead>
+                    <tr>
+                      <th style={styles.th}>Date</th>
+                      <th style={styles.th}>Sessions</th>
+                      <th style={styles.th}>Intake</th>
+                      <th style={styles.th}>Flagged</th>
+                      <th style={styles.th}>New proposals</th>
+                      <th style={styles.th}>Pending</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {digestHistory.map((entry) => (
+                      <tr key={entry.generated_at}>
+                        <td style={styles.td}>{formatDate(entry.generated_at)}</td>
+                        <td style={styles.td}>{formatNumber(entry.capture.sessions)}</td>
+                        <td style={styles.td}>{formatNumber(entry.intake.stored)}</td>
+                        <td style={styles.td}>{formatNumber(entry.health.flagged)}</td>
+                        <td style={styles.td}>{formatNumber(entry.proposals.new_drafts)}</td>
+                        <td style={styles.td}>{formatNumber(entry.proposals.pending)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : null}
         </section>
       ) : (
         <section style={styles.runsShell}>

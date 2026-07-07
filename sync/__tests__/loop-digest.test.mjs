@@ -1,5 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {
+  mkdtempSync, readFileSync, rmSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { runDigest } from '../loop-digest.mjs';
 
@@ -31,6 +36,10 @@ function deps(overrides = {}) {
       writeDigest: (path, digest) => {
         calls.path = path;
         calls.digest = digest;
+      },
+      appendDigestHistory: (dir, digest) => {
+        calls.historyDir = dir;
+        calls.historyDigest = digest;
       },
       ...overrides,
     },
@@ -74,4 +83,24 @@ test('digest file is written under public/data/loop-engineering', async () => {
   const fixture = deps();
   await runDigest({ repoRoot: '/repo', now: NOW, deps: fixture.deps });
   assert.equal(fixture.calls.path, '/repo/public/data/loop-engineering/digest.json');
+});
+
+test('digest history appends one JSON line per run', async () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'meow-digest-history-'));
+  try {
+    const fixture = deps({ writeDigest: undefined, appendDigestHistory: undefined });
+    const first = await runDigest({ repoRoot, now: NOW, deps: fixture.deps });
+    const second = await runDigest({
+      repoRoot,
+      now: new Date('2026-07-08T12:00:00.000Z'),
+      deps: fixture.deps,
+    });
+    const lines = readFileSync(join(repoRoot, 'public', 'data', 'loop-engineering', 'digest-history.jsonl'), 'utf8')
+      .trim()
+      .split('\n');
+    assert.equal(lines.length, 2);
+    assert.deepEqual(lines.map((line) => JSON.parse(line)), [first, second]);
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
 });

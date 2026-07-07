@@ -125,6 +125,11 @@ export async function fetchLoopDigest() {
   return data && typeof data === 'object' && !data.error ? data : null;
 }
 
+export async function fetchLoopDigestHistory() {
+  const data = await fetchLoopJson('/loop-eng/digest/history');
+  return Array.isArray(data) ? data : [];
+}
+
 export async function fetchLoopNonce() {
   const data = await fetchLoopJson('/loop-eng/nonce');
   return typeof data?.nonce === 'string' ? data.nonce : null;
