@@ -13,6 +13,7 @@
     "loop:capture": "node sync/loop-capture.mjs",
     "loop:propose": "node sync/loop-propose.mjs",
     "loop:simulate": "node sync/loop-simulate.mjs",
+    "intake": "node sync/intake-local.mjs",
     "eval": "node sync/loop-eval.mjs",
     "sync:superadmin": "node sync/superadmin-usage.mjs",
     "gen:assets": "node scripts/generate-companion-assets.js",
