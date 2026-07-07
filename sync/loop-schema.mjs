@@ -26,6 +26,11 @@ export const PROPOSAL_CATEGORIES = [
   'prompt', 'skill', 'rubric', 'test', 'ui', 'workflow', 'policy',
 ];
 
+// Categories that the executor may auto-merge on green CI. This set is
+// intentionally hard-coded: widening it requires a policy proposal through
+// the Review Deck, not a config change.
+export const AUTO_MERGE_CATEGORIES = new Set(['test', 'prompt']);
+
 // Diff targets that force review_only — privacy / security / money /
 // client-data / prod-infra surfaces. Generators cannot unset the flag: the
 // validator rejects any record that violates this map.

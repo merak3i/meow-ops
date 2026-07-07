@@ -23,6 +23,54 @@ Production is broken?
 
 ---
 
+## Executor Auto-Merge Rollback
+
+Use this when an executor auto-merged PR broke something.
+
+1. Find the PR that the executor merged:
+
+   ```bash
+   gh pr list --state merged --author @me --search "system:executor" --limit 10
+   ```
+
+2. Revert it:
+
+   ```bash
+   git revert <MERGE_COMMIT_SHA> --no-edit
+   git push origin main
+   ```
+
+3. Record the rollback in the ledger:
+
+   ```bash
+   grep "applied" ~/.meow-ops/loop-ledger/proposals.jsonl | tail -5
+   ```
+
+4. Let the Loop Engineering status machine handle the rest:
+
+   Mark the proposal `rolled_back` by appending a supersede via the Review Deck.
+   The next `loop:capture` run records an outcome against the rolled-back
+   decision.
+
+### Auto-Merge Fence
+
+Only `{test, prompt}` categories auto-merge. This is hard-coded in
+`sync/loop-schema.mjs` as `AUTO_MERGE_CATEGORIES`. Widening the fence requires
+a policy proposal through the Review Deck, not a config change.
+
+### Prevention
+
+Before approving a proposal for execution:
+
+- Verify the diff is correct.
+- Check that the simulation passed.
+- For test proposals, the executor runs the test suite in a worktree, so a
+  broken test fails gates before push.
+- For prompt proposals, the target is under `prompts/`, so runtime code is not
+  affected.
+
+---
+
 ## Strategy 1 — Vercel Instant Rollback (Recommended for Production)
 
 Vercel keeps every deployment. You can reactivate any previous one instantly.

@@ -138,6 +138,8 @@ interface ExecutionEvidence {
   mode?: string;
   pass?: boolean;
   pr_url?: string;
+  auto_merged?: boolean;
+  auto_merge_error?: string;
   gates?: { gate?: string; pass?: boolean }[];
 }
 
@@ -296,16 +298,20 @@ export function FiveBeatCard({
           </div>
         )}
         {execution && (
-          <p style={styles.muted}>
-            Execution {execution.mode || 'dry-run'}: {execution.pass ? 'passed' : 'failed'}
-            {' - '}
-            {(execution.gates || []).map((gate) => `${gate.gate || 'gate'}=${gate.pass ? 'ok' : 'FAIL'}`).join(', ')}
-          </p>
-        )}
-        {pushed?.pr_url && (
-          <p style={styles.muted}>
-            PR created: <a href={pushed.pr_url} target="_blank" rel="noopener" style={{ color: 'var(--accent)' }}>{pushed.pr_url}</a>
-          </p>
+          <div style={{ ...styles.muted, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <p style={{ margin: 0 }}>
+              {execution.mode === 'push' ? 'Execution' : 'Dry run'}: {execution.pass ? '✓ passed' : '✗ failed'}
+              {' - '}
+              {(execution.gates || []).map((gate) => `${gate.gate || 'gate'}=${gate.pass ? 'ok' : 'FAIL'}`).join(', ')}
+            </p>
+            {execution.pr_url && (
+              <p style={{ margin: 0 }}>
+                PR: <a href={execution.pr_url} target="_blank" rel="noopener" style={{ color: 'var(--accent)' }}>{execution.pr_url}</a>
+                {execution.auto_merged && ' - auto-merged ✓'}
+                {execution.auto_merge_error && ` - auto-merge failed: ${execution.auto_merge_error}`}
+              </p>
+            )}
+          </div>
         )}
         {error && <p style={{ ...styles.muted, color: '#fb7185' }}>{error}</p>}
       </section>

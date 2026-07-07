@@ -10,7 +10,7 @@ import {
   appendRecord, foldLatestById, newId, readLedger,
 } from './loop-ledger.mjs';
 import { loadEnv } from './load-env.mjs';
-import { REVIEW_ONLY_PATH_RE } from './loop-schema.mjs';
+import { AUTO_MERGE_CATEGORIES, REVIEW_ONLY_PATH_RE } from './loop-schema.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..');
@@ -97,6 +97,28 @@ function parsePrUrl(output) {
   return String(output || '').match(/https:\/\/\S+/)?.[0] || '';
 }
 
+function shouldAutoMerge(proposal) {
+  return AUTO_MERGE_CATEGORIES.has(proposal.category);
+}
+
+function autoMergeProposal(proposal, prUrl, worktreeDir, execSync, now) {
+  if (!shouldAutoMerge(proposal)) return { auto_merged: false };
+  const checks = run(execSync, 'gh', ['pr', 'checks', prUrl, '--watch'], worktreeDir);
+  if (!checks.pass) return { auto_merged: false, auto_merge_error: checks.note };
+  const merged = run(execSync, 'gh', ['pr', 'merge', prUrl, '--squash', '--delete-branch'], worktreeDir);
+  if (!merged.pass) return { auto_merged: false, auto_merge_error: merged.note };
+  appendRecord('decision', {
+    decision_id: newId('dec'),
+    proposal_id: proposal.proposal_id,
+    decided_at: now.toISOString(),
+    decision: 'approved',
+    decided_by: 'system:executor',
+    created_by: 'system:executor',
+    reason: `auto-merged PR ${prUrl} (category: ${proposal.category})`,
+  });
+  return { auto_merged: true };
+}
+
 function pushProposal(proposal, worktreeDir, gateResults, execSync, now) {
   const branchName = `executor/${proposal.proposal_id}`;
   const prefix = commitPrefix(proposal.category);
@@ -117,10 +139,10 @@ function pushProposal(proposal, worktreeDir, gateResults, execSync, now) {
       created_by: 'system:executor',
       reason: `executed and PR created: ${prUrl}`,
     });
-    return { pass: true, branchName, prUrl };
+    return { pass: true, branchName, prUrl, ...autoMergeProposal(proposal, prUrl, worktreeDir, execSync, now) };
   } catch (err) {
     gateResults.push({ gate: 'push', pass: false, note: tail(`${err.stdout || ''}\n${err.stderr || ''}`.trim() || err.message) });
-    return { pass: false, branchName };
+    return { pass: false, branchName, auto_merged: false };
   }
 }
 
@@ -156,7 +178,12 @@ export function executeProposal({
     }
     if (mode === 'push' && gateResults.every((gate) => gate.pass)) {
       const pushed = pushProposal(proposal, worktreeDir, gateResults, execSync, now);
-      return appendExecutionEvidence(proposal, gateResults, now, 'push', { pr_url: pushed.prUrl, branch: pushed.branchName });
+      return appendExecutionEvidence(proposal, gateResults, now, 'push', {
+        pr_url: pushed.prUrl,
+        branch: pushed.branchName,
+        auto_merged: pushed.auto_merged,
+        auto_merge_error: pushed.auto_merge_error,
+      });
     }
     return appendExecutionEvidence(proposal, gateResults, now, mode);
   } finally {
