@@ -54,7 +54,7 @@ export function readLoopAliases(path = join(resolveLedgerDir(), 'aliases.json'))
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8'));
   } catch (err) {
-    throw new Error(`[aliases] aliases.json is malformed JSON: ${err.message}`);
+    throw new Error(`[aliases] aliases.json is malformed JSON: ${err.message}`, { cause: err });
   }
   if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
     throw new Error('[aliases] aliases.json must be an object mapping correlation prefixes to loop_id strings');

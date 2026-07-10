@@ -441,6 +441,13 @@ function EmptyPanel({ error }) {
   );
 }
 
+async function fetchCapacitySnapshot() {
+  return Promise.all([
+    fetchCapacityUsageData(),
+    fetchCapacityUsageStatus(),
+  ]);
+}
+
 export default function CapacityUsage() {
   const [data, setData] = useState(null);
   const [status, setStatus] = useState(null);
@@ -450,12 +457,8 @@ export default function CapacityUsage() {
   const [refreshNotice, setRefreshNotice] = useState(null);
 
   const load = useCallback(async () => {
-    setLoading(true);
     try {
-      const [usage, freshStatus] = await Promise.all([
-        fetchCapacityUsageData(),
-        fetchCapacityUsageStatus(),
-      ]);
+      const [usage, freshStatus] = await fetchCapacitySnapshot();
       setData(usage);
       setStatus(freshStatus);
       setError(null);
@@ -466,7 +469,24 @@ export default function CapacityUsage() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    let active = true;
+    async function initialLoad() {
+      try {
+        const [usage, freshStatus] = await fetchCapacitySnapshot();
+        if (!active) return;
+        setData(usage);
+        setStatus(freshStatus);
+        setError(null);
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    void initialLoad();
+    return () => { active = false; };
+  }, []);
 
   async function syncNow() {
     if (syncing) return;
@@ -476,6 +496,7 @@ export default function CapacityUsage() {
 
     try {
       const result = await postCapacityUsageSync();
+      setLoading(true);
       await load();
 
       if (!result.ok) {
