@@ -1,4 +1,4 @@
-const FALLBACK = "I don't know how to answer that yet. Try: pending, cost, health, digest, runs, activity, or drafts.";
+export const FALLBACK_ANSWER = "I don't know how to answer that yet. Try: pending, cost, health, digest, runs, activity, or drafts.";
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
 const money = (value) => `$${value.toFixed(2)}`;
@@ -85,5 +85,5 @@ export function ask(question, { proposals, decisions, runs, digest } = {}) {
   if (hasKeyword(q, ['execute', 'applied'])) {
     return { answer: proposalsByStatus(proposalRows, ['applied'], 'applied proposal') };
   }
-  return { answer: FALLBACK };
+  return { answer: FALLBACK_ANSWER };
 }

@@ -383,6 +383,7 @@ export default function LoopReview() {
   const [digestBusy, setDigestBusy] = useState(false);
   const [askInput, setAskInput] = useState('');
   const [askAnswer, setAskAnswer] = useState<string | null>(null);
+  const [askSource, setAskSource] = useState<'keyword' | 'llm' | null>(null);
   const [askBusy, setAskBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -593,6 +594,7 @@ export default function LoopReview() {
     setAskBusy(true);
     setError(null);
     setAskAnswer(null);
+    setAskSource(null);
     try {
       const result = await postLoopAsk(question);
       if (!result?.ok) {
@@ -600,6 +602,7 @@ export default function LoopReview() {
         return;
       }
       setAskAnswer(result.answer || '');
+      setAskSource(result.source === 'llm' ? 'llm' : 'keyword');
     } finally {
       setAskBusy(false);
     }
@@ -636,6 +639,7 @@ export default function LoopReview() {
           onChange={(event) => {
             setAskInput(event.target.value);
             setAskAnswer(null);
+            setAskSource(null);
           }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
@@ -657,7 +661,7 @@ export default function LoopReview() {
       {(askBusy || askAnswer) && (
         <div style={styles.detail}>
           <div style={{ color: 'var(--text-secondary)', fontSize: 13, whiteSpace: 'pre-wrap' }}>
-            {askBusy ? 'Thinking...' : askAnswer}
+            {askBusy ? 'Thinking...' : <>{askAnswer}{askSource === 'llm' && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}> (via AI)</span>}</>}
           </div>
         </div>
       )}

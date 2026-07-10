@@ -145,7 +145,7 @@ function appendMeterRun({ now, startedAtMs, responseJson }) {
   });
 }
 
-async function postDeepSeek({ key, prompt, transport, signal }) {
+async function postDeepSeekJson({ key, prompt, transport, signal }) {
   const response = await transport(API_URL, {
     method: 'POST',
     headers: {
@@ -172,6 +172,28 @@ async function postDeepSeek({ key, prompt, transport, signal }) {
   }
 }
 
+async function postDeepSeekText({ key, system, user, transport, signal }) {
+  const response = await transport(API_URL, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${key}`,
+    },
+    signal,
+    body: JSON.stringify({
+      model: DEEPSEEK_MODEL,
+      max_tokens: 300,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+    }),
+  });
+  if (!response?.ok) return { ok: false, responseJson: null };
+  try {
+    return { ok: true, responseJson: await response.json() };
+  } catch {
+    return { ok: false, responseJson: null };
+  }
+}
+
 async function oneAttempt({ env, now, prompt, transport, notes }) {
   const key = budgetCheck({ env, now, prompt, notes });
   if (!key) return { status: 'skip' };
@@ -180,7 +202,7 @@ async function oneAttempt({ env, now, prompt, transport, notes }) {
   const timeout = setTimeout(() => controller.abort(), 60_000);
   const startedAtMs = performance.now();
   try {
-    const posted = await postDeepSeek({
+    const posted = await postDeepSeekJson({
       key,
       prompt,
       transport,
@@ -218,4 +240,48 @@ export async function callLlm({
   }
   note(notes, 'llm skipped: malformed json');
   return null;
+}
+
+function askSkipReason(notes) {
+  const reasons = {
+    'llm skipped: no key': 'no key',
+    'llm skipped: call cap': 'call cap',
+    'llm skipped: weekly cap': 'weekly cap',
+  };
+  return [...notes].reverse().map((entry) => reasons[entry]).find(Boolean) || 'no key';
+}
+
+export async function askLlm({
+  question,
+  context = '',
+  env = process.env,
+  transport = globalThis.fetch,
+  now = new Date(),
+  notes,
+} = {}) {
+  if (typeof transport !== 'function') {
+    note(notes, 'llm skipped: no transport');
+    return { status: 'error' };
+  }
+  const system = "You are Meow-Ops, a concise operations assistant. Answer the user's question using ONLY the context below. If the context doesn't contain enough information, say so. Keep answers under 3 sentences.\n\nContext:\n" + context;
+  const user = typeof question === 'string' ? question : '';
+  const budgetNotes = Array.isArray(notes) ? notes : [];
+  const key = budgetCheck({ env, now, prompt: `${system}\n${user}`, notes: budgetNotes });
+  if (!key) return { status: 'skip', reason: askSkipReason(budgetNotes) };
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
+  const startedAtMs = performance.now();
+  try {
+    const posted = await postDeepSeekText({ key, system, user, transport, signal: controller.signal });
+    if (!posted.ok) return { status: 'error' };
+    const content = posted.responseJson?.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || !content.trim()) return { status: 'error' };
+    appendMeterRun({ now, startedAtMs, responseJson: posted.responseJson });
+    return { status: 'ok', answer: content.trim() };
+  } catch {
+    return { status: 'error' };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
