@@ -22,6 +22,10 @@ function deps(overrides = {}) {
         calls.intake += 1;
         return { processed: 2, stored: 1, dropped: 0, skipped: 1 };
       },
+      runVisionIntake: async () => {
+        calls.vision = (calls.vision || 0) + 1;
+        return { processed: 0, stored: 0, dropped: 0, skipped: 0 };
+      },
       runAutomationHealth: async () => ({
         agents: [
           { label: 'agent.one', running: false, last_exit_status: 1, log_staleness_hours: 30, [errorSignatureKey]: 'hidden', flags: ['failed'] },
@@ -84,7 +88,16 @@ test('--no-intake skips intake', async () => {
   const fixture = deps();
   const digest = await runDigest({ repoRoot: '/repo', now: NOW, noIntake: true, deps: fixture.deps });
   assert.equal(fixture.calls.intake, 0);
+  assert.equal(fixture.calls.vision, undefined);
   assert.deepEqual(digest.intake, { processed: 0, stored: 0, dropped: 0, skipped: 0 });
+});
+
+test('vision intake stats merge into the intake totals', async () => {
+  const fixture = deps({
+    runVisionIntake: async () => ({ processed: 1, stored: 1, dropped: 0, skipped: 0 }),
+  });
+  const digest = await runDigest({ repoRoot: '/repo', now: NOW, deps: fixture.deps });
+  assert.deepEqual(digest.intake, { processed: 3, stored: 2, dropped: 0, skipped: 1 });
 });
 
 test('--no-ai calls runAllRules with ai false', async () => {
