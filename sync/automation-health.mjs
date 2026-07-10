@@ -110,7 +110,7 @@ function scrubSignature(line) {
 }
 
 function lastInterestingLine(path) {
-  let text = '';
+  let text;
   try {
     const content = readFileSync(path, 'utf8');
     text = content.slice(Math.max(0, content.length - 32_000));
