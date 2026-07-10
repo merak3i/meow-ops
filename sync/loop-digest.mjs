@@ -9,6 +9,7 @@ import { loadEnv } from './load-env.mjs';
 import { appendRecord, readLedger } from './loop-ledger.mjs';
 import { buildRun, selectSessions, summarize } from './loop-capture.mjs';
 import { runIntake } from './intake-local.mjs';
+import { runVisionIntake } from './intake-vision.mjs';
 import { runAutomationHealth } from './automation-health.mjs';
 import { runAllRules } from './loop-propose.mjs';
 
@@ -16,6 +17,15 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..');
 const LOOP_ID = 'meow-ops-dev';
 const EMPTY_INTAKE = { processed: 0, stored: 0, dropped: 0, skipped: 0 };
+
+function mergeIntake(a, b) {
+  return {
+    processed: (a.processed || 0) + (b.processed || 0),
+    stored: (a.stored || 0) + (b.stored || 0),
+    dropped: (a.dropped || 0) + (b.dropped || 0),
+    skipped: (a.skipped || 0) + (b.skipped || 0),
+  };
+}
 
 function latestProposals(records) {
   const byId = new Map();
@@ -94,6 +104,12 @@ export async function runDigest({
     } catch (err) {
       notes.push(`intake failed: ${err.message}`);
       intake = { ...EMPTY_INTAKE, dropped: 1 };
+    }
+    try {
+      const vision = await (deps.runVisionIntake || runVisionIntake)({ limit: 5 });
+      intake = mergeIntake(intake, vision);
+    } catch (err) {
+      notes.push(`vision intake failed: ${err.message}`);
     }
   }
   const health = await (deps.runAutomationHealth || runAutomationHealth)();
