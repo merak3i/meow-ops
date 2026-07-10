@@ -12,8 +12,8 @@ const plist = readFileSync(plistPath, 'utf8');
 test('daily digest LaunchAgent points at the loop digest schedule', () => {
   assert.match(plist, /<key>Label<\/key>\s*<string>com\.meowops\.daily-digest<\/string>/);
   assert.match(plist, /<string>\/Users\/napster\/Documents\/meow-ops\/sync\/loop-digest\.mjs<\/string>/);
-  assert.match(plist, /<key>StartCalendarInterval<\/key>\s*<dict>[\s\S]*<key>Hour<\/key>\s*<integer>3<\/integer>/);
-  assert.match(plist, /<key>Minute<\/key>\s*<integer>0<\/integer>/);
+  assert.match(plist, /<key>StartCalendarInterval<\/key>\s*<dict>[\s\S]*<key>Hour<\/key>\s*<integer>8<\/integer>/);
+  assert.match(plist, /<key>Minute<\/key>\s*<integer>30<\/integer>/);
   assert.ok(existsSync(join(repoRoot, 'sync', 'loop-digest.mjs')));
 });
 

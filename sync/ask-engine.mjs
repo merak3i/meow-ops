@@ -4,6 +4,12 @@ const asArray = (value) => (Array.isArray(value) ? value : []);
 const money = (value) => `$${value.toFixed(2)}`;
 const hasKeyword = (question, keywords) => keywords.some((keyword) => question.includes(keyword));
 
+function latestProposals(proposals) {
+  const byId = new Map();
+  for (const proposal of proposals) byId.set(proposal.proposal_id, proposal);
+  return [...byId.values()];
+}
+
 function date(value) {
   if (!value) return 'unknown date';
   const parsed = new Date(value);
@@ -28,7 +34,7 @@ function sumCost(runs, key) {
 
 export function ask(question, { proposals, decisions, runs, digest } = {}) {
   const q = String(question || '').toLowerCase();
-  const proposalRows = asArray(proposals);
+  const proposalRows = latestProposals(asArray(proposals));
   const decisionRows = asArray(decisions);
   const runRows = asArray(runs);
   const proposalMap = new Map(proposalRows.map((proposal) => [proposal.proposal_id, proposal]));

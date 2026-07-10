@@ -12,7 +12,7 @@ const NOW = new Date('2026-07-07T12:00:00.000Z');
 const errorSignatureKey = ['last_error', 'signature'].join('_');
 
 function deps(overrides = {}) {
-  const calls = { intake: 0, rules: [] };
+  const calls = { intake: 0, codex: 0, antigravity: 0, vision: 0, rules: [] };
   return {
     calls,
     deps: {
@@ -22,8 +22,16 @@ function deps(overrides = {}) {
         calls.intake += 1;
         return { processed: 2, stored: 1, dropped: 0, skipped: 1 };
       },
+      runCodexIntake: async () => {
+        calls.codex += 1;
+        return { processed: 0, stored: 0, dropped: 0, skipped: 0 };
+      },
+      runAntigravityIntake: async () => {
+        calls.antigravity += 1;
+        return { processed: 0, stored: 0, dropped: 0, skipped: 0 };
+      },
       runVisionIntake: async () => {
-        calls.vision = (calls.vision || 0) + 1;
+        calls.vision += 1;
         return { processed: 0, stored: 0, dropped: 0, skipped: 0 };
       },
       runAutomationHealth: async () => ({
@@ -88,7 +96,9 @@ test('--no-intake skips intake', async () => {
   const fixture = deps();
   const digest = await runDigest({ repoRoot: '/repo', now: NOW, noIntake: true, deps: fixture.deps });
   assert.equal(fixture.calls.intake, 0);
-  assert.equal(fixture.calls.vision, undefined);
+  assert.equal(fixture.calls.codex, 0);
+  assert.equal(fixture.calls.antigravity, 0);
+  assert.equal(fixture.calls.vision, 0);
   assert.deepEqual(digest.intake, { processed: 0, stored: 0, dropped: 0, skipped: 0 });
 });
 
@@ -98,6 +108,15 @@ test('vision intake stats merge into the intake totals', async () => {
   });
   const digest = await runDigest({ repoRoot: '/repo', now: NOW, deps: fixture.deps });
   assert.deepEqual(digest.intake, { processed: 3, stored: 2, dropped: 0, skipped: 1 });
+});
+
+test('digest runs and merges every text intake source', async () => {
+  const fixture = deps({
+    runCodexIntake: async () => ({ processed: 1, stored: 1, dropped: 0, skipped: 0 }),
+    runAntigravityIntake: async () => ({ processed: 1, stored: 1, dropped: 0, skipped: 1 }),
+  });
+  const digest = await runDigest({ repoRoot: '/repo', now: NOW, deps: fixture.deps });
+  assert.deepEqual(digest.intake, { processed: 4, stored: 3, dropped: 0, skipped: 2 });
 });
 
 test('--no-ai calls runAllRules with ai false', async () => {

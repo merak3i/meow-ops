@@ -32,6 +32,16 @@ test('answers pending count and titles', () => {
   assert.match(result.answer, /Trim noisy alert/);
 });
 
+test('counts only the latest revision of each proposal', () => {
+  const revised = [
+    { proposal_id: 'p1', title: 'Already handled', status: 'pending_approval' },
+    { proposal_id: 'p2', title: 'Still pending', status: 'pending_approval' },
+    { proposal_id: 'p1', title: 'Already handled', status: 'approved' },
+  ];
+  assert.match(ask('what is pending?', { proposals: revised }).answer, /^1 pending proposal:/);
+  assert.match(ask('what is approved?', { proposals: revised }).answer, /^1 approved proposal:/);
+});
+
 test('answers cost totals across runs', () => {
   assert.equal(ask('money spent', { runs }).answer, '$1.50 real / $3.25 notional across 2 runs.');
 });

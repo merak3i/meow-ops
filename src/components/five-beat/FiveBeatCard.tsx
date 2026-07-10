@@ -67,7 +67,7 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: 'inherit',
   },
   primaryButton: {
-    borderColor: 'var(--accent)',
+    border: '1px solid var(--accent)',
     color: 'var(--bg-main)',
     background: 'var(--accent)',
   },
@@ -200,6 +200,9 @@ export function FiveBeatCard({
   const decisionLine = latestDecision
     ? `${latestDecision.decision} by ${latestDecision.decided_by} at ${new Date(latestDecision.decided_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`
     : 'No owner decision recorded yet.';
+  const undoable = latestDecision
+    && ['approved', 'rejected'].includes(latestDecision.decision)
+    && ['approved', 'rejected'].includes(proposal.status);
 
   return (
     <article style={styles.shell} data-testid="five-beat-card">
@@ -324,7 +327,7 @@ export function FiveBeatCard({
             outcome {outcome.verdict}
           </span>
         )}
-        {!skeleton && latestDecision && latestDecision.decision !== 'undone' && (
+        {!skeleton && undoable && (
           <button
             type="button"
             disabled={busy}

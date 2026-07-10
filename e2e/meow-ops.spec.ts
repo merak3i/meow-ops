@@ -302,6 +302,8 @@ async function mockLoopEng(
     comparisons?: unknown[];
     simulations?: unknown[];
     outcomes?: unknown[];
+    digest?: Record<string, unknown> | null;
+    digestHistory?: unknown[];
   },
 ) {
   await page.context().route('**/loop-eng/**', async (route) => {
@@ -314,6 +316,8 @@ async function mockLoopEng(
       '/loop-eng/comparisons': data.comparisons ?? [],
       '/loop-eng/simulations': data.simulations ?? [],
       '/loop-eng/outcomes': data.outcomes ?? [],
+      '/loop-eng/digest': data.digest ?? {},
+      '/loop-eng/digest/history': data.digestHistory ?? [],
     };
     await route.fulfill({
       status: 200,
@@ -523,6 +527,70 @@ test('Review Deck: expired drafts leave queue but remain under expired filter', 
   await page.getByRole('button', { name: 'Expired', exact: true }).click();
   await expect(page.getByRole('button', { name: /Expired stale draft/ })).toBeVisible();
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
+});
+
+test('Review Deck: deferred proposals do not offer an invalid Undo action', async ({ page }) => {
+  await mockLoopEng(page, {
+    proposals: [{
+      schema_version: 1,
+      proposal_id: 'prop-deferred',
+      loop_id: 'demo-loop',
+      created_at: '2026-07-06T00:00:00.000Z',
+      created_by: 'system:propose',
+      category: 'workflow',
+      title: 'Deferred owner decision',
+      one_percent_target: 'Keep the deferred item out of the active queue',
+      evidence: [{ kind: 'rule', ref: 'deferred-test' }],
+      rollback: { plan: 'Return it to pending manually' },
+      review_only: false,
+      status: 'pending_approval',
+    }],
+    decisions: [{
+      decision_id: 'dec-deferred',
+      proposal_id: 'prop-deferred',
+      decided_at: '2026-07-06T00:01:00.000Z',
+      decision: 'deferred',
+      decided_by: 'owner',
+    }],
+  });
+  await page.goto('/#/loop-review');
+  await waitForApp(page);
+  await page.getByRole('button', { name: 'Decided', exact: true }).click();
+  await expect(page.getByText(/deferred by owner at/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
+});
+
+test('Review Deck: mobile Digest stays within the viewport', async ({ page }) => {
+  const digest = {
+    generated_at: '2026-07-06T00:00:00.000Z',
+    period: { since: '2026-07-05', until: '2026-07-06T00:00:00.000Z' },
+    capture: { run_id: null, sessions: 0 },
+    intake: { processed: 0, stored: 0, dropped: 0, skipped: 1 },
+    health: {
+      agents_total: 1,
+      flagged: 1,
+      flags: ['stale-log'],
+      agents: [{
+        label: 'com.google.GoogleUpdater.long-component-name',
+        running: false,
+        last_exit_status: 0,
+        log_staleness_hours: 48,
+        flags: ['stale-log'],
+      }],
+    },
+    proposals: { new_drafts: 0, pending: 0, total: 0 },
+  };
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockLoopEng(page, { digest, digestHistory: [digest] });
+  await page.goto('/#/loop-review');
+  await waitForApp(page);
+  await page.getByRole('button', { name: 'Digest', exact: true }).click();
+  await expect(page.getByText('Agents', { exact: true })).toBeVisible();
+  const dimensions = await page.evaluate(() => ({
+    width: window.innerWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1);
 });
 
 // ── 11. Companion ─────────────────────────────────────────────────────────────
