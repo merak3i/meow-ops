@@ -9,6 +9,8 @@ import { loadEnv } from './load-env.mjs';
 import { appendRecord, readLedger } from './loop-ledger.mjs';
 import { buildRun, selectSessions, summarize } from './loop-capture.mjs';
 import { runIntake } from './intake-local.mjs';
+import { runCodexIntake } from './intake-codex.mjs';
+import { runAntigravityIntake } from './intake-antigravity.mjs';
 import { runVisionIntake } from './intake-vision.mjs';
 import { runAutomationHealth } from './automation-health.mjs';
 import { runAllRules } from './loop-propose.mjs';
@@ -104,6 +106,18 @@ export async function runDigest({
     } catch (err) {
       notes.push(`intake failed: ${err.message}`);
       intake = { ...EMPTY_INTAKE, dropped: 1 };
+    }
+    try {
+      const codex = await (deps.runCodexIntake || runCodexIntake)({ limit: 5 });
+      intake = mergeIntake(intake, codex);
+    } catch (err) {
+      notes.push(`codex intake failed: ${err.message}`);
+    }
+    try {
+      const antigravity = await (deps.runAntigravityIntake || runAntigravityIntake)({ limit: 5 });
+      intake = mergeIntake(intake, antigravity);
+    } catch (err) {
+      notes.push(`antigravity intake failed: ${err.message}`);
     }
     try {
       const vision = await (deps.runVisionIntake || runVisionIntake)({ limit: 5 });

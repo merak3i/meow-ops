@@ -690,7 +690,7 @@ export default function LoopReview() {
                       type="button"
                       style={{
                         ...styles.item,
-                        borderColor: active ? 'var(--accent)' : 'var(--border)',
+                        border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
                       }}
                       onClick={() => setSelectedId(proposal.proposal_id)}
                     >
@@ -835,7 +835,7 @@ export default function LoopReview() {
                       return (
                         <span key={agent.label} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'baseline' }}>
                           <span style={{ color: agent.running ? 'var(--success, #22c55e)' : 'var(--danger, #fb7185)' }}>●</span>
-                          <strong>{agent.label}</strong>
+                          <strong style={{ minWidth: 0, maxWidth: '100%', overflowWrap: 'anywhere' }}>{agent.label}</strong>
                           <span>{agent.running ? 'running' : 'stopped'}</span>
                           {failed && <span style={{ color: 'var(--danger, #fb7185)' }}>exit {agent.last_exit_status}</span>}
                           {stale && <span style={{ color: 'var(--warning)' }}>{agent.log_staleness_hours}h stale</span>}
@@ -955,7 +955,7 @@ export default function LoopReview() {
                   type="button"
                   style={{
                     ...styles.loopChip,
-                    borderColor: loopFilter === 'all' ? 'var(--accent)' : 'var(--border)',
+                    border: `1px solid ${loopFilter === 'all' ? 'var(--accent)' : 'var(--border)'}`,
                     color: loopFilter === 'all' ? 'var(--text-primary)' : 'var(--text-secondary)',
                   }}
                   onClick={() => setLoopFilter('all')}
@@ -968,7 +968,7 @@ export default function LoopReview() {
                     type="button"
                     style={{
                       ...styles.loopChip,
-                      borderColor: loopFilter === loopId ? 'var(--accent)' : 'var(--border)',
+                      border: `1px solid ${loopFilter === loopId ? 'var(--accent)' : 'var(--border)'}`,
                       color: loopFilter === loopId ? 'var(--text-primary)' : 'var(--text-secondary)',
                     }}
                     onClick={() => setLoopFilter(loopId)}
@@ -1045,7 +1045,7 @@ export default function LoopReview() {
                             key={metric}
                             style={{
                               ...styles.deltaChip,
-                              borderColor: tone,
+                              border: `1px solid ${tone}`,
                               color: tone,
                             }}
                           >

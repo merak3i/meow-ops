@@ -6,8 +6,8 @@
 // — which runs on YOUR machine, not on Vercel — so it can read
 // ~/.claude/projects/, ~/.codex/sessions/, and other local-only exports.
 //
-// All endpoints are read/local-only: session data is gitignored and no HTTP
-// path here ever pushes to git.
+// All endpoints are local-only. Loop Engineering writes still pass through
+// ledger validation, and execution can push only behind its explicit gate.
 //
 // Usage:
 //   node sync/local-api.mjs
@@ -18,7 +18,7 @@ import { createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
 import { statSync, existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 
 import {
@@ -27,9 +27,12 @@ import {
 import { runDigest } from './loop-digest.mjs';
 import { ask, FALLBACK_ANSWER } from './ask-engine.mjs';
 import { askLlm } from './llm-gateway.mjs';
+import { loadEnv } from './load-env.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
+const IS_CLI = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (IS_CLI) loadEnv(ROOT);
 const PORT = Number(process.env.MEOW_LOCAL_API_PORT || process.env.MEOW_SYNC_PORT || 7337);
 const LOCAL_ACCESS_HEADER = 'x-meow-ops-local';
 const LOOP_OPS_DIR = join(ROOT, 'public', 'data', 'loop-ops');
@@ -693,7 +696,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /loop-eng/digest         - last Loop Engineering digest');
   console.log('  POST /loop-eng/digest         - run Loop Engineering digest');
   console.log('  GET  /loop-eng/digest/history - Loop Engineering digest history');
-  console.log('  POST /loop-eng/ask            - deterministic Review Deck query');
+  console.log('  POST /loop-eng/ask            - keyword query + budgeted AI fallback');
   console.log('  POST /loop-eng/decisions      - owner decision with nonce');
   console.log('  POST /loop-eng/execute        - dry-run/push executor with nonce');
   console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');

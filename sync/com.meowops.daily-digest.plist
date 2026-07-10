@@ -20,12 +20,13 @@
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/napster/Documents/meow-ops</string>
+  <!-- launchd calendar intervals use local time; 08:30 IST is 03:00 UTC. -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
-    <integer>3</integer>
+    <integer>8</integer>
     <key>Minute</key>
-    <integer>0</integer>
+    <integer>30</integer>
   </dict>
   <key>RunAtLoad</key>
   <false/>

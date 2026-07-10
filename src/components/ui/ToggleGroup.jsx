@@ -16,7 +16,11 @@ export function ToggleGroup({ value, onChange, options, size = 'md', ariaLabel }
       aria-label={ariaLabel}
       style={{
         display: 'flex',
+        flexWrap: 'wrap',
         gap: 4,
+        maxWidth: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
         background: 'var(--bg-card)',
         borderRadius: 8,
         padding: 3,
