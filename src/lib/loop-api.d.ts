@@ -32,7 +32,7 @@ export interface DigestData {
 export function fetchLoopDigest(): Promise<DigestData | null>;
 export function fetchLoopDigestHistory(): Promise<DigestData[]>;
 export function postLoopRunDigest(): Promise<{ ok: boolean; digest?: DigestData; error?: string } | null>;
-export function postLoopAsk(question: string): Promise<{ ok: boolean; answer?: string; error?: string } | null>;
+export function postLoopAsk(question: string): Promise<{ ok: boolean; answer?: string; source?: 'keyword' | 'llm'; error?: string } | null>;
 export function fetchLoopNonce(): Promise<string | null>;
 export function postLoopDecision(input: {
   proposal_id: string;

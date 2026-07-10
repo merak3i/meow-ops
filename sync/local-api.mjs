@@ -22,10 +22,11 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 
 import {
-  appendRecord, foldLatestById, newId, readLedger,
+  appendRecord, assertRedacted, foldLatestById, newId, readLedger,
 } from './loop-ledger.mjs';
 import { runDigest } from './loop-digest.mjs';
-import { ask } from './ask-engine.mjs';
+import { ask, FALLBACK_ANSWER } from './ask-engine.mjs';
+import { askLlm } from './llm-gateway.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -103,6 +104,25 @@ function requireBrowserHeader(req, res) {
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
   res.end(JSON.stringify(payload));
+}
+
+function buildAskContext({ proposals, decisions, runs, digest }) {
+  const rows = (value) => (Array.isArray(value) ? value : []);
+  const text = (value, fallback = 'none') => typeof value === 'string' && value.trim() ? value.trim() : fallback;
+  const date = (value) => Number.isFinite(Date.parse(value || '')) ? new Date(value).toISOString().slice(0, 10) : 'unknown date';
+  const proposalRows = rows(proposals);
+  const titleById = new Map(proposalRows.map((proposal) => [proposal.proposal_id, text(proposal.title, 'Untitled proposal')]));
+  const pending = proposalRows.filter((proposal) => proposal.status === 'pending_approval');
+  const recent = [...rows(decisions)].sort((a, b) => String(b.decided_at).localeCompare(String(a.decided_at))).slice(0, 5);
+  const sum = (key) => rows(runs).reduce((total, run) => total + (Number(run.metrics?.[key]) || 0), 0);
+  const health = digest?.health || {};
+  const flagged = rows(health.agents).filter((agent) => rows(agent.flags).length > 0).slice(0, 5);
+  return [
+    `Pending proposals (${pending.length}): ${pending.slice(0, 5).map((proposal) => text(proposal.title, 'Untitled proposal')).join(', ') || 'none'}`,
+    `Recent decisions: ${recent.map((decision) => `${date(decision.decided_at)} ${text(decision.decision, 'unknown')} ${titleById.get(decision.proposal_id) || 'Untitled proposal'}`).join('; ') || 'none'}`,
+    `Total cost: $${sum('cost_usd_real').toFixed(2)} real / $${sum('cost_usd_notional').toFixed(2)} notional`,
+    `Agent health: ${Number(health.agents_total) || 0} total, ${Number(health.flagged) || 0} flagged (${flagged.map((agent) => `${text(agent.label, 'unknown agent')}: ${rows(agent.flags).map(String).join(', ')}`).join('; ') || 'none'})`,
+  ].join('\n');
 }
 
 function ruleError(res, statusCode, rule, message) {
@@ -367,13 +387,23 @@ const server = createServer(async (req, res) => {
         const data = readFileSync(join(ROOT, 'public', 'data', 'loop-engineering', 'digest.json'), 'utf8');
         digest = JSON.parse(data);
       } catch {}
-      const result = ask(question, {
+      const data = {
         proposals: readLedger('proposal'),
         decisions: readLedger('decision'),
         runs: readLedger('run'),
         digest,
-      });
-      sendJson(res, 200, { ok: true, answer: result.answer });
+      };
+      const { answer } = ask(question, data);
+      let finalAnswer = answer;
+      let source = 'keyword';
+      if (answer === FALLBACK_ANSWER && process.env.DEEPSEEK_API_KEY) {
+        const llm = await askLlm({ question, context: buildAskContext(data), env: process.env, now: new Date() });
+        if (llm.status === 'ok') {
+          finalAnswer = assertRedacted(llm.answer, 'llm-answer');
+          source = 'llm';
+        }
+      }
+      sendJson(res, 200, { ok: true, answer: finalAnswer, source });
     } catch (err) {
       sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
     }

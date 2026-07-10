@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,6 +8,7 @@ import { calculateCost } from '../cost-calculator.mjs';
 import { appendRecord, readLedger } from '../loop-ledger.mjs';
 import { validateLoopRun } from '../loop-schema.mjs';
 import {
+  askLlm,
   callLlm,
   DEEPSEEK_MODEL,
   METER_LOOP_ID,
@@ -15,6 +16,8 @@ import {
 } from '../llm-gateway.mjs';
 
 const NOW = new Date('2026-07-06T00:00:00.000Z');
+
+beforeEach(resetLlmBudgetForTests);
 
 async function withTempLedger(fn) {
   const dir = mkdtempSync(join(tmpdir(), 'meow-llm-gateway-'));
@@ -179,6 +182,46 @@ test('llm gateway budget checks skip before network calls', async () => {
     });
     assert.equal(weeklyCap, null);
     assert.deepEqual(notes, ['llm skipped: weekly cap']);
+    assert.equal(calls, 0);
+  });
+});
+
+test('askLlm skips without a key before transport', async () => {
+  await withTempLedger(async () => {
+    let calls = 0;
+    const result = await askLlm({ question: 'What changed?', env: {}, transport: async () => { calls += 1; } });
+    assert.deepEqual(result, { status: 'skip', reason: 'no key' });
+    assert.equal(calls, 0);
+  });
+});
+
+test('askLlm sends a text request, returns the answer, and meters it', async () => {
+  await withTempLedger(async () => {
+    const result = await askLlm({
+      question: 'How much did we spend?', context: 'Total cost: $42.00 real / $0.00 notional', now: NOW,
+      env: { DEEPSEEK_API_KEY: fakeKey() },
+      transport: async (_, options) => {
+        const body = JSON.parse(options.body);
+        assert.equal('response_format' in body, false);
+        assert.deepEqual(body.messages.map((message) => message.role), ['system', 'user']);
+        assert.match(body.messages[0].content, /Context:/);
+        assert.equal(body.messages[1].content, 'How much did we spend?');
+        return responseWith('42 dollars.');
+      },
+    });
+    assert.deepEqual(result, { status: 'ok', answer: '42 dollars.' });
+    assert.equal(readLedger('run').filter((run) => run.loop_id === METER_LOOP_ID).length, 1);
+  });
+});
+
+test('askLlm honors the shared call cap before transport', async () => {
+  await withTempLedger(async () => {
+    let calls = 0;
+    const result = await askLlm({
+      question: 'What changed?', env: { DEEPSEEK_API_KEY: fakeKey(), MEOW_LLM_CALLS_PER_CYCLE: '0' },
+      transport: async () => { calls += 1; },
+    });
+    assert.deepEqual(result, { status: 'skip', reason: 'call cap' });
     assert.equal(calls, 0);
   });
 });
