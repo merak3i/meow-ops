@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus, SquareCode, Code2, Pencil, Check, X, Clock } from 'lucide-react';
+import { Activity, Zap, DollarSign, FolderKanban, TrendingUp, TrendingDown, Minus, SquareCode, Code2, Pencil, Check, X, Clock, FlaskConical, ExternalLink } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import DailyChart from '../components/DailyChart';
 import ToolBreakdown from '../components/ToolBreakdown';
@@ -14,6 +14,9 @@ import {
   getToolBreakdownFromSessions,
   buildDailyFromSessions,
 } from '../lib/queries';
+
+const configuredAgentSandboxUrl = import.meta.env.VITE_AGENT_SANDBOX_URL;
+const agentSandboxUrl = configuredAgentSandboxUrl?.startsWith('https://') ? configuredAgentSandboxUrl : null;
 
 // ─── Source filter toggle ─────────────────────────────────────────────────────
 const SOURCE_OPTIONS = [
@@ -53,6 +56,34 @@ function SourceToggle({ value, onChange }) {
         ariaLabel="Session source"
       />
     </div>
+  );
+}
+
+function AgentSandboxLink() {
+  if (!agentSandboxUrl) return null;
+
+  return (
+    <a
+      href={agentSandboxUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Open Agent Sandbox"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        color: 'var(--text-primary)', textDecoration: 'none',
+        background: 'color-mix(in oklch, var(--accent) 11%, var(--bg-card))',
+        border: '1px solid color-mix(in oklch, var(--accent) 38%, var(--border))',
+        borderRadius: 9, padding: '8px 11px',
+        transition: 'border-color 160ms ease, background 160ms ease',
+      }}
+    >
+      <FlaskConical size={15} color="var(--accent)" aria-hidden="true" />
+      <span style={{ display: 'grid', gap: 1, lineHeight: 1.2 }}>
+        <strong style={{ fontSize: 12, fontWeight: 600 }}>Agent Sandbox</strong>
+        <small style={{ fontSize: 10, color: 'var(--text-muted)' }}>Validate a repo before integration</small>
+      </span>
+      <ExternalLink size={13} color="var(--text-muted)" aria-hidden="true" />
+    </a>
   );
 }
 
@@ -597,7 +628,10 @@ export default function Overview({
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <h2 style={{ fontSize: 22 }}>Overview</h2>
-        {hasCodex && <SourceToggle value={source} onChange={setSource} />}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+          <AgentSandboxLink />
+          {hasCodex && <SourceToggle value={source} onChange={setSource} />}
+        </div>
       </div>
 
       {/* ── Primary stat cards ── */}

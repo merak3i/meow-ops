@@ -78,6 +78,18 @@ test('Overview: stat cards render', async ({ page }) => {
   await expect(page.locator('text=/Projects —/').first()).toBeVisible();
 });
 
+test('Overview: Agent Sandbox launch card is opt-in and external', async ({ page }) => {
+  const link = page.getByRole('link', { name: 'Open Agent Sandbox' });
+  if (process.env.VITE_AGENT_SANDBOX_URL) {
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', /noopener/);
+    await expect(link).toHaveAttribute('href', /^https:\/\//);
+  } else {
+    await expect(link).toHaveCount(0);
+  }
+});
+
 test('Overview: Cost Breakdown section renders', async ({ page }) => {
   await expect(page.locator('text=COST BREAKDOWN').or(page.locator('text=Cost Breakdown')).first()).toBeVisible();
   // SpendCard labels — use .first() to resolve strict mode

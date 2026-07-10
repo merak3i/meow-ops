@@ -13,6 +13,9 @@ import Pomodoro from './pages/Pomodoro';
 import { pageById } from './components/nav-config';
 import { usePageRoute } from './lib/usePageRoute';
 
+const configuredAgentSandboxUrl = import.meta.env.VITE_AGENT_SANDBOX_URL;
+const agentSandboxUrl = configuredAgentSandboxUrl?.startsWith('https://') ? configuredAgentSandboxUrl : null;
+
 // Heavy pages — code-split to keep the main bundle lean
 const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
 const CompanionPageV2    = lazy(() => import('./companion-v2/CompanionPageV2'));
@@ -76,6 +79,19 @@ function NoDataScreen() {
       <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
         Then hit the sync button in the sidebar, or refresh this page.
       </p>
+      {agentSandboxUrl && (
+        <a
+          href={agentSandboxUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            color: 'var(--accent)', fontSize: 13, textDecoration: 'none',
+            border: '1px solid var(--border)', borderRadius: 8, padding: '9px 13px',
+          }}
+        >
+          Open Agent Sandbox
+        </a>
+      )}
     </div>
   );
 }
