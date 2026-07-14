@@ -40,6 +40,8 @@ const FLAG_METRICS = {
   slower: 'duration_seconds',
 };
 const PUBLIC_DATA_RULE = 'public/data/*';
+const REVIEW_FIX_FILE = 'review-fix.json';
+const REVIEW_FIX_CHECK_IDS = new Set(['sync-tests', 'eval', 'lint', 'typecheck', 'build', 'e2e']);
 const DEMO_NEGATIONS = [
   '!public/data/demo-cost-summary.json',
   '!public/data/demo-sessions.json',
@@ -432,6 +434,59 @@ function readAutomationHealth({ intakeDir, env } = {}) {
     const snapshot = safeReadJson(path);
     return Array.isArray(snapshot?.agents) ? snapshot : null;
   } catch { return null; }
+}
+
+function readReviewFix({ intakeDir, env } = {}) {
+  const path = join(intakeDir || resolveIntakeDir(env || process.env), REVIEW_FIX_FILE);
+  if (!existsSync(path)) return null;
+  try {
+    const snapshot = safeReadJson(path);
+    if (!Array.isArray(snapshot?.checks)) return null;
+    const seen = new Set();
+    return snapshot.checks
+      .filter((check) => check
+        && typeof check.id === 'string'
+        && REVIEW_FIX_CHECK_IDS.has(check.id)
+        && check.passed === false
+        && !seen.has(check.id)
+        && Boolean(seen.add(check.id)))
+      .map((check) => ({ id: check.id, exit_code: Number.isInteger(check.exit_code) ? check.exit_code : 1 }));
+  } catch { return null; }
+}
+
+function reviewFixProposal({ now, check }) {
+  return baseProposal({
+    ruleId: 'review-fix',
+    now,
+    category: 'test',
+    title: `Review failing verification: ${check.id}`,
+    onePercentTarget: 'Restore a failed local verification before the next operator review',
+    diff: { source: 'review-fix', check: check.id, exit_code: check.exit_code },
+    rationale: `the latest local review recorded a non-zero exit for ${check.id}`,
+    evidence: [{ kind: 'review-fix', ref: check.id, value: check.exit_code }],
+    confidence: 0.8,
+    risk: 'low',
+    riskNotes: 'check id and exit code only; owner inspects the local failure before changing code',
+    expectedBenefit: 'keeps verification regressions visible in the Review Deck instead of buried in terminal output',
+    rollbackPlan: 'Reject this proposal if the recorded check failure is expected or no longer reproducible',
+    reviewOnly: true,
+  });
+}
+
+export function appendReviewFixProposals(options = {}) {
+  const proposals = options.proposals || readLedger('proposal');
+  const failures = readReviewFix(options) || [];
+  if (failures.length === 0) return [{ ruleId: 'review-fix', status: 'clear', proposal_id: null }];
+  const results = [];
+  for (const check of failures) {
+    if (hasNonRejectedProposalForEvidenceRef('review-fix', check.id, proposals)) {
+      results.push({ ruleId: 'review-fix', status: 'skipped-existing', proposal_id: null });
+      continue;
+    }
+    const stored = appendRecord('proposal', reviewFixProposal({ now: options.now || new Date(), check }));
+    results.push({ ruleId: 'review-fix', status: 'draft', proposal_id: stored.proposal_id });
+  }
+  return results;
 }
 
 function automationHealthProposal({ ruleId, now, agent, stale = false }) {
@@ -1013,6 +1068,7 @@ export function runProposer(options = {}) {
     results.push({ ruleId, status: 'fired', proposal_id: pending.proposal_id });
   }
   results.push(...appendAutomationHealthProposals(options));
+  results.push(...appendReviewFixProposals(options));
   results.push(...appendIntakeMinerProposals(options));
   for (const result of appendComparisonSkeletons({ now: options.now })) {
     results.push({
@@ -1055,6 +1111,7 @@ export async function runProposerWithAi(options = {}) {
     results.push({ ruleId, status: 'fired', proposal_id: pending.proposal_id });
   }
   results.push(...appendAutomationHealthProposals(options));
+  results.push(...appendReviewFixProposals(options));
   results.push(...appendIntakeMinerProposals(options));
   for (const result of await appendComparisonSkeletonsWithAi({
     now: options.now,

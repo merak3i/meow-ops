@@ -3,6 +3,7 @@ import { PasswordGate } from './components/PasswordGate';
 import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import DateFilter from './components/DateFilter';
+import CompanionChat from './components/companion-chat/CompanionChat';
 import Overview from './pages/Overview';
 import Sessions from './pages/Sessions';
 import ByProject from './pages/ByProject';
@@ -356,6 +357,7 @@ export default function App() {
           </ErrorBoundary>
         )}
       </main>
+      <CompanionChat pageLabel={pageDesc?.label || 'Meow Ops'} />
     </div>
     </PasswordGate>
   );

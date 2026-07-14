@@ -2,7 +2,7 @@
  * Meow Operations — end-to-end test suite
  *
  * Runs against the Vite preview build (dist/).
- * Covers all 13 pages + key interactions.
+ * Covers all 14 routed pages + key interactions.
  */
 import { expect, test } from '@playwright/test';
 
@@ -49,7 +49,7 @@ test('sidebar renders all nav buttons', async ({ page }) => {
   const expectedNav = [
     'Overview', 'Sessions', 'By Project', 'By Day', 'By Action',
     'Cost Tracker', 'Analytics', 'Agent Ops', 'Scrying Sanctum',
-    'The Loom', 'Review Deck', 'Companion', 'Focus Timer',
+    'The Loom', 'Review Deck', 'Capacity & Usage', 'Companion', 'Focus Timer',
   ];
   for (const label of expectedNav) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -59,6 +59,15 @@ test('sidebar renders all nav buttons', async ({ page }) => {
   }
 });
 
+test('Capacity & Usage: local-first usage cockpit renders', async ({ page }) => {
+  await nav(page, 'Capacity & Usage');
+  await expect(page.getByRole('heading', { name: 'Capacity & Usage', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Refresh local data' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'GitHub Actions', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'SuperAdmin Wiring', exact: true })).toBeVisible();
+  await expect(page.locator('[data-vite-error]')).toHaveCount(0);
+});
+
 test('sidebar shows Source Usage panel when multiple sources exist', async ({ page }) => {
   // The panel is only rendered when the data has multiple sources.
   // If only Claude data is present the panel is hidden — that's correct behaviour.
@@ -66,6 +75,28 @@ test('sidebar shows Source Usage panel when multiple sources exist', async ({ pa
   const count = await panel.count();
   // Accept 0 (single-source data) or 1 (multi-source data)
   expect(count).toBeGreaterThanOrEqual(0);
+});
+
+test('Companion chat opens as a persistent guided operations surface', async ({ page }) => {
+  await page.getByRole('button', { name: 'Open Companion chat' }).click();
+  const chat = page.getByRole('dialog', { name: 'Companion AI chat' });
+  await expect(chat).toBeVisible();
+  await expect(chat.getByText('Local-first copilot')).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'What changed today?' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Is sync healthy?' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'What should I fix next?' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Prepare a repair prompt' })).toBeVisible();
+  await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toBeFocused();
+});
+
+test('Companion chat becomes a clean full-height mobile panel', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Open Companion chat' }).click();
+  const chat = page.getByRole('dialog', { name: 'Companion AI chat' });
+  await expect(chat).toHaveCSS('height', '844px');
+  await expect(page.getByRole('button', { name: 'Close Companion chat' })).toBeHidden();
+  await expect(chat.getByRole('button', { name: 'Close chat' })).toBeVisible();
+  await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toBeVisible();
 });
 
 // ── 2. Overview ───────────────────────────────────────────────────────────────
@@ -262,11 +293,11 @@ test('Scrying Sanctum: per-session roster visible', async ({ page }) => {
   // a per-session roster list. Each roster row is a button containing a
   // class label (Wolverine / Batman / Dr. Strange / etc.). At least one
   // should be present once demo sessions load.
-  await page.waitForTimeout(3000);
-  const rosterText = await page.evaluate(() => document.body.innerText);
-  const hasClassLabel =
-    /WOLVERINE|BATMAN|DR\.\s*STRANGE|DARTH VADER|CAPTAIN AMERICA|GANDALF|TERMINATOR/i.test(rosterText);
-  expect(hasClassLabel).toBe(true);
+  await page.waitForFunction(
+    () => /WOLVERINE|BATMAN|DR\.\s*STRANGE|DARTH VADER|CAPTAIN AMERICA|GANDALF|TERMINATOR/i
+      .test(document.body.innerText),
+    { timeout: 10_000 },
+  );
 });
 
 // ── 10b. Loop Ops ─────────────────────────────────────────────────────────────

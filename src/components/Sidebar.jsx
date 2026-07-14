@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useCallback, useEffect, useState } from 'react';
 import {
   RefreshCw, Check, AlertCircle, Sun, Moon,
 } from 'lucide-react';
 import { triggerSync, getSyncStatus, invalidateRealSessions, IS_PROD } from '../lib/queries';
 import { Eyebrow } from './ui/Eyebrow';
 import { NAV_SECTIONS } from './nav-config';
+import SyncActivityDrawer from './SyncActivityDrawer';
 
 function relativeTime(ms) {
   if (!ms) return 'never';
@@ -19,28 +19,51 @@ function relativeTime(ms) {
 // ─── Sync button ─────────────────────────────────────────────────────────────
 
 function SyncButton({ onReload }) {
-  const [status, setStatus] = useState('idle');
-  const [lastSync, setLastSync] = useState(null);
-  const [errorMsg, setErrorMsg] = useState(null);
+  const [sync, setSync] = useState(null);
   const [mode, setMode] = useState(IS_PROD ? 'refresh' : 'sync');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [requesting, setRequesting] = useState(false);
   const [, setTicker] = useState(0);
+
+  const refreshStatus = useCallback(async () => {
+    const next = await getSyncStatus();
+    setSync(next);
+    if (next.mode === 'local-sync' || next.mode === 'dev-sync') setMode('sync');
+    else setMode('refresh');
+    return next;
+  }, []);
 
   useEffect(() => {
     let mounted = true;
-    getSyncStatus().then((s) => {
+    getSyncStatus().then((next) => {
       if (!mounted) return;
-      if (s.mode === 'local-sync' || s.mode === 'dev-sync') setMode('sync');
+      setSync(next);
+      if (next.mode === 'local-sync' || next.mode === 'dev-sync') setMode('sync');
       else setMode('refresh');
-      if (s.ok) setLastSync(s.mtime);
     });
     const tick = setInterval(() => setTicker((n) => n + 1), 30_000);
     return () => { mounted = false; clearInterval(tick); };
-  }, []);
+  }, [refreshStatus]);
+
+  useEffect(() => {
+    if (sync?.state !== 'running') return undefined;
+    const poll = setInterval(async () => {
+      const next = await refreshStatus();
+      if (next.state !== 'running' && next.ok) {
+        invalidateRealSessions();
+        await onReload?.();
+      }
+    }, 1200);
+    return () => clearInterval(poll);
+  }, [onReload, refreshStatus, sync?.state]);
 
   const handleSync = async () => {
-    if (status === 'syncing') return;
-    setStatus('syncing');
-    setErrorMsg(null);
+    if (requesting || sync?.state === 'running') {
+      setDrawerOpen(true);
+      return;
+    }
+    setRequesting(true);
+    setDrawerOpen(true);
     let actionMode = mode;
 
     if (actionMode === 'refresh' && IS_PROD) {
@@ -52,13 +75,7 @@ function SyncButton({ onReload }) {
         try {
           invalidateRealSessions();
           await onReload?.();
-          setStatus('success');
-          setTimeout(() => setStatus('idle'), 2000);
-        } catch {
-          setStatus('error');
-          setErrorMsg('Refresh failed');
-          setTimeout(() => setStatus('idle'), 3000);
-        }
+        } finally { setRequesting(false); }
         return;
       }
     }
@@ -67,91 +84,70 @@ function SyncButton({ onReload }) {
       try {
         invalidateRealSessions();
         await onReload?.();
-        setStatus('success');
-        setTimeout(() => setStatus('idle'), 2000);
-      } catch {
-        setStatus('error');
-        setErrorMsg('Refresh failed');
-        setTimeout(() => setStatus('idle'), 3000);
-      }
+      } finally { setRequesting(false); }
       return;
     }
 
     const result = await triggerSync();
-    if (result.ok) {
-      setStatus('success');
-      setLastSync(result.mtime || Date.now());
-      await onReload?.();
-      setTimeout(() => setStatus('idle'), 2000);
-    } else {
-      setStatus('error');
-      setErrorMsg(result.error || result.stderr || 'Sync failed');
-      setTimeout(() => setStatus('idle'), 3000);
-    }
+    if (result.status) setSync({ ...result.status, mode: sync?.mode || 'dev-sync' });
+    await refreshStatus();
+    setRequesting(false);
   };
 
-  const Icon = status === 'success' ? Check : status === 'error' ? AlertCircle : RefreshCw;
+  const state = requesting ? 'running' : sync?.state || 'idle';
+  const Icon = state === 'succeeded' ? Check : state === 'failed' ? AlertCircle : RefreshCw;
   const accent =
-    status === 'success' ? 'var(--green)' :
-    status === 'error' ? 'var(--red)' :
-    status === 'syncing' ? 'var(--accent)' : 'var(--text-secondary)';
+    state === 'succeeded' ? 'var(--green)' :
+    state === 'failed' ? 'var(--red)' :
+    state === 'partial' ? 'var(--amber)' :
+    state === 'running' ? 'var(--accent)' : 'var(--text-secondary)';
+  const lastSync = sync?.artifact?.mtime || sync?.mtime;
 
   return (
+    <>
     <div style={{ padding: '0 16px', marginBottom: 8 }}>
       <button
         onClick={handleSync}
-        disabled={status === 'syncing'}
+        aria-haspopup="dialog"
         className="sidebar-sync-button"
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 8,
           padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 8,
-          background: 'var(--bg-page)', color: accent, cursor: status === 'syncing' ? 'wait' : 'pointer',
+          background: 'var(--bg-page)', color: accent, cursor: state === 'running' ? 'progress' : 'pointer',
           fontSize: 12, fontFamily: 'inherit', textAlign: 'left', transition: 'all 0.3s var(--ease)',
         }}
-        onMouseEnter={(e) => { if (status === 'idle') e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
-        onMouseLeave={(e) => { if (status === 'idle') e.currentTarget.style.borderColor = 'var(--border)'; }}
+        onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--border-hover)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; }}
         title={
-          errorMsg
+          sync?.failure?.summary
           || (mode === 'sync'
             ? `Last sync: ${relativeTime(lastSync)}`
             : 'Reload the latest data already available to this dashboard')
         }
       >
-        <motion.span
-          animate={status === 'syncing' ? { rotate: 360 } : { rotate: 0 }}
-          transition={status === 'syncing' ? { duration: 1, repeat: Infinity, ease: 'linear' } : { duration: 0.3 }}
-          style={{ display: 'flex', alignItems: 'center' }}
-        >
+        <span className={state === 'running' ? 'loop-spin' : ''} style={{ display: 'flex', alignItems: 'center' }}>
           <Icon size={14} />
-        </motion.span>
+        </span>
         <span className="sidebar-sync-text" style={{ flex: 1 }}>
-          {status === 'syncing' ? (mode === 'sync' ? 'Syncing…' : 'Refreshing…')
-            : status === 'success' ? 'Synced'
-              : status === 'error' ? 'Failed'
+          {state === 'running' ? (mode === 'sync' ? 'Syncing…' : 'Refreshing…')
+            : state === 'succeeded' ? 'Sessions healthy'
+              : state === 'partial' ? 'Synced with warning'
+                : state === 'failed' ? 'Sync needs attention'
                 : mode === 'sync' ? 'Sync sessions' : 'Refresh data'}
         </span>
-        {status === 'idle' && lastSync && mode === 'sync' && (
+        {state !== 'running' && lastSync && mode === 'sync' && (
           <span className="sidebar-sync-time" style={{ fontSize: 10, color: 'var(--text-muted)' }}>{relativeTime(lastSync)}</span>
         )}
       </button>
-      <AnimatePresence>
-        {status === 'error' && errorMsg && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            style={{
-              marginTop: 6, padding: '6px 10px', fontSize: 10,
-              color: 'var(--red)', background: 'var(--bg-page)',
-              borderRadius: 6, border: '1px solid var(--border)',
-              overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis',
-            }}
-          >
-            {errorMsg.slice(0, 60)}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
+    <SyncActivityDrawer
+      open={drawerOpen}
+      status={sync}
+      retrying={requesting}
+      onClose={() => setDrawerOpen(false)}
+      onRetry={() => { void handleSync(); }}
+    />
+    </>
   );
 }
 

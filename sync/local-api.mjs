@@ -28,6 +28,7 @@ import { runDigest } from './loop-digest.mjs';
 import { ask, FALLBACK_ANSWER } from './ask-engine.mjs';
 import { askLlm } from './llm-gateway.mjs';
 import { loadEnv } from './load-env.mjs';
+import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -109,7 +110,7 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function buildAskContext({ proposals, decisions, runs, digest }) {
+function buildAskContext({ proposals, decisions, runs, digest, sync }) {
   const rows = (value) => (Array.isArray(value) ? value : []);
   const text = (value, fallback = 'none') => typeof value === 'string' && value.trim() ? value.trim() : fallback;
   const date = (value) => Number.isFinite(Date.parse(value || '')) ? new Date(value).toISOString().slice(0, 10) : 'unknown date';
@@ -125,6 +126,7 @@ function buildAskContext({ proposals, decisions, runs, digest }) {
     `Recent decisions: ${recent.map((decision) => `${date(decision.decided_at)} ${text(decision.decision, 'unknown')} ${titleById.get(decision.proposal_id) || 'Untitled proposal'}`).join('; ') || 'none'}`,
     `Total cost: $${sum('cost_usd_real').toFixed(2)} real / $${sum('cost_usd_notional').toFixed(2)} notional`,
     `Agent health: ${Number(health.agents_total) || 0} total, ${Number(health.flagged) || 0} flagged (${flagged.map((agent) => `${text(agent.label, 'unknown agent')}: ${rows(agent.flags).map(String).join(', ')}`).join('; ') || 'none'})`,
+    `Session sync: ${text(sync?.state, 'unknown')} at ${text(sync?.phase, 'no active phase')}; ${Number(sync?.artifact?.sessions) || 0} verified sessions; issue: ${text(sync?.failure?.summary || sync?.warning?.summary, 'none')}`,
   ].join('\n');
 }
 
@@ -224,8 +226,7 @@ const server = createServer(async (req, res) => {
 
   const path = new URL(req.url, `http://localhost:${PORT}`).pathname;
   const needsBrowserHeader =
-    path === '/sync'
-    || path === '/sync/status'
+    path.startsWith('/sync')
     || path === '/data/sessions.json'
     || path === '/data/cost-summary.json'
     || path.startsWith('/loop-eng/');
@@ -234,12 +235,13 @@ const server = createServer(async (req, res) => {
 
   // ── GET /sync/status ──────────────────────────────────────────────────────
   if (path === '/sync/status' && req.method === 'GET') {
-    try {
-      const st = statSync(join(ROOT, 'public', 'data', 'sessions.json'));
-      res.end(JSON.stringify({ ok: true, mtime: st.mtimeMs, size: st.size }));
-    } catch {
-      res.end(JSON.stringify({ ok: false, error: 'No data file yet' }));
-    }
+    sendJson(res, 200, getSyncStatus({ repoRoot: ROOT }));
+    return;
+  }
+
+  if (path.startsWith('/sync/runs/') && req.method === 'GET') {
+    const run = getSyncRun(path.slice('/sync/runs/'.length));
+    sendJson(res, run ? 200 : 404, run || { ok: false, error: 'Sync run not found' });
     return;
   }
 
@@ -261,45 +263,18 @@ const server = createServer(async (req, res) => {
   // ── POST /sync ────────────────────────────────────────────────────────────
   if (path === '/sync' && req.method === 'POST') {
     console.log(`\n[${new Date().toLocaleTimeString()}] Sync triggered from browser`);
-    // HTTP-triggered sync is export-only. A browser request should never be
-    // able to cause a git push, even if export-local supports manual flags.
-    const child = spawn(NODE, [join(ROOT, 'sync', 'export-local.mjs')], {
-      cwd: ROOT,
+    const started = startSyncRun({
+      repoRoot: ROOT,
+      node: NODE,
+      trigger: 'dashboard',
       env: { ...process.env },
     });
-
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-      process.stdout.write(chunk);
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-      process.stderr.write(chunk);
-    });
-
-    const timer = setTimeout(() => child.kill(), 90_000);
-
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      let mtime = null;
-      try {
-        mtime = statSync(join(ROOT, 'public', 'data', 'sessions.json')).mtimeMs;
-      } catch {}
-      res.end(JSON.stringify({
-        ok: code === 0,
-        code,
-        stdout: stdout.slice(-2000),
-        stderr: stderr.slice(-500),
-        mtime,
-      }));
-    });
-
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      res.statusCode = 500;
-      res.end(JSON.stringify({ ok: false, error: err.message }));
+    sendJson(res, started.accepted ? 202 : 409, {
+      ok: started.accepted,
+      accepted: started.accepted,
+      busy: started.busy,
+      run_id: started.run_id,
+      status: started.snapshot,
     });
     return;
   }
@@ -395,6 +370,7 @@ const server = createServer(async (req, res) => {
         decisions: readLedger('decision'),
         runs: readLedger('run'),
         digest,
+        sync: getSyncStatus({ repoRoot: ROOT }),
       };
       const { answer } = ask(question, data);
       let finalAnswer = answer;
@@ -406,7 +382,12 @@ const server = createServer(async (req, res) => {
           source = 'llm';
         }
       }
-      sendJson(res, 200, { ok: true, answer: finalAnswer, source });
+      sendJson(res, 200, {
+        ok: true,
+        answer: finalAnswer,
+        source,
+        suggestions: ['What changed today?', 'Is sync healthy?', 'What should I fix next?', 'Prepare a repair prompt'],
+      });
     } catch (err) {
       sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
     }
@@ -681,8 +662,9 @@ const server = createServer(async (req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log('Meow Ops local sync API');
   console.log(`  http://127.0.0.1:${PORT}`);
-  console.log('  POST /sync                    - export local sessions only');
-  console.log('  GET  /sync/status             - last export timestamp');
+  console.log('  POST /sync                    - start an observable background sync');
+  console.log('  GET  /sync/status             - current phase, artifact, and last result');
+  console.log('  GET  /sync/runs/:id           - persisted sanitized run metadata');
   console.log('  GET  /data/sessions.json      - exported session metrics');
   console.log('  GET  /data/cost-summary.json  - exported spend summary');
   console.log('  GET  /loop-ops/spec           - Loop-Ops entities (local import)');

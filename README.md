@@ -1,8 +1,8 @@
 # 🐾 Meow Operations
 
-> **Local-first AI observability for people who live inside agentic coding tools.**
+> **Local-first AI observability and loop engineering for people who live inside agentic coding tools.**
 
-Meow Operations turns local Claude Code, OpenAI Codex Desktop, Aider, Cursor, and Google Antigravity session logs into an installable PWA. It shows token spend, model mix, tool usage, source comparison, session quality, live agent timelines, Loom Ops for loop-based workflows, a Pomodoro focus timer, and a living 3D cat companion. No accounts. No telemetry. MIT-licensed.
+Meow Operations turns local Claude Code, OpenAI Codex Desktop, Aider, Cursor, and Google Antigravity activity into an installable PWA. It combines token/cost analytics, source comparison, live agent timelines, a Loop Ops control room, evidence-backed review queues, optional guarded execution, a Pomodoro focus timer, and a living 3D cat companion. No required account. No telemetry. MIT-licensed.
 
 ## Screenshots
 
@@ -107,7 +107,8 @@ Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, **Cur
 | **Analytics** | AG Grid analytics table powered by typed session, velocity, efficiency, burn-rate, and profile modules |
 | **Agent Ops** | Wall-clock Gantt timeline of parent + subagent runs, efficiency index, drill-down panel |
 | **Scrying Sanctum** | 3D agent pipeline visualizer — unit frames, ley lines, pixel-art sprites |
-| **The Loom** | Read-only control room for loop-based workflows, with workbook import, ownership, verification, and evidence |
+| **The Loom** | Read-only control room for loop-based workflows, with workbook import, hierarchy, ownership, verification, and evidence |
+| **Review Deck** | Owner decisions, proposal lifecycle, run comparisons, daily digest, activity history, Companion handoff, and guarded execution |
 | **By Project** | Horizontal bar breakdown per project |
 | **By Day** | Area chart of token usage and session counts over time |
 | **By Action** | Which tools your agents actually reach for |
@@ -178,7 +179,7 @@ See `db/migrations/0003_scrying_sanctum.sql` for the full schema and RLS policie
 
 ### The Loom (Loom Ops)
 
-The Loom is the read-only control room for loop-based workflows. It imports a workbook or workflow spec, builds the hierarchy on top of it, and renders the result as an interactive React Flow canvas.
+The Loom is the read-only topology and evidence view for loop-based workflows. It imports a workbook or workflow spec, builds the hierarchy on top of it, and renders the result as an interactive React Flow canvas. The adjacent Review Deck is the owner-governed change surface.
 
 Use it when a loop matters more than a single run:
 - Check the shape of the loop before execution starts.
@@ -227,40 +228,43 @@ These screens show the shape of the loop, the expanded waves, the inspector, the
 - Excel workbook importer with fail-loud validation. Unknown groups, duplicate keys, missing columns, or secret-shaped content stop the import with named violations.
 - Collapsible wave clusters keep dense lanes readable. Minimap, keyboard access, light and dark theme, and reduced-motion support stay on.
 - Every node answers four questions: what owns this, what it can touch, last verified state, and what was not verified.
-- Inspector shows workflow-spec knobs, guardrails, eval gates, and copyable validation commands. The Loom never executes anything itself.
+- Inspector shows workflow-spec knobs, guardrails, eval gates, and copyable validation commands. The Loom never executes anything itself; execution is a separate Review Deck action that requires approval.
 - Run timeline joins recorded loop runs against real session costs. An empty evidence list stays suspicious.
 - Permanent "production writes disabled" badge. The alarm branch wears red, never the safe green.
 - All loop data is local-only, and the hosted demo intentionally shows the instructional empty state.
 
 Local API endpoints (`sync/local-api.mjs`): `GET /loop-ops/spec|status|runs`, `POST /loop-ops/sync` re-runs the importer. Import manually with `node sync/loop-ops-import.mjs`.
 
-### Loop Engineering
+### Loop Engineering and Review Deck
 
-Loop Engineering is the weekly review habit for improving the tool without letting automation approve itself.
+Loop Engineering is the review loop around the agents: capture what happened, turn recurring friction into small proposals, let the owner decide, and measure the next run. It is designed to improve the workflow without letting automation approve itself.
 
-The five-minute ritual:
+The local pipeline can:
 
-1. Capture the current loop state.
-2. Generate deterministic proposals from local facts.
-3. Open the Review Deck and read the Ship Next tab.
-4. Approve, reject, defer, or undo from the owner surface.
-5. Apply approved changes manually, then let the next capture measure the outcome.
+1. Capture loop runs and compare them against prior evidence.
+2. Intake content-free summaries from Claude, Codex, Antigravity, and optional screenshots.
+3. Mine recurring failures, wasted work, high-friction task types, and automation-health drift.
+4. Generate deterministic proposals, optionally enrich drafts with a bounded local/DeepSeek model call, and produce a daily digest with history.
+5. Route decisions through the Review Deck and explanations through the persistent Companion chat.
+6. Execute only an approved, actionable proposal, with evidence recorded back to the local ledger.
 
 Commands:
 
 ```bash
 npm run loop:capture -- --loop <LOOP_ID> --since <ISO_TIME>
+npm run intake
+npm run digest
+npm run daily
 npm run loop:propose
+npm run loop:review
 npm run loop:simulate -- --proposal <PROPOSAL_ID>
 node sync/local-api.mjs
 npm run dev
 ```
 
-Open `http://localhost:5173/#/loop-review` and use:
+`npm run loop:review` runs the local sync tests, evals, lint, typecheck, and build. It writes only check IDs and exit codes outside the worktree, then creates review-only Review Deck drafts for failures; raw terminal output is never stored. Include browser coverage when needed with `npm run loop:review -- --with-e2e`.
 
-- Proposals for the five-beat review card.
-- Runs for real and notional cost, duration warnings, and comparison deltas.
-- Ship Next for ranked pending work plus approved items waiting for manual apply.
+Open `http://localhost:5173/#/loop-review` for the owner surface. The optional executor runs an approved proposal in a temporary detached git worktree, applies the proposed diff, runs `npm ci`, `npm run test:sync`, `npm run eval`, and `npm run build`, then either records a dry-run or, in `push` mode, creates an `executor/<proposal-id>` branch and pull request. Only the hard-coded `test` and `prompt` categories may auto-merge after green PR checks; privacy, security, money, client-data, and production-infrastructure paths are forced to review-only.
 
 Guarantees:
 
@@ -338,16 +342,21 @@ A living 3D companion rendered in WebGL with Kajiya-Kay fur shading, subsurface 
 
 **Live session detection** — page polls every 30s. When new sessions are detected while you're working, the cat reacts with a gold sparkle burst.
 
+### Companion AI Copilot
+
+Companion is a persistent local-first chat dock available on every dashboard page. It keeps the last 30 messages in localStorage, restores the thread after reload, supports Enter-to-send / Shift+Enter-for-newline, and includes premade prompts for daily changes, sync health, next-fix ranking, and evidence-bound repair briefs.
+
+Answers use deterministic local ledgers, digest data, and structured sync status first. DeepSeek is an optional, visibly labeled copilot only when local rules cannot answer the question; it does not execute changes. The local API keeps the existing weekly spend guard and per-process call cap. The daily operator forces `MEOW_LLM_CALLS_PER_CYCLE=1`, so its scheduled cycle can make at most one DeepSeek call and still produces a deterministic digest and nudge when AI is unavailable.
+
 ### macOS Menu Bar And Local Sync API
 
-A native-feeling menu bar widget can auto-sync your sessions in the background:
+A native-feeling menu bar widget can request a background sync through the same observable runner used by the dashboard. Install the persistent helper and the single daily operator job with:
 
 ```bash
-cp sync/launchd-example.plist ~/Library/LaunchAgents/com.meow-ops.sync.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.meow-ops.sync.plist
+npm run agents:install
 ```
 
-Runs `export-local.mjs` every hour, keeping your local data files fresh without uploading them anywhere.
+The installer renders paths for the current clone, keeps logs under `~/Library/Logs/meow-ops/`, removes the retired duplicate hourly jobs, keeps `com.meowops.localapi` alive, and runs `com.meowops.daily` once at 08:30 local time.
 
 For a hosted dashboard that can trigger sync from the browser, run the local API on your machine:
 
@@ -355,7 +364,7 @@ For a hosted dashboard that can trigger sync from the browser, run the local API
 node sync/local-api.mjs           # export local data (no git push — that is retired)
 ```
 
-It listens on `http://localhost:7337`, serves fresh local `sessions.json` and `cost-summary.json`, and exposes `POST /sync` plus `GET /sync/status`. This process reads only local files on your machine and never pushes to git. Requests are restricted to localhost; if you call it from a hosted dashboard URL, allowlist that origin with `MEOW_DASHBOARD_ORIGIN` (see `.env.example`).
+It listens on `http://localhost:7337`, serves fresh local `sessions.json` and `cost-summary.json`, and exposes asynchronous `POST /sync`, `GET /sync/status`, and `GET /sync/runs/:id`. A POST returns `202` with a run ID; the UI then follows `preflight → export sessions → verify artifacts → refresh limits`. Failures remain visible with a sanitized phase, code, and retry hint. Runtime metadata lives outside the worktree at `~/.meow-ops/runtime/`. This process reads only local files on your machine and never pushes to git. Requests are restricted to localhost; if you call it from a hosted dashboard URL, allowlist that origin with `MEOW_DASHBOARD_ORIGIN` (see `.env.example`).
 
 ### How Sessions Are Classified
 
@@ -387,7 +396,7 @@ Every session is auto-tagged by tool usage profile:
 | **xAI** | Grok-3, Grok-3-mini, Grok-2 |
 | **Cohere** | Command R+, Command R |
 | **Amazon** | Nova Pro, Nova Lite, Nova Micro |
-| **Google** | Gemini 2.5 Pro, 2.0 Flash, 1.5 Pro, 1.5 Flash |
+| **Google** | Gemini 3 Pro, 3 Flash, 2.5 Pro, 2.5 Flash, 2.0 Flash, 1.5 Pro, 1.5 Flash |
 | **Mistral** | Large, Small |
 | **Perplexity** | Sonar Pro, Sonar |
 | **Local** | Llama 3.3-70B (cost = $0) |
@@ -412,6 +421,8 @@ It currently:
 - Strips `cwd`, chat titles, and first-user-message snippets from the exported sessions payload
 - Keeps `sync/upload-to-supabase.mjs` and `sync/full-sync.mjs` as optional advanced workflows, not the default analytics path
 
+The default invocation writes local files only. The former `--push` path is retired; passing it prints a warning and never commits or uploads session data.
+
 Useful commands:
 
 ```bash
@@ -427,34 +438,41 @@ This is optional. The default Meow Ops setup is local-only.
 
 > **Privacy change:** hosted builds no longer rely on `VITE_SESSIONS_URL` or a public `sessions.json`. Older public-bucket setups exposed session metadata more broadly than intended, so the default path is now localhost helper first, demo fallback second.
 
-### 1. Keep hourly exports local
+### 1. Install one daily local cycle
 
 ```bash
-cp sync/launchd-example.plist ~/Library/LaunchAgents/com.meow-ops.sync.plist
-# Edit YOUR_HOME and YOUR_REPO_PATH inside the plist, then:
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.meow-ops.sync.plist
-launchctl kickstart -k gui/$(id -u)/com.meow-ops.sync
+npm run agents:install
 ```
 
-This runs `sync/export-local.mjs` every hour and updates:
+At 08:30 local time, `sync/daily-operator.mjs` runs one bounded flow:
 
-- `public/data/sessions.json`
-- `public/data/cost-summary.json`
+1. Export and verify local session artifacts.
+2. Refresh usage limits as an optional, timeout-bounded phase.
+3. Run intake, automation health, deterministic proposal rules, and the digest.
+4. Allow at most one DeepSeek enrichment call.
+5. Write a local Companion nudge under `~/.meow-ops/runtime/`.
 
-### 2. Optional: keep the localhost helper running
+### 2. Keep repository review running while the laptop is off
+
+`.github/workflows/daily-operator.yml` runs at `03:00 UTC` (`08:30 IST`) and can also be started with **Run workflow**. It executes the cloud-safe review gates, writes the result to the GitHub Actions job summary, and uploads a 30-day `meow-ops-daily-<run-id>` artifact containing only check IDs, exit codes, commit metadata, and a deterministic nudge.
+
+The GitHub-hosted runner cannot read `~/.claude`, `~/.codex`, the local ledger, LaunchAgents, or `127.0.0.1:7337`. Its report therefore marks local session sync as `deferred`; the macOS daily operator catches up private session data the next time the laptop is online. This split keeps the repository monitored every day without uploading personal session data.
+
+Run the same cloud-safe review locally with:
+
+```bash
+npm run daily:cloud
+```
+
+### 3. Optional: keep the localhost helper running
 
 If you want the hosted `vercel.app` shell to read local data from the same machine, keep the helper alive with launchd:
 
-```bash
-cp sync/com.meowops.localapi.plist ~/Library/LaunchAgents/com.meowops.localapi.plist
-# Edit YOUR_REPO_PATH inside the plist, then:
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.meowops.localapi.plist
-launchctl kickstart -k gui/$(id -u)/com.meowops.localapi
-```
+`npm run agents:install` installs this service together with the daily job. To run only in the current terminal, use `node sync/local-api.mjs`.
 
 The hosted shell will try `127.0.0.1:7337` first. If the helper is not running, it falls back to bundled demo data instead of pulling a public session feed.
 
-### 3. Optional: deploy the static shell to Vercel
+### 4. Optional: deploy the static shell to Vercel
 
 ```bash
 npx vercel --prod
@@ -462,13 +480,13 @@ npx vercel --prod
 
 That deploy publishes the UI shell only. Session analytics remain local unless you intentionally rewire the app to use a remote store.
 
-### 4. Install to dock
+### 5. Install to dock
 
 1. Open your Vercel URL in Chrome
 2. Address bar → install icon (⊕)
 3. Right-click dock icon → Options → Keep in Dock
 
-### 5. Scrying Sanctum (Supabase Realtime, optional)
+### 6. Scrying Sanctum (Supabase Realtime, optional)
 
 Run the migration to enable live agent pipeline visualization:
 
@@ -500,7 +518,7 @@ Local machine                                         Hosted shell (optional)
               │          ├──── localhost:5173 / preview
               │          └──── sync/local-api.mjs ──► hosted shell on same machine
               │
-              └──── hourly launchd job keeps files fresh
+              └──── daily operator: sync → verify → review → nudge
 
 PWA on dock ──► vercel.app ──── local helper first, demo fallback
               React 19 + Vite 8 + Recharts + D3 + AG Grid
@@ -538,10 +556,10 @@ End-to-end tests run against the production build using Playwright:
 
 ```bash
 npm run build         # build dist/
-npx playwright test   # runs all 15 tests against npm run preview
+npx playwright test   # runs the Playwright suite against npm run preview
 ```
 
-Tests cover all 12 pages, key interactions, PWA manifest, and data endpoints. The `playwright.config.ts` uses a single Chromium project against `http://localhost:4173` (Vite preview port).
+Tests cover the dashboard and operations surfaces, key interactions, PWA manifest, and data endpoints. The `playwright.config.ts` uses a single Chromium project against `http://localhost:4173` (Vite preview port). The sync suite covers parsers, local API boundaries, intake redaction, loop ledger transitions, proposals, digests, execution gates, and SuperAdmin snapshots.
 `npm run eval` is the blocking privacy + loop-integrity gate.
 
 To run a single test file or test by name:
@@ -562,6 +580,7 @@ npx playwright test --reporter=list
 - **Supabase is optional and scoped.** The default app no longer depends on Supabase Storage for session analytics. Supabase Realtime remains opt-in for Scrying Sanctum.
 - **Service key is local-only.** It never appears in the production bundle.
 - **Hosted demo password gate is optional.** `VITE_ACCESS_PASSWORD` only protects demo access; it is not an account system.
+- **Optional model enrichment is bounded.** Transcript/screenshot intake uses a localhost-only LM Studio endpoint when configured. Companion can use DeepSeek only when explicitly configured, with per-process and weekly spend caps; deterministic answers remain available without it.
 - **No analytics, no telemetry, no tracking.** The app has no idea you exist.
 
 ---
@@ -642,7 +661,7 @@ meow-ops/
 │       ├── 0003_scrying_sanctum.sql   Pipeline viz schema + RLS + Realtime
 │       └── 0004_rls_tenant_isolation.sql  Strict per-tenant SELECT (no NULL-tenant world read)
 ├── e2e/
-│   └── meow-ops.spec.ts         Playwright e2e tests (15 tests, all pages)
+│   └── meow-ops.spec.ts         Playwright e2e tests
 ├── src/
 │   ├── analytics/               Velocity, efficiency, burn-rate, profile modules
 │   ├── companion-v2/            WebGL/pixel companion
@@ -662,6 +681,9 @@ meow-ops/
 │   │   ├── AgentVisualizer.tsx  Gantt timeline, ghost flagging, drill-down
 │   │   ├── AgentDetailPanel.tsx Slide-in session detail panel
 │   │   ├── ScryingSanctum.tsx   3D agent pipeline visualizer
+│   │   ├── LoopOps.tsx           The Loom loop topology and evidence view
+│   │   ├── LoopReview.tsx        Owner Review Deck, digest, Ask, and execution controls
+│   │   ├── CapacityUsage.jsx     Local-first SuperAdmin usage cockpit
 │   │   └── ...                  Overview, Sessions, ByDay, ByProject, etc.
 │   ├── scrying-sanctum/         Realtime pipeline components for external feeds
 │   │   ├── ScryingSanctum.tsx   Main page — D3 zoom canvas, legend, loot box
@@ -685,15 +707,30 @@ meow-ops/
 │   ├── session-utils.mjs        Shared snippet/project/default-session helpers
 │   ├── cost-calculator.mjs      30+ model pricing with fuzzy matching
 │   ├── export-local.mjs         All sources → sessions.json + cost-summary.json
-│   ├── fetch-claude-limits.mjs  Update rate-limits.json from claude.ai/settings/usage
+│   ├── sync-runner.mjs          Single-flight observable sync state machine
+│   ├── fetch-claude-limits.mjs  Refresh local rate-limits.json from explicit env values
 │   ├── upload-to-supabase.mjs   Optional advanced Storage upload script
 │   ├── full-sync.mjs            export + upload in one shot
-│   ├── local-api.mjs            localhost sync/status/data server
-│   └── launchd-example.plist    macOS hourly local-export template
+│   ├── local-api.mjs            localhost sync, loop, intake, and execution API
+│   ├── intake-*.mjs              Local transcript, log, and screenshot intake
+│   ├── loop-capture.mjs          Capture runs and session evidence
+│   ├── loop-propose.mjs          Deterministic proposal generation and miners
+│   ├── loop-simulate.mjs         Proposal simulation
+│   ├── loop-execute.mjs          Gated worktree execution and optional PR creation
+│   ├── loop-digest.mjs           Daily digest and digest history
+│   ├── daily-operator.mjs         One daily sync, review, AI-cap, and nudge cycle
+│   ├── cloud-daily-review.mjs      GitHub-safe repository review and artifact report
+│   ├── install-macos-agents.mjs   Render and activate current-path LaunchAgents
+│   ├── loop-ledger.mjs           Redacted append-only local ledger
+│   ├── com.meowops.localapi.plist Persistent localhost-helper template
+│   └── com.meowops.daily-digest.plist Single daily operator template
 ├── menubar/
 │   ├── MeowOpsBar.swift         macOS menu bar companion source
 │   └── build.sh                 Build script for MeowOpsBar.app
 ├── playwright.config.ts         Playwright configuration
+├── .github/workflows/
+│   ├── ci.yml                    Push and pull-request verification
+│   └── daily-operator.yml        03:00 UTC repository review schedule
 └── .env.example
 ```
 

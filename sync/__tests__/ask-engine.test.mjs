@@ -54,7 +54,29 @@ test('answers health from latest digest', () => {
 
 test('unknown question returns fallback', () => {
   const result = ask('what should I eat?', {});
-  assert.match(result.answer, /I don't know how to answer that yet/);
+  assert.match(result.answer, /I don't know how to answer that from local evidence yet/);
+});
+
+test('answers sync health and creates an evidence-bound repair prompt', () => {
+  const sync = {
+    state: 'failed',
+    phase: 'export_sessions',
+    artifact: { sessions: 42 },
+    failure: { stage: 'export_sessions', code: 'exit_1', summary: 'Session export did not complete successfully.' },
+  };
+  assert.match(ask('is sync healthy?', { sync }).answer, /failed at export_sessions/);
+  const repair = ask('prepare a repair prompt', { sync }).answer;
+  assert.match(repair, /Evidence code: exit_1/);
+  assert.match(repair, /smallest fix/);
+});
+
+test('fix-next prioritizes a failed sync before proposals', () => {
+  const answer = ask('what should I fix next?', {
+    proposals,
+    digest,
+    sync: { state: 'failed', failure: { stage: 'verify_artifacts', summary: 'Missing artifact', code: 'missing' } },
+  }).answer;
+  assert.match(answer, /failed at verify_artifacts/);
 });
 
 test('empty data is graceful', () => {
