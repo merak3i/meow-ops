@@ -1,22 +1,18 @@
 #!/usr/bin/env node
 // sync/fetch-claude-limits.mjs
-// Reads Claude.ai rate limit data from the settings page.
+// Refreshes the local rate-limit snapshot from explicit environment values.
 //
 // Usage:
 //   node sync/fetch-claude-limits.mjs
 //
-// Requires the user to be logged in to Claude.ai in Chrome.
-// Reads the Chrome session cookie from the macOS keychain to authenticate.
-//
 // Output: public/data/rate-limits.json
 
-import { execSync }  from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dir  = dirname(fileURLToPath(import.meta.url));
-const OUT    = join(__dir, '..', 'public', 'data', 'rate-limits.json');
+const OUT    = process.env.MEOW_RATE_LIMITS_OUT || join(__dir, '..', 'public', 'data', 'rate-limits.json');
 
 // ─── Read existing data ───────────────────────────────────────────────────────
 
@@ -25,60 +21,19 @@ if (existsSync(OUT)) {
   try { existing = JSON.parse(readFileSync(OUT, 'utf8')); } catch { /* ignore */ }
 }
 
-// ─── Try to read from Chrome cookie DB ───────────────────────────────────────
-// On macOS, Chrome stores encrypted cookies in an SQLite database.
-// The encryption key is in the login keychain.
+// ─── Explicit local values ───────────────────────────────────────────────────
 
-async function tryReadChromeSession() {
-  const platform = process.platform;
-  if (platform !== 'darwin') {
-    console.log('⚠  Auto-read only supported on macOS. Use --manual mode.');
-    return null;
-  }
-
-  try {
-    // Attempt to read the Chrome encryption key from Keychain
-    const keyRaw = execSync(
-      "security find-generic-password -wa 'Chrome'",
-      { stdio: ['pipe', 'pipe', 'pipe'] }
-    ).toString().trim();
-
-    if (!keyRaw) return null;
-
-    const cookieDB = `${process.env.HOME}/Library/Application Support/Google/Chrome/Default/Cookies`;
-    if (!existsSync(cookieDB)) return null;
-
-    // Query the cookie DB
-    const rows = execSync(
-      `sqlite3 "${cookieDB}" "SELECT name,encrypted_value,expires_utc FROM cookies WHERE host_key LIKE '%claude.ai%' AND name IN ('sessionKey','__cf_bm','CF_Authorization')"`,
-      { stdio: ['pipe', 'pipe', 'pipe'] }
-    ).toString().trim();
-
-    if (!rows) {
-      console.log('⚠  No Claude.ai cookies found in Chrome. Make sure you are logged in.');
-      return null;
-    }
-
-    console.log('✓  Found Chrome Claude.ai session cookie');
-    // At this point we have the encrypted cookie — decryption requires AES-128-CBC with the keychain key.
-    // Full implementation: use node's crypto module with the keychain key.
-    // For now, log success and fall through to manual mode.
-    return { found: true, raw: rows };
-  } catch (err) {
-    // Keychain access denied or DB locked — common when Chrome is running
-    console.log(`⚠  Chrome cookie read failed: ${err.message}`);
-    return null;
-  }
+function percent(value, fallback = 0) {
+  const parsed = Number.parseInt(String(value ?? fallback), 10);
+  return Number.isFinite(parsed) ? Math.min(100, Math.max(0, parsed)) : fallback;
 }
-
-// ─── Manual entry fallback ────────────────────────────────────────────────────
 
 function promptManual() {
   console.log(`
 ┌─────────────────────────────────────────────────────────┐
 │  MEOW OPS — Rate Limit Sync                             │
 │                                                         │
-│  Auto-read failed. Please enter values manually.        │
+│  Refreshing from explicit local values.                 │
 │  Go to: https://claude.ai/settings/usage                │
 └─────────────────────────────────────────────────────────┘
 
@@ -92,14 +47,14 @@ Example:
   CLAUDE_SESSION_PCT=38 CLAUDE_WEEKLY_ALL_PCT=81 CLAUDE_WEEKLY_SONNET_PCT=53 node sync/fetch-claude-limits.mjs
 `);
 
-  const sessionPct      = parseInt(process.env.CLAUDE_SESSION_PCT      ?? existing?.claude?.session?.used_pct      ?? '0');
-  const weeklyAllPct    = parseInt(process.env.CLAUDE_WEEKLY_ALL_PCT   ?? existing?.claude?.weekly?.all_models_used_pct ?? '0');
-  const weeklySonnetPct = parseInt(process.env.CLAUDE_WEEKLY_SONNET_PCT ?? existing?.claude?.weekly?.sonnet_only_used_pct ?? '0');
+  const sessionPct      = percent(process.env.CLAUDE_SESSION_PCT, existing?.claude?.session?.used_pct ?? 0);
+  const weeklyAllPct    = percent(process.env.CLAUDE_WEEKLY_ALL_PCT, existing?.claude?.weekly?.all_models_used_pct ?? 0);
+  const weeklySonnetPct = percent(process.env.CLAUDE_WEEKLY_SONNET_PCT, existing?.claude?.weekly?.sonnet_only_used_pct ?? 0);
   const resetsLabel     = process.env.CLAUDE_RESETS_LABEL ?? existing?.claude?.weekly?.resets_label ?? '';
 
   // Codex limits (CODEX_WEEKLY_REMAINING_PCT = % remaining shown in Codex UI)
   const codexWeeklyRemainingPct = process.env.CODEX_WEEKLY_REMAINING_PCT != null
-    ? parseInt(process.env.CODEX_WEEKLY_REMAINING_PCT)
+    ? percent(process.env.CODEX_WEEKLY_REMAINING_PCT)
     : existing?.codex?.weekly?.remaining_pct ?? null;
   const codexResetsLabel = process.env.CODEX_RESETS_LABEL ?? existing?.codex?.weekly?.resets_label ?? null;
 
@@ -112,8 +67,6 @@ async function main() {
   console.log('🔮 Meow Ops — Fetching rate limits…');
 
   const shouldPush = process.argv.includes('--push');
-
-  await tryReadChromeSession();
 
   const { sessionPct, weeklyAllPct, weeklySonnetPct, resetsLabel, codexWeeklyRemainingPct, codexResetsLabel } = promptManual();
 
@@ -147,28 +100,14 @@ async function main() {
     },
   };
 
+  mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, JSON.stringify(output, null, 2));
   console.log(`✓  Saved to ${OUT}`);
   console.log(`   Claude session: ${sessionPct}% used`);
   console.log(`   Claude weekly:  ${weeklyAllPct}% all models, ${weeklySonnetPct}% Sonnet`);
 
   if (shouldPush) {
-    console.log('📤 Pushing to GitHub…');
-    const { execSync: exec } = await import('node:child_process');
-    const root = join(__dir, '..');
-    try {
-      exec('git add public/data/rate-limits.json', { cwd: root, stdio: 'pipe' });
-      exec(`git commit -m "chore: update Claude rate limits (${now.slice(0, 10)})"`, { cwd: root, stdio: 'pipe' });
-      exec('git push origin main', { cwd: root, stdio: 'pipe' });
-      console.log('✓  Pushed to GitHub — Vercel will redeploy automatically');
-    } catch (err) {
-      // "nothing to commit" is fine — only log real errors
-      if (!err.message.includes('nothing to commit')) {
-        console.log(`⚠  Git push failed: ${err.message}`);
-      } else {
-        console.log('✓  No changes to push');
-      }
-    }
+    console.log('⚠  --push is retired: rate-limit data remains local and was not committed.');
   }
 }
 

@@ -14,7 +14,6 @@ import {
   fetchLoopSummary,
   postLoopDecision,
   postLoopExecute,
-  postLoopAsk,
   postLoopRunDigest,
 } from '@/lib/loop-api';
 import type { DigestData } from '@/lib/loop-api';
@@ -179,20 +178,6 @@ const styles: Record<string, CSSProperties> = {
     color: 'var(--text-secondary)',
   },
   muted: { margin: 0, color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.6 },
-};
-
-const askBarStyle: CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', width: '100%' };
-
-const askInputStyle: CSSProperties = {
-  flex: 1, border: '1px solid var(--border)', borderRadius: 6, padding: '8px 12px', fontSize: 13,
-  background: 'var(--bg-card)',
-  color: 'var(--text-primary)',
-  fontFamily: 'inherit',
-};
-
-const askButtonStyle: CSSProperties = {
-  border: '1px solid var(--border)', borderRadius: 6, padding: '8px 14px', fontSize: 12,
-  background: 'var(--bg-card)', color: 'var(--text-secondary)', cursor: 'pointer', fontFamily: 'inherit',
 };
 
 function latestDecisionByProposal(decisions: Decision[]) {
@@ -381,10 +366,6 @@ export default function LoopReview() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [digestBusy, setDigestBusy] = useState(false);
-  const [askInput, setAskInput] = useState('');
-  const [askAnswer, setAskAnswer] = useState<string | null>(null);
-  const [askSource, setAskSource] = useState<'keyword' | 'llm' | null>(null);
-  const [askBusy, setAskBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -588,26 +569,6 @@ export default function LoopReview() {
     }
   }, [load]);
 
-  const handleAsk = useCallback(async () => {
-    const question = askInput.trim();
-    if (!question || askBusy) return;
-    setAskBusy(true);
-    setError(null);
-    setAskAnswer(null);
-    setAskSource(null);
-    try {
-      const result = await postLoopAsk(question);
-      if (!result?.ok) {
-        setError(result?.error || 'Local helper unavailable. Start node sync/local-api.mjs.');
-        return;
-      }
-      setAskAnswer(result.answer || '');
-      setAskSource(result.source === 'llm' ? 'llm' : 'keyword');
-    } finally {
-      setAskBusy(false);
-    }
-  }, [askBusy, askInput]);
-
   return (
     <div style={styles.shell}>
       <header style={styles.header}>
@@ -630,41 +591,24 @@ export default function LoopReview() {
         )}
       </div>
 
-      <div style={askBarStyle}>
-        <input
-          type="text"
-          value={askInput}
-          placeholder="Ask about proposals, cost, health, activity..."
-          style={askInputStyle}
-          onChange={(event) => {
-            setAskInput(event.target.value);
-            setAskAnswer(null);
-            setAskSource(null);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              void handleAsk();
-            }
-          }}
-        />
-        <button
-          type="button"
-          style={{ ...askButtonStyle, cursor: askBusy ? 'wait' : 'pointer', opacity: askBusy ? 0.6 : 1 }}
-          disabled={askBusy}
-          onClick={() => { void handleAsk(); }}
-        >
-          {askBusy ? 'Thinking...' : 'Ask'}
-        </button>
-      </div>
-
-      {(askBusy || askAnswer) && (
-        <div style={styles.detail}>
-          <div style={{ color: 'var(--text-secondary)', fontSize: 13, whiteSpace: 'pre-wrap' }}>
-            {askBusy ? 'Thinking...' : <>{askAnswer}{askSource === 'llm' && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}> (via AI)</span>}</>}
-          </div>
-        </div>
-      )}
+      <button
+        type="button"
+        style={{
+          ...styles.detail,
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          color: 'var(--text-secondary)',
+          fontFamily: 'inherit',
+          textAlign: 'left',
+          cursor: 'pointer',
+        }}
+        onClick={() => window.dispatchEvent(new Event('meow:open-companion'))}
+      >
+        <span>Need context? Ask Companion about proposals, sync health, or the next fix.</span>
+        <span style={{ color: 'var(--accent)', fontSize: 12 }}>Open Companion →</span>
+      </button>
 
       {loading ? (
         <div style={styles.empty}>Loading Review Deck...</div>

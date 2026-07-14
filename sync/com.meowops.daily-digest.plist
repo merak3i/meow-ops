@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Meow Operations — daily digest template (macOS)
+  Meow Operations — one daily operator cycle (macOS)
 
   Install:
     cp sync/com.meowops.daily-digest.plist ~/Library/LaunchAgents/ && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.meowops.daily-digest.plist
@@ -12,15 +12,15 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.meowops.daily-digest</string>
+  <string>com.meowops.daily</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/node</string>
-    <string>/Users/napster/Documents/meow-ops/sync/loop-digest.mjs</string>
+    <string>YOUR_NODE_PATH</string>
+    <string>YOUR_REPO_PATH/sync/daily-operator.mjs</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/Users/napster/Documents/meow-ops</string>
-  <!-- launchd calendar intervals use local time; 08:30 IST is 03:00 UTC. -->
+  <string>YOUR_REPO_PATH</string>
+  <!-- launchd calendar intervals use the machine's local time. -->
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
@@ -31,15 +31,15 @@
   <key>RunAtLoad</key>
   <false/>
   <key>StandardOutPath</key>
-  <string>/Users/napster/Library/Logs/meow-ops/daily-digest.log</string>
+  <string>YOUR_HOME/Library/Logs/meow-ops/daily.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/napster/Library/Logs/meow-ops/daily-digest.log</string>
+  <string>YOUR_HOME/Library/Logs/meow-ops/daily.log</string>
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>HOME</key>
-    <string>/Users/napster</string>
+    <string>YOUR_HOME</string>
   </dict>
 </dict>
 </plist>

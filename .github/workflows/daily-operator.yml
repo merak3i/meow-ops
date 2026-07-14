@@ -1,0 +1,39 @@
+name: Daily operator review
+
+on:
+  schedule:
+    # GitHub cron uses UTC. 03:00 UTC = 08:30 IST.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meow-ops-daily-operator
+  cancel-in-progress: false
+
+jobs:
+  cloud-review:
+    name: Repository review (local sync deferred)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      MEOW_CLOUD_OUT: ${{ runner.temp }}/meow-ops-daily
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run cloud-safe daily review
+        run: npm run daily:cloud
+      - name: Upload daily report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: meow-ops-daily-${{ github.run_id }}
+          path: ${{ runner.temp }}/meow-ops-daily
+          if-no-files-found: error
+          retention-days: 30

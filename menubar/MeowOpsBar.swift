@@ -270,19 +270,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func syncNow() {
         statusItem.button?.title = "🐾 ↻"
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let repoPath = (home as NSString).appendingPathComponent("repos/meow-ops")
-        let node = ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"]
-            .first { FileManager.default.fileExists(atPath: $0) } ?? "/usr/bin/env node"
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: node.hasPrefix("/usr/bin/env") ? "/usr/bin/env" : node)
-        // --push commits + pushes to GitHub so Vercel picks up the latest data
-        task.arguments     = node.hasPrefix("/usr/bin/env")
-            ? ["node", "sync/export-local.mjs", "--push"]
-            : ["sync/export-local.mjs", "--push"]
-        task.currentDirectoryURL = URL(fileURLWithPath: repoPath)
-        task.terminationHandler = { [weak self] _ in DispatchQueue.main.async { self?.refresh() } }
-        try? task.run()
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:7337/sync")!)
+        request.httpMethod = "POST"
+        request.setValue("1", forHTTPHeaderField: "x-meow-ops-local")
+        request.timeoutInterval = 3
+        URLSession.shared.dataTask(with: request) { [weak self] _, _, _ in
+            // POST only accepts the background run. The dashboard and helper
+            // expose its actual phase/result; refresh the menu-bar totals after
+            // the normal export window without guessing a repository path.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { self?.refresh() }
+        }.resume()
     }
 }
 

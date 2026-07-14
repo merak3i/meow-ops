@@ -18,7 +18,7 @@ import App from './App';
   document.documentElement.setAttribute('data-theme', prefersLight ? 'light' : 'dark');
 })();
 
-if ('serviceWorker' in navigator) {
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js');
 }
 

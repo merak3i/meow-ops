@@ -17,7 +17,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/opt/homebrew/bin/node</string>
+    <string>YOUR_NODE_PATH</string>
     <string>YOUR_REPO_PATH/sync/local-api.mjs</string>
   </array>
 
@@ -31,15 +31,17 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>YOUR_REPO_PATH/sync/local-api.log</string>
+  <string>YOUR_HOME/Library/Logs/meow-ops/local-api.log</string>
 
   <key>StandardErrorPath</key>
-  <string>YOUR_REPO_PATH/sync/local-api.log</string>
+  <string>YOUR_HOME/Library/Logs/meow-ops/local-api.log</string>
 
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>HOME</key>
+    <string>YOUR_HOME</string>
   </dict>
 </dict>
 </plist>

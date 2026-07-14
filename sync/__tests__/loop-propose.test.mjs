@@ -16,6 +16,7 @@ import {
   brokenAgentProposal,
   appendComparisonSkeletons,
   appendComparisonSkeletonsWithAi,
+  appendReviewFixProposals,
   collectCandidates,
   hasOpenProposalForLoop,
   runProposer,
@@ -240,6 +241,12 @@ function writeHealth(intakeDir, agents) {
   writeFileSync(join(intakeDir, 'automation-health.json'), JSON.stringify({
     generated_at: NOW.toISOString(),
     agents,
+  }, null, 2));
+}
+
+function writeReviewFix(intakeDir, checks) {
+  writeFileSync(join(intakeDir, 'review-fix.json'), JSON.stringify({
+    generated_at: NOW.toISOString(), checks,
   }, null, 2));
 }
 
@@ -647,4 +654,22 @@ test('staleAgentProposal fires on stale-log and automation-health rules are revi
   } finally {
     rmSync(intakeDir, { recursive: true, force: true });
   }
+});
+
+test('review-fix proposes a review-only draft for each failed verification and dedupes it', () => {
+  withTempLedger(() => {
+    const intakeDir = process.env.MEOW_INTAKE_DIR;
+    mkdirSync(intakeDir, { recursive: true });
+    writeReviewFix(intakeDir, [
+      { id: 'lint', passed: false, exit_code: 2 },
+      { id: 'build', passed: true, exit_code: 0 },
+    ]);
+    const first = appendReviewFixProposals({ intakeDir, now: NOW, proposals: [] });
+    assert.equal(first[0].status, 'draft');
+    const proposal = readLedger('proposal').at(-1);
+    assert.equal(proposal.review_only, true);
+    assert.ok(proposal.evidence.some((item) => item.kind === 'review-fix' && item.ref === 'lint'));
+    const second = appendReviewFixProposals({ intakeDir, now: NOW });
+    assert.equal(second[0].status, 'skipped-existing');
+  });
 });

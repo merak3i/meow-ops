@@ -5,11 +5,12 @@ import { spawn } from 'child_process';
 import { statSync } from 'fs';
 import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { getSyncRun, getSyncStatus, startSyncRun } from './sync/sync-runner.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
-// Local-only dev plugin: exposes POST /api/sync to run the export script
-// and GET /api/sync/status to read the timestamp of the generated JSON.
+// Local-only dev plugin: exposes the same observable background sync contract
+// as the localhost helper.
 function meowSyncPlugin() {
   return {
     name: 'meow-sync',
@@ -43,19 +44,17 @@ function meowSyncPlugin() {
           res.end();
           return;
         }
-        try {
-          const filePath = join(server.config.root, 'public', 'data', 'sessions.json');
-          const stat = statSync(filePath);
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({
-            ok: true,
-            mtime: stat.mtimeMs,
-            size: stat.size,
-          }));
-        } catch {
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ ok: false, error: 'No data file yet' }));
-        }
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(getSyncStatus({ repoRoot: server.config.root })));
+      });
+
+      server.middlewares.use('/api/sync/runs', (req, res) => {
+        if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        const runId = new URL(req.url || '/', 'http://localhost').pathname.split('/').filter(Boolean)[0];
+        const run = getSyncRun(runId);
+        res.statusCode = run ? 200 : 404;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify(run || { ok: false, error: 'Sync run not found' }));
       });
 
       // Dev-mode mirror of the local API's Loop-Ops endpoints (sync/local-api.mjs).
@@ -154,60 +153,21 @@ function meowSyncPlugin() {
           return;
         }
         if (blockNonLocal(req, res)) return;
-        const scriptPath      = join(server.config.root, 'sync', 'export-local.mjs');
-        const limitsScriptPath = join(server.config.root, 'sync', 'fetch-claude-limits.mjs');
-        const child = spawn('node', [scriptPath], {
-          cwd: server.config.root,
+        const started = startSyncRun({
+          repoRoot: server.config.root,
+          node: process.execPath,
+          trigger: 'dashboard-dev',
           env: process.env,
         });
-
-        let stdout = '';
-        let stderr = '';
-        child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-        child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-
-        const timeout = setTimeout(() => {
-          child.kill();
-        }, 60000);
-
-        child.on('close', (code) => {
-          clearTimeout(timeout);
-          let stats = null;
-          try {
-            const filePath = join(server.config.root, 'public', 'data', 'sessions.json');
-            stats = statSync(filePath);
-          } catch {}
-
-          res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({
-            ok: code === 0,
-            code,
-            stdout: stdout.slice(-2000),
-            stderr: stderr.slice(-1000),
-            mtime: stats?.mtimeMs || null,
-            size: stats?.size || null,
-          }));
-
-          // After session sync completes, refresh rate limits in the background.
-          // Reads Chrome cookie if possible; falls back to existing values.
-          // NOTE: --push is intentionally NOT passed. A browser POST must never
-          // be able to trigger a git commit/push — that was a CSRF vector where
-          // any visited page could drive `git push origin main`. Publish rate
-          // limits manually with `node sync/fetch-claude-limits.mjs --push`.
-          spawn('node', [limitsScriptPath], {
-            cwd: server.config.root,
-            env: process.env,
-            stdio: 'ignore',
-            detached: true,
-          }).unref();
-        });
-
-        child.on('error', (err) => {
-          clearTimeout(timeout);
-          res.setHeader('Content-Type', 'application/json');
-          res.statusCode = 500;
-          res.end(JSON.stringify({ ok: false, error: err.message }));
-        });
+        res.statusCode = started.accepted ? 202 : 409;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({
+          ok: started.accepted,
+          accepted: started.accepted,
+          busy: started.busy,
+          run_id: started.run_id,
+          status: started.snapshot,
+        }));
       });
     },
   };
