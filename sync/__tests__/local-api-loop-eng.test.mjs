@@ -318,6 +318,40 @@ test('owner can personalize Companion while evidence permissions remain authorit
   assert.equal(reset.body.profile.revision, 2);
 });
 
+test('Companion soul route accepts a 100,000-character owner meta-prompt', async () => {
+  const initial = await getJson('/companion/soul');
+  const line = 'owner preference.\n';
+  const customInstructions = `${line.repeat(6_000).slice(0, 99_999)}!`;
+  const saved = await postSoul({
+    ...initial.body.profile,
+    custom_instructions: customInstructions,
+  });
+
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.profile.custom_instructions.length, 100_000);
+});
+
+test('Companion activates the matching project soul overlay for an answer', async () => {
+  const initial = await getJson('/companion/soul');
+  const saved = await postSoul({
+    ...initial.body.profile,
+    preset: 'warm-strategist',
+    project_overlays: [{
+      project_id: 'berglabs',
+      project_name: 'BergLabs',
+      enabled: true,
+      preset: 'critical-partner',
+      custom_instructions: 'Prioritize shipped customer outcomes.',
+    }],
+  });
+  assert.equal(saved.status, 200);
+
+  const answer = await postAsk('what is the vision for BergLabs?');
+  assert.equal(answer.status, 200);
+  assert.equal(answer.body.soul.preset, 'critical-partner');
+  assert.equal(answer.body.soul.project_overlay.project_id, 'berglabs');
+});
+
 test('GET /loop-eng/summary reports system-expired drafts outside rejected counts', async () => {
   const draft = appendRecord('proposal', baseProposal({
     proposal_id: newId('prop'),

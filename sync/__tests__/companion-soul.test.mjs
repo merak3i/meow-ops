@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-  applySoulPolicy, compileSoulInstructions, DEFAULT_SOUL, readSoulProfile, saveSoulProfile,
+  applySoulPolicy, compileSoulInstructions, DEFAULT_SOUL, readSoulProfile, resolveSoulProfile,
+  saveSoulProfile,
 } from '../companion-soul.mjs';
 
 function withSoulDir(fn) {
@@ -35,6 +36,62 @@ test('owner can save a versioned soul profile without mutating the default', () 
   assert.equal(saved.revision, 1);
   assert.equal(readSoulProfile().preset, 'warm-strategist');
   assert.equal(DEFAULT_SOUL.name, 'Companion');
+}));
+
+test('owner meta-prompt stores up to 100,000 characters', () => withSoulDir(() => {
+  const line = 'owner preference.\n';
+  const customInstructions = `${line.repeat(6_000).slice(0, 99_999)}!`;
+  const saved = saveSoulProfile({
+    ...DEFAULT_SOUL,
+    custom_instructions: customInstructions,
+  });
+
+  assert.equal(saved.custom_instructions.length, 100_000);
+  assert.equal(readSoulProfile().custom_instructions, customInstructions);
+}));
+
+test('owner meta-prompt rejects more than 100,000 characters', () => withSoulDir(() => {
+  const line = 'owner preference.\n';
+  const customInstructions = `${line.repeat(6_000).slice(0, 100_000)}!`;
+
+  assert.throws(() => saveSoulProfile({
+    ...DEFAULT_SOUL,
+    custom_instructions: customInstructions,
+  }), /custom_instructions must be 0-100000 characters/);
+}));
+
+test('legacy soul revisions load with an empty project overlay collection', () => withSoulDir((dir) => {
+  const { project_overlays: _overlays, ...legacy } = DEFAULT_SOUL;
+  writeFileSync(join(dir, 'soul.jsonl'), `${JSON.stringify({ ...legacy, schema_version: 1 })}\n`, 'utf8');
+
+  const current = readSoulProfile();
+  assert.equal(current.schema_version, 2);
+  assert.deepEqual(current.project_overlays, []);
+}));
+
+test('project soul overlay inherits the owner prompt and activates through a known alias', () => withSoulDir(() => {
+  const saved = saveSoulProfile({
+    ...DEFAULT_SOUL,
+    preset: 'warm-strategist',
+    custom_instructions: 'Protect the long-term product thesis.',
+    project_overlays: [{
+      project_id: 'berglabs',
+      project_name: 'BergLabs',
+      enabled: true,
+      preset: 'critical-partner',
+      custom_instructions: 'For this project, prioritize shipped customer outcomes.',
+    }],
+  });
+  const resolved = resolveSoulProfile(saved, 'What should Berg fix next?', [{
+    id: 'berglabs', name: 'BergLabs', matchNames: ['BergLabs', 'Berg'], facts: {},
+  }]);
+  const instructions = compileSoulInstructions(resolved);
+
+  assert.equal(resolved.preset, 'critical-partner');
+  assert.equal(resolved.active_project_overlay.project_name, 'BergLabs');
+  assert.match(instructions, /Protect the long-term product thesis/);
+  assert.match(instructions, /prioritize shipped customer outcomes/);
+  assert.ok(instructions.indexOf('prioritize shipped customer outcomes') < instructions.indexOf('Non-overridable evidence contract'));
 }));
 
 test('strict soul policy filters memory and keeps the evidence contract after meta-prompts', () => {

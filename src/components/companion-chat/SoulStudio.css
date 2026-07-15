@@ -19,9 +19,9 @@
 .soul-studio__section h3, .soul-studio__contract h3 { margin: 0; color: var(--text-primary); font-size: 11px; font-weight: 500; }
 .soul-studio__section-title p, .soul-studio__contract header p { margin: 3px 0 0; color: var(--text-muted); font-size: 8px; line-height: 1.4; }
 .soul-studio__field { display: grid; gap: 5px; color: var(--text-muted); font-size: 8px; }
-.soul-studio__field input, .soul-studio__field textarea { box-sizing: border-box; width: 100%; padding: 8px 9px; border: 1px solid var(--border-input); border-radius: 8px; outline: none; background: var(--bg-card); color: var(--text-primary); font: inherit; font-size: 9px; }
+.soul-studio__field input, .soul-studio__field textarea, .soul-studio__field select { box-sizing: border-box; width: 100%; padding: 8px 9px; border: 1px solid var(--border-input); border-radius: 8px; outline: none; background: var(--bg-card); color: var(--text-primary); font: inherit; font-size: 9px; }
 .soul-studio__field textarea { resize: vertical; line-height: 1.55; }
-.soul-studio__field input:focus, .soul-studio__field textarea:focus { border-color: color-mix(in oklab, var(--accent) 60%, var(--border)); }
+.soul-studio__field input:focus, .soul-studio__field textarea:focus, .soul-studio__field select:focus { border-color: color-mix(in oklab, var(--accent) 60%, var(--border)); }
 .soul-studio__field--textarea { position: relative; }
 .soul-studio__field--textarea > small { position: absolute; right: 7px; bottom: 6px; color: var(--text-muted); font-size: 7px; }
 
@@ -40,6 +40,21 @@
 .soul-studio__uncertainty small, .soul-studio__switches small { color: var(--text-muted); font-size: 7px; line-height: 1.4; }
 .soul-studio__switches input { width: 28px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 .soul-studio__switches .is-disabled { opacity: .45; }
+
+.soul-studio__count { color: var(--text-muted); font-size: 7px; white-space: nowrap; }
+.soul-studio__overlay-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 7px; }
+.soul-studio__overlay-add > button { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 7px 9px; border: 1px solid color-mix(in oklab, var(--accent) 45%, var(--border)); border-radius: 8px; background: color-mix(in oklab, var(--accent) 8%, transparent); color: var(--text-secondary); font: inherit; font-size: 8px; cursor: pointer; }
+.soul-studio__overlay-add > button:disabled { opacity: .4; cursor: default; }
+.soul-studio__overlays { display: grid; gap: 8px; margin-top: 9px; }
+.soul-studio__overlay { display: grid; gap: 9px; padding: 10px; border: 1px solid var(--border); border-radius: 9px; background: color-mix(in oklab, var(--bg-card) 82%, transparent); }
+.soul-studio__overlay > header { display: grid; grid-template-columns: minmax(0, 1fr) auto 26px; align-items: center; gap: 8px; }
+.soul-studio__overlay > header > div { min-width: 0; display: grid; gap: 2px; }
+.soul-studio__overlay > header strong { overflow: hidden; color: var(--text-primary); font-size: 9px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.soul-studio__overlay > header small { color: var(--text-muted); font-size: 7px; }
+.soul-studio__overlay > header > button { width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--text-muted); cursor: pointer; }
+.soul-studio__overlay-enabled { display: flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: 7px; cursor: pointer; }
+.soul-studio__overlay-enabled input { width: 26px; height: 14px; accent-color: var(--accent); }
+.soul-studio__empty { margin: 0; padding: 8px 0 1px; color: var(--text-muted); font-size: 8px; line-height: 1.45; }
 
 .soul-studio__contract { margin-top: 10px; padding: 13px; border: 1px solid color-mix(in oklab, var(--success) 35%, var(--border)); border-radius: 11px; background: color-mix(in oklab, var(--success) 5%, var(--bg-page)); }
 .soul-studio__contract header { display: flex; align-items: flex-start; gap: 8px; color: var(--success); }
@@ -61,6 +76,8 @@
 @media (max-width: 520px) {
   .soul-studio { padding: 14px; }
   .soul-studio__presets, .soul-studio__contract > div { grid-template-columns: 1fr; }
+  .soul-studio__overlay-add { grid-template-columns: 1fr; }
+  .soul-studio__overlay-add > button { justify-content: center; }
   .soul-studio__footer { bottom: -14px; margin: 12px -14px -14px; padding: 10px 14px; align-items: flex-start; flex-direction: column; }
   .soul-studio__footer > div { width: 100%; }
   .soul-studio__footer button { flex: 1; justify-content: center; }

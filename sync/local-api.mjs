@@ -32,7 +32,7 @@ import { buildProjectSnapshot } from './project-intelligence.mjs';
 import { appendProjectClaim, confirmProjectClaim, readProjectClaims } from './project-ledger.mjs';
 import {
   applySoulPolicy, compileSoulInstructions, readSoulProfile, resetSoulProfile,
-  saveSoulProfile, SOUL_PRESETS,
+  resolveSoulProfile, saveSoulProfile, SOUL_PRESETS,
 } from './companion-soul.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
 
@@ -442,7 +442,7 @@ const server = createServer(async (req, res) => {
   if (path === '/companion/soul' && req.method === 'POST') {
     let body;
     try {
-      body = await readJsonBody(req);
+      body = await readJsonBody(req, 512_000);
     } catch (err) {
       ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
       return;
@@ -492,7 +492,7 @@ const server = createServer(async (req, res) => {
         const data = readFileSync(join(ROOT, 'public', 'data', 'loop-engineering', 'digest.json'), 'utf8');
         digest = JSON.parse(data);
       } catch {}
-      const soul = readSoulProfile();
+      const storedSoul = readSoulProfile();
       const rawData = {
         proposals: readLedger('proposal'),
         decisions: readLedger('decision'),
@@ -502,6 +502,11 @@ const server = createServer(async (req, res) => {
         digest,
         sync: getSyncStatus({ repoRoot: ROOT }),
       };
+      const soul = resolveSoulProfile(
+        storedSoul,
+        question,
+        buildProjectSnapshot({ sessions: rawData.sessions, claims: rawData.claims }).projects,
+      );
       const soulPolicy = applySoulPolicy(soul, rawData);
       const data = soulPolicy.context;
       const result = ask(question, data);
@@ -538,6 +543,10 @@ const server = createServer(async (req, res) => {
           preset: soul.preset,
           revision: soul.revision,
           uncertainty_policy: soul.uncertainty_policy,
+          project_overlay: soul.active_project_overlay ? {
+            project_id: soul.active_project_overlay.project_id,
+            project_name: soul.active_project_overlay.project_name,
+          } : null,
         },
         suggestions: ['What changed today?', 'Is sync healthy?', 'What should I fix next?', 'Prepare a repair prompt'],
       });

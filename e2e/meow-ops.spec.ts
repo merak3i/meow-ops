@@ -100,9 +100,15 @@ test('Companion Soul Studio previews personality without weakening evidence gate
   await expect(chat.getByRole('button', { name: 'Critical Partner' })).toBeVisible();
   await expect(chat.getByRole('button', { name: 'Curious Explorer' })).toBeVisible();
   await expect(chat.getByText('Evidence gates cannot be overridden')).toBeVisible();
+  await expect(chat.getByRole('textbox', { name: 'Owner meta-prompt' })).toHaveAttribute('maxlength', '100000');
+  await expect(chat.getByRole('heading', { name: 'Project souls' })).toBeVisible();
 
   await chat.getByRole('textbox', { name: 'Companion name' }).fill('Maven');
   await chat.getByRole('button', { name: 'Critical Partner' }).click();
+  await chat.getByRole('combobox', { name: 'Project for new soul overlay' }).fill('Patherle');
+  await chat.getByRole('button', { name: 'Add layer' }).click();
+  await expect(chat.getByRole('combobox', { name: 'Patherle working style' })).toHaveValue('inherit');
+  await expect(chat.getByRole('textbox', { name: 'Patherle soul instructions' })).toHaveAttribute('maxlength', '12000');
   await expect(chat.getByText('Maven', { exact: true })).toBeVisible();
   await expect(chat.getByText(/Pressure-test assumptions/)).toBeVisible();
 

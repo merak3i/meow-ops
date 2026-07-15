@@ -166,6 +166,11 @@ export async function postProjectConfirm(claim_id) {
   return result && typeof result === 'object' ? result : null;
 }
 
+export async function fetchProjectIntelligenceSnapshot() {
+  const data = await fetchLoopJson('/project-intelligence/snapshot');
+  return data && typeof data === 'object' ? data : null;
+}
+
 export async function fetchCompanionSoul() {
   const data = await fetchLoopJson('/companion/soul');
   return data && typeof data === 'object' ? data : null;

@@ -55,7 +55,9 @@ export interface CompanionAnswer {
   learning?: ProjectLearningTarget;
   claim_id?: string;
   claim_status?: 'inferred' | 'owner_confirmed' | 'stale' | 'contradicted';
-  soul?: Pick<CompanionSoulProfile, 'name' | 'preset' | 'revision' | 'uncertainty_policy'>;
+  soul?: Pick<CompanionSoulProfile, 'name' | 'preset' | 'revision' | 'uncertainty_policy'> & {
+    project_overlay?: Pick<CompanionProjectSoulOverlay, 'project_id' | 'project_name'> | null;
+  };
   error?: string;
 }
 export function postLoopAsk(question: string): Promise<CompanionAnswer | null>;
@@ -68,6 +70,19 @@ export interface ProjectClaim {
   status: 'inferred' | 'owner_confirmed' | 'stale' | 'contradicted';
   source: string;
 }
+export interface ProjectIntelligenceProject {
+  id: string;
+  name: string;
+  matchNames: string[];
+  facts: Record<string, ProjectClaim>;
+}
+export interface ProjectIntelligenceSnapshot {
+  ok: boolean;
+  projects: ProjectIntelligenceProject[];
+  claim_count: number;
+  session_count: number;
+}
+export function fetchProjectIntelligenceSnapshot(): Promise<ProjectIntelligenceSnapshot | null>;
 export function postProjectClaim(input: {
   project_name: string;
   project_id?: string;
@@ -84,8 +99,15 @@ export interface SoulPreset {
   description: string;
   instruction: string;
 }
+export interface CompanionProjectSoulOverlay {
+  project_id: string;
+  project_name: string;
+  enabled: boolean;
+  preset: SoulPresetId | 'inherit';
+  custom_instructions: string;
+}
 export interface CompanionSoulProfile {
-  schema_version: 1;
+  schema_version: 2;
   profile_id: 'primary';
   revision: number;
   updated_at: string | null;
@@ -99,6 +121,7 @@ export interface CompanionSoulProfile {
     inferred_claims: boolean;
   };
   model_synthesis: boolean;
+  project_overlays: CompanionProjectSoulOverlay[];
 }
 export interface CompanionSoulResponse {
   ok: boolean;

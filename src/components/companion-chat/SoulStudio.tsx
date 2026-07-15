@@ -1,10 +1,13 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Cat, Check, LockKeyhole, RotateCcw, Save, ShieldCheck } from 'lucide-react';
 import {
-  fetchCompanionSoul, resetCompanionSoul, saveCompanionSoul,
+  ArrowLeft, Cat, Check, LockKeyhole, Plus, RotateCcw, Save, ShieldCheck, Trash2,
+} from 'lucide-react';
+import {
+  fetchCompanionSoul, fetchProjectIntelligenceSnapshot, resetCompanionSoul, saveCompanionSoul,
 } from '../../lib/loop-api';
 import type {
-  CompanionSoulProfile, SoulPreset, SoulPresetId, UncertaintyPolicy,
+  CompanionProjectSoulOverlay, CompanionSoulProfile, ProjectIntelligenceProject, SoulPreset,
+  SoulPresetId, UncertaintyPolicy,
 } from '../../lib/loop-api';
 import './SoulStudio.css';
 
@@ -28,7 +31,7 @@ const FALLBACK_PRESETS: SoulPreset[] = [
 ];
 
 export const DEFAULT_SOUL_PROFILE: CompanionSoulProfile = {
-  schema_version: 1,
+  schema_version: 2,
   profile_id: 'primary',
   revision: 0,
   updated_at: null,
@@ -38,7 +41,11 @@ export const DEFAULT_SOUL_PROFILE: CompanionSoulProfile = {
   uncertainty_policy: 'evidence-led',
   memory: { session_metrics: true, project_facts: true, inferred_claims: true },
   model_synthesis: true,
+  project_overlays: [],
 };
+
+const OWNER_META_PROMPT_MAX_CHARS = 100_000;
+const PROJECT_OVERLAY_PROMPT_MAX_CHARS = 12_000;
 
 const UNCERTAINTY_OPTIONS: Array<{ id: UncertaintyPolicy; label: string; detail: string }> = [
   { id: 'strict', label: 'Strict evidence', detail: 'Stops when verified evidence runs out.' },
@@ -59,18 +66,30 @@ type Props = {
 };
 
 function cloneProfile(profile: CompanionSoulProfile): CompanionSoulProfile {
-  return { ...profile, memory: { ...profile.memory } };
+  return {
+    ...DEFAULT_SOUL_PROFILE,
+    ...profile,
+    schema_version: 2,
+    memory: { ...DEFAULT_SOUL_PROFILE.memory, ...profile.memory },
+    project_overlays: (profile.project_overlays || []).map((overlay) => ({ ...overlay })),
+  };
+}
+
+function slug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
 export default function SoulStudio({ onClose, onProfile }: Props) {
   const [profile, setProfile] = useState<CompanionSoulProfile>(() => cloneProfile(DEFAULT_SOUL_PROFILE));
   const [presets, setPresets] = useState<SoulPreset[]>(FALLBACK_PRESETS);
+  const [projects, setProjects] = useState<ProjectIntelligenceProject[]>([]);
+  const [newProject, setNewProject] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<'loading' | 'ready' | 'saved' | 'offline' | 'error'>('loading');
 
   useEffect(() => {
     let mounted = true;
-    fetchCompanionSoul().then((result) => {
+    Promise.all([fetchCompanionSoul(), fetchProjectIntelligenceSnapshot()]).then(([result, snapshot]) => {
       if (!mounted) return;
       if (result?.profile) {
         setProfile(cloneProfile(result.profile));
@@ -80,6 +99,7 @@ export default function SoulStudio({ onClose, onProfile }: Props) {
       } else {
         setStatus('offline');
       }
+      if (snapshot?.projects) setProjects(snapshot.projects);
     });
     return () => { mounted = false; };
   }, [onProfile]);
@@ -102,6 +122,48 @@ export default function SoulStudio({ onClose, onProfile }: Props) {
         [key]: value,
         ...(key === 'project_facts' && !value ? { inferred_claims: false } : {}),
       },
+    }));
+    setStatus('ready');
+  }
+
+  function updateOverlay(projectId: string, patch: Partial<CompanionProjectSoulOverlay>) {
+    setProfile((current) => ({
+      ...current,
+      project_overlays: current.project_overlays.map((overlay) => (
+        overlay.project_id === projectId ? { ...overlay, ...patch } : overlay
+      )),
+    }));
+    setStatus('ready');
+  }
+
+  function addOverlay() {
+    const projectName = newProject.trim();
+    if (!projectName || profile.project_overlays.length >= 24) return;
+    const known = projects.find((project) => (
+      project.id === projectName
+      || project.name.toLowerCase() === projectName.toLowerCase()
+      || project.matchNames.some((name) => name.toLowerCase() === projectName.toLowerCase())
+    ));
+    const projectId = known?.id || slug(projectName);
+    if (!projectId || profile.project_overlays.some((overlay) => overlay.project_id === projectId)) return;
+    setProfile((current) => ({
+      ...current,
+      project_overlays: [...current.project_overlays, {
+        project_id: projectId,
+        project_name: known?.name || projectName,
+        enabled: true,
+        preset: 'inherit',
+        custom_instructions: '',
+      }],
+    }));
+    setNewProject('');
+    setStatus('ready');
+  }
+
+  function removeOverlay(projectId: string) {
+    setProfile((current) => ({
+      ...current,
+      project_overlays: current.project_overlays.filter((overlay) => overlay.project_id !== projectId),
     }));
     setStatus('ready');
   }
@@ -164,9 +226,42 @@ export default function SoulStudio({ onClose, onProfile }: Props) {
         <div className="soul-studio__section-title"><div><h3>Owner meta-prompt</h3><p>Your durable working preferences, applied after the preset.</p></div></div>
         <label className="soul-studio__field soul-studio__field--textarea">
           Custom instructions
-          <textarea aria-label="Owner meta-prompt" value={profile.custom_instructions} maxLength={8000} rows={6} placeholder="Example: Lead with the decision. Challenge scope creep. Keep the next action concrete." onChange={(event) => { setProfile({ ...profile, custom_instructions: event.target.value }); setStatus('ready'); }} />
-          <small>{profile.custom_instructions.length.toLocaleString()} / 8,000</small>
+          <textarea aria-label="Owner meta-prompt" value={profile.custom_instructions} maxLength={OWNER_META_PROMPT_MAX_CHARS} rows={8} placeholder="Example: Lead with the decision. Challenge scope creep. Keep the next action concrete." onChange={(event) => { setProfile({ ...profile, custom_instructions: event.target.value }); setStatus('ready'); }} />
+          <small>{profile.custom_instructions.length.toLocaleString()} / {OWNER_META_PROMPT_MAX_CHARS.toLocaleString()}</small>
         </label>
+      </section>
+
+      <section className="soul-studio__section">
+        <div className="soul-studio__section-title"><div><h3>Project souls</h3><p>Add a focused layer that inherits the owner meta-prompt and evidence gates.</p></div><span className="soul-studio__count">{profile.project_overlays.length} / 24</span></div>
+        <div className="soul-studio__overlay-add">
+          <label className="soul-studio__field">Project
+            <input aria-label="Project for new soul overlay" list="soul-studio-projects" value={newProject} maxLength={100} placeholder="Choose or type a project" onChange={(event) => setNewProject(event.target.value)} />
+          </label>
+          <datalist id="soul-studio-projects">{projects.map((project) => <option key={project.id} value={project.name} />)}</datalist>
+          <button type="button" onClick={addOverlay} disabled={!newProject.trim() || profile.project_overlays.length >= 24}><Plus size={12} /> Add layer</button>
+        </div>
+        <div className="soul-studio__overlays">
+          {profile.project_overlays.map((overlay) => (
+            <article className="soul-studio__overlay" key={overlay.project_id}>
+              <header>
+                <div><strong>{overlay.project_name}</strong><small>{overlay.project_id}</small></div>
+                <label className="soul-studio__overlay-enabled"><span>{overlay.enabled ? 'Active' : 'Paused'}</span><input type="checkbox" aria-label={`Enable ${overlay.project_name} soul`} checked={overlay.enabled} onChange={(event) => updateOverlay(overlay.project_id, { enabled: event.target.checked })} /></label>
+                <button type="button" aria-label={`Remove ${overlay.project_name} soul`} onClick={() => removeOverlay(overlay.project_id)}><Trash2 size={12} /></button>
+              </header>
+              <label className="soul-studio__field">Project working style
+                <select aria-label={`${overlay.project_name} working style`} value={overlay.preset} onChange={(event) => updateOverlay(overlay.project_id, { preset: event.target.value as CompanionProjectSoulOverlay['preset'] })}>
+                  <option value="inherit">Inherit global style</option>
+                  {presets.map((preset) => <option value={preset.id} key={preset.id}>{preset.name}</option>)}
+                </select>
+              </label>
+              <label className="soul-studio__field soul-studio__field--textarea">Project instructions
+                <textarea aria-label={`${overlay.project_name} soul instructions`} value={overlay.custom_instructions} maxLength={PROJECT_OVERLAY_PROMPT_MAX_CHARS} rows={4} placeholder="What should Companion emphasize only for this project?" onChange={(event) => updateOverlay(overlay.project_id, { custom_instructions: event.target.value })} />
+                <small>{overlay.custom_instructions.length.toLocaleString()} / {PROJECT_OVERLAY_PROMPT_MAX_CHARS.toLocaleString()}</small>
+              </label>
+            </article>
+          ))}
+          {profile.project_overlays.length === 0 && <p className="soul-studio__empty">No project layers yet. Global soul settings apply everywhere.</p>}
+        </div>
       </section>
 
       <section className="soul-studio__section">

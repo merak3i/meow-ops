@@ -13,6 +13,11 @@ import { assertOutsideWorktree, assertRedacted } from './loop-ledger.mjs';
 const FILE_NAME = 'soul.jsonl';
 const PRESET_IDS = ['clear-operator', 'warm-strategist', 'critical-partner', 'curious-explorer'];
 const UNCERTAINTY_POLICIES = ['strict', 'evidence-led', 'exploratory'];
+const OVERLAY_PRESET_IDS = ['inherit', ...PRESET_IDS];
+const PROJECT_OVERLAY_MAX_COUNT = 24;
+const PROJECT_OVERLAY_PROMPT_MAX_CHARS = 12_000;
+
+export const OWNER_META_PROMPT_MAX_CHARS = 100_000;
 
 export const SOUL_PRESETS = Object.freeze([
   {
@@ -42,7 +47,7 @@ export const SOUL_PRESETS = Object.freeze([
 ]);
 
 export const DEFAULT_SOUL = Object.freeze({
-  schema_version: 1,
+  schema_version: 2,
   profile_id: 'primary',
   revision: 0,
   updated_at: null,
@@ -56,6 +61,7 @@ export const DEFAULT_SOUL = Object.freeze({
     inferred_claims: true,
   }),
   model_synthesis: true,
+  project_overlays: Object.freeze([]),
 });
 
 export function resolveSoulDir() {
@@ -79,6 +85,59 @@ function bool(value, field) {
   return value;
 }
 
+function projectId(value, fallbackName) {
+  const raw = String(value || fallbackName || '').trim().toLowerCase();
+  const clean = raw.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  if (!clean || clean.length > 100) {
+    throw new Error('[companion-soul] project overlay project_id must be 1-100 characters');
+  }
+  return clean;
+}
+
+function validateProjectOverlays(value) {
+  if (!Array.isArray(value)) throw new Error('[companion-soul] project_overlays must be an array');
+  if (value.length > PROJECT_OVERLAY_MAX_COUNT) {
+    throw new Error(`[companion-soul] project_overlays must contain at most ${PROJECT_OVERLAY_MAX_COUNT} items`);
+  }
+  const seen = new Set();
+  return value.map((input, index) => {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new Error(`[companion-soul] project_overlays[${index}] must be an object`);
+    }
+    const project_name = text(input.project_name, `project_overlays[${index}].project_name`, 100);
+    const project_id = projectId(input.project_id, project_name);
+    if (seen.has(project_id)) throw new Error(`[companion-soul] duplicate project overlay: ${project_id}`);
+    seen.add(project_id);
+    const preset = text(input.preset || 'inherit', `project_overlays[${index}].preset`, 40);
+    if (!OVERLAY_PRESET_IDS.includes(preset)) {
+      throw new Error(`[companion-soul] unsupported project overlay preset: ${preset}`);
+    }
+    return {
+      project_id,
+      project_name,
+      enabled: bool(input.enabled, `project_overlays[${index}].enabled`),
+      preset,
+      custom_instructions: text(
+        input.custom_instructions,
+        `project_overlays[${index}].custom_instructions`,
+        PROJECT_OVERLAY_PROMPT_MAX_CHARS,
+        { allowEmpty: true },
+      ),
+    };
+  });
+}
+
+function normalizeStoredProfile(profile) {
+  if (!profile || typeof profile !== 'object') return DEFAULT_SOUL;
+  return {
+    ...DEFAULT_SOUL,
+    ...profile,
+    schema_version: 2,
+    memory: { ...DEFAULT_SOUL.memory, ...(profile.memory || {}) },
+    project_overlays: Array.isArray(profile.project_overlays) ? profile.project_overlays : [],
+  };
+}
+
 function validateProfile(input, revision, updatedAt) {
   const preset = text(input.preset, 'preset', 40);
   const uncertainty = text(input.uncertainty_policy, 'uncertainty_policy', 40);
@@ -88,13 +147,18 @@ function validateProfile(input, revision, updatedAt) {
   }
   const memory = input.memory || {};
   return assertRedacted({
-    schema_version: 1,
+    schema_version: 2,
     profile_id: 'primary',
     revision,
     updated_at: updatedAt,
     name: text(input.name, 'name', 40),
     preset,
-    custom_instructions: text(input.custom_instructions, 'custom_instructions', 8000, { allowEmpty: true }),
+    custom_instructions: text(
+      input.custom_instructions,
+      'custom_instructions',
+      OWNER_META_PROMPT_MAX_CHARS,
+      { allowEmpty: true },
+    ),
     uncertainty_policy: uncertainty,
     memory: {
       session_metrics: bool(memory.session_metrics, 'memory.session_metrics'),
@@ -102,6 +166,7 @@ function validateProfile(input, revision, updatedAt) {
       inferred_claims: bool(memory.inferred_claims, 'memory.inferred_claims'),
     },
     model_synthesis: bool(input.model_synthesis, 'model_synthesis'),
+    project_overlays: validateProjectOverlays(input.project_overlays || []),
   }, 'companion-soul');
 }
 
@@ -119,7 +184,7 @@ export function readSoulHistory() {
 }
 
 export function readSoulProfile() {
-  return readSoulHistory().at(-1) || DEFAULT_SOUL;
+  return normalizeStoredProfile(readSoulHistory().at(-1));
 }
 
 function withLock(lockPath, fn) {
@@ -158,7 +223,41 @@ export function resetSoulProfile() {
   return saveSoulProfile({
     ...DEFAULT_SOUL,
     memory: { ...DEFAULT_SOUL.memory },
+    project_overlays: [],
   });
+}
+
+export function resolveSoulProfile(profile = DEFAULT_SOUL, question = '', projects = []) {
+  const current = normalizeStoredProfile(profile);
+  const q = String(question || '').trim().toLowerCase();
+  if (!q) return { ...current, active_project_overlay: null };
+  const projectRows = Array.isArray(projects) ? projects : [];
+  const matches = current.project_overlays
+    .filter((overlay) => overlay.enabled)
+    .map((overlay) => {
+      const project = projectRows.find((candidate) => (
+        candidate?.id === overlay.project_id
+        || String(candidate?.name || '').toLowerCase() === overlay.project_name.toLowerCase()
+      ));
+      const names = new Set([
+        overlay.project_name,
+        overlay.project_id.replaceAll('-', ' '),
+        ...(Array.isArray(project?.matchNames) ? project.matchNames : []),
+      ]);
+      const matched = [...names]
+        .map((name) => String(name || '').trim().toLowerCase())
+        .filter((name) => name.length >= 3 && q.includes(name))
+        .sort((a, b) => b.length - a.length)[0];
+      return matched ? { overlay, matchLength: matched.length } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.matchLength - a.matchLength);
+  const active = matches[0]?.overlay || null;
+  return {
+    ...current,
+    preset: active?.preset && active.preset !== 'inherit' ? active.preset : current.preset,
+    active_project_overlay: active,
+  };
 }
 
 export function applySoulPolicy(profile = DEFAULT_SOUL, data = {}) {
@@ -188,11 +287,15 @@ export function compileSoulInstructions(profile = DEFAULT_SOUL) {
     exploratory: 'You may explore possibilities, but keep every inference visibly separate from verified evidence.',
   }[profile.uncertainty_policy] || '';
   const owner = String(profile.custom_instructions || '').trim();
+  const project = profile.active_project_overlay;
+  const projectInstructions = String(project?.custom_instructions || '').trim();
   return [
     `You are ${profile.name || 'Companion'}, the local-first Meow Ops copilot.`,
     `Working style: ${preset.instruction}`,
     `Uncertainty posture: ${uncertainty}`,
     ...(owner ? [`Owner meta-prompt:\n${owner}`] : []),
+    ...(project ? [`Active project soul: ${project.project_name}. This layer inherits every global instruction.`] : []),
+    ...(projectInstructions ? [`Project-specific instructions:\n${projectInstructions}`] : []),
     'Non-overridable evidence contract:',
     '- Known known: answer from verified local evidence and cite the evidence category.',
     '- Known unknown: state the specific missing fact and ask one focused question.',
