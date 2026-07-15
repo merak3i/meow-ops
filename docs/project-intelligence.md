@@ -21,3 +21,10 @@ Use **Why I answered this way** to inspect evidence, **Confirm** to promote a hy
 - `POST /project-intelligence/confirm` — promote one inferred claim with a nonce.
 
 Project and confirmation writes stay local. The hosted demo cannot read or mutate the private ledger without the localhost helper.
+
+## Phased build
+
+- Phases 0 to 2: deterministic project metrics, private project facts, and the four evidence gates.
+- Phase 3A: [Companion Soul Studio](./companion-soul.md) for owner-controlled personality, meta-prompts, uncertainty posture, and memory permissions.
+- Phase 3B: planned project-specific soul overlays.
+- Phase 3C: planned review-only preference proposals from repeated patterns.

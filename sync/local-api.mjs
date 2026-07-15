@@ -30,6 +30,10 @@ import { askLlm } from './llm-gateway.mjs';
 import { loadEnv } from './load-env.mjs';
 import { buildProjectSnapshot } from './project-intelligence.mjs';
 import { appendProjectClaim, confirmProjectClaim, readProjectClaims } from './project-ledger.mjs';
+import {
+  applySoulPolicy, compileSoulInstructions, readSoulProfile, resetSoulProfile,
+  saveSoulProfile, SOUL_PRESETS,
+} from './companion-soul.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -242,7 +246,8 @@ const server = createServer(async (req, res) => {
     || path === '/data/sessions.json'
     || path === '/data/cost-summary.json'
     || path.startsWith('/loop-eng/')
-    || path.startsWith('/project-intelligence/');
+    || path.startsWith('/project-intelligence/')
+    || path.startsWith('/companion/');
 
   if (needsBrowserHeader && !requireBrowserHeader(req, res)) return;
 
@@ -429,6 +434,51 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/companion/soul' && req.method === 'GET') {
+    sendJson(res, 200, { ok: true, profile: readSoulProfile(), presets: SOUL_PRESETS });
+    return;
+  }
+
+  if (path === '/companion/soul' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      sendJson(res, 200, { ok: true, profile: saveSoulProfile(body.profile) });
+    } catch (err) {
+      ruleError(res, 400, 'companion-soul', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (path === '/companion/soul/reset' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      sendJson(res, 200, { ok: true, profile: resetSoulProfile() });
+    } catch (err) {
+      ruleError(res, 400, 'companion-soul', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
   if (path === '/loop-eng/ask' && req.method === 'POST') {
     try {
       const body = await readJsonBody(req);
@@ -442,7 +492,8 @@ const server = createServer(async (req, res) => {
         const data = readFileSync(join(ROOT, 'public', 'data', 'loop-engineering', 'digest.json'), 'utf8');
         digest = JSON.parse(data);
       } catch {}
-      const data = {
+      const soul = readSoulProfile();
+      const rawData = {
         proposals: readLedger('proposal'),
         decisions: readLedger('decision'),
         runs: readLedger('run'),
@@ -451,11 +502,19 @@ const server = createServer(async (req, res) => {
         digest,
         sync: getSyncStatus({ repoRoot: ROOT }),
       };
+      const soulPolicy = applySoulPolicy(soul, rawData);
+      const data = soulPolicy.context;
       const result = ask(question, data);
       let finalAnswer = result.answer;
       let source = 'keyword';
-      if (result.answer === FALLBACK_ANSWER && process.env.DEEPSEEK_API_KEY) {
-        const llm = await askLlm({ question, context: buildAskContext(data), env: process.env, now: new Date() });
+      if (result.answer === FALLBACK_ANSWER && process.env.DEEPSEEK_API_KEY && soulPolicy.allow_model_synthesis) {
+        const llm = await askLlm({
+          question,
+          context: buildAskContext(data),
+          instructions: compileSoulInstructions(soul),
+          env: process.env,
+          now: new Date(),
+        });
         if (llm.status === 'ok') {
           finalAnswer = `Unverified model synthesis: ${assertRedacted(llm.answer, 'llm-answer')}`;
           source = 'llm';
@@ -474,6 +533,12 @@ const server = createServer(async (req, res) => {
           detail: 'Deterministic local ledger, digest, or sync evidence',
         }],
         unknowns: result.unknowns || [],
+        soul: {
+          name: soul.name,
+          preset: soul.preset,
+          revision: soul.revision,
+          uncertainty_policy: soul.uncertainty_policy,
+        },
         suggestions: ['What changed today?', 'Is sync healthy?', 'What should I fix next?', 'Prepare a repair prompt'],
       });
     } catch (err) {
@@ -770,6 +835,9 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /project-intelligence/snapshot - project facts and evidence coverage');
   console.log('  POST /project-intelligence/claims   - owner-confirm one project fact');
   console.log('  POST /project-intelligence/confirm  - promote one inferred fact');
+  console.log('  GET  /companion/soul                   - current private soul profile');
+  console.log('  POST /companion/soul                   - save a versioned soul profile');
+  console.log('  POST /companion/soul/reset             - append the default soul profile');
   console.log('  POST /loop-eng/decisions      - owner decision with nonce');
   console.log('  POST /loop-eng/execute        - dry-run/push executor with nonce');
   console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');

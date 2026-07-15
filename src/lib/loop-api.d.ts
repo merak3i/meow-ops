@@ -55,6 +55,7 @@ export interface CompanionAnswer {
   learning?: ProjectLearningTarget;
   claim_id?: string;
   claim_status?: 'inferred' | 'owner_confirmed' | 'stale' | 'contradicted';
+  soul?: Pick<CompanionSoulProfile, 'name' | 'preset' | 'revision' | 'uncertainty_policy'>;
   error?: string;
 }
 export function postLoopAsk(question: string): Promise<CompanionAnswer | null>;
@@ -75,6 +76,39 @@ export function postProjectClaim(input: {
   supersedes?: string;
 }): Promise<{ ok: boolean; claim?: ProjectClaim; error?: string } | null>;
 export function postProjectConfirm(claim_id: string): Promise<{ ok: boolean; claim?: ProjectClaim; error?: string } | null>;
+export type SoulPresetId = 'clear-operator' | 'warm-strategist' | 'critical-partner' | 'curious-explorer';
+export type UncertaintyPolicy = 'strict' | 'evidence-led' | 'exploratory';
+export interface SoulPreset {
+  id: SoulPresetId;
+  name: string;
+  description: string;
+  instruction: string;
+}
+export interface CompanionSoulProfile {
+  schema_version: 1;
+  profile_id: 'primary';
+  revision: number;
+  updated_at: string | null;
+  name: string;
+  preset: SoulPresetId;
+  custom_instructions: string;
+  uncertainty_policy: UncertaintyPolicy;
+  memory: {
+    session_metrics: boolean;
+    project_facts: boolean;
+    inferred_claims: boolean;
+  };
+  model_synthesis: boolean;
+}
+export interface CompanionSoulResponse {
+  ok: boolean;
+  profile?: CompanionSoulProfile;
+  presets?: SoulPreset[];
+  error?: string;
+}
+export function fetchCompanionSoul(): Promise<CompanionSoulResponse | null>;
+export function saveCompanionSoul(profile: CompanionSoulProfile): Promise<CompanionSoulResponse | null>;
+export function resetCompanionSoul(): Promise<CompanionSoulResponse | null>;
 export function fetchLoopNonce(): Promise<string | null>;
 export function postLoopDecision(input: {
   proposal_id: string;

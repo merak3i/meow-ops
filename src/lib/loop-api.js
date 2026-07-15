@@ -166,6 +166,29 @@ export async function postProjectConfirm(claim_id) {
   return result && typeof result === 'object' ? result : null;
 }
 
+export async function fetchCompanionSoul() {
+  const data = await fetchLoopJson('/companion/soul');
+  return data && typeof data === 'object' ? data : null;
+}
+
+export async function saveCompanionSoul(profile) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+  const result = await postJson(`${base}/companion/soul`, { nonce, profile });
+  return result && typeof result === 'object' ? result : null;
+}
+
+export async function resetCompanionSoul() {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+  const result = await postJson(`${base}/companion/soul/reset`, { nonce });
+  return result && typeof result === 'object' ? result : null;
+}
+
 export async function fetchLoopNonce() {
   const data = await fetchLoopJson('/loop-eng/nonce');
   return typeof data?.nonce === 'string' ? data.nonce : null;

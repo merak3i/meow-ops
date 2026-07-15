@@ -20,6 +20,7 @@ let server;
 let ledgerDir;
 let sessionsFile;
 let projectDir;
+let soulDir;
 let previousLoopDir;
 let pendingProposal;
 let draftProposal;
@@ -147,6 +148,24 @@ async function postProjectConfirm(claim_id) {
   return { status: res.status, body: await res.json() };
 }
 
+async function postSoul(profile) {
+  const res = await fetch(`${BASE}/companion/soul`, {
+    method: 'POST',
+    headers: { ...LOCAL_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile, nonce: await nonce() }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+async function resetSoul() {
+  const res = await fetch(`${BASE}/companion/soul/reset`, {
+    method: 'POST',
+    headers: { ...LOCAL_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nonce: await nonce() }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
 async function nonce() {
   const res = await getJson('/loop-eng/nonce');
   assert.equal(res.status, 200);
@@ -158,6 +177,7 @@ before(async () => {
   ledgerDir = mkdtempSync(join(tmpdir(), 'meow-loop-api-ledger-'));
   sessionsFile = join(ledgerDir, 'sessions.json');
   projectDir = join(ledgerDir, 'project-intelligence');
+  soulDir = join(ledgerDir, 'companion-soul');
   writeFileSync(sessionsFile, JSON.stringify([
     { project: 'BergLabs', duration_seconds: 7200, started_at: new Date().toISOString(), source: 'codex' },
     { project: 'Patherle', duration_seconds: 1800, started_at: new Date().toISOString(), source: 'claude' },
@@ -193,6 +213,7 @@ before(async () => {
       MEOW_LOOP_DIR: ledgerDir,
       MEOW_SESSIONS_FILE: sessionsFile,
       MEOW_PROJECT_INTELLIGENCE_DIR: projectDir,
+      MEOW_COMPANION_SOUL_DIR: soulDir,
     },
     stdio: 'pipe',
   });
@@ -265,6 +286,36 @@ test('owner can teach one project fact and Companion answers from it', async () 
   const confirmed = await postProjectConfirm(taught.body.claim.claim_id);
   assert.equal(confirmed.status, 200);
   assert.equal(confirmed.body.claim.status, 'owner_confirmed');
+});
+
+test('owner can personalize Companion while evidence permissions remain authoritative', async () => {
+  const initial = await getJson('/companion/soul');
+  assert.equal(initial.status, 200);
+  assert.equal(initial.body.profile.preset, 'clear-operator');
+  assert.equal(initial.body.presets.length, 4);
+
+  const saved = await postSoul({
+    ...initial.body.profile,
+    name: 'Maven',
+    preset: 'critical-partner',
+    custom_instructions: 'Challenge scope creep and identify the smallest decisive move.',
+    uncertainty_policy: 'strict',
+    memory: { session_metrics: false, project_facts: true, inferred_claims: false },
+    model_synthesis: false,
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.profile.revision, 1);
+  assert.equal(saved.body.profile.name, 'Maven');
+
+  const answer = await postAsk('what project did I spend the most time on today?');
+  assert.equal(answer.body.gate, 'known_unknown');
+  assert.match(answer.body.answer, /do not have tracked project time/i);
+  assert.equal(answer.body.soul.name, 'Maven');
+
+  const reset = await resetSoul();
+  assert.equal(reset.status, 200);
+  assert.equal(reset.body.profile.name, 'Companion');
+  assert.equal(reset.body.profile.revision, 2);
 });
 
 test('GET /loop-eng/summary reports system-expired drafts outside rejected counts', async () => {

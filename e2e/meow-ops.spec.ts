@@ -89,6 +89,27 @@ test('Companion chat opens as a persistent guided operations surface', async ({ 
   await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toBeFocused();
 });
 
+test('Companion Soul Studio previews personality without weakening evidence gates', async ({ page }) => {
+  await page.getByRole('button', { name: 'Open Companion chat' }).click();
+  const chat = page.getByRole('dialog', { name: 'Companion AI chat' });
+  await chat.getByRole('button', { name: 'Open Soul Studio' }).click();
+
+  await expect(chat.getByRole('heading', { name: 'Soul Studio' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Clear Operator' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Warm Strategist' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Critical Partner' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Curious Explorer' })).toBeVisible();
+  await expect(chat.getByText('Evidence gates cannot be overridden')).toBeVisible();
+
+  await chat.getByRole('textbox', { name: 'Companion name' }).fill('Maven');
+  await chat.getByRole('button', { name: 'Critical Partner' }).click();
+  await expect(chat.getByText('Maven', { exact: true })).toBeVisible();
+  await expect(chat.getByText(/Pressure-test assumptions/)).toBeVisible();
+
+  await chat.getByRole('button', { name: 'Back to chat' }).click();
+  await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toBeVisible();
+});
+
 test('Companion chat becomes a clean full-height mobile panel', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Open Companion chat' }).click();

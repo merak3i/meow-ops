@@ -1,12 +1,14 @@
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BookOpen, Cat, Check, ChevronRight, Maximize2, Minimize2, Pencil, Plus, Send, Sparkles, WifiOff, X,
+  BookOpen, Cat, Check, ChevronRight, Maximize2, Minimize2, Pencil, Plus, Send, Settings2, Sparkles, WifiOff, X,
 } from 'lucide-react';
 import { getSyncStatus } from '../../lib/queries';
-import { postLoopAsk, postProjectClaim, postProjectConfirm } from '../../lib/loop-api';
+import { fetchCompanionSoul, postLoopAsk, postProjectClaim, postProjectConfirm } from '../../lib/loop-api';
 import {
   ChatMessage, LearningTarget, STARTER_PROMPTS, clearThread, formatTime, loadThread, newMessage, saveThread, syncNudge,
 } from './companionChatModel';
+import SoulStudio from './SoulStudio';
+import type { CompanionSoulProfile } from '../../lib/loop-api';
 import './CompanionChat.css';
 
 type Props = { pageLabel?: string };
@@ -41,10 +43,19 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
   const [unread, setUnread] = useState(false);
   const [teaching, setTeaching] = useState<TeachingDraft | null>(null);
   const [teachBusy, setTeachBusy] = useState(false);
+  const [soulOpen, setSoulOpen] = useState(false);
+  const [soulName, setSoulName] = useState('Companion');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { saveThread(messages); }, [messages]);
+  useEffect(() => {
+    let mounted = true;
+    fetchCompanionSoul().then((result) => {
+      if (mounted && result?.profile?.name) setSoulName(result.profile.name);
+    });
+    return () => { mounted = false; };
+  }, []);
   useEffect(() => {
     if (!open) return undefined;
     const id = window.setTimeout(() => textareaRef.current?.focus(), 120);
@@ -83,6 +94,10 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
     [messages],
   );
 
+  const handleSoulProfile = useCallback((profile: CompanionSoulProfile) => {
+    setSoulName(profile.name || 'Companion');
+  }, []);
+
   async function send(question: string) {
     const clean = question.trim();
     if (!clean || busy) return;
@@ -102,6 +117,7 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
       return;
     }
     setConnection('ready');
+    if (result.soul?.name) setSoulName(result.soul.name);
     const metadata = {
       ...(result.gate ? { gate: result.gate } : {}),
       ...(result.confidence !== undefined ? { confidence: result.confidence } : {}),
@@ -210,13 +226,14 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
             <div className="companion-chat__identity">
               <span className="companion-chat__avatar"><Cat size={17} /></span>
               <div>
-                <strong>Companion</strong>
+                <strong>{soulName}</strong>
                 <span className={connection === 'ready' ? '' : 'is-offline'}>
                   {connection === 'ready' ? <><i /> Local-first copilot</> : <><WifiOff size={10} /> Helper offline</>}
                 </span>
               </div>
             </div>
             <div className="companion-chat__actions">
+              <button type="button" onClick={() => { setSoulOpen(true); setExpanded(true); setTeaching(null); }} title="Soul Studio" aria-label="Open Soul Studio"><Settings2 size={14} /></button>
               <button type="button" onClick={() => setMessages(clearThread(pageLabel))} title="New chat" aria-label="New chat"><Plus size={15} /></button>
               <button type="button" onClick={() => setExpanded((value) => !value)} title={expanded ? 'Compact chat' : 'Expand chat'} aria-label={expanded ? 'Compact chat' : 'Expand chat'}>
                 {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
@@ -226,11 +243,14 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
           </header>
 
           <div className="companion-chat__context">
-            <Sparkles size={11} />
-            <span>Reading local Meow Ops evidence · viewing {pageLabel}</span>
-            <button type="button" onClick={() => openTeaching()}><BookOpen size={10} /> Teach</button>
+            {soulOpen ? <Settings2 size={11} /> : <Sparkles size={11} />}
+            <span>{soulOpen ? 'Private soul profile · evidence gates stay locked' : `Reading local Meow Ops evidence · viewing ${pageLabel}`}</span>
+            {!soulOpen && <button type="button" onClick={() => openTeaching()}><BookOpen size={10} /> Teach</button>}
           </div>
 
+          {soulOpen ? (
+            <SoulStudio onClose={() => setSoulOpen(false)} onProfile={handleSoulProfile} />
+          ) : <>
           <div className="companion-chat__transcript" aria-live="polite">
             {teaching && (
               <form className="companion-chat__teach" onSubmit={saveTeaching}>
@@ -310,6 +330,7 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
             <button type="submit" disabled={!input.trim() || busy} aria-label="Send message"><Send size={15} /></button>
             <small>Enter to send · Shift+Enter for a new line</small>
           </form>
+          </>}
         </section>
       )}
 
@@ -324,7 +345,7 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
         aria-expanded={open}
       >
         <span className="companion-chat-dock__avatar"><Cat size={19} /></span>
-        <span className="companion-chat-dock__label"><strong>Companion</strong><small>{nudge ? 'Has an ops nudge' : 'Ask Meow Ops'}</small></span>
+        <span className="companion-chat-dock__label"><strong>{soulName}</strong><small>{nudge ? 'Has an ops nudge' : 'Ask Meow Ops'}</small></span>
         {unread && <i className="companion-chat-dock__unread" />}
       </button>
     </>
