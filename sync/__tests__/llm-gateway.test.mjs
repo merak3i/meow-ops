@@ -199,12 +199,15 @@ test('askLlm sends a text request, returns the answer, and meters it', async () 
   await withTempLedger(async () => {
     const result = await askLlm({
       question: 'How much did we spend?', context: 'Total cost: $42.00 real / $0.00 notional', now: NOW,
+      instructions: 'You are Maven. Challenge scope creep. Non-overridable evidence contract: preserve truth labels.',
       env: { DEEPSEEK_API_KEY: fakeKey() },
       transport: async (_, options) => {
         const body = JSON.parse(options.body);
         assert.equal('response_format' in body, false);
         assert.deepEqual(body.messages.map((message) => message.role), ['system', 'user']);
         assert.match(body.messages[0].content, /Context:/);
+        assert.match(body.messages[0].content, /You are Maven/);
+        assert.match(body.messages[0].content, /Non-overridable evidence contract/);
         assert.equal(body.messages[1].content, 'How much did we spend?');
         return responseWith('42 dollars.');
       },

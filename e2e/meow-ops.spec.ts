@@ -89,6 +89,176 @@ test('Companion chat opens as a persistent guided operations surface', async ({ 
   await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toBeFocused();
 });
 
+test('Companion Soul Studio previews personality without weakening evidence gates', async ({ page }) => {
+  await page.getByRole('button', { name: 'Open Companion chat' }).click();
+  const chat = page.getByRole('dialog', { name: 'Companion AI chat' });
+  await chat.getByRole('button', { name: 'Open Soul Studio' }).click();
+
+  await expect(chat.getByRole('heading', { name: 'Soul Studio' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Clear Operator' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Warm Strategist' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Critical Partner' })).toBeVisible();
+  await expect(chat.getByRole('button', { name: 'Curious Explorer' })).toBeVisible();
+  await expect(chat.getByText('Evidence gates cannot be overridden')).toBeVisible();
+  await expect(chat.getByRole('textbox', { name: 'Owner meta-prompt' })).toHaveAttribute('maxlength', '100000');
+  await expect(chat.getByRole('heading', { name: 'Response style' })).toBeVisible();
+  await expect(chat.getByRole('combobox', { name: 'Answer length' })).toHaveValue('balanced');
+  await expect(chat.getByRole('combobox', { name: 'Challenge style' })).toHaveValue('balanced');
+  await expect(chat.getByRole('combobox', { name: 'Exploration style' })).toHaveValue('balanced');
+  await expect(chat.getByRole('heading', { name: 'Suggested refinements' })).toBeVisible();
+  await expect(chat.getByText(/Raw questions and responses are never written/)).toBeVisible();
+  await expect(chat.getByRole('heading', { name: 'Project souls' })).toBeVisible();
+
+  await chat.getByRole('textbox', { name: 'Companion name' }).fill('Maven');
+  await chat.getByRole('button', { name: 'Critical Partner' }).click();
+  await chat.getByRole('combobox', { name: 'Project for new soul overlay' }).fill('Patherle');
+  await chat.getByRole('button', { name: 'Add layer' }).click();
+  await expect(chat.getByRole('combobox', { name: 'Patherle working style' })).toHaveValue('inherit');
+  await expect(chat.getByRole('textbox', { name: 'Patherle soul instructions' })).toHaveAttribute('maxlength', '12000');
+  await chat.getByText('Project response style').click();
+  await expect(chat.getByRole('combobox', { name: 'Patherle answer length' })).toHaveValue('inherit');
+  await expect(chat.getByText('Maven', { exact: true })).toBeVisible();
+  await expect(chat.getByText(/Pressure-test assumptions/)).toBeVisible();
+
+  await chat.getByRole('button', { name: 'Back to chat' }).click();
+  await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toBeVisible();
+});
+
+test('Companion feedback records only preference metadata from an answer', async ({ page }) => {
+  const profile = {
+    schema_version: 3,
+    profile_id: 'primary',
+    revision: 4,
+    updated_at: '2026-07-15T00:00:00.000Z',
+    name: 'Companion',
+    preset: 'clear-operator',
+    custom_instructions: '',
+    response_preferences: { verbosity: 'balanced', challenge: 'balanced', exploration: 'balanced' },
+    uncertainty_policy: 'evidence-led',
+    memory: { session_metrics: true, project_facts: true, inferred_claims: true },
+    model_synthesis: true,
+    project_overlays: [],
+  };
+
+  await page.addInitScript((mockProfile) => {
+    const testWindow = window as typeof window & { __companionFeedbackBody?: Record<string, unknown> };
+    const nativeFetch = window.fetch.bind(window);
+    let nonceIndex = 0;
+    localStorage.removeItem('meow-ops-companion-thread-v1');
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (!/^http:\/\/(127\.0\.0\.1|localhost):7337\//.test(url)) return nativeFetch(input, init);
+      const path = new URL(url).pathname;
+      const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+        status,
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (path === '/loop-eng/summary') return respond({});
+      if (path === '/sync/status') return respond({ state: 'idle' });
+      if (path === '/companion/soul') return respond({ ok: true, profile: mockProfile });
+      if (path === '/loop-eng/ask') return respond({
+        ok: true,
+        answer: 'BergLabs received the most time this week.',
+        source: 'keyword',
+        gate: 'known_known',
+        confidence: 1,
+        evidence: [{ kind: 'session_metrics', ref: 'sessions.json', detail: 'Weekly project duration' }],
+        unknowns: [],
+        soul: { name: 'Companion', preset: 'clear-operator', revision: 4, uncertainty_policy: 'evidence-led', project_overlay: null },
+      });
+      if (path === '/loop-eng/nonce') return respond({ nonce: `nonce-${++nonceIndex}` });
+      if (path === '/companion/feedback') {
+        testWindow.__companionFeedbackBody = JSON.parse(String(init?.body || '{}'));
+        return respond({ ok: true }, 201);
+      }
+      return respond({ ok: false }, 404);
+    };
+  }, profile);
+
+  await page.reload();
+  await waitForApp(page);
+  await page.getByRole('button', { name: 'Open Companion chat' }).click();
+  const chat = page.getByRole('dialog', { name: 'Companion AI chat' });
+  await chat.getByRole('textbox', { name: 'Message Companion' }).fill('Which project received the most time this week?');
+  await chat.getByRole('button', { name: 'Send message' }).click();
+  const answer = chat.locator('.companion-chat__message--assistant').filter({ hasText: 'BergLabs received the most time this week.' });
+  await expect(answer).toBeVisible();
+  await answer.getByText('Tune this response').click();
+  await answer.getByRole('button', { name: 'Too long' }).click();
+  await expect(answer.getByText(/Saved as metadata only/)).toBeVisible();
+
+  const feedbackBody = await page.evaluate(() => (
+    window as typeof window & { __companionFeedbackBody?: Record<string, unknown> }
+  ).__companionFeedbackBody || null);
+  expect(feedbackBody).toMatchObject({ signal: 'too_verbose', gate: 'known_known', soul_revision: 4 });
+  expect(feedbackBody).toHaveProperty('response_ref');
+  expect(feedbackBody).not.toHaveProperty('question');
+  expect(feedbackBody).not.toHaveProperty('answer');
+  expect(feedbackBody).not.toHaveProperty('response_text');
+});
+
+test('Soul Studio applies a review-only preference suggestion only after owner action', async ({ page }) => {
+  const profile = {
+    schema_version: 3,
+    profile_id: 'primary',
+    revision: 4,
+    updated_at: '2026-07-15T00:00:00.000Z',
+    name: 'Companion',
+    preset: 'clear-operator',
+    custom_instructions: '',
+    response_preferences: { verbosity: 'balanced', challenge: 'balanced', exploration: 'balanced' },
+    uncertainty_policy: 'evidence-led',
+    memory: { session_metrics: true, project_facts: true, inferred_claims: true },
+    model_synthesis: true,
+    project_overlays: [],
+  };
+  const proposal = {
+    proposal_id: 'pref_test', status: 'review_only', signal: 'too_verbose', signal_label: 'Too long',
+    title: 'Make answers more concise', reason: '3 matching feedback signals in the last 30 days.',
+    impact: 'Use shorter, more decisive answers.', evidence_count: 3, scope_label: 'All projects',
+    target: { scope: 'global', field: 'verbosity', value: 'concise' }, current_value: 'balanced',
+  };
+
+  await page.addInitScript(({ mockProfile, mockProposal }) => {
+    const nativeFetch = window.fetch.bind(window);
+    localStorage.removeItem('meow-ops-companion-thread-v1');
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (!/^http:\/\/(127\.0\.0\.1|localhost):7337\//.test(url)) return nativeFetch(input, init);
+      const path = new URL(url).pathname;
+      const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+        status, headers: { 'Content-Type': 'application/json' },
+      });
+      if (path === '/loop-eng/summary') return respond({});
+      if (path === '/sync/status') return respond({ state: 'idle' });
+      if (path === '/companion/soul') return respond({ ok: true, profile: mockProfile });
+      if (path === '/project-intelligence/snapshot') return respond({ ok: true, projects: [], claim_count: 0, session_count: 0 });
+      if (path === '/companion/preferences') return respond({
+        ok: true, feedback_count: 3, proposals: [mockProposal], signals: [],
+        policy: { threshold: 3, window_days: 30, auto_apply: false },
+      });
+      if (path === '/loop-eng/nonce') return respond({ nonce: 'nonce-apply' });
+      if (path === '/companion/preferences/decision') return respond({
+        ok: true,
+        profile: { ...mockProfile, revision: 5, response_preferences: { ...mockProfile.response_preferences, verbosity: 'concise' } },
+        preferences: { feedback_count: 3, proposals: [], signals: [], policy: { threshold: 3, window_days: 30, auto_apply: false } },
+      });
+      return respond({ ok: false }, 404);
+    };
+  }, { mockProfile: profile, mockProposal: proposal });
+
+  await page.reload();
+  await waitForApp(page);
+  await page.getByRole('button', { name: 'Open Companion chat' }).click();
+  const chat = page.getByRole('dialog', { name: 'Companion AI chat' });
+  await chat.getByRole('button', { name: 'Open Soul Studio' }).click();
+  await expect(chat.getByText('Make answers more concise')).toBeVisible();
+  await expect(chat.getByRole('combobox', { name: 'Answer length' })).toHaveValue('balanced');
+  await chat.getByRole('button', { name: 'Apply to soul' }).click();
+  await expect(chat.getByRole('combobox', { name: 'Answer length' })).toHaveValue('concise');
+  await expect(chat.getByText('Make answers more concise')).toHaveCount(0);
+});
+
 test('Companion chat becomes a clean full-height mobile panel', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Open Companion chat' }).click();
