@@ -146,6 +146,26 @@ export async function postLoopAsk(question) {
   return result && typeof result === 'object' ? result : null;
 }
 
+export async function postProjectClaim({ project_name, project_id, field, value, supersedes }) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+  const result = await postJson(`${base}/project-intelligence/claims`, {
+    nonce, project_name, project_id, field, value, supersedes,
+  });
+  return result && typeof result === 'object' ? result : null;
+}
+
+export async function postProjectConfirm(claim_id) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+  const result = await postJson(`${base}/project-intelligence/confirm`, { nonce, claim_id });
+  return result && typeof result === 'object' ? result : null;
+}
+
 export async function fetchLoopNonce() {
   const data = await fetchLoopJson('/loop-eng/nonce');
   return typeof data?.nonce === 'string' ? data.nonce : null;

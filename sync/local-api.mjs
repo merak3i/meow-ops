@@ -28,6 +28,8 @@ import { runDigest } from './loop-digest.mjs';
 import { ask, FALLBACK_ANSWER } from './ask-engine.mjs';
 import { askLlm } from './llm-gateway.mjs';
 import { loadEnv } from './load-env.mjs';
+import { buildProjectSnapshot } from './project-intelligence.mjs';
+import { appendProjectClaim, confirmProjectClaim, readProjectClaims } from './project-ledger.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -38,6 +40,7 @@ const PORT = Number(process.env.MEOW_LOCAL_API_PORT || process.env.MEOW_SYNC_POR
 const LOCAL_ACCESS_HEADER = 'x-meow-ops-local';
 const LOOP_OPS_DIR = join(ROOT, 'public', 'data', 'loop-ops');
 const SUPERADMIN_USAGE_FILE = join(ROOT, 'public', 'data', 'superadmin-usage.json');
+const SESSIONS_FILE = process.env.MEOW_SESSIONS_FILE || join(ROOT, 'public', 'data', 'sessions.json');
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://meow-ops.vercel.app',
   'http://localhost:5173',
@@ -108,6 +111,15 @@ function requireBrowserHeader(req, res) {
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
   res.end(JSON.stringify(payload));
+}
+
+function readJsonArray(path) {
+  try {
+    const value = JSON.parse(readFileSync(path, 'utf8'));
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
 }
 
 function buildAskContext({ proposals, decisions, runs, digest, sync }) {
@@ -229,7 +241,8 @@ const server = createServer(async (req, res) => {
     path.startsWith('/sync')
     || path === '/data/sessions.json'
     || path === '/data/cost-summary.json'
-    || path.startsWith('/loop-eng/');
+    || path.startsWith('/loop-eng/')
+    || path.startsWith('/project-intelligence/');
 
   if (needsBrowserHeader && !requireBrowserHeader(req, res)) return;
 
@@ -352,6 +365,70 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/project-intelligence/snapshot' && req.method === 'GET') {
+    const snapshot = buildProjectSnapshot({
+      sessions: readJsonArray(SESSIONS_FILE),
+      claims: readProjectClaims(),
+    });
+    sendJson(res, 200, {
+      ok: true,
+      projects: snapshot.projects,
+      claim_count: snapshot.claims.length,
+      session_count: snapshot.sessions.length,
+    });
+    return;
+  }
+
+  if (path === '/project-intelligence/claims' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      const claim = appendProjectClaim({
+        project_name: body.project_name,
+        project_id: body.project_id,
+        field: body.field,
+        value: body.value,
+        status: 'owner_confirmed',
+        source: 'owner',
+        supersedes: body.supersedes,
+      });
+      sendJson(res, 201, { ok: true, claim });
+    } catch (err) {
+      ruleError(res, 400, 'project-claim', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (path === '/project-intelligence/confirm' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      const claim = confirmProjectClaim(body.claim_id);
+      sendJson(res, 200, { ok: true, claim });
+    } catch (err) {
+      ruleError(res, 400, 'project-claim', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
   if (path === '/loop-eng/ask' && req.method === 'POST') {
     try {
       const body = await readJsonBody(req);
@@ -369,23 +446,34 @@ const server = createServer(async (req, res) => {
         proposals: readLedger('proposal'),
         decisions: readLedger('decision'),
         runs: readLedger('run'),
+        sessions: readJsonArray(SESSIONS_FILE),
+        claims: readProjectClaims(),
         digest,
         sync: getSyncStatus({ repoRoot: ROOT }),
       };
-      const { answer } = ask(question, data);
-      let finalAnswer = answer;
+      const result = ask(question, data);
+      let finalAnswer = result.answer;
       let source = 'keyword';
-      if (answer === FALLBACK_ANSWER && process.env.DEEPSEEK_API_KEY) {
+      if (result.answer === FALLBACK_ANSWER && process.env.DEEPSEEK_API_KEY) {
         const llm = await askLlm({ question, context: buildAskContext(data), env: process.env, now: new Date() });
         if (llm.status === 'ok') {
-          finalAnswer = assertRedacted(llm.answer, 'llm-answer');
+          finalAnswer = `Unverified model synthesis: ${assertRedacted(llm.answer, 'llm-answer')}`;
           source = 'llm';
         }
       }
       sendJson(res, 200, {
         ok: true,
+        ...result,
         answer: finalAnswer,
         source,
+        gate: result.gate || 'known_known',
+        confidence: result.confidence ?? 1,
+        evidence: result.evidence || [{
+          kind: 'local_reasoning',
+          ref: 'loop-eng/ask',
+          detail: 'Deterministic local ledger, digest, or sync evidence',
+        }],
+        unknowns: result.unknowns || [],
         suggestions: ['What changed today?', 'Is sync healthy?', 'What should I fix next?', 'Prepare a repair prompt'],
       });
     } catch (err) {
@@ -679,6 +767,9 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  POST /loop-eng/digest         - run Loop Engineering digest');
   console.log('  GET  /loop-eng/digest/history - Loop Engineering digest history');
   console.log('  POST /loop-eng/ask            - keyword query + budgeted AI fallback');
+  console.log('  GET  /project-intelligence/snapshot - project facts and evidence coverage');
+  console.log('  POST /project-intelligence/claims   - owner-confirm one project fact');
+  console.log('  POST /project-intelligence/confirm  - promote one inferred fact');
   console.log('  POST /loop-eng/decisions      - owner decision with nonce');
   console.log('  POST /loop-eng/execute        - dry-run/push executor with nonce');
   console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');

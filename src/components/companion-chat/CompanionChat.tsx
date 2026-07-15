@@ -1,15 +1,34 @@
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Cat, ChevronRight, Maximize2, Minimize2, Plus, Send, Sparkles, WifiOff, X,
+  BookOpen, Cat, Check, ChevronRight, Maximize2, Minimize2, Pencil, Plus, Send, Sparkles, WifiOff, X,
 } from 'lucide-react';
 import { getSyncStatus } from '../../lib/queries';
-import { postLoopAsk } from '../../lib/loop-api';
+import { postLoopAsk, postProjectClaim, postProjectConfirm } from '../../lib/loop-api';
 import {
-  ChatMessage, STARTER_PROMPTS, clearThread, formatTime, loadThread, newMessage, saveThread, syncNudge,
+  ChatMessage, LearningTarget, STARTER_PROMPTS, clearThread, formatTime, loadThread, newMessage, saveThread, syncNudge,
 } from './companionChatModel';
 import './CompanionChat.css';
 
 type Props = { pageLabel?: string };
+type TeachingDraft = LearningTarget & { project_name: string; value: string; supersedes?: string };
+
+const PROJECT_FIELDS = [
+  ['alias', 'Alias / folder name'],
+  ['vision', 'Vision'],
+  ['mission', 'Mission'],
+  ['outcome', 'Current outcome'],
+  ['current_phase', 'Current phase'],
+  ['priority', 'Priority'],
+  ['constraint', 'Constraint'],
+  ['non_goal', 'Non-goal'],
+] as const;
+
+const GATE_LABELS = {
+  known_known: 'Verified',
+  known_unknown: 'Needs teaching',
+  unknown_known: 'Hypothesis',
+  unknown_unknown: 'Blind spot',
+} as const;
 
 export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
   const [open, setOpen] = useState(false);
@@ -20,6 +39,8 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
   const [connection, setConnection] = useState<'ready' | 'offline'>('ready');
   const [nudge, setNudge] = useState<string | null>(null);
   const [unread, setUnread] = useState(false);
+  const [teaching, setTeaching] = useState<TeachingDraft | null>(null);
+  const [teachBusy, setTeachBusy] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -81,10 +102,21 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
       return;
     }
     setConnection('ready');
+    const metadata = {
+      ...(result.gate ? { gate: result.gate } : {}),
+      ...(result.confidence !== undefined ? { confidence: result.confidence } : {}),
+      ...(result.evidence ? { evidence: result.evidence } : {}),
+      ...(result.unknowns ? { unknowns: result.unknowns } : {}),
+      ...(result.next_question ? { nextQuestion: result.next_question } : {}),
+      ...(result.learning ? { learning: result.learning } : {}),
+      ...(result.claim_id ? { claimId: result.claim_id } : {}),
+      ...(result.claim_status ? { claimStatus: result.claim_status } : {}),
+    };
     setMessages((current) => [...current, newMessage(
       'assistant',
       result.answer || 'No answer was returned.',
       result.source === 'llm' ? 'deepseek' : 'local',
+      metadata,
     )]);
     setBusy(false);
     setUnread(!open);
@@ -100,6 +132,70 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
       event.preventDefault();
       void send(input);
     }
+  }
+
+  function openTeaching(message?: ChatMessage) {
+    const target = message?.learning;
+    setTeaching({
+      project_name: target?.project_name || '',
+      field: target?.field || 'vision',
+      value: '',
+      ...(target?.project_id ? { project_id: target.project_id } : {}),
+      ...(message?.claimId ? { supersedes: message.claimId } : {}),
+    });
+  }
+
+  async function saveTeaching(event: FormEvent) {
+    event.preventDefault();
+    if (!teaching?.project_name.trim() || !teaching.value.trim() || teachBusy) return;
+    setTeachBusy(true);
+    const result = await postProjectClaim({
+      project_name: teaching.project_name.trim(),
+      field: teaching.field,
+      value: teaching.value.trim(),
+      ...(teaching.project_id ? { project_id: teaching.project_id } : {}),
+      ...(teaching.supersedes ? { supersedes: teaching.supersedes } : {}),
+    });
+    if (result?.ok && result.claim) {
+      const claim = result.claim;
+      setMessages((current) => [...current, newMessage(
+        'assistant',
+        `Learned and owner-confirmed: ${claim.project_name} ${claim.field.replaceAll('_', ' ')} — ${claim.value}`,
+        'local',
+        {
+          gate: 'known_known',
+          confidence: 1,
+          evidence: [{ kind: 'owner_confirmation', ref: claim.claim_id, detail: 'Saved in the private project ledger' }],
+          learning: { project_id: claim.project_id, project_name: claim.project_name, field: claim.field },
+          claimId: claim.claim_id,
+          claimStatus: 'owner_confirmed',
+        },
+      )]);
+      setTeaching(null);
+    } else {
+      setMessages((current) => [...current, newMessage(
+        'assistant',
+        result?.error || 'I could not save that project fact. Check the local helper and try again.',
+        'local',
+        { gate: 'known_unknown' },
+      )]);
+    }
+    setTeachBusy(false);
+  }
+
+  async function confirmClaim(message: ChatMessage) {
+    if (!message.claimId || teachBusy) return;
+    setTeachBusy(true);
+    const result = await postProjectConfirm(message.claimId);
+    setMessages((current) => [...current, newMessage(
+      'assistant',
+      result?.ok
+        ? 'Confirmed. I will now treat that project fact as owner-verified.'
+        : (result?.error || 'I could not confirm that claim.'),
+      'local',
+      result?.ok ? { gate: 'known_known', confidence: 1 } : { gate: 'known_unknown' },
+    )]);
+    setTeachBusy(false);
   }
 
   return (
@@ -131,10 +227,20 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
 
           <div className="companion-chat__context">
             <Sparkles size={11} />
-            Reading local Meow Ops evidence · viewing {pageLabel}
+            <span>Reading local Meow Ops evidence · viewing {pageLabel}</span>
+            <button type="button" onClick={() => openTeaching()}><BookOpen size={10} /> Teach</button>
           </div>
 
           <div className="companion-chat__transcript" aria-live="polite">
+            {teaching && (
+              <form className="companion-chat__teach" onSubmit={saveTeaching}>
+                <header><strong>Teach Companion one project fact</strong><button type="button" onClick={() => setTeaching(null)} aria-label="Close teaching form"><X size={12} /></button></header>
+                <label>Project<input value={teaching.project_name} maxLength={100} onChange={(event) => setTeaching({ ...teaching, project_name: event.target.value })} placeholder="e.g. BergLabs" /></label>
+                <label>What are you teaching?<select value={teaching.field} onChange={(event) => setTeaching({ ...teaching, field: event.target.value })}>{PROJECT_FIELDS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                <label>{`What is the current ${teaching.field.replaceAll('_', ' ')}?`}<textarea value={teaching.value} maxLength={4000} rows={3} onChange={(event) => setTeaching({ ...teaching, value: event.target.value })} /></label>
+                <button type="submit" disabled={teachBusy || !teaching.project_name.trim() || !teaching.value.trim()}><Check size={11} /> Save confirmed fact</button>
+              </form>
+            )}
             {nudge && (
               <article className="companion-chat__insight">
                 <div><span>Notice</span><strong>Background work needs a look</strong></div>
@@ -148,7 +254,23 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
               <article key={message.id} className={`companion-chat__message companion-chat__message--${message.role}`}>
                 {message.role === 'assistant' && <span className="companion-chat__message-avatar"><Cat size={12} /></span>}
                 <div className="companion-chat__bubble">
+                  {message.role === 'assistant' && message.gate && (
+                    <span className={`companion-chat__gate companion-chat__gate--${message.gate}`}>{GATE_LABELS[message.gate]}</span>
+                  )}
                   <p>{message.text}</p>
+                  {message.role === 'assistant' && ((message.evidence?.length || 0) > 0 || (message.unknowns?.length || 0) > 0) && (
+                    <details className="companion-chat__evidence">
+                      <summary>Why I answered this way</summary>
+                      {message.evidence?.map((item) => <p key={`${item.kind}:${item.ref}`}><strong>{item.kind.replaceAll('_', ' ')}</strong> · {item.detail}</p>)}
+                      {message.unknowns?.map((item) => <p key={item}><strong>Unknown</strong> · {item}</p>)}
+                    </details>
+                  )}
+                  {message.role === 'assistant' && (message.learning || message.claimStatus === 'inferred') && (
+                    <div className="companion-chat__learning-actions">
+                      {message.claimStatus === 'inferred' && <button type="button" disabled={teachBusy} onClick={() => void confirmClaim(message)}><Check size={10} /> Confirm</button>}
+                      {message.learning && <button type="button" onClick={() => openTeaching(message)}><Pencil size={10} /> {message.claimId ? 'Correct' : 'Teach Companion'}</button>}
+                    </div>
+                  )}
                   <footer>
                     <span>{formatTime(message.createdAt)}</span>
                     {message.role === 'assistant' && (
