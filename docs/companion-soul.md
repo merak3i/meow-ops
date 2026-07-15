@@ -42,7 +42,23 @@ A project soul never duplicates or replaces the owner meta-prompt. The effective
 - `GET /companion/soul` returns the current private profile and available presets.
 - `POST /companion/soul` validates and appends one profile revision with a nonce.
 - `POST /companion/soul/reset` appends the default profile with a nonce.
+- `GET /companion/preferences` returns review-only preference suggestions and the learning policy.
+- `POST /companion/feedback` records one allowlisted metadata signal for one response with a nonce.
+- `POST /companion/preferences/decision` applies or dismisses one reviewed suggestion with a nonce.
 
-## Phased follow-through
+## Phase 3C: review-only preference learning
 
-Phase 3C should propose preference changes from repeated interaction patterns, but every proposal must remain review-only until the owner confirms it. Preference learning must store allowlisted feedback signals rather than raw conversation content.
+Shipped:
+
+- Direct response-style controls for answer length, challenge, and exploration.
+- Six allowlisted feedback signals: too long, needs more depth, challenge me more, too harsh, too speculative, and explore more.
+- One signal per Companion response, stored as metadata only in `~/.meow-ops/companion/preferences.jsonl`.
+- A review-only suggestion after three matching signals within 30 days.
+- Global suggestions and project-only suggestions when the answer used a project soul.
+- Owner Apply and Dismiss actions in Soul Studio. Suggestions never auto-apply.
+
+The preference ledger stores a generated response reference, signal ID, evidence gate, soul revision, project ID when applicable, and timestamp. It does not store the question, answer, transcript, prompt, or arbitrary metadata. Applying a suggestion appends a normal soul revision, so the result remains versioned and inspectable.
+
+## Phase status
+
+The planned Companion Project Intelligence build through Phase 3C is complete. Future expansion should use the same pattern: local evidence, allowlisted metadata, owner-visible review, and no silent mutation.

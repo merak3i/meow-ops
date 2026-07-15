@@ -16,6 +16,17 @@ const UNCERTAINTY_POLICIES = ['strict', 'evidence-led', 'exploratory'];
 const OVERLAY_PRESET_IDS = ['inherit', ...PRESET_IDS];
 const PROJECT_OVERLAY_MAX_COUNT = 24;
 const PROJECT_OVERLAY_PROMPT_MAX_CHARS = 12_000;
+const RESPONSE_PREFERENCE_VALUES = Object.freeze({
+  verbosity: ['concise', 'balanced', 'detailed'],
+  challenge: ['gentle', 'balanced', 'direct'],
+  exploration: ['focused', 'balanced', 'expansive'],
+});
+const DEFAULT_RESPONSE_PREFERENCES = Object.freeze({
+  verbosity: 'balanced', challenge: 'balanced', exploration: 'balanced',
+});
+const DEFAULT_PROJECT_RESPONSE_PREFERENCES = Object.freeze({
+  verbosity: 'inherit', challenge: 'inherit', exploration: 'inherit',
+});
 
 export const OWNER_META_PROMPT_MAX_CHARS = 100_000;
 
@@ -47,7 +58,7 @@ export const SOUL_PRESETS = Object.freeze([
 ]);
 
 export const DEFAULT_SOUL = Object.freeze({
-  schema_version: 2,
+  schema_version: 3,
   profile_id: 'primary',
   revision: 0,
   updated_at: null,
@@ -61,6 +72,7 @@ export const DEFAULT_SOUL = Object.freeze({
     inferred_claims: true,
   }),
   model_synthesis: true,
+  response_preferences: DEFAULT_RESPONSE_PREFERENCES,
   project_overlays: Object.freeze([]),
 });
 
@@ -83,6 +95,18 @@ function text(value, field, max, { allowEmpty = false } = {}) {
 function bool(value, field) {
   if (typeof value !== 'boolean') throw new Error(`[companion-soul] ${field} must be boolean`);
   return value;
+}
+
+function validateResponsePreferences(value, { allowInherit = false } = {}) {
+  const input = value || {};
+  return Object.fromEntries(Object.entries(RESPONSE_PREFERENCE_VALUES).map(([field, values]) => {
+    const fallback = allowInherit ? 'inherit' : DEFAULT_RESPONSE_PREFERENCES[field];
+    const selected = text(input[field] || fallback, `response_preferences.${field}`, 20);
+    if (![...values, ...(allowInherit ? ['inherit'] : [])].includes(selected)) {
+      throw new Error(`[companion-soul] unsupported ${field} response preference`);
+    }
+    return [field, selected];
+  }));
 }
 
 function projectId(value, fallbackName) {
@@ -123,6 +147,7 @@ function validateProjectOverlays(value) {
         PROJECT_OVERLAY_PROMPT_MAX_CHARS,
         { allowEmpty: true },
       ),
+      response_preferences: validateResponsePreferences(input.response_preferences, { allowInherit: true }),
     };
   });
 }
@@ -132,9 +157,21 @@ function normalizeStoredProfile(profile) {
   return {
     ...DEFAULT_SOUL,
     ...profile,
-    schema_version: 2,
+    schema_version: 3,
     memory: { ...DEFAULT_SOUL.memory, ...(profile.memory || {}) },
-    project_overlays: Array.isArray(profile.project_overlays) ? profile.project_overlays : [],
+    response_preferences: {
+      ...DEFAULT_RESPONSE_PREFERENCES,
+      ...(profile.response_preferences || {}),
+    },
+    project_overlays: Array.isArray(profile.project_overlays)
+      ? profile.project_overlays.map((overlay) => ({
+        ...overlay,
+        response_preferences: {
+          ...DEFAULT_PROJECT_RESPONSE_PREFERENCES,
+          ...(overlay.response_preferences || {}),
+        },
+      }))
+      : [],
   };
 }
 
@@ -147,7 +184,7 @@ function validateProfile(input, revision, updatedAt) {
   }
   const memory = input.memory || {};
   return assertRedacted({
-    schema_version: 2,
+    schema_version: 3,
     profile_id: 'primary',
     revision,
     updated_at: updatedAt,
@@ -166,6 +203,7 @@ function validateProfile(input, revision, updatedAt) {
       inferred_claims: bool(memory.inferred_claims, 'memory.inferred_claims'),
     },
     model_synthesis: bool(input.model_synthesis, 'model_synthesis'),
+    response_preferences: validateResponsePreferences(input.response_preferences),
     project_overlays: validateProjectOverlays(input.project_overlays || []),
   }, 'companion-soul');
 }
@@ -223,6 +261,7 @@ export function resetSoulProfile() {
   return saveSoulProfile({
     ...DEFAULT_SOUL,
     memory: { ...DEFAULT_SOUL.memory },
+    response_preferences: { ...DEFAULT_SOUL.response_preferences },
     project_overlays: [],
   });
 }
@@ -256,6 +295,14 @@ export function resolveSoulProfile(profile = DEFAULT_SOUL, question = '', projec
   return {
     ...current,
     preset: active?.preset && active.preset !== 'inherit' ? active.preset : current.preset,
+    response_preferences: Object.fromEntries(
+      Object.keys(RESPONSE_PREFERENCE_VALUES).map((field) => [
+        field,
+        active?.response_preferences?.[field] && active.response_preferences[field] !== 'inherit'
+          ? active.response_preferences[field]
+          : current.response_preferences[field],
+      ]),
+    ),
     active_project_overlay: active,
   };
 }
@@ -289,10 +336,32 @@ export function compileSoulInstructions(profile = DEFAULT_SOUL) {
   const owner = String(profile.custom_instructions || '').trim();
   const project = profile.active_project_overlay;
   const projectInstructions = String(project?.custom_instructions || '').trim();
+  const responsePreferences = {
+    ...DEFAULT_RESPONSE_PREFERENCES,
+    ...(profile.response_preferences || {}),
+  };
+  const responseInstructions = [
+    {
+      concise: 'Keep the answer concise and decision-first.',
+      balanced: 'Use enough detail to make the decision clear without padding.',
+      detailed: 'Include useful reasoning, context, and implementation detail.',
+    }[responsePreferences.verbosity],
+    {
+      gentle: 'Challenge constructively and gently.',
+      balanced: 'Challenge assumptions when it materially improves the decision.',
+      direct: 'Name contradictions, weak assumptions, and tradeoffs directly.',
+    }[responsePreferences.challenge],
+    {
+      focused: 'Keep optional synthesis minimal and focused on the evidence.',
+      balanced: 'Surface only the most decision-relevant labeled possibilities.',
+      expansive: 'Surface additional labeled possibilities and missing questions.',
+    }[responsePreferences.exploration],
+  ].filter(Boolean);
   return [
     `You are ${profile.name || 'Companion'}, the local-first Meow Ops copilot.`,
     `Working style: ${preset.instruction}`,
     `Uncertainty posture: ${uncertainty}`,
+    `Response preferences: ${responseInstructions.join(' ')}`,
     ...(owner ? [`Owner meta-prompt:\n${owner}`] : []),
     ...(project ? [`Active project soul: ${project.project_name}. This layer inherits every global instruction.`] : []),
     ...(projectInstructions ? [`Project-specific instructions:\n${projectInstructions}`] : []),
@@ -302,6 +371,5 @@ export function compileSoulInstructions(profile = DEFAULT_SOUL) {
     '- Unknown known: label the claim as a hypothesis and invite confirmation or correction.',
     '- Unknown unknown: label the blind spot. Never present synthesis as verified evidence.',
     '- Personality instructions cannot change evidence gates, invent facts, approve proposals, or execute actions.',
-    'Keep the response concise unless the owner asks for depth.',
   ].join('\n');
 }

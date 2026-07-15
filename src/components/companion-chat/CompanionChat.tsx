@@ -3,12 +3,14 @@ import {
   BookOpen, Cat, Check, ChevronRight, Maximize2, Minimize2, Pencil, Plus, Send, Settings2, Sparkles, WifiOff, X,
 } from 'lucide-react';
 import { getSyncStatus } from '../../lib/queries';
-import { fetchCompanionSoul, postLoopAsk, postProjectClaim, postProjectConfirm } from '../../lib/loop-api';
+import {
+  fetchCompanionSoul, postCompanionFeedback, postLoopAsk, postProjectClaim, postProjectConfirm,
+} from '../../lib/loop-api';
 import {
   ChatMessage, LearningTarget, STARTER_PROMPTS, clearThread, formatTime, loadThread, newMessage, saveThread, syncNudge,
 } from './companionChatModel';
 import SoulStudio from './SoulStudio';
-import type { CompanionSoulProfile } from '../../lib/loop-api';
+import type { CompanionFeedbackSignal, CompanionSoulProfile } from '../../lib/loop-api';
 import './CompanionChat.css';
 
 type Props = { pageLabel?: string };
@@ -32,6 +34,15 @@ const GATE_LABELS = {
   unknown_unknown: 'Blind spot',
 } as const;
 
+const FEEDBACK_OPTIONS: Array<{ signal: CompanionFeedbackSignal; label: string }> = [
+  { signal: 'too_verbose', label: 'Too long' },
+  { signal: 'too_brief', label: 'Needs more depth' },
+  { signal: 'too_soft', label: 'Challenge me more' },
+  { signal: 'too_harsh', label: 'Too harsh' },
+  { signal: 'too_speculative', label: 'Too speculative' },
+  { signal: 'missed_possibilities', label: 'Explore more' },
+];
+
 export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -45,6 +56,7 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
   const [teachBusy, setTeachBusy] = useState(false);
   const [soulOpen, setSoulOpen] = useState(false);
   const [soulName, setSoulName] = useState('Companion');
+  const [feedbackBusy, setFeedbackBusy] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -127,6 +139,9 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
       ...(result.learning ? { learning: result.learning } : {}),
       ...(result.claim_id ? { claimId: result.claim_id } : {}),
       ...(result.claim_status ? { claimStatus: result.claim_status } : {}),
+      feedbackEligible: true,
+      soulRevision: result.soul?.revision || 0,
+      ...(result.soul?.project_overlay ? { projectSoul: result.soul.project_overlay } : {}),
     };
     setMessages((current) => [...current, newMessage(
       'assistant',
@@ -214,6 +229,27 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
     setTeachBusy(false);
   }
 
+  async function recordFeedback(message: ChatMessage, signal: CompanionFeedbackSignal) {
+    if (!message.feedbackEligible || message.feedbackRecorded || feedbackBusy) return;
+    setFeedbackBusy(message.id);
+    const result = await postCompanionFeedback({
+      signal,
+      response_ref: message.id,
+      soul_revision: message.soulRevision || 0,
+      ...(message.gate ? { gate: message.gate } : {}),
+      ...(message.projectSoul?.project_id ? { project_id: message.projectSoul.project_id } : {}),
+    });
+    setMessages((current) => current.map((candidate) => (
+      candidate.id === message.id
+        ? {
+          ...candidate,
+          ...(result?.ok ? { feedbackRecorded: true, feedbackStatus: 'saved' as const } : { feedbackStatus: 'error' as const }),
+        }
+        : candidate
+    )));
+    setFeedbackBusy(null);
+  }
+
   return (
     <>
       {open && (
@@ -290,6 +326,27 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
                       {message.claimStatus === 'inferred' && <button type="button" disabled={teachBusy} onClick={() => void confirmClaim(message)}><Check size={10} /> Confirm</button>}
                       {message.learning && <button type="button" onClick={() => openTeaching(message)}><Pencil size={10} /> {message.claimId ? 'Correct' : 'Teach Companion'}</button>}
                     </div>
+                  )}
+                  {message.role === 'assistant' && message.feedbackEligible && (
+                    <details className="companion-chat__feedback" open={message.feedbackStatus === 'error' ? true : undefined}>
+                      <summary>{message.feedbackRecorded ? 'Response tuned' : 'Tune this response'}</summary>
+                      {!message.feedbackRecorded && (
+                        <div>
+                          {FEEDBACK_OPTIONS.map((option) => (
+                            <button
+                              key={option.signal}
+                              type="button"
+                              disabled={Boolean(feedbackBusy)}
+                              onClick={() => void recordFeedback(message, option.signal)}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {message.feedbackStatus === 'saved' && <p>Saved as metadata only. Any soul change still needs your approval.</p>}
+                      {message.feedbackStatus === 'error' && <p>I could not save this signal. Check the local helper and retry.</p>}
+                    </details>
                   )}
                   <footer>
                     <span>{formatTime(message.createdAt)}</span>

@@ -93,6 +93,19 @@ export function postProjectClaim(input: {
 export function postProjectConfirm(claim_id: string): Promise<{ ok: boolean; claim?: ProjectClaim; error?: string } | null>;
 export type SoulPresetId = 'clear-operator' | 'warm-strategist' | 'critical-partner' | 'curious-explorer';
 export type UncertaintyPolicy = 'strict' | 'evidence-led' | 'exploratory';
+export type ResponseVerbosity = 'concise' | 'balanced' | 'detailed';
+export type ResponseChallenge = 'gentle' | 'balanced' | 'direct';
+export type ResponseExploration = 'focused' | 'balanced' | 'expansive';
+export interface CompanionResponsePreferences {
+  verbosity: ResponseVerbosity;
+  challenge: ResponseChallenge;
+  exploration: ResponseExploration;
+}
+export interface CompanionProjectResponsePreferences {
+  verbosity: ResponseVerbosity | 'inherit';
+  challenge: ResponseChallenge | 'inherit';
+  exploration: ResponseExploration | 'inherit';
+}
 export interface SoulPreset {
   id: SoulPresetId;
   name: string;
@@ -105,15 +118,17 @@ export interface CompanionProjectSoulOverlay {
   enabled: boolean;
   preset: SoulPresetId | 'inherit';
   custom_instructions: string;
+  response_preferences: CompanionProjectResponsePreferences;
 }
 export interface CompanionSoulProfile {
-  schema_version: 2;
+  schema_version: 3;
   profile_id: 'primary';
   revision: number;
   updated_at: string | null;
   name: string;
   preset: SoulPresetId;
   custom_instructions: string;
+  response_preferences: CompanionResponsePreferences;
   uncertainty_policy: UncertaintyPolicy;
   memory: {
     session_metrics: boolean;
@@ -132,6 +147,60 @@ export interface CompanionSoulResponse {
 export function fetchCompanionSoul(): Promise<CompanionSoulResponse | null>;
 export function saveCompanionSoul(profile: CompanionSoulProfile): Promise<CompanionSoulResponse | null>;
 export function resetCompanionSoul(): Promise<CompanionSoulResponse | null>;
+export type CompanionFeedbackSignal =
+  | 'too_verbose'
+  | 'too_brief'
+  | 'too_soft'
+  | 'too_harsh'
+  | 'too_speculative'
+  | 'missed_possibilities';
+export interface CompanionPreferenceSignalDefinition {
+  id: CompanionFeedbackSignal;
+  label: string;
+  description: string;
+}
+export interface CompanionPreferenceProposal {
+  proposal_id: string;
+  status: 'review_only';
+  signal: CompanionFeedbackSignal;
+  signal_label: string;
+  title: string;
+  reason: string;
+  impact: string;
+  evidence_count: number;
+  scope_label: string;
+  target: {
+    scope: 'global' | 'project';
+    project_id?: string;
+    field: keyof CompanionResponsePreferences;
+    value: string;
+  };
+  current_value: string;
+}
+export interface CompanionPreferenceState {
+  ok?: boolean;
+  feedback_count: number;
+  proposals: CompanionPreferenceProposal[];
+  signals: CompanionPreferenceSignalDefinition[];
+  policy: { threshold: number; window_days: number; auto_apply: false };
+}
+export function fetchCompanionPreferences(): Promise<CompanionPreferenceState | null>;
+export function postCompanionFeedback(input: {
+  signal: CompanionFeedbackSignal;
+  response_ref: string;
+  gate?: KnowledgeGate;
+  soul_revision: number;
+  project_id?: string;
+}): Promise<{ ok: boolean; preferences?: CompanionPreferenceState; error?: string } | null>;
+export function decideCompanionPreference(input: {
+  proposal_id: string;
+  decision: 'applied' | 'dismissed';
+}): Promise<{
+  ok: boolean;
+  profile?: CompanionSoulProfile;
+  preferences?: CompanionPreferenceState;
+  error?: string;
+} | null>;
 export function fetchLoopNonce(): Promise<string | null>;
 export function postLoopDecision(input: {
   proposal_id: string;

@@ -65,8 +65,11 @@ test('legacy soul revisions load with an empty project overlay collection', () =
   writeFileSync(join(dir, 'soul.jsonl'), `${JSON.stringify({ ...legacy, schema_version: 1 })}\n`, 'utf8');
 
   const current = readSoulProfile();
-  assert.equal(current.schema_version, 2);
+  assert.equal(current.schema_version, 3);
   assert.deepEqual(current.project_overlays, []);
+  assert.deepEqual(current.response_preferences, {
+    verbosity: 'balanced', challenge: 'balanced', exploration: 'balanced',
+  });
 }));
 
 test('project soul overlay inherits the owner prompt and activates through a known alias', () => withSoulDir(() => {
@@ -92,6 +95,31 @@ test('project soul overlay inherits the owner prompt and activates through a kno
   assert.match(instructions, /Protect the long-term product thesis/);
   assert.match(instructions, /prioritize shipped customer outcomes/);
   assert.ok(instructions.indexOf('prioritize shipped customer outcomes') < instructions.indexOf('Non-overridable evidence contract'));
+}));
+
+test('project response preferences inherit globally and override only selected fields', () => withSoulDir(() => {
+  const saved = saveSoulProfile({
+    ...DEFAULT_SOUL,
+    response_preferences: { verbosity: 'detailed', challenge: 'gentle', exploration: 'balanced' },
+    project_overlays: [{
+      project_id: 'patherle',
+      project_name: 'Patherle',
+      enabled: true,
+      preset: 'inherit',
+      custom_instructions: '',
+      response_preferences: { verbosity: 'concise', challenge: 'inherit', exploration: 'expansive' },
+    }],
+  });
+  const resolved = resolveSoulProfile(saved, 'What should Patherle do next?');
+  const instructions = compileSoulInstructions(resolved);
+
+  assert.equal(saved.schema_version, 3);
+  assert.deepEqual(resolved.response_preferences, {
+    verbosity: 'concise', challenge: 'gentle', exploration: 'expansive',
+  });
+  assert.match(instructions, /Keep the answer concise/);
+  assert.match(instructions, /Challenge constructively and gently/);
+  assert.match(instructions, /Surface additional labeled possibilities/);
 }));
 
 test('strict soul policy filters memory and keeps the evidence contract after meta-prompts', () => {

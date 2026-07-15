@@ -20,6 +20,11 @@ export type ChatMessage = {
   learning?: LearningTarget;
   claimId?: string;
   claimStatus?: 'inferred' | 'owner_confirmed' | 'stale' | 'contradicted';
+  feedbackEligible?: boolean;
+  feedbackRecorded?: boolean;
+  feedbackStatus?: 'saved' | 'error';
+  soulRevision?: number;
+  projectSoul?: { project_id: string; project_name: string };
 };
 
 export const STARTER_PROMPTS = [

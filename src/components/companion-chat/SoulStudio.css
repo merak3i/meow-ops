@@ -55,6 +55,22 @@
 .soul-studio__overlay-enabled { display: flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: 7px; cursor: pointer; }
 .soul-studio__overlay-enabled input { width: 26px; height: 14px; accent-color: var(--accent); }
 .soul-studio__empty { margin: 0; padding: 8px 0 1px; color: var(--text-muted); font-size: 8px; line-height: 1.45; }
+.soul-studio__response-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.soul-studio__overlay-response { padding-top: 1px; color: var(--text-muted); font-size: 8px; }
+.soul-studio__overlay-response summary { cursor: pointer; color: var(--text-secondary); }
+.soul-studio__overlay-response .soul-studio__response-grid { margin-top: 8px; }
+.soul-studio__preference-policy { margin: -2px 0 10px; color: var(--text-muted); font-size: 8px; line-height: 1.5; }
+.soul-studio__preference-list { display: grid; gap: 8px; }
+.soul-studio__preference { display: grid; gap: 7px; padding: 10px; border: 1px solid color-mix(in oklab, var(--warning) 35%, var(--border)); border-radius: 9px; background: color-mix(in oklab, var(--warning) 5%, var(--bg-card)); }
+.soul-studio__preference header { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
+.soul-studio__preference header > div { display: grid; gap: 2px; }
+.soul-studio__preference strong { color: var(--text-primary); font-size: 9px; font-weight: 500; text-transform: capitalize; }
+.soul-studio__preference small, .soul-studio__preference p { margin: 0; color: var(--text-muted); font-size: 7px; line-height: 1.45; }
+.soul-studio__preference header > span { padding: 2px 5px; border: 1px solid color-mix(in oklab, var(--warning) 45%, var(--border)); border-radius: 999px; color: var(--warning); font-size: 6px; letter-spacing: .35px; text-transform: uppercase; }
+.soul-studio__preference > div { display: flex; justify-content: flex-end; gap: 6px; }
+.soul-studio__preference button { display: inline-flex; align-items: center; gap: 4px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 7px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 8px; cursor: pointer; }
+.soul-studio__preference button:last-child { border-color: color-mix(in oklab, var(--accent) 55%, var(--border)); background: color-mix(in oklab, var(--accent) 10%, transparent); }
+.soul-studio__preference button:disabled { opacity: .45; cursor: default; }
 
 .soul-studio__contract { margin-top: 10px; padding: 13px; border: 1px solid color-mix(in oklab, var(--success) 35%, var(--border)); border-radius: 11px; background: color-mix(in oklab, var(--success) 5%, var(--bg-page)); }
 .soul-studio__contract header { display: flex; align-items: flex-start; gap: 8px; color: var(--success); }
@@ -78,6 +94,7 @@
   .soul-studio__presets, .soul-studio__contract > div { grid-template-columns: 1fr; }
   .soul-studio__overlay-add { grid-template-columns: 1fr; }
   .soul-studio__overlay-add > button { justify-content: center; }
+  .soul-studio__response-grid { grid-template-columns: 1fr; }
   .soul-studio__footer { bottom: -14px; margin: 12px -14px -14px; padding: 10px 14px; align-items: flex-start; flex-direction: column; }
   .soul-studio__footer > div { width: 100%; }
   .soul-studio__footer button { flex: 1; justify-content: center; }

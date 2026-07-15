@@ -21,6 +21,7 @@ let ledgerDir;
 let sessionsFile;
 let projectDir;
 let soulDir;
+let preferenceDir;
 let previousLoopDir;
 let pendingProposal;
 let draftProposal;
@@ -166,6 +167,24 @@ async function resetSoul() {
   return { status: res.status, body: await res.json() };
 }
 
+async function postCompanionFeedback(payload) {
+  const res = await fetch(`${BASE}/companion/feedback`, {
+    method: 'POST',
+    headers: { ...LOCAL_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, nonce: await nonce() }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+async function decidePreference(payload) {
+  const res = await fetch(`${BASE}/companion/preferences/decision`, {
+    method: 'POST',
+    headers: { ...LOCAL_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, nonce: await nonce() }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
 async function nonce() {
   const res = await getJson('/loop-eng/nonce');
   assert.equal(res.status, 200);
@@ -178,6 +197,7 @@ before(async () => {
   sessionsFile = join(ledgerDir, 'sessions.json');
   projectDir = join(ledgerDir, 'project-intelligence');
   soulDir = join(ledgerDir, 'companion-soul');
+  preferenceDir = join(ledgerDir, 'companion-preferences');
   writeFileSync(sessionsFile, JSON.stringify([
     { project: 'BergLabs', duration_seconds: 7200, started_at: new Date().toISOString(), source: 'codex' },
     { project: 'Patherle', duration_seconds: 1800, started_at: new Date().toISOString(), source: 'claude' },
@@ -214,6 +234,7 @@ before(async () => {
       MEOW_SESSIONS_FILE: sessionsFile,
       MEOW_PROJECT_INTELLIGENCE_DIR: projectDir,
       MEOW_COMPANION_SOUL_DIR: soulDir,
+      MEOW_COMPANION_PREFERENCE_DIR: preferenceDir,
     },
     stdio: 'pipe',
   });
@@ -350,6 +371,33 @@ test('Companion activates the matching project soul overlay for an answer', asyn
   assert.equal(answer.status, 200);
   assert.equal(answer.body.soul.preset, 'critical-partner');
   assert.equal(answer.body.soul.project_overlay.project_id, 'berglabs');
+});
+
+test('Companion feedback stays review-only until the owner applies its proposal', async () => {
+  const soul = await getJson('/companion/soul');
+  for (let index = 1; index <= 3; index++) {
+    const feedback = await postCompanionFeedback({
+      signal: 'too_verbose',
+      response_ref: `api-preference-${index}`,
+      gate: 'known_known',
+      soul_revision: soul.body.profile.revision,
+    });
+    assert.equal(feedback.status, 201);
+  }
+
+  const before = await getJson('/companion/preferences');
+  assert.equal(before.status, 200);
+  assert.equal(before.body.proposals.length, 1);
+  assert.equal(before.body.proposals[0].status, 'review_only');
+  assert.equal(soul.body.profile.response_preferences.verbosity, 'balanced');
+
+  const decision = await decidePreference({
+    proposal_id: before.body.proposals[0].proposal_id,
+    decision: 'applied',
+  });
+  assert.equal(decision.status, 200);
+  assert.equal(decision.body.profile.response_preferences.verbosity, 'concise');
+  assert.deepEqual(decision.body.preferences.proposals, []);
 });
 
 test('GET /loop-eng/summary reports system-expired drafts outside rejected counts', async () => {

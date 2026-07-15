@@ -27,4 +27,6 @@ Project and confirmation writes stay local. The hosted demo cannot read or mutat
 - Phases 0 to 2: deterministic project metrics, private project facts, and the four evidence gates.
 - Phase 3A: [Companion Soul Studio](./companion-soul.md) for owner-controlled personality, meta-prompts, uncertainty posture, and memory permissions.
 - Phase 3B: inherited project-specific soul overlays with alias-aware runtime activation.
-- Phase 3C: planned review-only preference proposals from repeated patterns.
+- Phase 3C: shipped metadata-only feedback, direct response-style controls, and review-only preference suggestions that require owner Apply or Dismiss.
+
+The planned build through Phase 3C is complete. See [Companion Soul Studio](./companion-soul.md) for the current privacy contract and operator flow.

@@ -194,6 +194,33 @@ export async function resetCompanionSoul() {
   return result && typeof result === 'object' ? result : null;
 }
 
+export async function fetchCompanionPreferences() {
+  const data = await fetchLoopJson('/companion/preferences');
+  return data && typeof data === 'object' ? data : null;
+}
+
+export async function postCompanionFeedback({ signal, response_ref, gate, soul_revision, project_id }) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+  const result = await postJson(`${base}/companion/feedback`, {
+    nonce, signal, response_ref, gate, soul_revision, project_id,
+  });
+  return result && typeof result === 'object' ? result : null;
+}
+
+export async function decideCompanionPreference({ proposal_id, decision }) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+  const result = await postJson(`${base}/companion/preferences/decision`, {
+    nonce, proposal_id, decision,
+  });
+  return result && typeof result === 'object' ? result : null;
+}
+
 export async function fetchLoopNonce() {
   const data = await fetchLoopJson('/loop-eng/nonce');
   return typeof data?.nonce === 'string' ? data.nonce : null;

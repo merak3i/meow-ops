@@ -34,6 +34,10 @@ import {
   applySoulPolicy, compileSoulInstructions, readSoulProfile, resetSoulProfile,
   resolveSoulProfile, saveSoulProfile, SOUL_PRESETS,
 } from './companion-soul.mjs';
+import {
+  appendCompanionFeedback, applyPreferenceProposal, readPreferenceState,
+  recordPreferenceDecision,
+} from './companion-preferences.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -475,6 +479,80 @@ const server = createServer(async (req, res) => {
       sendJson(res, 200, { ok: true, profile: resetSoulProfile() });
     } catch (err) {
       ruleError(res, 400, 'companion-soul', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (path === '/companion/preferences' && req.method === 'GET') {
+    sendJson(res, 200, { ok: true, ...readPreferenceState(readSoulProfile()) });
+    return;
+  }
+
+  if (path === '/companion/feedback' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      const feedback = appendCompanionFeedback(body);
+      sendJson(res, 201, {
+        ok: true,
+        feedback,
+        preferences: readPreferenceState(readSoulProfile()),
+      });
+    } catch (err) {
+      ruleError(res, 400, 'companion-feedback', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (path === '/companion/preferences/decision' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      const current = readSoulProfile();
+      const proposal = readPreferenceState(current).proposals
+        .find((candidate) => candidate.proposal_id === body.proposal_id);
+      if (!proposal) {
+        ruleError(res, 404, 'companion-preference', 'preference proposal not found');
+        return;
+      }
+      if (!['applied', 'dismissed'].includes(body.decision)) {
+        ruleError(res, 400, 'companion-preference', 'decision must be applied or dismissed');
+        return;
+      }
+      const profile = body.decision === 'applied'
+        ? saveSoulProfile(applyPreferenceProposal(current, proposal))
+        : current;
+      const decision = recordPreferenceDecision({
+        proposal_id: proposal.proposal_id,
+        decision: body.decision,
+        soul_revision: profile.revision,
+      });
+      sendJson(res, 200, {
+        ok: true,
+        decision,
+        profile,
+        preferences: readPreferenceState(profile),
+      });
+    } catch (err) {
+      ruleError(res, 400, 'companion-preference', err instanceof Error ? err.message : String(err));
     }
     return;
   }

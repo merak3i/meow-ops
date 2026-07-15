@@ -3,11 +3,13 @@ import {
   ArrowLeft, Cat, Check, LockKeyhole, Plus, RotateCcw, Save, ShieldCheck, Trash2,
 } from 'lucide-react';
 import {
-  fetchCompanionSoul, fetchProjectIntelligenceSnapshot, resetCompanionSoul, saveCompanionSoul,
+  decideCompanionPreference, fetchCompanionPreferences, fetchCompanionSoul,
+  fetchProjectIntelligenceSnapshot, resetCompanionSoul, saveCompanionSoul,
 } from '../../lib/loop-api';
 import type {
-  CompanionProjectSoulOverlay, CompanionSoulProfile, ProjectIntelligenceProject, SoulPreset,
-  SoulPresetId, UncertaintyPolicy,
+  CompanionPreferenceState, CompanionProjectSoulOverlay, CompanionResponsePreferences,
+  CompanionSoulProfile, ProjectIntelligenceProject, ResponseChallenge, ResponseExploration,
+  ResponseVerbosity, SoulPreset, SoulPresetId, UncertaintyPolicy,
 } from '../../lib/loop-api';
 import './SoulStudio.css';
 
@@ -31,17 +33,25 @@ const FALLBACK_PRESETS: SoulPreset[] = [
 ];
 
 export const DEFAULT_SOUL_PROFILE: CompanionSoulProfile = {
-  schema_version: 2,
+  schema_version: 3,
   profile_id: 'primary',
   revision: 0,
   updated_at: null,
   name: 'Companion',
   preset: 'clear-operator',
   custom_instructions: '',
+  response_preferences: { verbosity: 'balanced', challenge: 'balanced', exploration: 'balanced' },
   uncertainty_policy: 'evidence-led',
   memory: { session_metrics: true, project_facts: true, inferred_claims: true },
   model_synthesis: true,
   project_overlays: [],
+};
+
+const DEFAULT_PREFERENCE_STATE: CompanionPreferenceState = {
+  feedback_count: 0,
+  proposals: [],
+  signals: [],
+  policy: { threshold: 3, window_days: 30, auto_apply: false },
 };
 
 const OWNER_META_PROMPT_MAX_CHARS = 100_000;
@@ -69,9 +79,15 @@ function cloneProfile(profile: CompanionSoulProfile): CompanionSoulProfile {
   return {
     ...DEFAULT_SOUL_PROFILE,
     ...profile,
-    schema_version: 2,
+    schema_version: 3,
     memory: { ...DEFAULT_SOUL_PROFILE.memory, ...profile.memory },
-    project_overlays: (profile.project_overlays || []).map((overlay) => ({ ...overlay })),
+    response_preferences: { ...DEFAULT_SOUL_PROFILE.response_preferences, ...profile.response_preferences },
+    project_overlays: (profile.project_overlays || []).map((overlay) => ({
+      ...overlay,
+      response_preferences: Object.assign({
+        verbosity: 'inherit', challenge: 'inherit', exploration: 'inherit',
+      }, overlay.response_preferences || {}),
+    })),
   };
 }
 
@@ -85,11 +101,15 @@ export default function SoulStudio({ onClose, onProfile }: Props) {
   const [projects, setProjects] = useState<ProjectIntelligenceProject[]>([]);
   const [newProject, setNewProject] = useState('');
   const [busy, setBusy] = useState(false);
+  const [preferenceBusy, setPreferenceBusy] = useState<string | null>(null);
+  const [preferences, setPreferences] = useState<CompanionPreferenceState>(DEFAULT_PREFERENCE_STATE);
   const [status, setStatus] = useState<'loading' | 'ready' | 'saved' | 'offline' | 'error'>('loading');
 
   useEffect(() => {
     let mounted = true;
-    Promise.all([fetchCompanionSoul(), fetchProjectIntelligenceSnapshot()]).then(([result, snapshot]) => {
+    Promise.all([
+      fetchCompanionSoul(), fetchProjectIntelligenceSnapshot(), fetchCompanionPreferences(),
+    ]).then(([result, snapshot, preferenceState]) => {
       if (!mounted) return;
       if (result?.profile) {
         setProfile(cloneProfile(result.profile));
@@ -100,6 +120,7 @@ export default function SoulStudio({ onClose, onProfile }: Props) {
         setStatus('offline');
       }
       if (snapshot?.projects) setProjects(snapshot.projects);
+      if (preferenceState) setPreferences(preferenceState);
     });
     return () => { mounted = false; };
   }, [onProfile]);
@@ -126,11 +147,38 @@ export default function SoulStudio({ onClose, onProfile }: Props) {
     setStatus('ready');
   }
 
+  function setResponsePreference<Key extends keyof CompanionResponsePreferences>(
+    key: Key,
+    value: CompanionResponsePreferences[Key],
+  ) {
+    setProfile((current) => ({
+      ...current,
+      response_preferences: { ...current.response_preferences, [key]: value },
+    }));
+    setStatus('ready');
+  }
+
   function updateOverlay(projectId: string, patch: Partial<CompanionProjectSoulOverlay>) {
     setProfile((current) => ({
       ...current,
       project_overlays: current.project_overlays.map((overlay) => (
         overlay.project_id === projectId ? { ...overlay, ...patch } : overlay
+      )),
+    }));
+    setStatus('ready');
+  }
+
+  function updateOverlayPreference(
+    projectId: string,
+    key: keyof CompanionResponsePreferences,
+    value: string,
+  ) {
+    setProfile((current) => ({
+      ...current,
+      project_overlays: current.project_overlays.map((overlay) => (
+        overlay.project_id === projectId
+          ? { ...overlay, response_preferences: { ...overlay.response_preferences, [key]: value } }
+          : overlay
       )),
     }));
     setStatus('ready');
@@ -154,6 +202,7 @@ export default function SoulStudio({ onClose, onProfile }: Props) {
         enabled: true,
         preset: 'inherit',
         custom_instructions: '',
+        response_preferences: { verbosity: 'inherit', challenge: 'inherit', exploration: 'inherit' },
       }],
     }));
     setNewProject('');
@@ -176,6 +225,8 @@ export default function SoulStudio({ onClose, onProfile }: Props) {
     if (result?.profile) {
       setProfile(cloneProfile(result.profile));
       onProfile(result.profile);
+      const preferenceState = await fetchCompanionPreferences();
+      if (preferenceState) setPreferences(preferenceState);
       setStatus('saved');
     } else {
       setStatus(result ? 'error' : 'offline');
@@ -190,11 +241,28 @@ export default function SoulStudio({ onClose, onProfile }: Props) {
     if (result?.profile) {
       setProfile(cloneProfile(result.profile));
       onProfile(result.profile);
+      const preferenceState = await fetchCompanionPreferences();
+      if (preferenceState) setPreferences(preferenceState);
       setStatus('saved');
     } else {
       setStatus(result ? 'error' : 'offline');
     }
     setBusy(false);
+  }
+
+  async function decidePreference(proposalId: string, decision: 'applied' | 'dismissed') {
+    if (preferenceBusy) return;
+    setPreferenceBusy(proposalId);
+    const result = await decideCompanionPreference({ proposal_id: proposalId, decision });
+    if (result?.ok && result.profile && result.preferences) {
+      setProfile(cloneProfile(result.profile));
+      setPreferences(result.preferences);
+      onProfile(result.profile);
+      setStatus('saved');
+    } else {
+      setStatus(result ? 'error' : 'offline');
+    }
+    setPreferenceBusy(null);
   }
 
   return (
@@ -219,6 +287,46 @@ export default function SoulStudio({ onClose, onProfile }: Props) {
               <span>{profile.preset === preset.id && <Check size={11} />}{preset.name}</span><small>{preset.description}</small>
             </button>
           ))}
+        </div>
+      </section>
+
+      <section className="soul-studio__section">
+        <div className="soul-studio__section-title"><div><h3>Response style</h3><p>Tune answer length, challenge, and exploration directly.</p></div></div>
+        <div className="soul-studio__response-grid">
+          <label className="soul-studio__field">Answer length
+            <select aria-label="Answer length" value={profile.response_preferences.verbosity} onChange={(event) => setResponsePreference('verbosity', event.target.value as ResponseVerbosity)}>
+              <option value="concise">Concise</option><option value="balanced">Balanced</option><option value="detailed">Detailed</option>
+            </select>
+          </label>
+          <label className="soul-studio__field">Challenge style
+            <select aria-label="Challenge style" value={profile.response_preferences.challenge} onChange={(event) => setResponsePreference('challenge', event.target.value as ResponseChallenge)}>
+              <option value="gentle">Gentle</option><option value="balanced">Balanced</option><option value="direct">Direct</option>
+            </select>
+          </label>
+          <label className="soul-studio__field">Exploration
+            <select aria-label="Exploration style" value={profile.response_preferences.exploration} onChange={(event) => setResponsePreference('exploration', event.target.value as ResponseExploration)}>
+              <option value="focused">Focused</option><option value="balanced">Balanced</option><option value="expansive">Expansive</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section className="soul-studio__section">
+        <div className="soul-studio__section-title"><div><h3>Suggested refinements</h3><p>Companion notices repeated feedback metadata. It never auto-applies a change.</p></div><span className="soul-studio__count">{preferences.proposals.length} ready</span></div>
+        <p className="soul-studio__preference-policy">A suggestion appears after {preferences.policy.threshold} matching signals within {preferences.policy.window_days} days. Raw questions and responses are never written to this learning ledger.</p>
+        <div className="soul-studio__preference-list">
+          {preferences.proposals.map((proposal) => (
+            <article key={proposal.proposal_id} className="soul-studio__preference">
+              <header><div><strong>{proposal.title}</strong><small>{proposal.scope_label} · {proposal.evidence_count} signals</small></div><span>Review only</span></header>
+              <p>{proposal.impact}</p>
+              <p><strong>{proposal.target.field}</strong>: {proposal.current_value} → {proposal.target.value}</p>
+              <div>
+                <button type="button" disabled={Boolean(preferenceBusy)} onClick={() => void decidePreference(proposal.proposal_id, 'dismissed')}>Dismiss</button>
+                <button type="button" disabled={Boolean(preferenceBusy)} onClick={() => void decidePreference(proposal.proposal_id, 'applied')}><Check size={11} /> Apply to soul</button>
+              </div>
+            </article>
+          ))}
+          {preferences.proposals.length === 0 && <p className="soul-studio__empty">No refinements need review. Use “Tune this response” after a Companion answer to teach response preferences safely.</p>}
         </div>
       </section>
 
@@ -258,6 +366,26 @@ export default function SoulStudio({ onClose, onProfile }: Props) {
                 <textarea aria-label={`${overlay.project_name} soul instructions`} value={overlay.custom_instructions} maxLength={PROJECT_OVERLAY_PROMPT_MAX_CHARS} rows={4} placeholder="What should Companion emphasize only for this project?" onChange={(event) => updateOverlay(overlay.project_id, { custom_instructions: event.target.value })} />
                 <small>{overlay.custom_instructions.length.toLocaleString()} / {PROJECT_OVERLAY_PROMPT_MAX_CHARS.toLocaleString()}</small>
               </label>
+              <details className="soul-studio__overlay-response">
+                <summary>Project response style</summary>
+                <div className="soul-studio__response-grid">
+                  <label className="soul-studio__field">Answer length
+                    <select aria-label={`${overlay.project_name} answer length`} value={overlay.response_preferences.verbosity} onChange={(event) => updateOverlayPreference(overlay.project_id, 'verbosity', event.target.value)}>
+                      <option value="inherit">Inherit global</option><option value="concise">Concise</option><option value="balanced">Balanced</option><option value="detailed">Detailed</option>
+                    </select>
+                  </label>
+                  <label className="soul-studio__field">Challenge
+                    <select aria-label={`${overlay.project_name} challenge style`} value={overlay.response_preferences.challenge} onChange={(event) => updateOverlayPreference(overlay.project_id, 'challenge', event.target.value)}>
+                      <option value="inherit">Inherit global</option><option value="gentle">Gentle</option><option value="balanced">Balanced</option><option value="direct">Direct</option>
+                    </select>
+                  </label>
+                  <label className="soul-studio__field">Exploration
+                    <select aria-label={`${overlay.project_name} exploration style`} value={overlay.response_preferences.exploration} onChange={(event) => updateOverlayPreference(overlay.project_id, 'exploration', event.target.value)}>
+                      <option value="inherit">Inherit global</option><option value="focused">Focused</option><option value="balanced">Balanced</option><option value="expansive">Expansive</option>
+                    </select>
+                  </label>
+                </div>
+              </details>
             </article>
           ))}
           {profile.project_overlays.length === 0 && <p className="soul-studio__empty">No project layers yet. Global soul settings apply everywhere.</p>}
