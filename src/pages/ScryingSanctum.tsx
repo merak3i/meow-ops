@@ -2128,6 +2128,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
   const costGauge = Math.min(1, groupCost / dayMaxCost);
 
   const [eventQueue, setEventQueue] = useState<Array<{ beat: SanctumEventBeat; key: number }>>([]);
+  const [eventNow, setEventNow] = useState(() => Date.now());
   const eventSequenceRef = useRef(0);
   const previousEventSnapshot = useRef<EventSnapshot | null>(null);
   const eventContextRef = useRef(group?.id ?? null);
@@ -2137,16 +2138,21 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
   }, []);
 
   useEffect(() => {
+    const id = window.setInterval(() => setEventNow(Date.now()), 10_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     const contextId = group?.id ?? null;
     if (eventContextRef.current !== contextId) {
       eventContextRef.current = contextId;
       previousEventSnapshot.current = null;
       setEventQueue([]);
     }
-    const next = snapshotSessions(flatNodes.map((node) => node.session), selected, groupCost, contextId);
+    const next = snapshotSessions(flatNodes.map((node) => node.session), selected, groupCost, contextId, eventNow);
     enqueueBeats(diffEventSnapshots(previousEventSnapshot.current, next));
     previousEventSnapshot.current = next;
-  }, [enqueueBeats, flatNodes, group?.id, groupCost, selected]);
+  }, [enqueueBeats, eventNow, flatNodes, group?.id, groupCost, selected]);
 
   const activeEvent = eventQueue[0];
   useEffect(() => {
