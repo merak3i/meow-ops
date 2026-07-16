@@ -202,30 +202,6 @@ function ArcaneFloor() {
     return lines;
   }, []);
 
-  // Generate hex tile grid positions within radius 12 — inner sanctum vs outer courtyard.
-  // `tone` gives the floor subtle Dalaran stone variation without turning it
-  // into a patchwork.
-  const hexTiles = useMemo(() => {
-    const tiles: { x: number; z: number; dark: boolean; inner: boolean; tone: number }[] = [];
-    const size = 1.1;
-    const h = size * Math.sqrt(3);
-    for (let row = -12; row <= 12; row++) {
-      for (let col = -12; col <= 12; col++) {
-        const x = col * size * 1.5;
-        const z = row * h + (col % 2 !== 0 ? h / 2 : 0);
-        if (x * x + z * z > 12 * 12) continue;
-        tiles.push({
-          x,
-          z,
-          dark: (row + col) % 2 === 0,
-          inner: x * x + z * z < 5 * 5,
-          tone: Math.abs((row * 5 + col * 3) % 5),
-        });
-      }
-    }
-    return tiles;
-  }, []);
-
   return (
     <>
       {/* Main dark ground — Dalaran D3 marble texture, now lit (PBR-lite).
@@ -240,32 +216,6 @@ function ArcaneFloor() {
           emissive={PAL.night900} emissiveIntensity={0.10}
           roughness={0.7} metalness={0.1} />
       </mesh>
-      {/* Hex stone tile pattern — unified violet stone with faint blue/gold
-          shifts so the color is present but no longer confetti-like. */}
-      {hexTiles.map((tile, i) => {
-        const base = tile.inner ? PAL.stone500 : PAL.night700;
-        const tint = tile.tone === 0 ? PAL.stone300
-          : tile.tone === 1 ? PAL.cyan
-          : tile.tone === 2 ? PAL.gold
-          : PAL.stone500;
-        const color = blendHex(base, tint, tile.inner ? 0.12 : 0.08);
-        const finalColor = tile.dark
-          ? blendHex(color, PAL.night900, tile.inner ? 0.10 : 0.14)
-          : color;
-        return (
-          <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.048, tile.z]}>
-            <circleGeometry args={[0.52, 6]} />
-            <meshBasicMaterial color={finalColor} />
-          </mesh>
-        );
-      })}
-      {/* Hex tile gap lines — faint grid overlay */}
-      {hexTiles.map((tile, i) => (
-        <mesh key={`r${i}`} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.046, tile.z]}>
-          <ringGeometry args={[0.50, 0.54, 6]} />
-          <meshBasicMaterial color={PAL.night900} transparent opacity={0.48} />
-        </mesh>
-      ))}
       {/* Ward ring — boundary between inner sanctum and outer courtyard */}
       <mesh ref={wardRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.038, 0]}>
         <ringGeometry args={[4.9, 5.15, 64]} />
@@ -375,52 +325,6 @@ function ArcanePaths() {
   );
 }
 
-function RunicGlyphs() {
-  // Twelve small glowing glyphs inscribed just outside the ward ring at
-  // radius 5.4. Slow group rotation + per-glyph opacity pulse make them
-  // read as ancient inlays gradually waking up. All on the same y-plane
-  // as the ward (-0.034) so they sit flush with the floor.
-  const groupRef = useRef<THREE.Group>(null);
-  const phases = useMemo(
-    () => Array.from({ length: 12 }, () => Math.random() * Math.PI * 2),
-    [],
-  );
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (!groupRef.current) return;
-    groupRef.current.rotation.z = t * 0.045; // slow glyph procession
-    groupRef.current.children.forEach((child, i) => {
-      const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
-      mat.opacity = 0.30 + Math.sin(t * 0.8 + (phases[i] ?? 0)) * 0.18;
-    });
-  });
-
-  const N = 12;
-  const RADIUS = 5.4;
-  return (
-    <group ref={groupRef} position={[0, -0.034, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      {Array.from({ length: N }, (_, i) => {
-        const a = (i / N) * Math.PI * 2;
-        const x = Math.cos(a) * RADIUS;
-        const y = Math.sin(a) * RADIUS;
-        const variant = i % 4;
-        return (
-          <mesh key={i} position={[x, y, 0]} rotation={[0, 0, a + Math.PI / 2]}>
-            {variant === 0 && <ringGeometry args={[0.06, 0.11, 6]} />}
-            {variant === 1 && <planeGeometry args={[0.20, 0.045]} />}
-            {variant === 2 && <ringGeometry args={[0.07, 0.13, 4, 1, 0, Math.PI]} />}
-            {variant === 3 && <planeGeometry args={[0.045, 0.20]} />}
-            <meshBasicMaterial color="#ffd97a" transparent opacity={0.35}
-              blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
-              depthWrite={false} fog={false} />
-          </mesh>
-        );
-      })}
-    </group>
-  );
-}
-
 function DalaranBackdropSpire({ position, height, radius, phase, crown = false }: {
   position: [number, number, number];
   height: number;
@@ -487,10 +391,6 @@ function DalaranBackdropSpire({ position, height, radius, phase, crown = false }
 }
 
 function DalaranBackdrop() {
-  const perf = usePerfLevel();
-  const crystalRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const runeRefs = useRef<(THREE.Mesh | null)[]>([]);
-
   const spires = useMemo(() => [
     { x: -11.5, z: -15.2, h: 4.9, r: 0.46, crown: false },
     { x: -7.4,  z: -16.0, h: 6.4, r: 0.58, crown: false },
@@ -499,21 +399,6 @@ function DalaranBackdrop() {
     { x: 7.4,   z: -15.7, h: 5.7, r: 0.54, crown: false },
     { x: 11.5,  z: -15.0, h: 4.7, r: 0.44, crown: false },
   ], []);
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    crystalRefs.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      mesh.rotation.y = t * (0.28 + i * 0.04);
-      mesh.position.y = 4.0 + Math.sin(t * 0.7 + i * 1.4) * 0.18;
-      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.40 + Math.sin(t * 0.9 + i) * 0.12;
-    });
-    runeRefs.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      mesh.rotation.z = t * (0.08 + i * 0.015);
-      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.12 + Math.sin(t * 0.8 + i * 0.9) * 0.06;
-    });
-  });
 
   return (
     <group>
@@ -558,40 +443,6 @@ function DalaranBackdrop() {
         );
       })}
 
-      {perf !== 'low' && [
-        [-5.0, -14.3, '#8b5cf6'],
-        [0.0, -14.9, '#ffd36a'],
-        [5.1, -14.4, '#5cd2ff'],
-      ].map(([x, z, color], i) => (
-        <mesh
-          key={`back-crystal-${i}`}
-          ref={(m) => { crystalRefs.current[i] = m; }}
-          position={[x as number, 4.0, z as number]}
-          rotation={[0.15, i * 0.8, 0.35]}
-        >
-          <octahedronGeometry args={[0.22 + i * 0.04, 0]} />
-          <meshBasicMaterial color={color as string} transparent opacity={0.44}
-            blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
-        </mesh>
-      ))}
-
-      {[
-        [-8.8, 5.3, -14.8, '#ffd36a'],
-        [-0.2, 6.2, -15.3, '#a78bfa'],
-        [8.6, 5.4, -14.8, '#5cd2ff'],
-      ].map(([x, y, z, color], i) => (
-        <mesh
-          key={`sky-rune-${i}`}
-          ref={(m) => { runeRefs.current[i] = m; }}
-          position={[x as number, y as number, z as number]}
-          rotation={[0, 0, i * 0.7]}
-        >
-          <ringGeometry args={[0.32, 0.40, 6]} />
-          <meshBasicMaterial color={color as string} transparent opacity={0.16}
-            blending={THREE.AdditiveBlending} depthWrite={false}
-            side={THREE.DoubleSide} fog={false} />
-        </mesh>
-      ))}
     </group>
   );
 }
@@ -701,9 +552,6 @@ function PlazaEnvironment() {
       ))}
       {/* Perimeter buildings intentionally hidden: the Sanctum now reads as
           an open ritual floor rather than a crowded city perimeter. */}
-      {/* Dalaran D3 — runic glyphs ring just outside the ward ring,
-          slowly rotating with per-glyph pulse. */}
-      <RunicGlyphs />
       {/* Dalaran D4 — magical lights + sparkles + faked godrays. All
           procedural; no postprocessing dep. */}
       <SunGodrays />

@@ -103,6 +103,30 @@ export function getMarbleTexture(): THREE.CanvasTexture {
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
   }
 
+  // Bake the plaza's hex rhythm into the marble instead of rendering every
+  // tile and gap as separate meshes. The restrained outlines preserve scale
+  // while eliminating hundreds of draw calls.
+  const hexSize = 30;
+  const hexHeight = Math.sqrt(3) * hexSize;
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(8,5,22,0.42)';
+  for (let col = -1; col < 13; col++) {
+    for (let row = -1; row < 12; row++) {
+      const cx = col * hexSize * 1.5;
+      const cy = row * hexHeight + (col % 2 === 0 ? 0 : hexHeight / 2);
+      ctx.beginPath();
+      for (let edge = 0; edge < 6; edge++) {
+        const angle = edge * Math.PI / 3;
+        const x = cx + Math.cos(angle) * hexSize;
+        const y = cy + Math.sin(angle) * hexSize;
+        if (edge === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
+
   // Gold / cyan veins — thin curved lines tracing through the
   // marble. Each is a gradient-stroked quadratic bezier so the vein fades
   // in/out along its length (mimics natural mineral cracks).
