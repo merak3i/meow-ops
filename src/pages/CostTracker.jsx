@@ -215,7 +215,7 @@ export default function CostTracker({ dailyData, modelData, stats, costSummary }
                   {formatCost(d.cost)}
                 </td>
                 <td style={{ padding: '8px 12px', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-muted)' }}>
-                  {stats.totalCost > 0 ? ((d.cost / stats.totalCost) * 100).toFixed(1) : 0}%
+                  {accurateTotalCost > 0 ? ((d.cost / accurateTotalCost) * 100).toFixed(1) : 0}%
                 </td>
               </tr>
             ))}

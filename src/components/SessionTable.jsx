@@ -74,7 +74,7 @@ export default function SessionTable({ sessions }) {
           </tr>
         </thead>
         <tbody>
-          {sorted.slice(0, 100).map((s) => {
+          {sorted.map((s) => {
             const cat = getCatMeta(s.cat_type);
             const activityTs = s.ended_at || s.started_at;
             return (

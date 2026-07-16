@@ -40,6 +40,7 @@ import {
 } from './companion-preferences.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
 import { readLedgerLoopRuns } from './loop-ledger-to-runs.mjs';
+import { querySessionHistory } from './session-history.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -245,11 +246,13 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  const path = new URL(req.url, `http://localhost:${PORT}`).pathname;
+  const requestUrl = new URL(req.url, `http://localhost:${PORT}`);
+  const path = requestUrl.pathname;
   const needsBrowserHeader =
     path.startsWith('/sync')
     || path === '/data/sessions.json'
     || path === '/data/cost-summary.json'
+    || path.startsWith('/session-history/')
     || path.startsWith('/loop-eng/')
     || path.startsWith('/project-intelligence/')
     || path.startsWith('/companion/');
@@ -279,6 +282,26 @@ const server = createServer(async (req, res) => {
     } catch {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: 'File not found - run a sync first' }));
+    }
+    return;
+  }
+
+  // ── GET /session-history/sessions ────────────────────────────────────────
+  // Filter the complete local archive before slicing a bounded browser page.
+  if (req.method === 'GET' && path === '/session-history/sessions') {
+    try {
+      const result = querySessionHistory({
+        limit: requestUrl.searchParams.get('limit'),
+        cursor: requestUrl.searchParams.get('cursor'),
+        from: requestUrl.searchParams.get('from'),
+        to: requestUrl.searchParams.get('to'),
+        project: requestUrl.searchParams.get('project'),
+        source: requestUrl.searchParams.get('source'),
+        model: requestUrl.searchParams.get('model'),
+      });
+      sendJson(res, 200, result);
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
     }
     return;
   }
@@ -910,6 +933,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /sync/runs/:id           - persisted sanitized run metadata');
   console.log('  GET  /data/sessions.json      - exported session metrics');
   console.log('  GET  /data/cost-summary.json  - exported spend summary');
+  console.log('  GET  /session-history/sessions - filtered, paginated session archive');
   console.log('  GET  /loop-ops/spec           - Loop-Ops entities (local import)');
   console.log('  GET  /loop-ops/status         - Loop-Ops file freshness');
   console.log('  GET  /loop-ops/runs           - recorded loop runs');

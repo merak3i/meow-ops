@@ -7,6 +7,7 @@ import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync/sync-runner.mjs';
 import { readLedgerLoopRuns } from './sync/loop-ledger-to-runs.mjs';
+import { querySessionHistory } from './sync/session-history.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -56,6 +57,29 @@ function meowSyncPlugin() {
         res.statusCode = run ? 200 : 404;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify(run || { ok: false, error: 'Sync run not found' }));
+      });
+
+      server.middlewares.use('/api/session-history/sessions', (req, res) => {
+        if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        if (blockNonLocal(req, res)) return;
+        try {
+          const url = new URL(req.url || '/', 'http://localhost');
+          const result = querySessionHistory({
+            limit: url.searchParams.get('limit'),
+            cursor: url.searchParams.get('cursor'),
+            from: url.searchParams.get('from'),
+            to: url.searchParams.get('to'),
+            project: url.searchParams.get('project'),
+            source: url.searchParams.get('source'),
+            model: url.searchParams.get('model'),
+          });
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+        }
       });
 
       // Dev-mode mirror of the local API's Loop-Ops endpoints (sync/local-api.mjs).

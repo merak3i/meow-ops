@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { updateSessionHistory } from '../session-history.mjs';
 
 // Raw GET so we can spoof the Host header (fetch forbids overriding it).
 function rawGet(path, headers) {
@@ -31,9 +32,23 @@ const WORKBOOK = process.env.LOOP_OPS_SPEC || join(ROOT, 'examples', 'loop-ops',
 
 let server;
 let ledgerDir;
+let historyDir;
 
 before(async () => {
   ledgerDir = mkdtempSync(join(tmpdir(), 'meow-loop-api-'));
+  historyDir = mkdtempSync(join(tmpdir(), 'meow-history-api-'));
+  updateSessionHistory([
+    {
+      session_id: 'history-a', project: 'alpha', source: 'codex', model: 'gpt-5',
+      ended_at: '2026-07-16T12:00:00.000Z', total_tokens: 10,
+      estimated_cost_usd: 0.1, duration_seconds: 60,
+    },
+    {
+      session_id: 'history-b', project: 'beta', source: 'claude', model: 'opus',
+      ended_at: '2026-07-15T12:00:00.000Z', total_tokens: 20,
+      estimated_cost_usd: 0.2, duration_seconds: 120,
+    },
+  ], { dir: historyDir });
   writeFileSync(join(ledgerDir, 'runs.jsonl'), `${JSON.stringify({
     run_id: 'run-api-fixture',
     loop_id: 'meow-ops-dev',
@@ -45,7 +60,12 @@ before(async () => {
   })}\n`, 'utf8');
   server = spawn('node', [join(ROOT, 'sync', 'local-api.mjs')], {
     cwd: ROOT,
-    env: { ...process.env, MEOW_LOCAL_API_PORT: String(PORT), MEOW_LOOP_DIR: ledgerDir },
+    env: {
+      ...process.env,
+      MEOW_LOCAL_API_PORT: String(PORT),
+      MEOW_LOOP_DIR: ledgerDir,
+      MEOW_SESSION_HISTORY_DIR: historyDir,
+    },
     stdio: 'pipe',
   });
   // Wait for the listener — poll instead of trusting startup logs.
@@ -63,6 +83,29 @@ before(async () => {
 after(() => {
   server?.kill();
   rmSync(ledgerDir, { recursive: true, force: true });
+  rmSync(historyDir, { recursive: true, force: true });
+});
+
+test('GET /session-history/sessions filters before paginating the full archive', async () => {
+  const res = await fetch(`${BASE}/session-history/sessions?project=alpha&limit=1`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.archive.total, 2);
+  assert.equal(body.total, 1);
+  assert.deepEqual(body.items.map((row) => row.session_id), ['history-a']);
+  assert.deepEqual(body.facets.projects, ['alpha', 'beta']);
+});
+
+test('browser-origin session history requests require the local access header', async () => {
+  const missing = await fetch(`${BASE}/session-history/sessions`, {
+    headers: { Origin: 'https://meow-ops.vercel.app' },
+  });
+  assert.equal(missing.status, 400);
+
+  const allowed = await fetch(`${BASE}/session-history/sessions`, {
+    headers: { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1' },
+  });
+  assert.equal(allowed.status, 200);
 });
 
 test('GET /loop-ops/status reports files and the writes-disabled invariant', async () => {

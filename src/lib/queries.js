@@ -307,6 +307,28 @@ export async function fetchAllSessions() {
   return DEMO_SESSIONS;
 }
 
+// Query the uncapped local archive. Filters are applied by the local helper
+// before a bounded page is sent to the browser.
+export async function fetchSessionPage(options = {}) {
+  const params = new URLSearchParams();
+  for (const key of ['limit', 'cursor', 'from', 'to', 'project', 'source', 'model']) {
+    const value = options[key];
+    if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+  }
+  const path = `/session-history/sessions?${params.toString()}`;
+  const data = IS_PROD
+    ? await fetchLocalJson(path)
+    : await fetchJson(withCacheBust(`/api${path}`));
+  if (!data || !Array.isArray(data.items)) return null;
+  return {
+    ...data,
+    items: sanitizeSessions(data.items),
+    total: coerceNum(data.total),
+    limit: coerceNum(data.limit),
+    nextCursor: typeof data.nextCursor === 'string' ? data.nextCursor : null,
+  };
+}
+
 // Returns true when sessions.json is present but empty / missing
 export async function hasNoData() {
   const real = await loadRealSessions();

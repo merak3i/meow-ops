@@ -57,8 +57,17 @@ function SourceToggle({ value, onChange }) {
 }
 
 // ─── Source comparison panel ──────────────────────────────────────────────────
-function SourceComparisonPanel({ allSessions }) {
+function SourceComparisonPanel({ allSessions, bySourceAllTime }) {
   const stats = useMemo(() => {
+    if (bySourceAllTime?.claude || bySourceAllTime?.codex) {
+      const fromRollup = (key) => ({
+        sessions: bySourceAllTime[key]?.sessions || 0,
+        cost: bySourceAllTime[key]?.cost || 0,
+        tokens: bySourceAllTime[key]?.tokens || 0,
+        ghosts: bySourceAllTime[key]?.ghost_count || 0,
+      });
+      return { claude: fromRollup('claude'), codex: fromRollup('codex') };
+    }
     const acc = {
       claude: { sessions: 0, cost: 0, tokens: 0, ghosts: 0 },
       codex:  { sessions: 0, cost: 0, tokens: 0, ghosts: 0 },
@@ -74,7 +83,7 @@ function SourceComparisonPanel({ allSessions }) {
       if (s.is_ghost) acc[src].ghosts++;
     });
     return acc;
-  }, [allSessions]);
+  }, [allSessions, bySourceAllTime]);
 
   const total = stats.claude.sessions + stats.codex.sessions;
   if (total === 0 || stats.codex.sessions === 0) return null;
@@ -547,7 +556,66 @@ export default function Overview({
     [allSessions, source],
   );
 
-  const stats    = useMemo(() => computeOverviewStats(sessions, dateRange),    [sessions, dateRange]);
+  const stats = useMemo(() => {
+    const local = computeOverviewStats(sessions, dateRange);
+    if (source === 'both' && typeof dateRange === 'number' && dailyData?.length) {
+      const complete = dailyData.reduce((acc, day) => {
+        acc.sessions += day.session_count || 0;
+        acc.tokens += day.total_tokens || 0;
+        acc.cost += day.estimated_cost_usd || 0;
+        acc.duration += day.total_duration_seconds || 0;
+        acc.ghosts += day.ghost_count || 0;
+        for (const project of day.projects || []) acc.projects.add(project);
+        return acc;
+      }, { sessions: 0, tokens: 0, cost: 0, duration: 0, ghosts: 0, projects: new Set() });
+      return {
+        ...local,
+        periodSessions: complete.sessions,
+        periodTokens: complete.tokens,
+        periodCost: complete.cost,
+        periodDuration: complete.duration,
+        periodProjects: complete.projects.size || local.periodProjects,
+        ghostCount: complete.ghosts,
+        healthRatio: complete.sessions > 0
+          ? (((complete.sessions - complete.ghosts) / complete.sessions) * 100).toFixed(0)
+          : 100,
+        sessionsToday: costSummary?.today?.sessions ?? local.sessionsToday,
+        tokensToday: costSummary?.today?.tokens ?? local.tokensToday,
+        costToday: costSummary?.today?.cost ?? local.costToday,
+        durationToday: costSummary?.today?.duration_seconds ?? local.durationToday,
+      };
+    }
+    if (dateRange !== 'all' || !costSummary) return local;
+    const complete = source === 'both'
+      ? costSummary.allTime
+      : costSummary.bySourceAllTime?.[source];
+    if (!complete) return local;
+    const today = source === 'both' ? costSummary.today : null;
+    const ghostCount = complete.ghost_count || 0;
+    return {
+      ...local,
+      periodSessions: complete.sessions || 0,
+      periodTokens: complete.tokens || 0,
+      periodCost: complete.cost || 0,
+      periodDuration: complete.duration_seconds || 0,
+      periodProjects: complete.distinct_projects || 0,
+      totalSessions: complete.sessions || 0,
+      totalTokens: complete.tokens || 0,
+      totalCost: complete.cost || 0,
+      totalDuration: complete.duration_seconds || 0,
+      totalProjects: complete.distinct_projects || 0,
+      ghostCount,
+      healthRatio: complete.sessions > 0
+        ? (((complete.sessions - ghostCount) / complete.sessions) * 100).toFixed(0)
+        : 100,
+      ...(today ? {
+        sessionsToday: today.sessions || 0,
+        tokensToday: today.tokens || 0,
+        costToday: today.cost || 0,
+        durationToday: today.duration_seconds || 0,
+      } : {}),
+    };
+  }, [sessions, dateRange, costSummary, source, dailyData]);
   const toolData = useMemo(() => getToolBreakdownFromSessions(sessions),       [sessions]);
 
   // ── Spend breakdown ────────────────────────────────────────────────────────
@@ -563,10 +631,23 @@ export default function Overview({
     [allSourceSessions],
   );
 
-  const timeSpent = useMemo(
-    () => computeTimeSpentBreakdown(allSourceSessions),
-    [allSourceSessions],
-  );
+  const timeSpent = useMemo(() => {
+    const local = computeTimeSpentBreakdown(allSourceSessions);
+    const complete = source === 'both'
+      ? costSummary?.allTime
+      : costSummary?.bySourceAllTime?.[source];
+    if (!complete) return local;
+    return {
+      ...local,
+      allTime: {
+        ...local.allTime,
+        sessions: complete.sessions || 0,
+        tokens: complete.tokens || 0,
+        cost: complete.cost || 0,
+        duration_seconds: complete.duration_seconds || 0,
+      },
+    };
+  }, [allSourceSessions, costSummary, source]);
 
   const spend = (source !== 'both' || !costSummary) ? localSpend : {
     today:          costSummary.today,
@@ -592,6 +673,9 @@ export default function Overview({
   }, [source, sessions, dailyData]);
 
   const label = periodLabel(dateRange);
+  const hasCompleteArchive = dateRange === 'all' && Boolean(
+    source === 'both' ? costSummary?.allTime : costSummary?.bySourceAllTime?.[source],
+  );
 
   return (
     <div>
@@ -603,9 +687,13 @@ export default function Overview({
       {/* ── Primary stat cards ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
         <StatCard
-          label={`Sessions — ${label}`}
+          label={dateRange === 'all'
+            ? `${hasCompleteArchive ? 'Sessions recorded' : 'Sessions loaded'} — All time`
+            : `Sessions — ${label}`}
           value={stats.periodSessions}
-          sub={`${stats.sessionsToday} today`}
+          sub={dateRange === 'all'
+            ? `${stats.sessionsToday} today · ${hasCompleteArchive ? 'complete archive' : 'preview only'}`
+            : `${stats.sessionsToday} today`}
           icon={Activity}
           color="var(--accent)"
         />
@@ -633,7 +721,12 @@ export default function Overview({
       </div>
 
       {/* ── Source comparison (only when Codex data exists) ── */}
-      {source === 'both' && <SourceComparisonPanel allSessions={allSessions} />}
+      {source === 'both' && (
+        <SourceComparisonPanel
+          allSessions={allSessions}
+          bySourceAllTime={costSummary?.bySourceAllTime}
+        />
+      )}
 
       {/* ── Token quota per source ── */}
       {sourceStats && tokenBudget && onBudgetChange && (
