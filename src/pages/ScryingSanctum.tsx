@@ -2130,16 +2130,23 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
   const [eventQueue, setEventQueue] = useState<Array<{ beat: SanctumEventBeat; key: number }>>([]);
   const eventSequenceRef = useRef(0);
   const previousEventSnapshot = useRef<EventSnapshot | null>(null);
+  const eventContextRef = useRef(group?.id ?? null);
   const enqueueBeats = useCallback((beats: SanctumEventBeat[]) => {
     if (!beats.length) return;
     setEventQueue((queue) => [...queue, ...beats.map((beat) => ({ beat, key: ++eventSequenceRef.current }))]);
   }, []);
 
   useEffect(() => {
-    const next = snapshotSessions(flatNodes.map((node) => node.session), selected, groupCost);
+    const contextId = group?.id ?? null;
+    if (eventContextRef.current !== contextId) {
+      eventContextRef.current = contextId;
+      previousEventSnapshot.current = null;
+      setEventQueue([]);
+    }
+    const next = snapshotSessions(flatNodes.map((node) => node.session), selected, groupCost, contextId);
     enqueueBeats(diffEventSnapshots(previousEventSnapshot.current, next));
     previousEventSnapshot.current = next;
-  }, [enqueueBeats, flatNodes, groupCost, selected]);
+  }, [enqueueBeats, flatNodes, group?.id, groupCost, selected]);
 
   const activeEvent = eventQueue[0];
   useEffect(() => {

@@ -83,6 +83,8 @@
 .sanctum-hud-panel [style*="font-size: 7"],
 .sanctum-hud-panel [style*="font-size: 8"] { font-size: 9px !important; }
 
+.sanctum-hud-panel.sanctum-hud-round { border-radius: 50% !important; }
+
 .sanctum-hud-title {
   font-family: 'Cinzel', serif !important;
   font-size: 14px !important;

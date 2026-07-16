@@ -150,6 +150,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   const game    = useCompanionGame(sessions);
   const [actionFrames, setActionFrames] = useState<ActionFrame[]>([]);
   const [actionNow, setActionNow] = useState(() => Date.now());
+  const [behaviorTick, setBehaviorTick] = useState(0);
   const lastScheduledRef = useRef(0);
   const queueAction = useCallback((action: CompanionAction) => {
     const now = Date.now();
@@ -157,7 +158,16 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
     setActionFrames((queue) => enqueueAction(queue, action, now));
   }, []);
   useEffect(() => {
-    const id = window.setInterval(() => setActionNow(Date.now()), 120);
+    if (!actionFrames.length) return;
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      setActionNow(now);
+      setActionFrames((queue) => queue.some((frame) => frame.end > now) ? queue : []);
+    }, 120);
+    return () => window.clearInterval(id);
+  }, [actionFrames.length]);
+  useEffect(() => {
+    const id = window.setInterval(() => setBehaviorTick((tick) => tick + 1), 12_000);
     return () => window.clearInterval(id);
   }, []);
   const activeAction = frameAt(actionFrames, actionNow);
@@ -166,15 +176,16 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
     return !session.is_ghost && age >= 0 && age < 120_000;
   });
   useEffect(() => {
-    if (activeAction || actionNow - lastScheduledRef.current < 12_000) return;
+    const now = Date.now();
+    if (activeAction || now - lastScheduledRef.current < 12_000) return;
     const behavior = scheduleBehavior({
       hunger: game.cat?.stats.hunger ?? 100,
       hasLiveSession,
     });
     if (!behavior) return;
-    lastScheduledRef.current = actionNow;
+    lastScheduledRef.current = now;
     queueAction(behavior);
-  }, [actionNow, activeAction, game.cat?.stats.hunger, hasLiveSession, queueAction]);
+  }, [behaviorTick, activeAction, game.cat?.stats.hunger, hasLiveSession, queueAction]);
   // Profile walks every session — memoise against the array reference so we
   // don't redo the walk on unrelated re-renders (cursor moves, tick events).
   const profile = useMemo(() => buildDeveloperProfile(sessions), [sessions]);
