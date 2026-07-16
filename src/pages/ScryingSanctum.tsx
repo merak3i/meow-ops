@@ -2156,11 +2156,6 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
           {ident.tag}
         </div>
       </Html>
-      {/* Selection pulse rings */}
-      {selected && <SelectionPulseRings color={c.aura} />}
-      {/* Trail particles */}
-      <CharacterTrail color={trailColor} isMoving={isMovingRef} />
-      <FootstepDust isMoving={isMovingRef} />
       {/* Nameplate is click-to-open: hidden by default, shows only when this
           character is selected (or possessed by an admin). Keeps the Sanctum
           floor readable instead of plastered with HUD cards. */}
