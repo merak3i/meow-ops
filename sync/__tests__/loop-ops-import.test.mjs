@@ -30,7 +30,7 @@ function defaultRows() {
   }));
 }
 
-async function makeWorkbook(rows, { dropColumn } = {}) {
+async function makeWorkbook(rows, { dropColumn, dependencies } = {}) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('1 · Registry');
   const headers = HEADERS.filter((h) => h !== dropColumn);
@@ -39,6 +39,15 @@ async function makeWorkbook(rows, { dropColumn } = {}) {
   ws.addRow([]);
   ws.addRow(headers);
   for (const r of rows) ws.addRow(headers.map((h) => r[h] ?? ''));
+  const depRows = dependencies ?? (rows.length > 2 ? [
+    [rows[0].surface_key, rows[1].surface_key, 'feeds'],
+    [rows[1].surface_key, rows[2].surface_key, 'verifies'],
+  ] : []);
+  const deps = wb.addWorksheet('8 · Dependencies');
+  deps.addRow(['DEPENDENCY EDGES']);
+  deps.addRow([]);
+  deps.addRow(['source', 'target', 'relationship']);
+  depRows.forEach((row) => deps.addRow(row));
   const dir = mkdtempSync(join(tmpdir(), 'loopops-wb-'));
   const path = join(dir, 'spec.xlsx');
   await wb.xlsx.writeFile(path);
@@ -62,7 +71,8 @@ test('valid workbook imports with coordinator, four directors, workers, and no t
   assert.equal(spec.meta.entityCount, 17);
   assert.equal(spec.meta.assistantCount, 12);
   assert.equal(spec.entities.filter((e) => e.kind === 'director').length, 4);
-  assert.equal(spec.edges.length, 16);
+  assert.equal(spec.edges.length, 2);
+  assert.ok(spec.edges.every((edge) => edge.id.startsWith('dep.')));
   assert.equal(spec.meta.productionWritesEnabled, false);
   assert.equal(spec.meta.truthSync, null);
   const assistant = spec.entities.find((e) => e.kind === 'assistant');
@@ -93,6 +103,15 @@ test('duplicate surface_key fails loudly naming both rows', async () => {
   const res = await runImporter(await makeWorkbook(rows));
   assert.equal(res.code, 1);
   assert.match(res.stderr, /duplicate surface_key/);
+});
+
+test('dependency edges must reference known surfaces', async () => {
+  const rows = defaultRows();
+  const res = await runImporter(await makeWorkbook(rows, {
+    dependencies: [[rows[0].surface_key, 'missing.surface', 'feeds']],
+  }));
+  assert.equal(res.code, 1);
+  assert.match(res.stderr, /must reference known surface_key/);
 });
 
 test('missing required column fails loudly naming the column', async () => {

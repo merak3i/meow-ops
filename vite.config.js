@@ -2,10 +2,11 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { spawn } from 'child_process';
-import { statSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync/sync-runner.mjs';
+import { readLedgerLoopRuns } from './sync/loop-ledger-to-runs.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -58,7 +59,25 @@ function meowSyncPlugin() {
       });
 
       // Dev-mode mirror of the local API's Loop-Ops endpoints (sync/local-api.mjs).
-      // GETs for spec/runs aren't needed here — Vite serves public/data/ directly.
+      // Spec is served statically; runs/gates need a local fallback when their
+      // gitignored JSON files do not exist.
+      for (const [route, file, fallback] of [
+        ['/api/loop-ops/runs', 'runs.json', () => readLedgerLoopRuns()],
+        ['/api/loop-ops/gates', 'gates.json', () => []],
+      ]) {
+        server.middlewares.use(route, (req, res) => {
+          if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+          let payload;
+          try {
+            payload = JSON.parse(readFileSync(join(server.config.root, 'public', 'data', 'loop-ops', file), 'utf8'));
+          } catch {
+            payload = fallback();
+          }
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(payload));
+        });
+      }
+
       server.middlewares.use('/api/loop-ops/status', (req, res) => {
         if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
         const dir = join(server.config.root, 'public', 'data', 'loop-ops');

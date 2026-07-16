@@ -1,6 +1,6 @@
 // Deterministic lane layout for the Loop-Ops canvas. The hierarchy is fixed
 // (1 coordinator → 4 directors → 26 assistants), so node positions are computed
-// directly — no runtime layout engine. The tenant lane (22 surfaces) clusters
+// directly — no runtime layout engine. The research lane clusters
 // by wave into collapsible groups so the default view stays readable (spec §4).
 import type { Edge, Node } from '@xyflow/react';
 import { LOOP_GROUPS, worstStatus } from './types';
@@ -29,14 +29,14 @@ const ROW_GAP = 100;
 const DIRECTOR_Y = 150;
 const CONTENT_Y = 300;
 
-// Tenant occupies four wave columns; the other lanes get one column each.
-const TENANT_WAVES = [1, 2, 3, 4] as const;
+// Research occupies four wave columns; the other lanes get one column each.
+const RESEARCH_WAVES = [1, 2, 3, 4] as const;
 const laneColX = (col: number) => 40 + col * (NODE_W + COL_GAP);
 const LANE_COLS: Record<LoopGroup, number[]> = {
-  tenant: TENANT_WAVES.map((_, i) => laneColX(i)),
-  customer: [laneColX(4)],
-  admin: [laneColX(5)],
-  doer: [laneColX(6)],
+  research: RESEARCH_WAVES.map((_, i) => laneColX(i)),
+  build: [laneColX(4)],
+  review: [laneColX(5)],
+  ops: [laneColX(6)],
 };
 
 // Stagger node reveal on load; index.css disables it under reduced motion.
@@ -74,7 +74,7 @@ export function buildFlow(
   if (coordinator) {
     nodes.push({
       id: coordinator.id, type: 'entity', data: entityData(coordinator),
-      position: { x: (laneCenter('tenant') + laneCenter('doer')) / 2, y: 0 },
+      position: { x: (laneCenter('research') + laneCenter('ops')) / 2, y: 0 },
       draggable: false, connectable: false,
     });
   }
@@ -92,14 +92,14 @@ export function buildFlow(
     }
 
     const laneAssistants = assistants.filter((a) => a.group === g);
-    if (g === 'tenant') {
-      TENANT_WAVES.forEach((wave, col) => {
+    if (g === 'research') {
+      RESEARCH_WAVES.forEach((wave, col) => {
         const inWave = laneAssistants.filter((a) => a.wave === wave);
         // An empty wave gets no cluster node — rendering one would show a
         // status for zero surfaces and an expand that does nothing.
         if (inWave.length === 0) return;
-        const colX = LANE_COLS.tenant[col] ?? 40;
-        const clusterId = `cluster.tenant.wave${wave}`;
+        const colX = LANE_COLS.research[col] ?? 40;
+        const clusterId = `cluster.research.wave${wave}`;
         const expanded = expandedWaves.has(wave);
         nodes.push({
           id: clusterId, type: 'cluster',

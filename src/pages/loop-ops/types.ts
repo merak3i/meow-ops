@@ -11,8 +11,8 @@ export const STATUS_SEVERITY: readonly LoopStatus[] = [
   'failed', 'blocked', 'needs-review', 'running', 'covered', 'wired', 'passed',
 ];
 
-export type LoopGroup = 'tenant' | 'customer' | 'admin' | 'doer';
-export const LOOP_GROUPS: readonly LoopGroup[] = ['tenant', 'customer', 'admin', 'doer'];
+export type LoopGroup = 'research' | 'build' | 'review' | 'ops';
+export const LOOP_GROUPS: readonly LoopGroup[] = ['research', 'build', 'review', 'ops'];
 
 // Per-surface knobs and verification context shown in the inspector drawer.
 // Additive to the spec §6 contract — everything here is display-only.

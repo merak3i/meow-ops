@@ -27,7 +27,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 7437;
 const BASE = `http://127.0.0.1:${PORT}`;
 const SPEC_PRESENT = existsSync(join(ROOT, 'public', 'data', 'loop-ops', 'spec.json'));
-const WORKBOOK = process.env.LOOP_OPS_SPEC || '';
+const WORKBOOK = process.env.LOOP_OPS_SPEC || join(ROOT, 'examples', 'loop-ops', 'demo-spec.xlsx');
 
 let server;
 let ledgerDir;
@@ -97,10 +97,18 @@ test('GET /loop-ops/runs serves transformed local ledger runs when runs.json is 
   assert.equal(runs[0].cost.usd, 1.5);
 });
 
-test('GET /loop-ops/gates is GET-only and returns an empty local fallback', async () => {
+test('GET /loop-ops/gates is GET-only and returns local gate evidence or an empty fallback', async () => {
   const res = await fetch(`${BASE}/loop-ops/gates`);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), []);
+  const gates = await res.json();
+  assert.ok(Array.isArray(gates));
+  for (const gate of gates) {
+    assert.equal(typeof gate.id, 'string');
+    assert.equal(typeof gate.entityId, 'string');
+  }
+
+  const writeAttempt = await fetch(`${BASE}/loop-ops/gates`, { method: 'POST' });
+  assert.equal(writeAttempt.status, 404);
 });
 
 test('unknown loop-ops path still 404s', async () => {
@@ -125,7 +133,7 @@ test('allows a same-origin / no-Origin request', async () => {
   assert.equal(res.status, 200);
 });
 
-test('POST /loop-ops/sync runs the importer end-to-end', { skip: !WORKBOOK || !existsSync(WORKBOOK) }, async () => {
+test('POST /loop-ops/sync runs the bundled demo importer end-to-end', { skip: !existsSync(WORKBOOK) }, async () => {
   const res = await fetch(`${BASE}/loop-ops/sync`, { method: 'POST' });
   assert.equal(res.status, 200);
   const body = await res.json();

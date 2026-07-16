@@ -1,0 +1,7 @@
+surface_key,status,db_status,latest_e2e_gate,correlation_status,last_verified_at_utc,current_truth,eval_set,source_refs
+meow-ops-dev,passed,passed,pass,COMPLETE,2026-07-16T12:00:00.000Z,Local run ledger is readable,loom-dev-v1,https://github.com/merak3i/meow-ops
+meow-ops-guardrails,passed,passed,pass,COMPLETE,2026-07-16T12:00:00.000Z,Review-only guardrails are active,loom-guardrails-v1,https://github.com/merak3i/meow-ops
+meow-ops-assistant,wired,wired,pass,COMPLETE,2026-07-16T12:00:00.000Z,Assistant workflow is wired,loom-assistant-v1,https://github.com/merak3i/meow-ops
+meow-ops-prompts,covered,covered,,PARTIAL,2026-07-16T12:00:00.000Z,Prompt maintenance is covered,loom-prompts-v1,https://github.com/merak3i/meow-ops
+meow-ops-llm-smoke-20260706,passed,passed,pass,COMPLETE,2026-07-16T12:00:00.000Z,Local smoke checks pass,loom-smoke-v1,https://github.com/merak3i/meow-ops
+meow-ops-phase3-manual,needs-review,needs-review,,PARTIAL,2026-07-16T12:00:00.000Z,Manual verification remains required,loom-manual-v1,https://github.com/merak3i/meow-ops

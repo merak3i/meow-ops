@@ -177,6 +177,7 @@ export default function LoopOps() {
               entities={displayEntities}
               expandedWaves={expandedWaves}
               proposalCounts={proposalCounts}
+              dependencyEdges={spec.edges}
               onToggleWave={toggleWave}
               onSelectEntity={setSelected}
               onOpenProposals={openProposals}

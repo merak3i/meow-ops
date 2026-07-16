@@ -571,7 +571,11 @@ test('Loop Ops: inspector drawer answers the four questions', async ({ page }) =
 test('Loop Ops: run timeline renders a recorded run with joined session cost', async ({ page }) => {
   test.skip(!(await loopSpecPresent(page)), 'local-only Loop-Ops fixture absent — run the importer');
   const runsRes = await page.request.get('/data/loop-ops/runs.json');
-  test.skip(runsRes.status() !== 200, 'local-only runs.json absent — record a run first (SOP §5)');
+  const runsContentType = runsRes.headers()['content-type'] || '';
+  test.skip(
+    runsRes.status() !== 200 || !runsContentType.includes('json'),
+    'local-only runs.json absent — record a run first (SOP §5)',
+  );
   const runs = await runsRes.json();
   test.skip(!Array.isArray(runs) || runs.length === 0, 'runs.json empty');
 
@@ -602,18 +606,19 @@ test('Loop Ops: ledger-backed run timeline shows real cost and operator details'
   const spec = {
     meta: {
       specVersion: 1, generatedBy: 'e2e', generatedAt: '2026-07-16T12:00:00.000Z',
-      masterSpec: 'fixture', entityCount: 6, assistantCount: 1,
+      masterSpec: 'fixture', entityCount: 7, assistantCount: 2,
       productionWritesEnabled: false, links: {},
     },
     entities: [
       entity('coordinator', 'coordinator', null, null),
-      entity('director-tenant', 'director', 'tenant', null),
-      entity('director-customer', 'director', 'customer', null),
-      entity('director-admin', 'director', 'admin', null),
-      entity('director-doer', 'director', 'doer', null),
-      entity('meow-ops-dev', 'assistant', 'tenant', 1),
+      entity('director-research', 'director', 'research', null),
+      entity('director-build', 'director', 'build', null),
+      entity('director-review', 'director', 'review', null),
+      entity('director-ops', 'director', 'ops', null),
+      entity('meow-ops-dev', 'assistant', 'research', 1),
+      entity('meow-ops-guardrails', 'assistant', 'review', 2),
     ],
-    edges: [],
+    edges: [{ id: 'dep.dev.guardrails', source: 'meow-ops-dev', target: 'meow-ops-guardrails' }],
   };
   const runs = [{
     id: 'run-ledger-e2e', goal: 'Light the cockpit', entityIds: ['meow-ops-dev'],
@@ -658,18 +663,19 @@ test('Loop Ops: stale gate degrades node status and exposes evidence in inspecto
   const spec = {
     meta: {
       specVersion: 1, generatedBy: 'e2e', generatedAt: '2026-07-16T12:00:00.000Z',
-      masterSpec: 'fixture', entityCount: 6, assistantCount: 1,
+      masterSpec: 'fixture', entityCount: 7, assistantCount: 2,
       productionWritesEnabled: false, links: {},
     },
     entities: [
       entity('coordinator', 'coordinator', null, null),
-      entity('director-tenant', 'director', 'tenant', null),
-      entity('director-customer', 'director', 'customer', null),
-      entity('director-admin', 'director', 'admin', null),
-      entity('director-doer', 'director', 'doer', null),
-      entity('meow-ops-dev', 'assistant', 'tenant', 1),
+      entity('director-research', 'director', 'research', null),
+      entity('director-build', 'director', 'build', null),
+      entity('director-review', 'director', 'review', null),
+      entity('director-ops', 'director', 'ops', null),
+      entity('meow-ops-dev', 'assistant', 'research', 1),
+      entity('meow-ops-guardrails', 'assistant', 'review', 2),
     ],
-    edges: [],
+    edges: [{ id: 'dep.dev.guardrails', source: 'meow-ops-dev', target: 'meow-ops-guardrails' }],
   };
   const gates = [{
     id: 'gate-stale', entityId: 'meow-ops-dev', gateType: 'eval', status: 'passed',
@@ -709,6 +715,11 @@ test('Loop Ops: stale gate degrades node status and exposes evidence in inspecto
   await expect(inspector.getByText('Eval set passed 18/18', { exact: false })).toBeVisible();
   await expect(inspector.getByText(/stale after 7 days/i)).toBeVisible();
   await expect(inspector.locator('[data-status="needs-review"]')).toBeVisible();
+  await expect(page.locator('.loop-dependency-edge')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show dependencies' }).click();
+  await expect(page.locator('.loop-dependency-edge')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Hide dependencies' }).click();
+  await expect(page.locator('.loop-dependency-edge')).toHaveCount(0);
   const badge = node.getByRole('button', { name: 'Open 2 proposals for meow-ops-dev' });
   await expect(badge).toHaveText('⚑ 2');
   await badge.click();

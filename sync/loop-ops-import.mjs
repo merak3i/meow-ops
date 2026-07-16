@@ -151,7 +151,34 @@ async function main() {
   const flywheel = byKey(sheetRows(sheet('6 ·'), 'surface_key'));
   const beats = byKey(sheetRows(sheet('7 ·'), 'surface_key'));
   const wavemap = byKey(sheetRows(sheet('9 ·'), 'surface_key'));
+  const dependencies = sheetRows(sheet('8 ·'), 'source');
   const dangers = sheetRows(sheet('10 ·'), 'danger / gap');
+
+  const dependencyEdges = [];
+  const dependencyIds = new Set();
+  for (const row of dependencies) {
+    const source = String(row.source ?? '').trim();
+    const target = String(row.target ?? '').trim();
+    if (!seen.has(source) || !seen.has(target)) {
+      errors.push(`dependency row ${row.__row} must reference known surface_key values, got "${source}" -> "${target}"`);
+      continue;
+    }
+    if (source === target) {
+      errors.push(`dependency row ${row.__row} cannot point "${source}" to itself`);
+      continue;
+    }
+    const id = `dep.${source}.${target}`;
+    if (dependencyIds.has(id)) errors.push(`duplicate dependency "${source}" -> "${target}"`);
+    else {
+      dependencyIds.add(id);
+      dependencyEdges.push({ id, source, target });
+    }
+  }
+  if (errors.length) {
+    console.error('loop-ops-import: workbook validation FAILED - nothing written.');
+    errors.forEach((e) => console.error(`  x ${e}`));
+    process.exit(1);
+  }
 
   let truthByKey = {};
   let truthUsed = false;
@@ -169,7 +196,7 @@ async function main() {
     .join('; ');
 
   const entities = [];
-  const edges = [];
+  const edges = dependencyEdges;
   const gates = [];
 
   entities.push({
@@ -195,7 +222,6 @@ async function main() {
       allowedActions: ['inspect', 'open-link'],
       detail: { notVerified: ['Synthetic entity - no runtime counterpart exists yet'] },
     });
-    edges.push({ id: `e.coordinator.${g}`, source: 'coordinator.main', target: `director.${g}` });
   }
 
   for (const r of registry) {
@@ -249,7 +275,6 @@ async function main() {
         notVerified,
       },
     });
-    edges.push({ id: `e.${g}.${key}`, source: `director.${g}`, target: key });
 
     if (String(cellVal(r.evalGate)) === 'true') {
       const caseName = ev ? String(ev.case_name) : '';
