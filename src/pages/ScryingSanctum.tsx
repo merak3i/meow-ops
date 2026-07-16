@@ -335,68 +335,6 @@ function ArcaneFloor() {
   );
 }
 
-function CenterPortal() {
-  const outerRef = useRef<THREE.Mesh>(null);
-  const innerRef = useRef<THREE.Mesh>(null);
-  const glowRef  = useRef<THREE.Mesh>(null);
-  const orbitalARef = useRef<THREE.Mesh>(null);
-  const orbitalBRef = useRef<THREE.Mesh>(null);
-  const equatorialRef = useRef<THREE.Mesh>(null);
-  const eyeRef = useRef<THREE.Mesh>(null);
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (outerRef.current) outerRef.current.rotation.z = t * 0.2;
-    if (innerRef.current) innerRef.current.rotation.z = -t * 0.35;
-    if (glowRef.current) {
-      (glowRef.current.material as THREE.MeshBasicMaterial).opacity = 0.15 + Math.sin(t * 1.5) * 0.08;
-    }
-    // Astrolabe orbital rings
-    if (orbitalARef.current) orbitalARef.current.rotation.y = t * 0.4;
-    if (orbitalBRef.current) orbitalBRef.current.rotation.y = -t * 0.6;
-    if (equatorialRef.current) equatorialRef.current.rotation.y = t * 0.15;
-    if (eyeRef.current) eyeRef.current.scale.setScalar(1 + Math.sin(t * 2) * 0.15);
-  });
-
-  return (
-    <>
-      {/* Flat ground portal rings */}
-      <group rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
-        <mesh ref={outerRef}>
-          <ringGeometry args={[1.0, 1.15, 6]} />
-          <meshBasicMaterial color="#c8a855" transparent opacity={0.35} side={THREE.DoubleSide} />
-        </mesh>
-        <mesh ref={innerRef}>
-          <ringGeometry args={[0.55, 0.7, 4]} />
-          <meshBasicMaterial color="#8b5cf6" transparent opacity={0.3} side={THREE.DoubleSide} />
-        </mesh>
-        <mesh ref={glowRef}>
-          <circleGeometry args={[0.45, 16]} />
-          <meshBasicMaterial color="#c8a855" transparent opacity={0.18} />
-        </mesh>
-      </group>
-      {/* Astrolabe — tilted orbital rings above portal */}
-      <mesh ref={orbitalARef} position={[0, 0.6, 0]} rotation={[Math.PI / 3, 0, 0]}>
-        <torusGeometry args={[1.4, 0.03, 8, 32]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.3} />
-      </mesh>
-      <mesh ref={orbitalBRef} position={[0, 0.6, 0]} rotation={[Math.PI / 6, Math.PI / 4, 0]}>
-        <torusGeometry args={[1.0, 0.025, 8, 24]} />
-        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.25} />
-      </mesh>
-      <mesh ref={equatorialRef} position={[0, 0.6, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[1.6, 0.02, 8, 32]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.15} />
-      </mesh>
-      {/* Center eye */}
-      <mesh ref={eyeRef} position={[0, 0.6, 0]}>
-        <sphereGeometry args={[0.2, 12, 12]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.5} />
-      </mesh>
-    </>
-  );
-}
-
 // ─── Ground Paths (radial walkways from gates to center) ────────────────────
 
 function ArcanePaths() {
@@ -659,122 +597,6 @@ function DalaranBackdrop() {
 }
 
 
-// ─── Arcane Fountain ────────────────────────────────────────────────────────
-
-function ArcaneFountain() {
-  const perf      = usePerfLevel();
-  const waterRef  = useRef<THREE.Mesh>(null);
-  const crystalRef = useRef<THREE.Mesh>(null);
-  const jetRef    = useRef<THREE.Mesh>(null);
-  const splashRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const rippleRef = useRef<THREE.Mesh>(null);
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (waterRef.current) (waterRef.current.material as THREE.MeshBasicMaterial).opacity = 0.35 + Math.sin(t * 1.2) * 0.1;
-    if (crystalRef.current) {
-      crystalRef.current.rotation.y = t * 0.6;
-      crystalRef.current.position.y = 1.1 + Math.sin(t * 1.0) * 0.05;
-    }
-    if (jetRef.current) jetRef.current.scale.y = 0.8 + Math.sin(t * 3) * 0.2;
-    if (perf !== 'low') {
-      splashRefs.current.forEach((ref, i) => {
-        if (!ref) return;
-        ref.position.y = 0.28 + Math.abs(Math.sin(t * 2.5 + i * 1.5)) * 0.15;
-        (ref.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.abs(Math.sin(t * 2.5 + i * 1.5)) * 0.3;
-      });
-      if (rippleRef.current) {
-        const cycle = (t * 0.5) % 1;
-        const s = 1 + cycle;
-        rippleRef.current.scale.setScalar(s);
-        (rippleRef.current.material as THREE.MeshBasicMaterial).opacity = 0.2 * (1 - cycle);
-      }
-    }
-  });
-
-  return (
-    <group position={[4.0, 0, 9.5]}>
-      {/* Ground rune ring */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <ringGeometry args={[1.1, 1.2, 8]} />
-        <meshBasicMaterial color="#60a5fa" transparent opacity={0.1} />
-      </mesh>
-      {/* Base platform */}
-      <mesh position={[0, 0.1, 0]}>
-        <cylinderGeometry args={[1.0, 1.1, 0.2, 8]} />
-        <meshBasicMaterial color="#2a2040" />
-      </mesh>
-      {/* Basin wall */}
-      <mesh position={[0, 0.3, 0]}>
-        <torusGeometry args={[0.85, 0.12, 6, 8]} />
-        <meshBasicMaterial color="#241a38" />
-      </mesh>
-      {/* Water surface */}
-      <mesh ref={waterRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.25, 0]}>
-        <circleGeometry args={[0.75, 12]} />
-        <meshBasicMaterial color="#1a3050" transparent opacity={0.4} />
-      </mesh>
-      {/* Ripple ring — skipped in low perf mode */}
-      {perf !== 'low' && (
-        <mesh ref={rippleRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.26, 0]}>
-          <ringGeometry args={[0.3, 0.35, 12]} />
-          <meshBasicMaterial color="#60a5fa" transparent opacity={0.15} />
-        </mesh>
-      )}
-      {/* Central column */}
-      <mesh position={[0, 0.6, 0]}>
-        <cylinderGeometry args={[0.08, 0.12, 0.8, 6]} />
-        <meshBasicMaterial color="#2a2040" />
-      </mesh>
-      {/* Water jet */}
-      <mesh ref={jetRef} position={[0, 0.9, 0]}>
-        <cylinderGeometry args={[0.02, 0.01, 0.4, 4]} />
-        <meshBasicMaterial color="#60a5fa" transparent opacity={0.4} />
-      </mesh>
-      {/* Crystal top */}
-      <mesh ref={crystalRef} position={[0, 1.1, 0]}>
-        <octahedronGeometry args={[0.12, 0]} />
-        <meshBasicMaterial color="#60a5fa" transparent opacity={0.7} />
-      </mesh>
-      {/* Splash particles — skipped in low perf mode */}
-      {perf !== 'low' && [0, 1, 2, 3].map((i) => (
-        <mesh key={i} ref={(el) => { splashRefs.current[i] = el; }}
-          position={[Math.cos(i * Math.PI / 2) * 0.6, 0.3, Math.sin(i * Math.PI / 2) * 0.6]}>
-          <sphereGeometry args={[0.03, 4, 4]} />
-          <meshBasicMaterial color="#60a5fa" transparent opacity={0.3} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-function ArcaneBanner({ position, color, phase }: { position: [number, number, number]; color: string; phase: number }) {
-  const fabricRef = useRef<THREE.Mesh>(null);
-  useFrame((state) => {
-    if (fabricRef.current) fabricRef.current.rotation.z = Math.sin(state.clock.elapsedTime * 0.8 + phase) * 0.05;
-  });
-  return (
-    <group position={position}>
-      <mesh position={[0, 1.25, 0]}>
-        <cylinderGeometry args={[0.04, 0.04, 2.5, 4]} />
-        <meshBasicMaterial color="#3a2a18" />
-      </mesh>
-      <mesh position={[0, 2.4, 0]}>
-        <boxGeometry args={[0.6, 0.04, 0.04]} />
-        <meshBasicMaterial color="#3a2a18" />
-      </mesh>
-      <mesh ref={fabricRef} position={[0, 1.6, 0]}>
-        <planeGeometry args={[0.5, 1.2]} />
-        <meshBasicMaterial color={color} transparent opacity={0.7} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh position={[0, 1.0, 0]}>
-        <planeGeometry args={[0.5, 0.06]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.5} side={THREE.DoubleSide} />
-      </mesh>
-    </group>
-  );
-}
-
 // ─── Stage Rim ──────────────────────────────────────────────────────────────
 //
 // Flat annular ring on the floor at radius 8.0–8.5 framing the champion
@@ -863,74 +685,6 @@ function AtmosphericFog() {
   );
 }
 
-// ─── Stage Lights ───────────────────────────────────────────────────────────
-//
-// Six tall warm-gold glow columns at the rim (radius 8.7), offset 30°
-// so none align with the cardinal axes. Each pairs a soft additive
-// cylinder ("flame body"), a brighter pulsing core sphere ("flame head"),
-// a stone pedestal at the base, and a small ground rune ring. Adds the
-// "ten thousand candles" stage feel and balances the cyan/violet palette
-// with a warm complement. Cores pulse asynchronously via per-light phase
-// offset so the stage doesn't strobe in unison.
-
-function StageLights() {
-  const positions = useMemo<Array<[number, number]>>(() => {
-    const arr: Array<[number, number]> = [];
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
-      arr.push([Math.cos(a) * 8.7, Math.sin(a) * 8.7]);
-    }
-    return arr;
-  }, []);
-
-  const coreRefs = useRef<(THREE.Mesh | null)[]>([]);
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    coreRefs.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      const phase = t * 1.4 + i * 0.7;
-      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(phase) * 0.20;
-    });
-  });
-
-  return (
-    <>
-      {positions.map(([x, z], i) => (
-        <group key={i} position={[x, 0, z]}>
-          {/* Stone pedestal */}
-          <mesh position={[0, 0.10, 0]}>
-            <cylinderGeometry args={[0.20, 0.24, 0.20, 12]} />
-            <meshBasicMaterial color="#1a0f28" />
-          </mesh>
-          {/* Flame body — tall additive cylinder */}
-          <mesh position={[0, 1.05, 0]}>
-            <cylinderGeometry args={[0.18, 0.10, 2.0, 12, 1, true]} />
-            <meshBasicMaterial color="#f5c518" transparent opacity={0.22}
-              blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
-              depthWrite={false} fog={false} />
-          </mesh>
-          {/* Flame core — bright pulsing head */}
-          <mesh
-            ref={(m) => { coreRefs.current[i] = m; }}
-            position={[0, 0.55, 0]}
-          >
-            <sphereGeometry args={[0.13, 12, 12]} />
-            <meshBasicMaterial color="#ffd97a" transparent opacity={0.85}
-              blending={THREE.AdditiveBlending} fog={false} depthWrite={false} />
-          </mesh>
-          {/* Ground rune ring at the base */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.045, 0]}>
-            <ringGeometry args={[0.32, 0.42, 18]} />
-            <meshBasicMaterial color="#f5c518" transparent opacity={0.40}
-              blending={THREE.AdditiveBlending} depthWrite={false}
-              side={THREE.DoubleSide} fog={false} />
-          </mesh>
-        </group>
-      ))}
-    </>
-  );
-}
-
 function PlazaEnvironment() {
   const pillarPositions: [number, number, number][] = [
     [0, 0, -9], [9, 0, 0], [0, 0, 9], [-9, 0, 0],
@@ -939,25 +693,12 @@ function PlazaEnvironment() {
   return (
     <>
       <ArcaneFloor />
-      <CenterPortal />
-      {/* Stage frame — defines the inside/outside of the performance area
-          so the eye reads the plaza as a stage instead of an open courtyard.
-          The rim alone gives the floor an edge; the warm rim lights add the
-          theatre feel and balance the cyan/violet palette with gold. The
-          back fog band pushes the Citadel + Lich King visually deeper so
-          the foreground action pops. */}
       <StageRim />
-      <StageLights />
       <AtmosphericFog />
       <DalaranBackdrop />
       {pillarPositions.map((position, i) => (
         <CrystalPillar key={i} position={position} />
       ))}
-      {/* Arcane banners between pillars */}
-      <ArcaneBanner position={[4.5, 0, -7.2]} color="#8b5cf6" phase={0} />
-      <ArcaneBanner position={[-4.5, 0, -7.2]} color="#f59e0b" phase={1.2} />
-      <ArcaneBanner position={[7.2, 0, 4.5]} color="#34d399" phase={2.4} />
-      <ArcaneBanner position={[-7.2, 0, 4.5]} color="#a78bfa" phase={3.6} />
       {/* Perimeter buildings intentionally hidden: the Sanctum now reads as
           an open ritual floor rather than a crowded city perimeter. */}
       {/* Dalaran D3 — runic glyphs ring just outside the ward ring,
@@ -968,8 +709,6 @@ function PlazaEnvironment() {
       <SunGodrays />
       <AtmosphericMotes />
       <ArcanePaths />
-      {/* Fountain */}
-      <ArcaneFountain />
     </>
   );
 }
