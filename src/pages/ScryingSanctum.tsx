@@ -45,6 +45,7 @@ import {
 } from './sanctum/perf';
 import { LichKing } from './sanctum/LichKing';
 import { Minimap } from './sanctum/Minimap';
+import { SANCTUM_PALETTE as PAL } from './sanctum/palette';
 import {
   ClaudeSun, deriveSunBinding,
   SUN_POSITION, SUN_SELECTION_ID,
@@ -192,7 +193,7 @@ function ArcaneWeather() {
   );
 }
 
-function CrystalPillar({ position, color }: { position: [number, number, number]; color: string }) {
+function CrystalPillar({ position }: { position: [number, number, number] }) {
   const crystalRef = useRef<THREE.Mesh>(null);
   const beamRef = useRef<THREE.Mesh>(null);
   const runeRefs = useRef<(THREE.Mesh | null)[]>([]);
@@ -221,28 +222,28 @@ function CrystalPillar({ position, color }: { position: [number, number, number]
       {/* Stone base */}
       <mesh position={[0, 0.3, 0]}>
         <cylinderGeometry args={[0.35, 0.45, 0.6, 6]} />
-        <meshStandardMaterial color="#2a2040" roughness={0.9} />
+        <meshStandardMaterial color={PAL.stone500} roughness={0.9} />
       </mesh>
       {/* Crystal */}
       <mesh ref={crystalRef} position={[0, 1.2, 0]}>
         <octahedronGeometry args={[0.4, 0]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.5}
+        <meshStandardMaterial color={PAL.gold} emissive={PAL.gold} emissiveIntensity={0.7}
           transparent opacity={0.85} roughness={0.2} metalness={0.3} />
       </mesh>
       {/* Light column */}
       <mesh ref={beamRef} position={[0, 4, 0]}>
         <cylinderGeometry args={[0.08, 0.02, 6, 8]} />
-        <meshBasicMaterial color={color} transparent opacity={0.07} side={THREE.DoubleSide} />
+        <meshBasicMaterial color={PAL.gold} transparent opacity={0.05} side={THREE.DoubleSide} />
       </mesh>
       {/* Orbiting rune stones */}
       {[0, 1, 2].map((i) => (
         <mesh key={i} ref={(el) => { runeRefs.current[i] = el; }}>
           <octahedronGeometry args={[0.08, 0]} />
-          <meshBasicMaterial color={color} transparent opacity={0.5} />
+          <meshBasicMaterial color={PAL.stone300} transparent opacity={0.28} />
         </mesh>
       ))}
       {/* Glow light */}
-      <pointLight position={[0, 1.2, 0]} color={color} intensity={0.25} distance={5} />
+      <pointLight position={[0, 1.2, 0]} color={PAL.gold} intensity={0.16} distance={5} />
     </group>
   );
 }
@@ -494,21 +495,21 @@ function ArcaneFloor() {
           color tint stays so the night palette is preserved. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
         <circleGeometry args={[14, 64]} />
-        <meshStandardMaterial map={getMarbleTexture()} color="#b18cff"
-          emissive="#1b0f40" emissiveIntensity={0.18}
-          roughness={0.42} metalness={0.24} />
+        <meshStandardMaterial map={getMarbleTexture()} color={PAL.night700}
+          emissive={PAL.night900} emissiveIntensity={0.10}
+          roughness={0.7} metalness={0.1} />
       </mesh>
       {/* Hex stone tile pattern — unified violet stone with faint blue/gold
           shifts so the color is present but no longer confetti-like. */}
       {hexTiles.map((tile, i) => {
-        const base = tile.inner ? '#3d2a65' : '#241a3c';
-        const tint = tile.tone === 0 ? '#5cd2ff'
-          : tile.tone === 1 ? '#a78bfa'
-          : tile.tone === 2 ? '#ffd36a'
-          : '#4b3a74';
-        const color = blendHex(base, tint, tile.inner ? 0.075 : 0.045);
+        const base = tile.inner ? PAL.stone500 : PAL.night700;
+        const tint = tile.tone === 0 ? PAL.stone300
+          : tile.tone === 1 ? PAL.cyan
+          : tile.tone === 2 ? PAL.gold
+          : PAL.stone500;
+        const color = blendHex(base, tint, tile.inner ? 0.12 : 0.08);
         const finalColor = tile.dark
-          ? blendHex(color, '#090613', tile.inner ? 0.10 : 0.14)
+          ? blendHex(color, PAL.night900, tile.inner ? 0.10 : 0.14)
           : color;
         return (
           <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.048, tile.z]}>
@@ -521,13 +522,13 @@ function ArcaneFloor() {
       {hexTiles.map((tile, i) => (
         <mesh key={`r${i}`} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.046, tile.z]}>
           <ringGeometry args={[0.50, 0.54, 6]} />
-          <meshBasicMaterial color={tile.inner ? '#130d24' : '#0a0714'} transparent opacity={0.42} />
+          <meshBasicMaterial color={PAL.night900} transparent opacity={0.48} />
         </mesh>
       ))}
       {/* Ward ring — boundary between inner sanctum and outer courtyard */}
       <mesh ref={wardRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.038, 0]}>
         <ringGeometry args={[4.9, 5.15, 64]} />
-        <meshBasicMaterial color="#ffd36a" transparent opacity={0.28}
+        <meshBasicMaterial color={PAL.gold} transparent opacity={0.18}
           blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       {/* Ward rune markers — counter-rotating hex dots at radius 5 */}
@@ -537,7 +538,7 @@ function ArcaneFloor() {
           return (
             <mesh key={i} position={[Math.cos(angle) * 5, Math.sin(angle) * 5, 0]}>
               <circleGeometry args={[0.15, 6]} />
-              <meshBasicMaterial color={i % 2 === 0 ? '#5cd2ff' : '#ffd36a'} transparent opacity={0.56}
+              <meshBasicMaterial color={PAL.gold} transparent opacity={0.28}
                 blending={THREE.AdditiveBlending} depthWrite={false} />
             </mesh>
           );
@@ -546,31 +547,24 @@ function ArcaneFloor() {
       {/* Outer edge ring */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
         <ringGeometry args={[11, 11.2, 64]} />
-        <meshBasicMaterial color="#56d7ff" transparent opacity={0.28}
+        <meshBasicMaterial color={PAL.stone300} transparent opacity={0.12}
           blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
-      {/* Concentric arcane rings */}
-      {[
-        { r: 1.5, color: '#ffd36a', opacity: 0.26 },
-        { r: 3.0, color: '#ff6bd6', opacity: 0.20 },
-        { r: 5.0, color: '#5cd2ff', opacity: 0.24 },
-        { r: 8.0, color: '#a78bfa', opacity: 0.22 },
-      ].map(({ r, color, opacity }, i) => (
-        <mesh key={r} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04 + i * 0.002, 0]}>
-          <ringGeometry args={[r - 0.06, r + 0.06, 64]} />
-          <meshBasicMaterial color={color} transparent opacity={opacity}
-            blending={THREE.AdditiveBlending} depthWrite={false} />
-        </mesh>
-      ))}
+      {/* One functional ring; S4 turns its sweep into the spend gauge. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.038, 0]}>
+        <ringGeometry args={[7.94, 8.06, 64]} />
+        <meshBasicMaterial color={PAL.gold} transparent opacity={0.16}
+          blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
       {/* Center glow */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}>
         <circleGeometry args={[1.2, 32]} />
-        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.24}
+        <meshBasicMaterial color={PAL.cyan} transparent opacity={0.12}
           blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.025, 0]}>
         <circleGeometry args={[0.5, 24]} />
-        <meshBasicMaterial color="#ffd36a" transparent opacity={0.55}
+        <meshBasicMaterial color={PAL.gold} transparent opacity={0.32}
           blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       {/* Rotating rune segments */}
@@ -584,8 +578,8 @@ function ArcaneFloor() {
             <mesh key={i} position={[cx * midR, cy * midR, 0]}
               rotation={[0, 0, r.angle + Math.PI / 2]}>
               <planeGeometry args={[0.04, len]} />
-              <meshBasicMaterial color={i % 3 === 0 ? '#ffd36a' : i % 3 === 1 ? '#5cd2ff' : '#ff6bd6'}
-                transparent opacity={0.24} side={THREE.DoubleSide}
+              <meshBasicMaterial color={PAL.stone300}
+                transparent opacity={0.10} side={THREE.DoubleSide}
                 blending={THREE.AdditiveBlending} depthWrite={false} />
             </mesh>
           );
@@ -594,7 +588,7 @@ function ArcaneFloor() {
       {/* Ground fog disc */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <circleGeometry args={[10, 48]} />
-        <meshBasicMaterial color="#3a1f72" transparent opacity={0.12} />
+        <meshBasicMaterial color={PAL.night700} transparent opacity={0.18} />
       </mesh>
     </>
   );
@@ -1422,13 +1416,8 @@ function StageLights() {
 }
 
 function PlazaEnvironment() {
-  const pillarPositions: { pos: [number, number, number]; color: string }[] = [
-    { pos: [0, 0, -9], color: '#8b5cf6' },   // N — purple
-    { pos: [9, 0, 0], color: '#60a5fa' },     // E — blue
-    { pos: [0, 0, 9], color: '#34d399' },     // S — green
-    { pos: [-9, 0, 0], color: '#f59e0b' },    // W — gold
-    { pos: [6.4, 0, -6.4], color: '#c084fc' }, // NE — light purple
-    { pos: [-6.4, 0, 6.4], color: '#a78bfa' }, // SW — violet
+  const pillarPositions: [number, number, number][] = [
+    [0, 0, -9], [9, 0, 0], [0, 0, 9], [-9, 0, 0],
   ];
 
   const brazierPositions: [number, number, number][] = [
@@ -1450,8 +1439,8 @@ function PlazaEnvironment() {
       <StageLights />
       <AtmosphericFog />
       <DalaranBackdrop />
-      {pillarPositions.map((p, i) => (
-        <CrystalPillar key={i} position={p.pos} color={p.color} />
+      {pillarPositions.map((position, i) => (
+        <CrystalPillar key={i} position={position} />
       ))}
       {brazierPositions.map((pos, i) => (
         <Brazier key={i} position={pos} />
