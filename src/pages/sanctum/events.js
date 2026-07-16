@@ -6,9 +6,10 @@ export function snapshotSessions(sessions, selectedId, totalCost, contextId = nu
     sessions: new Map(sessions.map((session) => {
       const endedAt = Date.parse(session.ended_at ?? '');
       const age = now - endedAt;
+      const ghost = Boolean(session.is_ghost);
       return [session.session_id, {
-        ghost: Boolean(session.is_ghost),
-        live: Number.isFinite(age) && age >= 0 && age < LIVE_SESSION_WINDOW_MS,
+        ghost,
+        live: !ghost && Number.isFinite(age) && age >= 0 && age < LIVE_SESSION_WINDOW_MS,
       }];
     })),
     selectedId: selectedId ?? null,
@@ -28,7 +29,7 @@ export function diffEventSnapshots(previous, next) {
       continue;
     }
     if (!oldState.ghost && state.ghost) beats.push({ type: 'E3', sessionId: id });
-    if (oldState.live && !state.live) beats.push({ type: 'E2', sessionId: id });
+    if (oldState.live && !state.live && !state.ghost) beats.push({ type: 'E2', sessionId: id });
   }
   for (const [id, state] of previous.sessions) {
     if (state.live && !next.sessions.has(id)) beats.push({ type: 'E2', sessionId: id });

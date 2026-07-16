@@ -33,6 +33,14 @@ test('a newly imported ghost produces arrival and wisp beats', () => {
   const before = snapshotSessions([], null, 0, 'run-a', NOW);
   const after = snapshotSessions([session('ghost', true)], null, 0.2, 'run-a', NOW);
   assert.deepEqual(diffEventSnapshots(before, after).map((event) => event.type), ['E1', 'E3']);
+  const aged = snapshotSessions(
+    [session('ghost', true)],
+    null,
+    0.2,
+    'run-a',
+    NOW + LIVE_SESSION_WINDOW_MS + 1,
+  );
+  assert.deepEqual(diffEventSnapshots(after, aged), []);
 });
 
 test('switching run-group context rebaselines without synthetic events', () => {
