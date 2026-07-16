@@ -132,7 +132,7 @@ function readJsonArray(path) {
   }
 }
 
-function buildAskContext({ proposals, decisions, runs, digest, sync }) {
+function buildAskContext({ proposals, decisions, runs, digest, sync, sessionHistory }) {
   const rows = (value) => (Array.isArray(value) ? value : []);
   const text = (value, fallback = 'none') => typeof value === 'string' && value.trim() ? value.trim() : fallback;
   const date = (value) => Number.isFinite(Date.parse(value || '')) ? new Date(value).toISOString().slice(0, 10) : 'unknown date';
@@ -143,12 +143,14 @@ function buildAskContext({ proposals, decisions, runs, digest, sync }) {
   const sum = (key) => rows(runs).reduce((total, run) => total + (Number(run.metrics?.[key]) || 0), 0);
   const health = digest?.health || {};
   const flagged = rows(health.agents).filter((agent) => rows(agent.flags).length > 0).slice(0, 5);
+  const archiveTotal = Number(sessionHistory?.archive?.total) || 0;
+  const previewTotal = Number(sync?.artifact?.sessions) || 0;
   return [
     `Pending proposals (${pending.length}): ${pending.slice(0, 5).map((proposal) => text(proposal.title, 'Untitled proposal')).join(', ') || 'none'}`,
     `Recent decisions: ${recent.map((decision) => `${date(decision.decided_at)} ${text(decision.decision, 'unknown')} ${titleById.get(decision.proposal_id) || 'Untitled proposal'}`).join('; ') || 'none'}`,
     `Total cost: $${sum('cost_usd_real').toFixed(2)} real / $${sum('cost_usd_notional').toFixed(2)} notional`,
     `Agent health: ${Number(health.agents_total) || 0} total, ${Number(health.flagged) || 0} flagged (${flagged.map((agent) => `${text(agent.label, 'unknown agent')}: ${rows(agent.flags).map(String).join(', ')}`).join('; ') || 'none'})`,
-    `Session sync: ${text(sync?.state, 'unknown')} at ${text(sync?.phase, 'no active phase')}; ${Number(sync?.artifact?.sessions) || 0} verified sessions; issue: ${text(sync?.failure?.summary || sync?.warning?.summary, 'none')}`,
+    `Session sync: ${text(sync?.state, 'unknown')} at ${text(sync?.phase, 'no active phase')}; complete archive ${archiveTotal || 'unknown'} sessions; browser preview ${previewTotal} sessions; issue: ${text(sync?.failure?.summary || sync?.warning?.summary, 'none')}`,
   ].join('\n');
 }
 
@@ -603,6 +605,7 @@ const server = createServer(async (req, res) => {
         claims: readProjectClaims(),
         digest,
         sync: getSyncStatus({ repoRoot: ROOT }),
+        sessionHistory: querySessionHistory({ limit: 1 }),
       };
       const soul = resolveSoulProfile(
         storedSoul,

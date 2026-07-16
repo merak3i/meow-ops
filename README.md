@@ -346,7 +346,9 @@ A living 3D companion rendered in WebGL with Kajiya-Kay fur shading, subsurface 
 
 Companion is a persistent local-first chat dock available on every dashboard page. It keeps the last 30 messages in localStorage, restores the thread after reload, supports Enter-to-send / Shift+Enter-for-newline, and includes premade prompts for daily changes, sync health, next-fix ranking, and evidence-bound repair briefs.
 
-Answers use deterministic local ledgers, digest data, and structured sync status first. DeepSeek is an optional, visibly labeled copilot only when local rules cannot answer the question; it does not execute changes. The local API keeps the existing weekly spend guard and per-process call cap. The daily operator forces `MEOW_LLM_CALLS_PER_CYCLE=1`, so its scheduled cycle can make at most one DeepSeek call and still produces a deterministic digest and nudge when AI is unavailable.
+Answers use deterministic local ledgers, digest data, and structured sync status first. DeepSeek is an optional provider behind the provider-neutral **Model-assisted** label only when local rules cannot answer the question; it does not execute changes. The local API keeps the existing weekly spend guard and per-process call cap. The daily operator forces `MEOW_LLM_CALLS_PER_CYCLE=1`, so its scheduled cycle can make at most one DeepSeek call and still produces a deterministic digest and nudge when AI is unavailable.
+
+See the [Companion plain-English SOP](docs/companion-sop.md) for setup, Soul Studio, Teach, privacy-safe Tune feedback, evidence labels, and troubleshooting.
 
 ### macOS Menu Bar And Local Sync API
 

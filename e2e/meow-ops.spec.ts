@@ -156,16 +156,20 @@ test('Companion feedback records only preference metadata from an answer', async
       if (path === '/loop-eng/summary') return respond({});
       if (path === '/sync/status') return respond({ state: 'idle' });
       if (path === '/companion/soul') return respond({ ok: true, profile: mockProfile });
-      if (path === '/loop-eng/ask') return respond({
-        ok: true,
-        answer: 'BergLabs received the most time this week.',
-        source: 'keyword',
-        gate: 'known_known',
-        confidence: 1,
-        evidence: [{ kind: 'session_metrics', ref: 'sessions.json', detail: 'Weekly project duration' }],
-        unknowns: [],
-        soul: { name: 'Companion', preset: 'clear-operator', revision: 4, uncertainty_policy: 'evidence-led', project_overlay: null },
-      });
+      if (path === '/loop-eng/ask') {
+        const request = JSON.parse(String(init?.body || '{}'));
+        const isUnknown = String(request.question || '').includes('unknown');
+        return respond({
+          ok: true,
+          answer: isUnknown ? 'I need the current project constraint.' : 'BergLabs received the most time this week.',
+          source: isUnknown ? 'keyword' : 'llm',
+          gate: isUnknown ? 'known_unknown' : 'known_known',
+          confidence: isUnknown ? 0 : 1,
+          evidence: isUnknown ? [] : [{ kind: 'session_metrics', ref: 'sessions.json', detail: 'Weekly project duration' }],
+          unknowns: isUnknown ? ['Current project constraint'] : [],
+          soul: { name: 'Companion', preset: 'clear-operator', revision: 4, uncertainty_policy: 'evidence-led', project_overlay: null },
+        });
+      }
       if (path === '/loop-eng/nonce') return respond({ nonce: `nonce-${++nonceIndex}` });
       if (path === '/companion/feedback') {
         testWindow.__companionFeedbackBody = JSON.parse(String(init?.body || '{}'));
@@ -183,6 +187,8 @@ test('Companion feedback records only preference metadata from an answer', async
   await chat.getByRole('button', { name: 'Send message' }).click();
   const answer = chat.locator('.companion-chat__message--assistant').filter({ hasText: 'BergLabs received the most time this week.' });
   await expect(answer).toBeVisible();
+  await expect(answer.getByText('Model-assisted')).toBeVisible();
+  await expect(answer.getByText('DeepSeek copilot')).toHaveCount(0);
   await answer.getByText('Tune this response').click();
   await answer.getByRole('button', { name: 'Too long' }).click();
   await expect(answer.getByText(/Saved as metadata only/)).toBeVisible();
@@ -195,6 +201,11 @@ test('Companion feedback records only preference metadata from an answer', async
   expect(feedbackBody).not.toHaveProperty('question');
   expect(feedbackBody).not.toHaveProperty('answer');
   expect(feedbackBody).not.toHaveProperty('response_text');
+
+  await chat.getByRole('textbox', { name: 'Message Companion' }).fill('What is unknown?');
+  await chat.getByRole('button', { name: 'Send message' }).click();
+  const unknown = chat.locator('.companion-chat__message--assistant').filter({ hasText: 'I need the current project constraint.' });
+  await expect(unknown.locator('footer').getByText('Unknown', { exact: true })).toBeVisible();
 });
 
 test('Soul Studio applies a review-only preference suggestion only after owner action', async ({ page }) => {
