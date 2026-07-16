@@ -28,6 +28,7 @@ import type {
   Proposal,
   Simulation,
 } from '@/types/loop';
+import { loopIdForEntityId } from './loop-ops/loop-entity-map.mjs';
 
 type View = 'proposals' | 'runs' | 'ship-next' | 'digest' | 'activity';
 type Filter = 'pending' | 'drafts' | 'decided' | 'expired' | 'all';
@@ -349,6 +350,8 @@ function deltaTone(deltaPct: number) {
 }
 
 export default function LoopReview() {
+  const requestedEntity = new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('entity');
+  const requestedLoop = requestedEntity ? loopIdForEntityId(requestedEntity) : null;
   const [view, setView] = useState<View>('proposals');
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [decisions, setDecisions] = useState<Decision[]>([]);
@@ -359,7 +362,7 @@ export default function LoopReview() {
   const [digest, setDigest] = useState<DigestData | null>(null);
   const [digestHistory, setDigestHistory] = useState<DigestData[]>([]);
   const [summary, setSummary] = useState<LoopSummary>({ counts_by_status: {}, open_per_loop: {}, total: 0 });
-  const [filter, setFilter] = useState<Filter>('pending');
+  const [filter, setFilter] = useState<Filter>(requestedLoop ? 'all' : 'pending');
   const [loopFilter, setLoopFilter] = useState('all');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
@@ -447,6 +450,7 @@ export default function LoopReview() {
 
   const filtered = useMemo(() => {
     return sorted.filter((proposal) => {
+      if (requestedLoop && proposal.loop_id !== requestedLoop) return false;
       const latest = latestByProposal.get(proposal.proposal_id);
       if (filter === 'all') return true;
       if (filter === 'pending') return proposal.status === 'pending_approval' && (!latest || latest.decision === 'undone');
@@ -454,7 +458,7 @@ export default function LoopReview() {
       if (filter === 'expired') return isExpiredProposal(proposal, latest);
       return isDecided(proposal, latest);
     });
-  }, [filter, latestByProposal, sorted]);
+  }, [filter, latestByProposal, requestedLoop, sorted]);
 
   const sortedRuns = useMemo(() => {
     return [...runs].sort((a, b) => b.captured_at.localeCompare(a.captured_at));
@@ -590,6 +594,11 @@ export default function LoopReview() {
           <ToggleGroup value={filter} onChange={(value: Filter) => setFilter(value)} options={FILTERS} size="sm" ariaLabel="Proposal status filter" />
         )}
       </div>
+      {requestedEntity && requestedLoop && (
+        <div style={{ ...styles.badge, alignSelf: 'flex-start' }} data-testid="review-entity-filter">
+          filtered to {requestedEntity}
+        </div>
+      )}
 
       <button
         type="button"

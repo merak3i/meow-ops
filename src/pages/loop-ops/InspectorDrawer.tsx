@@ -5,7 +5,8 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { StatusChip } from './StatusChip';
-import type { LoopEntity } from './types';
+import type { LoopEntity, LoopGate } from './types';
+import { isGateStale } from './gate-status.mjs';
 
 const drawer: CSSProperties = {
   width: 340, flexShrink: 0, borderLeft: '1px solid var(--border)',
@@ -51,7 +52,7 @@ function CopyableCommand({ command }: { command: string }) {
   );
 }
 
-export function InspectorDrawer({ entity, onClose }: { entity: LoopEntity; onClose: () => void }) {
+export function InspectorDrawer({ entity, gates, onClose }: { entity: LoopEntity; gates: readonly LoopGate[]; onClose: () => void }) {
   const d = entity.detail ?? {};
   const knobs: Array<[string, string | number | undefined]> = [
     ['archetype', entity.archetype ?? undefined], ['risk', entity.riskClass ?? undefined],
@@ -89,6 +90,17 @@ export function InspectorDrawer({ entity, onClose }: { entity: LoopEntity; onClo
           {d.lastCheckedAt && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{d.lastCheckedAt}</span>}
         </div>
         {d.currentTruth && <p style={body}>{d.currentTruth}</p>}
+        {gates.length === 0 && <p style={{ ...body, color: 'var(--loop-needs-review)' }}>No gate evidence recorded — needs review.</p>}
+        {gates.map((gate) => (
+          <div key={gate.id} data-testid="loop-gate-evidence" style={{ marginTop: 8 }}>
+            <p style={body}><strong>{gate.gateType}</strong>: {gate.evidence ?? 'no evidence attached'}</p>
+            {gate.blockingReason && <p style={{ ...body, color: 'var(--loop-blocked)' }}>blocking: {gate.blockingReason}</p>}
+            <p style={{ ...body, fontSize: 10 }}>
+              checked: {gate.lastCheckedAt ?? 'never'}
+              {isGateStale(gate) ? ` · stale after 7 days — needs review` : ''}
+            </p>
+          </div>
+        ))}
       </Section>
 
       <Section title="Not verified">

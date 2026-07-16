@@ -39,6 +39,8 @@ import {
   recordPreferenceDecision,
 } from './companion-preferences.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
+import { readLedgerLoopRuns } from './loop-ledger-to-runs.mjs';
+import { querySessionHistory } from './session-history.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -244,11 +246,13 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  const path = new URL(req.url, `http://localhost:${PORT}`).pathname;
+  const requestUrl = new URL(req.url, `http://localhost:${PORT}`);
+  const path = requestUrl.pathname;
   const needsBrowserHeader =
     path.startsWith('/sync')
     || path === '/data/sessions.json'
     || path === '/data/cost-summary.json'
+    || path.startsWith('/session-history/')
     || path.startsWith('/loop-eng/')
     || path.startsWith('/project-intelligence/')
     || path.startsWith('/companion/');
@@ -278,6 +282,26 @@ const server = createServer(async (req, res) => {
     } catch {
       res.statusCode = 404;
       res.end(JSON.stringify({ error: 'File not found - run a sync first' }));
+    }
+    return;
+  }
+
+  // ── GET /session-history/sessions ────────────────────────────────────────
+  // Filter the complete local archive before slicing a bounded browser page.
+  if (req.method === 'GET' && path === '/session-history/sessions') {
+    try {
+      const result = querySessionHistory({
+        limit: requestUrl.searchParams.get('limit'),
+        cursor: requestUrl.searchParams.get('cursor'),
+        from: requestUrl.searchParams.get('from'),
+        to: requestUrl.searchParams.get('to'),
+        project: requestUrl.searchParams.get('project'),
+        source: requestUrl.searchParams.get('source'),
+        model: requestUrl.searchParams.get('model'),
+      });
+      sendJson(res, 200, result);
+    } catch (err) {
+      sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
     }
     return;
   }
@@ -775,16 +799,18 @@ const server = createServer(async (req, res) => {
   }
 
   // ── Loop-Ops endpoints (spec §Phase 4) — read/local-only ─────────────────
-  // GET /loop-ops/spec and /loop-ops/runs serve the gitignored local JSON;
+  // GET /loop-ops/spec, /loop-ops/runs, and /loop-ops/gates serve local JSON;
   // POST /loop-ops/sync re-runs the workbook importer. No push path exists
   // here by construction — the importer never touches git.
 
-  if (req.method === 'GET' && (path === '/loop-ops/spec' || path === '/loop-ops/runs')) {
-    const file = path === '/loop-ops/spec' ? 'spec.json' : 'runs.json';
+  if (req.method === 'GET' && ['/loop-ops/spec', '/loop-ops/runs', '/loop-ops/gates'].includes(path)) {
+    const file = path === '/loop-ops/spec' ? 'spec.json' : path === '/loop-ops/runs' ? 'runs.json' : 'gates.json';
     try {
       res.end(readFileSync(join(LOOP_OPS_DIR, file), 'utf8'));
     } catch {
       if (path === '/loop-ops/runs') {
+        res.end(JSON.stringify(readLedgerLoopRuns()));
+      } else if (path === '/loop-ops/gates') {
         res.end('[]');
       } else {
         res.statusCode = 404;
@@ -907,9 +933,11 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /sync/runs/:id           - persisted sanitized run metadata');
   console.log('  GET  /data/sessions.json      - exported session metrics');
   console.log('  GET  /data/cost-summary.json  - exported spend summary');
+  console.log('  GET  /session-history/sessions - filtered, paginated session archive');
   console.log('  GET  /loop-ops/spec           - Loop-Ops entities (local import)');
   console.log('  GET  /loop-ops/status         - Loop-Ops file freshness');
   console.log('  GET  /loop-ops/runs           - recorded loop runs');
+  console.log('  GET  /loop-ops/gates          - local verification gates');
   console.log('  POST /loop-ops/sync           - re-import the Loop Ops workbook');
   console.log('  GET  /loop-eng/proposals      - Loop Engineering proposals');
   console.log('  GET  /loop-eng/simulations    - Loop Engineering simulations');

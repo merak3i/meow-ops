@@ -6,25 +6,13 @@ import { useEffect, useState } from 'react';
 import { fetchLoopRuns, fetchSessionCosts } from './api';
 import type { SessionCost } from './api';
 import type { LoopRun } from './types';
+import { isValidLoopRun } from './run-validation.mjs';
+import { fetchLoopComparisons } from '@/lib/loop-api';
+import type { Comparison } from '@/types/loop';
 
 export interface EnrichedRun extends LoopRun {
   joined: SessionCost | null;
-}
-
-const RUN_STATES = ['planned', 'running', 'passed', 'failed', 'stopped'];
-
-function isValidRun(value: unknown): value is LoopRun {
-  if (typeof value !== 'object' || value === null) return false;
-  const r = value as Partial<LoopRun>;
-  return typeof r.id === 'string'
-    && typeof r.goal === 'string'
-    && RUN_STATES.includes(r.state as string)
-    && typeof r.startedAt === 'string'
-    && Array.isArray(r.entityIds)
-    && Array.isArray(r.sessionIds)
-    && Array.isArray(r.artifacts)
-    && Array.isArray(r.verified)
-    && Array.isArray(r.notVerified);
+  comparison: Comparison | null;
 }
 
 export function useLoopRuns(): { runs: EnrichedRun[]; loading: boolean } {
@@ -35,8 +23,9 @@ export function useLoopRuns(): { runs: EnrichedRun[]; loading: boolean } {
     let cancelled = false;
     (async () => {
       try {
-        const raw = await fetchLoopRuns();
-        const valid = Array.isArray(raw) ? raw.filter(isValidRun) : [];
+        const [raw, comparisons] = await Promise.all([fetchLoopRuns(), fetchLoopComparisons()]);
+        const valid = Array.isArray(raw) ? raw.filter(isValidLoopRun) : [];
+        const comparisonByRun = new Map(comparisons.map((comparison) => [comparison.run_id, comparison]));
         const allIds = [...new Set(valid.flatMap((r) => r.sessionIds))];
         const costs = await fetchSessionCosts(allIds);
         if (cancelled) return;
@@ -48,7 +37,7 @@ export function useLoopRuns(): { runs: EnrichedRun[]; loading: boolean } {
             durationSeconds: acc.durationSeconds + c.durationSeconds,
             models: [...new Set([...acc.models, ...c.models])],
           }));
-          return { ...run, joined };
+          return { ...run, joined, comparison: comparisonByRun.get(run.id) ?? null };
         });
         // Newest first.
         enriched.sort((a, b) => b.startedAt.localeCompare(a.startedAt));

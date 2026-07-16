@@ -571,7 +571,11 @@ test('Loop Ops: inspector drawer answers the four questions', async ({ page }) =
 test('Loop Ops: run timeline renders a recorded run with joined session cost', async ({ page }) => {
   test.skip(!(await loopSpecPresent(page)), 'local-only Loop-Ops fixture absent — run the importer');
   const runsRes = await page.request.get('/data/loop-ops/runs.json');
-  test.skip(runsRes.status() !== 200, 'local-only runs.json absent — record a run first (SOP §5)');
+  const runsContentType = runsRes.headers()['content-type'] || '';
+  test.skip(
+    runsRes.status() !== 200 || !runsContentType.includes('json'),
+    'local-only runs.json absent — record a run first (SOP §5)',
+  );
   const runs = await runsRes.json();
   test.skip(!Array.isArray(runs) || runs.length === 0, 'runs.json empty');
 
@@ -591,6 +595,139 @@ test('Loop Ops: run timeline renders a recorded run with joined session cost', a
   // Expanding surfaces the evidence contract: verified + not-verified lists.
   await card.getByRole('button').first().click();
   await expect(timeline.locator('text=/not verified:/').first()).toBeVisible();
+});
+
+test('Loop Ops: ledger-backed run timeline shows real cost and operator details', async ({ page }) => {
+  const entity = (id: string, kind: 'coordinator' | 'director' | 'assistant', group: string | null, wave: number | null) => ({
+    id, kind, label: id, group, surfaceKey: kind === 'assistant' ? id : null,
+    archetype: null, riskClass: null, wave, status: 'passed', sources: [], repoLinks: [],
+    allowedActions: [], detail: {},
+  });
+  const spec = {
+    meta: {
+      specVersion: 1, generatedBy: 'e2e', generatedAt: '2026-07-16T12:00:00.000Z',
+      masterSpec: 'fixture', entityCount: 7, assistantCount: 2,
+      productionWritesEnabled: false, links: {},
+    },
+    entities: [
+      entity('coordinator', 'coordinator', null, null),
+      entity('director-research', 'director', 'research', null),
+      entity('director-build', 'director', 'build', null),
+      entity('director-review', 'director', 'review', null),
+      entity('director-ops', 'director', 'ops', null),
+      entity('meow-ops-dev', 'assistant', 'research', 1),
+      entity('meow-ops-guardrails', 'assistant', 'review', 2),
+    ],
+    edges: [{ id: 'dep.dev.guardrails', source: 'meow-ops-dev', target: 'meow-ops-guardrails' }],
+  };
+  const runs = [{
+    id: 'run-ledger-e2e', goal: 'Light the cockpit', entityIds: ['meow-ops-dev'],
+    state: 'passed', startedAt: '2026-07-16T12:00:00.000Z', endedAt: '2026-07-16T12:00:00.000Z',
+    operator: 'claude+codex', sessionIds: [], artifacts: [], cost: { usd: 12.5, tokens: 4200 },
+    verified: [], notVerified: [],
+  }];
+  await page.context().route('**/data/loop-ops/spec.json*', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(spec),
+  }));
+  await page.context().route('**/data/loop-ops/runs.json*', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(runs),
+  }));
+  await mockLoopEng(page, { comparisons: [{
+    schema_version: 1, comparison_id: 'cmp-ledger-e2e', run_id: 'run-ledger-e2e',
+    baseline_run_id: 'run-baseline', loop_id: 'meow-ops-dev', flags: [],
+    deltas: {
+      cost_usd_real: { before: 1, after: 35.6594, delta_pct: 3465.94 },
+      total_tokens: { before: 100, after: 507.15, delta_pct: 407.15 },
+      tool_error_count: { before: 2, after: 0, delta_pct: -100 },
+    },
+  }] });
+
+  await nav(page, 'The Loom');
+  const timeline = page.locator('[data-testid="loop-run-timeline"]');
+  await expect(timeline.getByText('No runs recorded')).toHaveCount(0);
+  const card = timeline.locator('[data-testid="loop-run"]');
+  await expect(card).toBeVisible();
+  await expect(card.getByText(/^\$12\.50/)).toBeVisible();
+  await expect(card.locator('[data-testid="loop-run-delta"]')).toHaveCount(3);
+  await expect(card.getByText(/real cost \+3465\.94%/)).toBeVisible();
+  await card.getByRole('button').click();
+  await expect(card.getByText('operator: claude+codex')).toBeVisible();
+});
+
+test('Loop Ops: stale gate degrades node status and exposes evidence in inspector', async ({ page }) => {
+  const entity = (id: string, kind: 'coordinator' | 'director' | 'assistant', group: string | null, wave: number | null) => ({
+    id, kind, label: id, group, surfaceKey: kind === 'assistant' ? id : null,
+    archetype: null, riskClass: null, wave, status: 'passed', sources: [], repoLinks: [],
+    allowedActions: [], detail: {},
+  });
+  const spec = {
+    meta: {
+      specVersion: 1, generatedBy: 'e2e', generatedAt: '2026-07-16T12:00:00.000Z',
+      masterSpec: 'fixture', entityCount: 7, assistantCount: 2,
+      productionWritesEnabled: false, links: {},
+    },
+    entities: [
+      entity('coordinator', 'coordinator', null, null),
+      entity('director-research', 'director', 'research', null),
+      entity('director-build', 'director', 'build', null),
+      entity('director-review', 'director', 'review', null),
+      entity('director-ops', 'director', 'ops', null),
+      entity('meow-ops-dev', 'assistant', 'research', 1),
+      entity('meow-ops-guardrails', 'assistant', 'review', 2),
+    ],
+    edges: [{ id: 'dep.dev.guardrails', source: 'meow-ops-dev', target: 'meow-ops-guardrails' }],
+  };
+  const gates = [{
+    id: 'gate-stale', entityId: 'meow-ops-dev', gateType: 'eval', status: 'passed',
+    evidence: 'Eval set passed 18/18', blockingReason: null,
+    lastCheckedAt: '2026-07-01T12:00:00.000Z',
+  }];
+  await page.context().route('**/data/loop-ops/spec.json*', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(spec),
+  }));
+  await page.context().route('**/data/loop-ops/gates.json*', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(gates),
+  }));
+  await page.context().route('**/data/loop-ops/runs.json*', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: '[]',
+  }));
+  const proposalBase = {
+    schema_version: 1, created_at: '2026-07-16T12:00:00.000Z', created_by: 'assistant:loop',
+    category: 'workflow', one_percent_target: 'Keep the Loom current',
+    evidence: [{ kind: 'rule', ref: 'loom-e2e' }], rollback: { plan: 'No write occurred' },
+    review_only: true, confidence: 0.8, risk: 'low', status: 'draft',
+  };
+  await mockLoopEng(page, {
+    proposals: [
+      { ...proposalBase, proposal_id: 'prop-dev-1', loop_id: 'meow-ops-dev', title: 'Dev proposal one' },
+      { ...proposalBase, proposal_id: 'prop-dev-2', loop_id: 'meow-ops-dev', title: 'Dev proposal two' },
+      { ...proposalBase, proposal_id: 'prop-other', loop_id: 'meow-ops-guardrails', title: 'Other entity proposal' },
+    ],
+    summary: { counts_by_status: { draft: 3 }, open_per_loop: { 'meow-ops-dev': 2, 'meow-ops-guardrails': 1 }, total: 3 },
+  });
+
+  await nav(page, 'The Loom');
+  await page.getByRole('button', { name: 'Expand all waves' }).click();
+  const node = page.locator('[data-entity-id="meow-ops-dev"]');
+  await expect(node.locator('[data-status="needs-review"]')).toBeVisible();
+  await node.click();
+  const inspector = page.locator('[data-testid="loop-inspector"]');
+  await expect(inspector.getByText('Eval set passed 18/18', { exact: false })).toBeVisible();
+  await expect(inspector.getByText(/stale after 7 days/i)).toBeVisible();
+  await expect(inspector.locator('[data-status="needs-review"]')).toBeVisible();
+  await expect(page.locator('.loop-dependency-edge')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Show dependencies' }).click();
+  await expect(page.locator('.loop-dependency-edge')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Hide dependencies' }).click();
+  await expect(page.locator('.loop-dependency-edge')).toHaveCount(0);
+  const badge = node.getByRole('button', { name: 'Open 2 proposals for meow-ops-dev' });
+  await expect(badge).toHaveText('⚑ 2');
+  await badge.click();
+  await expect(page.getByRole('heading', { name: 'Review Deck', exact: true })).toBeVisible();
+  await expect(page.locator('[data-testid="review-entity-filter"]')).toHaveText('filtered to meow-ops-dev');
+  await expect(page.getByRole('button', { name: /Dev proposal one/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Dev proposal two/ })).toBeVisible();
+  await expect(page.getByText('Other entity proposal')).toHaveCount(0);
 });
 
 test('Review Deck: empty state renders without local helper', async ({ page }) => {

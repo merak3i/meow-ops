@@ -10,6 +10,8 @@ import { scanCodexSessions }  from './parse-codex.mjs';
 import { scanCursorSessions } from './parse-cursor.mjs';
 import { scanAiderProjects }  from './parse-aider.mjs';
 import { scanAntigravitySessions, DEFAULT_ANTIGRAVITY_DIR } from './parse-antigravity.mjs';
+import { readSessionHistory, updateSessionHistory } from './session-history.mjs';
+import { buildSessionRollups } from './session-rollups.mjs';
 
 const CLAUDE_DIR = join(process.env.HOME, '.claude', 'projects');
 const CODEX_DIR  = join(process.env.HOME, '.codex', 'sessions');
@@ -51,9 +53,12 @@ const AIDER_PROJECT_DIRS = process.env.AIDER_PROJECTS
   : [];
 const OUTPUT_DIR = join(import.meta.dirname, '..', 'public', 'data');
 const OUTPUT_FILE = join(OUTPUT_DIR, 'sessions.json');
-// Raise via MEOW_MAX_SESSIONS env var (e.g. MEOW_MAX_SESSIONS=2000 node sync/export-local.mjs)
-// Default 1000 — sessions.json stays under ~2 MB; the browser handles it fine.
-const MAX_SESSIONS = parseInt(process.env.MEOW_MAX_SESSIONS || '1000', 10);
+// Lightweight compatibility preview only. Full retention lives in the uncapped
+// local archive and browser detail views query it in bounded pages.
+const SESSION_PREVIEW_LIMIT = parseInt(
+  process.env.MEOW_SESSION_PREVIEW_LIMIT || process.env.MEOW_MAX_SESSIONS || '1000',
+  10,
+);
 
 console.log('🐱 Meow Operations — Local Export\n');
 
@@ -232,20 +237,26 @@ allUnique.sort((a, b) => {
   return bTime - aTime;
 });
 
-// Take latest N (this is what the user asked for: "last 100")
-const latest = allUnique.slice(0, MAX_SESSIONS).map(toPublicSession);
+const publicSessions = allUnique.map(toPublicSession);
+const archive = updateSessionHistory(publicSessions);
+const completeSessions = readSessionHistory();
+const latest = completeSessions.slice(0, SESSION_PREVIEW_LIMIT);
 
-console.log(`Exporting latest ${latest.length} sessions\n`);
+console.log(`Archived ${archive.total} sessions (${archive.appended} new or changed revision${archive.appended === 1 ? '' : 's'})`);
+if (archive.thresholdExceeded) {
+  console.warn(`Archive is above the configurable ${archive.warningThreshold.toLocaleString()}-session safety threshold; retention remains uncapped.`);
+}
+console.log(`Exporting ${latest.length}-session compatibility preview\n`);
 
 // Stats — totals are over ALL sessions (not the capped export slice), so the
 // headline numbers match cost-summary.json rather than under-reporting when
-// more than MAX_SESSIONS sessions exist.
-const totalTokens = allUnique.reduce((a, s) => a + (s.total_tokens || 0), 0);
-const totalCost = allUnique.reduce((a, s) => a + (s.estimated_cost_usd || 0), 0);
+// more than SESSION_PREVIEW_LIMIT sessions exist.
+const totalTokens = completeSessions.reduce((a, s) => a + (s.total_tokens || 0), 0);
+const totalCost = completeSessions.reduce((a, s) => a + (s.estimated_cost_usd || 0), 0);
 const byProject = {};
 const byCat = {};
 const byModel = {};
-for (const s of latest) {
+for (const s of completeSessions) {
   byProject[s.project] = (byProject[s.project] || 0) + 1;
   byCat[s.cat_type] = (byCat[s.cat_type] || 0) + 1;
   if (s.model) byModel[s.model] = (byModel[s.model] || 0) + 1;
@@ -279,6 +290,7 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
   const TZ = process.env.MEOW_TZ
     || Intl.DateTimeFormat().resolvedOptions().timeZone
     || 'UTC';
+  const rollups = buildSessionRollups(completeSessions, { timeZone: TZ });
 
   function istDate(iso) {
     return new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ });
@@ -335,7 +347,7 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
 
   // Per-source this-month split
   const sourceMonth = {};
-  for (const s of allUnique) {
+  for (const s of completeSessions) {
     const d = new Date(activityTs(s));
     if (d < thisMonthStart) continue;
     const src = s.source || 'claude';
@@ -344,7 +356,7 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
   }
 
   // Today bucket (IST day match)
-  const todayBucket = allUnique.reduce((acc, s) => {
+  const todayBucket = completeSessions.reduce((acc, s) => {
     if (istDate(activityTs(s)) === todayStr) {
       addSession(acc, s);
     }
@@ -354,52 +366,47 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
   // ── Per-day summary (ALL sessions, no 250/1000 cap) ──────────────────────────
   // Used by ByDay chart and CostTracker so they show accurate data regardless
   // of how many sessions are in sessions.json.
-  const dailyMap = {};
-  for (const s of allUnique) {
-    const date = istDate(activityTs(s));
-    if (!dailyMap[date]) {
-      dailyMap[date] = {
-        date,
-        session_count:          0,
-        total_input_tokens:     0,
-        total_output_tokens:    0,
-        total_cache_creation:   0,
-        total_cache_read:       0,
-        total_tokens:           0,
-        estimated_cost_usd:     0,
-        total_duration_seconds: 0,
-        active_projects:        new Set(),
-        ghost_count:            0,
-      };
-    }
-    const d = dailyMap[date];
-    d.session_count++;
-    d.total_input_tokens   += s.input_tokens   || 0;
-    d.total_output_tokens  += s.output_tokens  || 0;
-    d.total_cache_creation += s.cache_creation_tokens || 0;
-    d.total_cache_read     += s.cache_read_tokens     || 0;
-    d.total_tokens         += s.total_tokens   || 0;
-    d.estimated_cost_usd   += s.estimated_cost_usd   || 0;
-    d.total_duration_seconds += s.duration_seconds || 0;
-    d.active_projects.add(s.project);
-    if (s.is_ghost) d.ghost_count++;
-  }
-  const daily_summary = Object.values(dailyMap)
-    .map((d) => ({ ...d, active_projects: d.active_projects.size }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const daily_summary = rollups.daily.map((d) => ({
+    date: d.key,
+    session_count: d.sessions,
+    total_input_tokens: d.input_tokens,
+    total_output_tokens: d.output_tokens,
+    total_cache_creation: d.cache_creation_tokens,
+    total_cache_read: d.cache_read_tokens,
+    total_tokens: d.tokens,
+    estimated_cost_usd: d.cost,
+    total_duration_seconds: d.duration_seconds,
+    active_projects: d.distinct_projects,
+    projects: d.projects,
+    ghost_count: d.ghost_count,
+  }));
 
   const summary = {
     exportedAt:    now.toISOString(),
     today:         todayBucket,
-    thisWeek:      bucket(allUnique, thisWeekStart, now),
-    lastWeek:      bucket(allUnique, lastWeekStart, lastWeekEnd),
-    thisMonth:     bucket(allUnique, thisMonthStart, now),
-    lastMonth:     bucket(allUnique, lastMonthStart, lastMonthEnd),
-    thisYear:      bucket(allUnique, thisYearStart, now),
-    lastYear:      bucket(allUnique, lastYearStart, lastYearEnd),
-    allTime:       allUnique.reduce((acc, s) => addSession(acc, s), emptyBucket()),
+    thisWeek:      bucket(completeSessions, thisWeekStart, now),
+    lastWeek:      bucket(completeSessions, lastWeekStart, lastWeekEnd),
+    thisMonth:     bucket(completeSessions, thisMonthStart, now),
+    lastMonth:     bucket(completeSessions, lastMonthStart, lastMonthEnd),
+    thisYear:      bucket(completeSessions, thisYearStart, now),
+    lastYear:      bucket(completeSessions, lastYearStart, lastYearEnd),
+    allTime:       rollups.allTime,
     bySource:      sourceMonth,
     daily_summary,
+    monthly_summary: rollups.monthly,
+    yearly_summary: rollups.yearly,
+    byProject: rollups.byProject,
+    byModel: rollups.byModel,
+    bySourceAllTime: Object.fromEntries(rollups.bySource.map((row) => [row.key, row])),
+    archive: {
+      total: archive.total,
+      appendOnly: true,
+      retentionCapped: false,
+      warningThreshold: archive.warningThreshold,
+      thresholdExceeded: archive.thresholdExceeded,
+      detailPageMax: 500,
+      previewLimit: SESSION_PREVIEW_LIMIT,
+    },
   };
 
   const SUMMARY_FILE = join(OUTPUT_DIR, 'cost-summary.json');

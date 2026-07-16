@@ -25,7 +25,7 @@ const baseStyle: CSSProperties = {
 const handleStyle: CSSProperties = { opacity: 0, pointerEvents: 'none' };
 
 export function EntityNode({ data }: NodeProps<Node<EntityNodeData>>) {
-  const { entity, revealDelay } = data;
+  const { entity, revealDelay, openProposalCount, onOpenProposals } = data;
   const kindStyle = KIND_STYLE[entity.kind];
   return (
     <div
@@ -53,6 +53,23 @@ export function EntityNode({ data }: NodeProps<Node<EntityNodeData>>) {
         {entity.riskClass && <span>{entity.riskClass}</span>}
         {entity.wave !== null && <span>W{entity.wave}</span>}
       </div>
+      {openProposalCount > 0 && (
+        <button
+          type="button"
+          aria-label={`Open ${openProposalCount} proposals for ${entity.label}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenProposals?.(entity.id);
+          }}
+          style={{
+            alignSelf: 'flex-start', border: '1px solid var(--warning)', borderRadius: 999,
+            padding: '2px 7px', background: 'transparent', color: 'var(--warning)',
+            fontSize: 10, cursor: 'pointer',
+          }}
+        >
+          ⚑ {openProposalCount}
+        </button>
+      )}
       <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={false} />
     </div>
   );

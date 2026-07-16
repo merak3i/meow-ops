@@ -2,10 +2,12 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { spawn } from 'child_process';
-import { statSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 import { join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync/sync-runner.mjs';
+import { readLedgerLoopRuns } from './sync/loop-ledger-to-runs.mjs';
+import { querySessionHistory } from './sync/session-history.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -44,12 +46,14 @@ function meowSyncPlugin() {
           res.end();
           return;
         }
+        if (blockNonLocal(req, res)) return;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify(getSyncStatus({ repoRoot: server.config.root })));
       });
 
       server.middlewares.use('/api/sync/runs', (req, res) => {
         if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        if (blockNonLocal(req, res)) return;
         const runId = new URL(req.url || '/', 'http://localhost').pathname.split('/').filter(Boolean)[0];
         const run = getSyncRun(runId);
         res.statusCode = run ? 200 : 404;
@@ -57,10 +61,53 @@ function meowSyncPlugin() {
         res.end(JSON.stringify(run || { ok: false, error: 'Sync run not found' }));
       });
 
+      server.middlewares.use('/api/session-history/sessions', (req, res) => {
+        if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        if (blockNonLocal(req, res)) return;
+        try {
+          const url = new URL(req.url || '/', 'http://localhost');
+          const result = querySessionHistory({
+            limit: url.searchParams.get('limit'),
+            cursor: url.searchParams.get('cursor'),
+            from: url.searchParams.get('from'),
+            to: url.searchParams.get('to'),
+            project: url.searchParams.get('project'),
+            source: url.searchParams.get('source'),
+            model: url.searchParams.get('model'),
+          });
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }));
+        }
+      });
+
       // Dev-mode mirror of the local API's Loop-Ops endpoints (sync/local-api.mjs).
-      // GETs for spec/runs aren't needed here — Vite serves public/data/ directly.
+      // Spec is served statically; runs/gates need a local fallback when their
+      // gitignored JSON files do not exist.
+      for (const [route, file, fallback] of [
+        ['/api/loop-ops/runs', 'runs.json', () => readLedgerLoopRuns()],
+        ['/api/loop-ops/gates', 'gates.json', () => []],
+      ]) {
+        server.middlewares.use(route, (req, res) => {
+          if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+          if (blockNonLocal(req, res)) return;
+          let payload;
+          try {
+            payload = JSON.parse(readFileSync(join(server.config.root, 'public', 'data', 'loop-ops', file), 'utf8'));
+          } catch {
+            payload = fallback();
+          }
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify(payload));
+        });
+      }
+
       server.middlewares.use('/api/loop-ops/status', (req, res) => {
         if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        if (blockNonLocal(req, res)) return;
         const dir = join(server.config.root, 'public', 'data', 'loop-ops');
         const files = {};
         for (const name of ['spec.json', 'gates.json', 'runs.json']) {
@@ -103,6 +150,7 @@ function meowSyncPlugin() {
       // Dev-mode mirror of sync/local-api.mjs for the Capacity & Usage page.
       server.middlewares.use('/api/superadmin-usage/status', (req, res) => {
         if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        if (blockNonLocal(req, res)) return;
         try {
           const filePath = join(server.config.root, 'public', 'data', 'superadmin-usage.json');
           const stat = statSync(filePath);

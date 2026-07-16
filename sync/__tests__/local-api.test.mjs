@@ -5,10 +5,12 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import http from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { updateSessionHistory } from '../session-history.mjs';
 
 // Raw GET so we can spoof the Host header (fetch forbids overriding it).
 function rawGet(path, headers) {
@@ -26,14 +28,44 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 7437;
 const BASE = `http://127.0.0.1:${PORT}`;
 const SPEC_PRESENT = existsSync(join(ROOT, 'public', 'data', 'loop-ops', 'spec.json'));
-const WORKBOOK = process.env.LOOP_OPS_SPEC || '';
+const WORKBOOK = process.env.LOOP_OPS_SPEC || join(ROOT, 'examples', 'loop-ops', 'demo-spec.xlsx');
 
 let server;
+let ledgerDir;
+let historyDir;
 
 before(async () => {
+  ledgerDir = mkdtempSync(join(tmpdir(), 'meow-loop-api-'));
+  historyDir = mkdtempSync(join(tmpdir(), 'meow-history-api-'));
+  updateSessionHistory([
+    {
+      session_id: 'history-a', project: 'alpha', source: 'codex', model: 'gpt-5',
+      ended_at: '2026-07-16T12:00:00.000Z', total_tokens: 10,
+      estimated_cost_usd: 0.1, duration_seconds: 60,
+    },
+    {
+      session_id: 'history-b', project: 'beta', source: 'claude', model: 'opus',
+      ended_at: '2026-07-15T12:00:00.000Z', total_tokens: 20,
+      estimated_cost_usd: 0.2, duration_seconds: 120,
+    },
+  ], { dir: historyDir });
+  writeFileSync(join(ledgerDir, 'runs.jsonl'), `${JSON.stringify({
+    run_id: 'run-api-fixture',
+    loop_id: 'meow-ops-dev',
+    captured_at: '2026-07-16T12:00:00.000Z',
+    sources: ['codex'],
+    session_ids: ['session-api'],
+    metrics: { sessions: 1, duration_seconds: 2, total_tokens: 150, cost_usd_real: 1.5, message_count: 2, tool_error_count: 0 },
+    schema_version: 1,
+  })}\n`, 'utf8');
   server = spawn('node', [join(ROOT, 'sync', 'local-api.mjs')], {
     cwd: ROOT,
-    env: { ...process.env, MEOW_LOCAL_API_PORT: String(PORT) },
+    env: {
+      ...process.env,
+      MEOW_LOCAL_API_PORT: String(PORT),
+      MEOW_LOOP_DIR: ledgerDir,
+      MEOW_SESSION_HISTORY_DIR: historyDir,
+    },
     stdio: 'pipe',
   });
   // Wait for the listener — poll instead of trusting startup logs.
@@ -48,7 +80,33 @@ before(async () => {
   throw new Error('local-api did not start on test port');
 });
 
-after(() => { server?.kill(); });
+after(() => {
+  server?.kill();
+  rmSync(ledgerDir, { recursive: true, force: true });
+  rmSync(historyDir, { recursive: true, force: true });
+});
+
+test('GET /session-history/sessions filters before paginating the full archive', async () => {
+  const res = await fetch(`${BASE}/session-history/sessions?project=alpha&limit=1`);
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.equal(body.archive.total, 2);
+  assert.equal(body.total, 1);
+  assert.deepEqual(body.items.map((row) => row.session_id), ['history-a']);
+  assert.deepEqual(body.facets.projects, ['alpha', 'beta']);
+});
+
+test('browser-origin session history requests require the local access header', async () => {
+  const missing = await fetch(`${BASE}/session-history/sessions`, {
+    headers: { Origin: 'https://meow-ops.vercel.app' },
+  });
+  assert.equal(missing.status, 400);
+
+  const allowed = await fetch(`${BASE}/session-history/sessions`, {
+    headers: { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1' },
+  });
+  assert.equal(allowed.status, 200);
+});
 
 test('GET /loop-ops/status reports files and the writes-disabled invariant', async () => {
   const res = await fetch(`${BASE}/loop-ops/status`);
@@ -73,11 +131,27 @@ test('GET /loop-ops/spec 404s with guidance when the file is absent', { skip: SP
   assert.match((await res.json()).error, /loop-ops\/sync/);
 });
 
-test('GET /loop-ops/runs returns [] when no runs are recorded', async () => {
+test('GET /loop-ops/runs serves transformed local ledger runs when runs.json is absent', async () => {
   const res = await fetch(`${BASE}/loop-ops/runs`);
   assert.equal(res.status, 200);
   const runs = await res.json();
-  assert.ok(Array.isArray(runs));
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].id, 'run-api-fixture');
+  assert.equal(runs[0].cost.usd, 1.5);
+});
+
+test('GET /loop-ops/gates is GET-only and returns local gate evidence or an empty fallback', async () => {
+  const res = await fetch(`${BASE}/loop-ops/gates`);
+  assert.equal(res.status, 200);
+  const gates = await res.json();
+  assert.ok(Array.isArray(gates));
+  for (const gate of gates) {
+    assert.equal(typeof gate.id, 'string');
+    assert.equal(typeof gate.entityId, 'string');
+  }
+
+  const writeAttempt = await fetch(`${BASE}/loop-ops/gates`, { method: 'POST' });
+  assert.equal(writeAttempt.status, 404);
 });
 
 test('unknown loop-ops path still 404s', async () => {
@@ -102,7 +176,7 @@ test('allows a same-origin / no-Origin request', async () => {
   assert.equal(res.status, 200);
 });
 
-test('POST /loop-ops/sync runs the importer end-to-end', { skip: !WORKBOOK || !existsSync(WORKBOOK) }, async () => {
+test('POST /loop-ops/sync runs the bundled demo importer end-to-end', { skip: !existsSync(WORKBOOK) }, async () => {
   const res = await fetch(`${BASE}/loop-ops/sync`, { method: 'POST' });
   assert.equal(res.status, 200);
   const body = await res.json();

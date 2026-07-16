@@ -174,9 +174,19 @@ export default function App() {
     setReloadKey((k) => k + 1);
   }, []);
 
-  const projectData = getProjectBreakdown(sessions);
+  const projectData = dateRange === 'all' && costSummary?.byProject
+    ? costSummary.byProject.map((row) => ({
+        project: row.key,
+        sessions: row.sessions,
+        tokens: row.tokens,
+        cost: row.cost,
+        lastActive: row.last_activity_at,
+      }))
+    : getProjectBreakdown(sessions);
   const toolData    = getToolBreakdownFromSessions(sessions);
-  const modelData   = getModelBreakdown(sessions);
+  const modelData   = costSummary?.byModel
+    ? costSummary.byModel.map((row) => ({ model: row.key, sessions: row.sessions, tokens: row.tokens, cost: row.cost }))
+    : getModelBreakdown(sessions);
   // Stats are recomputed inside Overview against the source-filtered list, so
   // the App-level value is only consumed by CostTracker. Compute lazily there
   // would be cleaner; keeping the call here for now to preserve behaviour.
@@ -210,8 +220,14 @@ export default function App() {
       if (d >= weekStart)  { acc[src].weekTokens  += tok; acc[src].weekSessions++;  }
       if (d >= monthStart) { acc[src].monthTokens += tok; acc[src].monthSessions++; }
     });
+    for (const [src, complete] of Object.entries(costSummary?.bySourceAllTime || {})) {
+      if (!acc[src]) acc[src] = { weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0 };
+      acc[src].sessions = complete.sessions || 0;
+      acc[src].cost = complete.cost || 0;
+      acc[src].tokens = complete.tokens || 0;
+    }
     return acc;
-  }, [allSessions]);
+  }, [allSessions, costSummary]);
 
   const renderPage = () => {
     // Loop-Ops reads its own spec data and ships its own instructional empty

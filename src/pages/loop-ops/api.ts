@@ -3,7 +3,7 @@
 // hosted build — then fall back to the local API on 127.0.0.1:7337, which is
 // how the operator gets fresh local data while reviewing the deployed page.
 // Status and sync are API-only actions (dev: vite middleware mirror).
-import type { LoopSpec } from './types';
+import type { LoopGate, LoopSpec } from './types';
 
 const DEV = import.meta.env.DEV;
 const API_BASE = DEV ? '/api/loop-ops' : 'http://localhost:7337/loop-ops';
@@ -76,6 +76,18 @@ export async function fetchLoopRuns(): Promise<unknown> {
   }
 }
 
+export async function fetchLoopGates(): Promise<unknown> {
+  try {
+    return await fetchJson(`/data/loop-ops/gates.json?t=${Date.now()}`);
+  } catch {
+    try {
+      return await fetchJson(`${API_BASE}/gates?t=${Date.now()}`);
+    } catch {
+      return [];
+    }
+  }
+}
+
 export interface SessionCost {
   costUsd: number;
   tokens: number;
@@ -114,4 +126,4 @@ export async function fetchSessionCosts(ids: readonly string[]): Promise<Map<str
   return out;
 }
 
-export type { LoopSpec };
+export type { LoopGate, LoopSpec };

@@ -1,6 +1,6 @@
 // Read-only React Flow canvas (spec §Phase 2): no dragging, no connecting —
 // agents log state, the UI renders it. Pan/zoom + minimap stay enabled.
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Background, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import type { NodeMouseHandler } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -8,7 +8,7 @@ import { buildFlow } from './layout';
 import type { LoopFlowNode } from './layout';
 import { EntityNode } from './EntityNode';
 import { ClusterNode } from './ClusterNode';
-import type { LoopEntity } from './types';
+import type { LoopEntity, LoopSpecEdge } from './types';
 
 const nodeTypes = { entity: EntityNode, cluster: ClusterNode };
 
@@ -39,16 +39,36 @@ function FitOnExpand({ expandedWaves }: { expandedWaves: ReadonlySet<number> }) 
 interface LoopCanvasProps {
   entities: LoopEntity[];
   expandedWaves: ReadonlySet<number>;
+  proposalCounts: ReadonlyMap<string, number>;
+  dependencyEdges: LoopSpecEdge[];
   onToggleWave: (wave: number) => void;
   onSelectEntity: (entity: LoopEntity) => void;
+  onOpenProposals: (entityId: string) => void;
 }
 
-export function LoopCanvas({ entities, expandedWaves, onToggleWave, onSelectEntity }: LoopCanvasProps) {
+export function LoopCanvas({
+  entities, expandedWaves, proposalCounts, dependencyEdges, onToggleWave, onSelectEntity, onOpenProposals,
+}: LoopCanvasProps) {
   const theme = useSyncExternalStore(subscribeTheme, getTheme);
-  const { nodes, edges } = useMemo(
-    () => buildFlow(entities, expandedWaves),
-    [entities, expandedWaves],
+  const [showDependencies, setShowDependencies] = useState(false);
+  const { nodes, edges: hierarchyEdges } = useMemo(
+    () => buildFlow(entities, expandedWaves, proposalCounts, onOpenProposals),
+    [entities, expandedWaves, proposalCounts, onOpenProposals],
   );
+  const edges = useMemo(() => {
+    if (!showDependencies) return hierarchyEdges;
+    const visible = new Set(nodes.map((node) => node.id));
+    const overlay = dependencyEdges
+      .filter((edge) => visible.has(edge.source) && visible.has(edge.target))
+      .map((edge) => ({
+        ...edge,
+        id: `dependency.${edge.id}`,
+        className: 'loop-dependency-edge',
+        animated: false,
+        style: { strokeDasharray: '7 5', opacity: 0.55 },
+      }));
+    return [...hierarchyEdges, ...overlay];
+  }, [dependencyEdges, hierarchyEdges, nodes, showDependencies]);
 
   const activate = (node: LoopFlowNode) => {
     if (node.type === 'cluster') onToggleWave(node.data.wave);
@@ -72,7 +92,20 @@ export function LoopCanvas({ entities, expandedWaves, onToggleWave, onSelectEnti
   };
 
   return (
-    <div style={{ flex: 1, minHeight: 0 }} data-testid="loop-canvas" onKeyDown={handleKeyDown}>
+    <div style={{ flex: 1, minHeight: 0, position: 'relative' }} data-testid="loop-canvas" onKeyDown={handleKeyDown}>
+      <button
+        type="button"
+        aria-pressed={showDependencies}
+        onClick={() => setShowDependencies((shown) => !shown)}
+        style={{
+          position: 'absolute', zIndex: 5, top: 12, left: 12,
+          border: '1px solid var(--border)', borderRadius: 6, padding: '5px 9px',
+          background: 'var(--bg-card)', color: 'var(--text-secondary)', cursor: 'pointer',
+          fontSize: 11,
+        }}
+      >
+        {showDependencies ? 'Hide dependencies' : 'Show dependencies'}
+      </button>
       <ReactFlowProvider>
         <ReactFlow
           nodes={nodes}

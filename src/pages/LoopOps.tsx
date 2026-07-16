@@ -3,7 +3,7 @@
 // mobile fallback, refresh-spec action, and the run timeline. Data is
 // LOCAL-ONLY JSON produced by sync/loop-ops-import.mjs.
 // Hard invariant: no writes to production services from any Loop-Ops code path.
-import { useCallback, useState, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import { ShieldCheck, FileSpreadsheet, RefreshCw, SearchX } from 'lucide-react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useLoopOpsData } from './loop-ops/useLoopOpsData';
@@ -14,6 +14,8 @@ import { SourceStrip } from './loop-ops/SourceStrip';
 import { MobileFallback } from './loop-ops/MobileFallback';
 import { RunTimeline } from './loop-ops/RunTimeline';
 import type { LoopEntity } from './loop-ops/types';
+import { effectiveStatus } from './loop-ops/gate-status.mjs';
+import { useLoopProposals } from './loop-ops/useLoopProposals';
 
 const ALL_WAVES = [1, 2, 3, 4];
 
@@ -117,8 +119,9 @@ function EmptyState({ error }: { error: string | null }) {
 }
 
 export default function LoopOps() {
-  const { spec, status, loading, syncing, error, refresh } = useLoopOpsData();
+  const { spec, status, gatesByEntity, loading, syncing, error, refresh } = useLoopOpsData();
   const { runs, loading: runsLoading } = useLoopRuns();
+  const proposalCounts = useLoopProposals();
   const [expandedWaves, setExpandedWaves] = useState<ReadonlySet<number>>(new Set([1]));
   const [selected, setSelected] = useState<LoopEntity | null>(null);
   const isMobile = useSyncExternalStore(subscribeMobile, () => getMobileQuery().matches);
@@ -135,6 +138,16 @@ export default function LoopOps() {
   const toggleAll = useCallback(() => {
     setExpandedWaves(allExpanded ? new Set() : new Set(ALL_WAVES));
   }, [allExpanded]);
+  const displayEntities = useMemo(() => spec?.entities.map((entity) => ({
+    ...entity,
+    status: effectiveStatus(entity, gatesByEntity.get(entity.id) ?? []),
+  })) ?? [], [spec, gatesByEntity]);
+  const selectedDisplay = selected
+    ? displayEntities.find((entity) => entity.id === selected.id) ?? selected
+    : null;
+  const openProposals = useCallback((entityId: string) => {
+    window.location.hash = `#/loop-review?entity=${encodeURIComponent(entityId)}`;
+  }, []);
 
   if (loading) {
     return <div style={{ padding: 32, color: 'var(--text-muted)', fontSize: 14 }}>Loading the Loom…</div>;
@@ -158,16 +171,25 @@ export default function LoopOps() {
       )}
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         {isMobile
-          ? <MobileFallback entities={spec.entities} onSelectEntity={setSelected} />
+          ? <MobileFallback entities={displayEntities} onSelectEntity={setSelected} />
           : (
             <LoopCanvas
-              entities={spec.entities}
+              entities={displayEntities}
               expandedWaves={expandedWaves}
+              proposalCounts={proposalCounts}
+              dependencyEdges={spec.edges}
               onToggleWave={toggleWave}
               onSelectEntity={setSelected}
+              onOpenProposals={openProposals}
             />
           )}
-        {selected && <InspectorDrawer entity={selected} onClose={() => setSelected(null)} />}
+        {selectedDisplay && (
+          <InspectorDrawer
+            entity={selectedDisplay}
+            gates={gatesByEntity.get(selectedDisplay.id) ?? []}
+            onClose={() => setSelected(null)}
+          />
+        )}
       </div>
       <RunTimeline runs={runs} loading={runsLoading} />
     </div>

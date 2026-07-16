@@ -1,4 +1,4 @@
-// Collapsible wave cluster for the tenant lane (22 surfaces — spec §4).
+// Collapsible wave cluster for the research lane.
 // Clicking toggles expansion; the toggle itself is handled in LoopCanvas's
 // onNodeClick so node data stays plain and serializable.
 import { Handle, Position } from '@xyflow/react';
@@ -38,7 +38,7 @@ export function ClusterNode({ data }: NodeProps<Node<ClusterNodeData>>) {
         <StatusChip status={status} />
       </div>
       <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-        {count} tenant surface{count === 1 ? '' : 's'} — click to {expanded ? 'collapse' : 'expand'}
+        {count} research surface{count === 1 ? '' : 's'} — click to {expanded ? 'collapse' : 'expand'}
       </span>
       <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={false} />
     </div>
