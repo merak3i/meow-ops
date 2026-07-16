@@ -11,6 +11,7 @@ import { ParticleOverlay } from './ParticleOverlay';
 import { buildRoomVisual } from './room-renderer.js';
 import type { CompanionState } from '@/state/companionMachine';
 import type { CSSProperties } from 'react';
+import type { CompanionPose } from './pose-renderer.js';
 
 interface CompanionSceneProps {
   state:     CompanionState;
@@ -18,6 +19,8 @@ interface CompanionSceneProps {
   breed:     string;
   /** Saved room key, used for tier furniture and palette. */
   room:      string;
+  /** Optional body pose supplied by the dev cycler or action queue. */
+  pose?:      CompanionPose;
   /** Most recent effect type, e.g. 'feed' / 'pet'. Empty string disables. */
   effect:    string;
   /** Counter the parent bumps to retrigger the same effect. */
@@ -118,7 +121,7 @@ function RoomSignatureProps({ props, accent, highlight }: {
   ))}</>;
 }
 
-export function CompanionScene({ state, breed, room, effect, effectKey, onCatClick }: CompanionSceneProps) {
+export function CompanionScene({ state, breed, room, pose, effect, effectKey, onCatClick }: CompanionSceneProps) {
   const scene = STATE_SCENES[state] ?? STATE_SCENES.idle;
   const roomVisual = buildRoomVisual(room);
   const catClickProps = onCatClick ? { onClick: onCatClick } : {};
@@ -239,7 +242,12 @@ export function CompanionScene({ state, breed, room, effect, effectKey, onCatCli
       />
       <RoomSignatureProps props={roomVisual.props}
         accent={roomVisual.palette.accent} highlight={roomVisual.palette.highlight} />
-      <PixelCat state={state} breed={breed} {...catClickProps} />
+      <PixelCat
+        state={state}
+        breed={breed}
+        {...(pose ? { pose } : {})}
+        {...catClickProps}
+      />
       <ParticleOverlay effect={effect} effectKey={effectKey} />
       <div
         aria-hidden="true"

@@ -18,6 +18,7 @@ import { buildDeveloperProfile }                    from '@/analytics/profile';
 import type { Session }        from '@/types/session';
 import type { CompanionState } from '@/state/companionMachine';
 import type { MemoryMark }     from './useCompanionGame';
+import { COMPANION_POSES, type CompanionPose } from './pose-renderer.js';
 import './companion-page.css';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -293,24 +294,29 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   const ctx          = actorRef.context;
   const morph        = profile.morph_weights;
 
-  // Dev-only state cycler — press [ / ] to walk through every CompanionState
-  // so you can eyeball each pose. Press \ to clear the override. STATE_CYCLE
-  // is defined at module scope above.
+  // Dev-only matrix cycler: [ advances emotional states, ] advances poses,
+  // and \ returns both axes to live behavior.
   const [debugState, setDebugState] = useState<CompanionState | null>(null);
+  const [debugPose, setDebugPose] = useState<CompanionPose | null>(null);
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.key === '[' || e.key === ']') {
+      if (e.key === '[') {
         setDebugState((prev) => {
           const i = prev ? STATE_CYCLE.indexOf(prev) : -1;
-          const dir = e.key === ']' ? 1 : -1;
-          const next = (i + dir + STATE_CYCLE.length) % STATE_CYCLE.length;
+          const next = (i + 1) % STATE_CYCLE.length;
           return STATE_CYCLE[next] ?? null;
+        });
+      } else if (e.key === ']') {
+        setDebugPose((prev) => {
+          const i = prev ? COMPANION_POSES.indexOf(prev) : -1;
+          return COMPANION_POSES[(i + 1) % COMPANION_POSES.length] ?? null;
         });
       } else if (e.key === '\\') {
         setDebugState(null);
+        setDebugPose(null);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -459,6 +465,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             state={currentState}
             breed={game.cat?.breed ?? 'tabby'}
             room={game.cat?.room?.key ?? 'corner_mat'}
+            {...(debugPose ? { pose: debugPose } : {})}
             effect={effectTrigger.type}
             effectKey={effectTrigger.key}
             onCatClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); }}
@@ -468,9 +475,9 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
           <div className="companion-state-badge">
             <span style={{ fontSize: 16 }}>{stateEmoji(currentState)}</span>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{stateLabel(currentState)}</span>
-            {debugState && (
+            {(debugState || debugPose) && (
               <span style={{ fontSize: 10, color: '#f5c518', letterSpacing: 1, marginLeft: 4 }}>
-                DBG [ ]
+                DBG {debugState ?? currentState} · {debugPose ?? 'auto'}
               </span>
             )}
           </div>

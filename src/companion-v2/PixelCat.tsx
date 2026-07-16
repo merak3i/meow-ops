@@ -17,18 +17,21 @@ import {
 import { applyBreedPattern, buildBreedPalette } from './breed-renderer';
 import { getBreed } from '@/lib/companion-breeds';
 import type { CompanionState } from '@/state/companionMachine';
+import type { CompanionPose } from './pose-renderer.js';
 
 interface PixelCatProps {
   state: CompanionState;
   /** Saved companion breed key. Unknown keys safely fall back to tabby. */
   breed: string;
+  /** Optional body-pose override used by actions and the dev pose cycler. */
+  pose?: CompanionPose;
   /** Optional click handler — fires when the user clicks on any opaque pixel. */
   onClick?: () => void;
   /** Soft floor shadow under the cat. Defaults to true. */
   showShadow?: boolean;
 }
 
-export function PixelCat({ state, breed, onClick, showShadow = true }: PixelCatProps) {
+export function PixelCat({ state, breed, pose, onClick, showShadow = true }: PixelCatProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef    = useRef<HTMLCanvasElement | null>(null);
 
@@ -72,7 +75,22 @@ export function PixelCat({ state, breed, onClick, showShadow = true }: PixelCatP
       lastFrameIdx = -1;
     };
 
-    const drawSprite = (sprite: Sprite): void => {
+    const drawLayer = (sprite: Sprite): void => {
+      for (let y = 0; y < sprite.length; y++) {
+        const row = sprite[y];
+        if (!row) continue;
+        for (let x = 0; x < row.length; x++) {
+          const c = row[x];
+          if (!c) continue;
+          const idx = charToPaletteIndex(c);
+          if (idx === 0) continue;
+          ctx.fillStyle = palette[idx]!;
+          ctx.fillRect(offsetX + x * blockPx, offsetY + y * blockPx, blockPx, blockPx);
+        }
+      }
+    };
+
+    const drawSprite = (sprite: Sprite, tail: Sprite): void => {
       ctx.clearRect(0, 0, cw, ch);
 
       // Faint horizon line — gives the cat a place to be instead of floating
@@ -103,19 +121,8 @@ export function PixelCat({ state, breed, onClick, showShadow = true }: PixelCatP
         ctx.restore();
       }
 
-      // Paint the sprite, one block per source pixel.
-      for (let y = 0; y < sprite.length; y++) {
-        const row = sprite[y];
-        if (!row) continue;
-        for (let x = 0; x < row.length; x++) {
-          const c = row[x];
-          if (!c) continue;
-          const idx = charToPaletteIndex(c);
-          if (idx === 0) continue;
-          ctx.fillStyle = palette[idx]!;
-          ctx.fillRect(offsetX + x * blockPx, offsetY + y * blockPx, blockPx, blockPx);
-        }
-      }
+      drawLayer(applyBreedPattern(tail, breedData));
+      drawLayer(applyBreedPattern(sprite, breedData));
     };
 
     measure();
@@ -125,10 +132,10 @@ export function PixelCat({ state, breed, onClick, showShadow = true }: PixelCatP
 
     const tick = (now: number): void => {
       const elapsedMs = now - startTime;
-      const { frameIdx, sprite } = spriteForState(state, elapsedMs);
+      const { frameIdx, sprite, tail } = spriteForState(state, elapsedMs, pose);
       if (frameIdx !== lastFrameIdx) {
         lastFrameIdx = frameIdx;
-        drawSprite(applyBreedPattern(sprite, breedData));
+        drawSprite(sprite, tail);
       }
       rafId = requestAnimationFrame(tick);
     };
@@ -141,7 +148,7 @@ export function PixelCat({ state, breed, onClick, showShadow = true }: PixelCatP
       cancelAnimationFrame(rafId);
       ro.disconnect();
     };
-  }, [state, breed, showShadow]);
+  }, [state, breed, pose, showShadow]);
 
   return (
     <div
