@@ -56,143 +56,6 @@ export type { PerfStats };
 
 // ─── Arcane Sanctum Environment ──────────────────────────────────────────────
 
-function FloatingParticles() {
-  const perf  = usePerfLevel();
-  const refs = useRef<(THREE.Mesh | null)[]>([]);
-  const data = useMemo(() => {
-    const particles = [];
-    // 40 floating particles (original)
-    for (let i = 0; i < 40; i++) {
-      particles.push({
-        radius: 2 + Math.random() * 9,
-        speed: 0.15 + Math.random() * 0.3,
-        phase: Math.random() * Math.PI * 2,
-        baseY: 0.5 + Math.random() * 4,
-        yOsc: 0.3 + Math.random() * 0.8,
-        ySpeed: 0.4 + Math.random() * 0.6,
-        size: 0.04 + Math.random() * 0.06,
-        color: i % 3 === 0 ? '#c8a855' : i % 3 === 1 ? '#8b5cf6' : '#60a5fa',
-        ground: false,
-        flickerSpeed: 1.4 + Math.random() * 2.8,
-        flickerPhase: Math.random() * Math.PI * 2,
-      });
-    }
-    // 15 ground-level dust motes — very small, slow, dim
-    for (let i = 0; i < 15; i++) {
-      particles.push({
-        radius: 1.5 + Math.random() * 8,
-        speed: 0.04 + Math.random() * 0.08,
-        phase: Math.random() * Math.PI * 2,
-        baseY: 0.05 + Math.random() * 0.25,
-        yOsc: 0.05 + Math.random() * 0.1,
-        ySpeed: 0.2 + Math.random() * 0.3,
-        size: 0.02 + Math.random() * 0.03,
-        color: '#c8a855',
-        ground: true,
-        flickerSpeed: 0.8 + Math.random() * 1.2,
-        flickerPhase: Math.random() * Math.PI * 2,
-      });
-    }
-    return particles;
-  }, []);
-
-  useFrame((state) => {
-    if (perf === 'low') return;
-    const t = state.clock.elapsedTime;
-    data.forEach((d, i) => {
-      const mesh = refs.current[i];
-      if (!mesh) return;
-      const angle = d.phase + t * d.speed;
-      const y = d.baseY + Math.sin(t * d.ySpeed + d.phase) * d.yOsc;
-      mesh.position.set(
-        Math.cos(angle) * d.radius,
-        y,
-        Math.sin(angle) * d.radius,
-      );
-      // Depth variation: lower = dimmer, higher = brighter; plus per-firefly flicker
-      const heightFade = d.ground ? 0.25 : (0.35 + Math.min(0.65, y / 4));
-      const flicker    = 0.75 + Math.sin(t * d.flickerSpeed + d.flickerPhase) * 0.25;
-      (mesh.material as THREE.MeshBasicMaterial).opacity = heightFade * flicker;
-    });
-  });
-
-  if (perf === 'low') return null;
-  return (
-    <>
-      {data.map((d, i) => (
-        <mesh key={i} ref={(el) => { refs.current[i] = el; }}>
-          <sphereGeometry args={[d.size, d.ground ? 4 : 6, d.ground ? 4 : 6]} />
-          <meshBasicMaterial color={d.color} transparent opacity={0.5} />
-        </mesh>
-      ))}
-    </>
-  );
-}
-
-// ─── Arcane Weather (falling sparks + wind streaks) ─────────────────────────
-
-function ArcaneWeather() {
-  const perf      = usePerfLevel();
-  const sparkRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const streakRefs = useRef<(THREE.Mesh | null)[]>([]);
-
-  const sparks = useMemo(() => Array.from({ length: 20 }, (_, i) => ({
-    x: (Math.random() - 0.5) * 20,
-    z: (Math.random() - 0.5) * 20,
-    y: Math.random() * 6,
-    speed: 0.3 + Math.random() * 0.3,
-    phase: Math.random() * Math.PI * 2,
-    color: i % 3 === 0 ? '#8b5cf6' : '#c8a855',
-  })), []);
-
-  const streaks = useMemo(() => Array.from({ length: 8 }, () => ({
-    x: (Math.random() - 0.5) * 24,
-    y: 1.5 + Math.random() * 2.5,
-    z: (Math.random() - 0.5) * 20,
-    speed: 0.8 + Math.random() * 1.2,
-  })), []);
-
-  useFrame((state, delta) => {
-    if (perf === 'low') return;
-    const t = state.clock.elapsedTime;
-    sparks.forEach((s, i) => {
-      const mesh = sparkRefs.current[i];
-      if (!mesh) return;
-      s.y -= s.speed * delta;
-      if (s.y < 0) { s.y = 5 + Math.random() * 2; s.x = (Math.random() - 0.5) * 20; s.z = (Math.random() - 0.5) * 20; }
-      mesh.position.set(s.x + Math.sin(t + s.phase) * 0.3, s.y, s.z + Math.cos(t * 0.7 + s.phase) * 0.2);
-      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.25 + Math.sin(t * 3 + s.phase) * 0.15;
-    });
-    streaks.forEach((s, i) => {
-      const mesh = streakRefs.current[i];
-      if (!mesh) return;
-      s.x += s.speed * delta;
-      if (s.x > 12) s.x = -12;
-      mesh.position.set(s.x, s.y, s.z);
-    });
-  });
-
-  if (perf === 'low') return null;
-  return (
-    <>
-      {sparks.map((s, i) => (
-        <mesh key={`sp${i}`} ref={(el) => { sparkRefs.current[i] = el; }}
-          position={[s.x, s.y, s.z]}>
-          <sphereGeometry args={[0.02, 4, 4]} />
-          <meshBasicMaterial color={s.color} transparent opacity={0.35} />
-        </mesh>
-      ))}
-      {streaks.map((s, i) => (
-        <mesh key={`st${i}`} ref={(el) => { streakRefs.current[i] = el; }}
-          position={[s.x, s.y, s.z]} rotation={[0, 0, 0]}>
-          <planeGeometry args={[2.5, 0.008]} />
-          <meshBasicMaterial color="#c8a855" transparent opacity={0.04} side={THREE.DoubleSide} />
-        </mesh>
-      ))}
-    </>
-  );
-}
-
 function CrystalPillar({ position }: { position: [number, number, number] }) {
   const crystalRef = useRef<THREE.Mesh>(null);
   const beamRef = useRef<THREE.Mesh>(null);
@@ -254,90 +117,9 @@ function CrystalPillar({ position }: { position: [number, number, number] }) {
 // (which pulls duplicate three+react and breaks hooks). Procedural emissive
 // halos give a "bloomed" look on stylized scenes ~80% as well as real bloom.
 //
-//   DalaranLamppost — slim violet pole + warm gold pulsing wisp orb on top
-//                     + wide additive halo that fakes bloom around it
 //   SunGodrays     — six vertical light shafts radiating from the LLM Sun
 //                     straight down to the ground, slowly rotating
-//   AtmosphericMotes — wraps drei's <Sparkles> in three layers (near
-//                     lavender, mid gold, far white-blue) for depth feel
-
-function DalaranLamppost({ position, phase }: {
-  position: [number, number, number];
-  phase: number;
-}) {
-  const wispRef = useRef<THREE.Mesh>(null);
-  const haloRef = useRef<THREE.Mesh>(null);
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (wispRef.current) {
-      const pulse = 0.85 + Math.sin(t * 1.6 + phase) * 0.15;
-      wispRef.current.scale.setScalar(pulse);
-      const wispMat = wispRef.current.material as THREE.MeshBasicMaterial;
-      wispMat.opacity = 0.85 + Math.sin(t * 1.6 + phase) * 0.10;
-    }
-    if (haloRef.current) {
-      const haloMat = haloRef.current.material as THREE.MeshBasicMaterial;
-      haloMat.opacity = 0.20 + Math.sin(t * 1.6 + phase) * 0.06;
-    }
-  });
-  return (
-    <group position={position}>
-      {/* Base — small stone block */}
-      <mesh position={[0, 0.10, 0]}>
-        <boxGeometry args={[0.25, 0.20, 0.25]} />
-        <meshBasicMaterial color="#1a0f28" />
-      </mesh>
-      {/* Pole — slim cylinder */}
-      <mesh position={[0, 1.2, 0]}>
-        <cylinderGeometry args={[0.05, 0.06, 2.2, 6]} />
-        <meshBasicMaterial color="#2a1a3e" />
-      </mesh>
-      {/* Lantern frame — small cage at top */}
-      <mesh position={[0, 2.45, 0]}>
-        <boxGeometry args={[0.20, 0.20, 0.20]} />
-        <meshBasicMaterial color="#3a2a1c" transparent opacity={0.7} />
-      </mesh>
-      {/* Wisp orb — warm gold inside the lantern */}
-      <mesh ref={wispRef} position={[0, 2.45, 0]}>
-        <sphereGeometry args={[0.10, 12, 12]} />
-        <meshBasicMaterial color="#ffcb6a" transparent opacity={0.9}
-          blending={THREE.AdditiveBlending} fog={false} />
-      </mesh>
-      {/* Bloom-fake halo — wide additive sphere fakes a glow halo */}
-      <mesh ref={haloRef} position={[0, 2.45, 0]}>
-        <sphereGeometry args={[0.45, 16, 12]} />
-        <meshBasicMaterial color="#ffb84a" transparent opacity={0.20}
-          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
-      </mesh>
-    </group>
-  );
-}
-
-function DalaranLampposts() {
-  // Eight lampposts evenly spaced at radius 8.5, between the agent area
-  // (~5–7) and the gothic colonnade (10.5). Phases offset so the lamps
-  // don't pulse in lockstep.
-  const lamps = useMemo(() => {
-    const out: { x: number; z: number; phase: number }[] = [];
-    const N = 8;
-    for (let i = 0; i < N; i++) {
-      const a = (i / N) * Math.PI * 2 + Math.PI / N;  // half-step from gates
-      out.push({
-        x: Math.cos(a) * 8.5,
-        z: Math.sin(a) * 8.5,
-        phase: i * 0.7,
-      });
-    }
-    return out;
-  }, []);
-  return (
-    <>
-      {lamps.map((l, i) => (
-        <DalaranLamppost key={i} position={[l.x, 0, l.z]} phase={l.phase} />
-      ))}
-    </>
-  );
-}
+//   AtmosphericMotes — one restrained gold layer for depth.
 
 function SunGodrays() {
   // Six vertical light shafts radiating from the LLM Sun position straight
@@ -392,50 +174,9 @@ function SunGodrays() {
 }
 
 function AtmosphericMotes() {
-  // Three drei <Sparkles> layers at different depths/sizes for parallax.
-  // Near = lavender, mid = gold, far = pale blue. The whole field reads as
-  // drifting magical motes filling the violet ambient.
   return (
-    <>
-      <Sparkles count={80}  scale={[14, 6, 14]}  size={2.0} color="#c4a4ff"
-        speed={0.4} opacity={0.7} position={[0, 1, 0]} />
-      <Sparkles count={120} scale={[20, 8, 20]} size={1.4} color="#ffd97a"
-        speed={0.25} opacity={0.5} position={[0, 2, 0]} />
-      <Sparkles count={200} scale={[28, 10, 28]} size={0.9} color="#cce0ff"
-        speed={0.15} opacity={0.4} position={[0, 3, 0]} />
-    </>
-  );
-}
-
-function Brazier({ position }: { position: [number, number, number] }) {
-  const flameRef = useRef<THREE.Mesh>(null);
-  useFrame((state) => {
-    if (flameRef.current) {
-      const t = state.clock.elapsedTime;
-      flameRef.current.scale.y = 0.8 + Math.sin(t * 5 + position[0]) * 0.2;
-      flameRef.current.scale.x = 0.8 + Math.sin(t * 4.3 + position[2]) * 0.15;
-    }
-  });
-  return (
-    <group position={position}>
-      {/* Bowl */}
-      <mesh position={[0, 0.4, 0]}>
-        <cylinderGeometry args={[0.3, 0.2, 0.5, 8]} />
-        <meshStandardMaterial color="#3a2a18" roughness={0.8} metalness={0.4} />
-      </mesh>
-      {/* Stand */}
-      <mesh position={[0, 0.1, 0]}>
-        <cylinderGeometry args={[0.08, 0.15, 0.2, 6]} />
-        <meshStandardMaterial color="#2a1e10" roughness={0.9} />
-      </mesh>
-      {/* Flame */}
-      <mesh ref={flameRef} position={[0, 0.8, 0]}>
-        <sphereGeometry args={[0.18, 8, 6]} />
-        <meshBasicMaterial color="#ff8c22" transparent opacity={0.9} />
-      </mesh>
-      {/* Warm light */}
-      <pointLight position={[0, 0.9, 0]} color="#ff8c22" intensity={0.3} distance={5} />
-    </group>
+    <Sparkles count={120} scale={[20, 8, 20]} size={1.4} color={PAL.gold}
+      speed={0.25} opacity={0.42} position={[0, 2, 0]} />
   );
 }
 
@@ -1420,11 +1161,6 @@ function PlazaEnvironment() {
     [0, 0, -9], [9, 0, 0], [0, 0, 9], [-9, 0, 0],
   ];
 
-  const brazierPositions: [number, number, number][] = [
-    [4.5, 0, -4.5], [-4.5, 0, -4.5],
-    [4.5, 0, 4.5], [-4.5, 0, 4.5],
-  ];
-
   return (
     <>
       <ArcaneFloor />
@@ -1442,11 +1178,6 @@ function PlazaEnvironment() {
       {pillarPositions.map((position, i) => (
         <CrystalPillar key={i} position={position} />
       ))}
-      {brazierPositions.map((pos, i) => (
-        <Brazier key={i} position={pos} />
-      ))}
-      <FloatingParticles />
-      <ArcaneWeather />
       {/* Arcane banners between pillars */}
       <ArcaneBanner position={[4.5, 0, -7.2]} color="#8b5cf6" phase={0} />
       <ArcaneBanner position={[-4.5, 0, -7.2]} color="#f59e0b" phase={1.2} />
@@ -1459,7 +1190,6 @@ function PlazaEnvironment() {
       <RunicGlyphs />
       {/* Dalaran D4 — magical lights + sparkles + faked godrays. All
           procedural; no postprocessing dep. */}
-      <DalaranLampposts />
       <SunGodrays />
       <AtmosphericMotes />
       {/* Ground detail */}
@@ -3229,7 +2959,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                 across all bright sources. */}
             <color attach="background" args={['#160726']} />
             <fog attach="fog" args={['#1a0830', 28, 90]} />
-            <Stars radius={60} depth={20} count={1500} factor={2} fade speed={0.3} />
+            <Stars radius={60} depth={20} count={800} factor={2} fade speed={0.3} />
             <PerfReader statsRef={perfStatsRef} />
             <WebGLContextWatcher onContextLost={handleContextLost} onContextRestored={handleContextRestored} />
             <Suspense fallback={null}>
