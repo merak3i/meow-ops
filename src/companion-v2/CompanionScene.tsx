@@ -171,8 +171,10 @@ export function CompanionScene({ state, breed, room, pose, tailState, catOffset 
           height: '52%',
           borderWidth: 1,
           borderStyle: 'solid',
-          borderColor: `color-mix(in oklab, ${scene.accent} 24%, transparent)`,
+          borderTopColor: `color-mix(in oklab, ${scene.accent} 24%, transparent)`,
+          borderRightColor: `color-mix(in oklab, ${scene.accent} 24%, transparent)`,
           borderBottomColor: 'rgba(255,255,255,.04)',
+          borderLeftColor: `color-mix(in oklab, ${scene.accent} 24%, transparent)`,
           borderRadius: 10,
           background: `
             linear-gradient(135deg, color-mix(in oklab, ${roomVisual.palette.accent} 64%, ${scene.wall}), transparent 70%),
