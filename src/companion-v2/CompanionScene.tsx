@@ -12,6 +12,8 @@ import type { CompanionState } from '@/state/companionMachine';
 
 interface CompanionSceneProps {
   state:     CompanionState;
+  /** Saved companion breed key, forwarded to the pixel compositor. */
+  breed:     string;
   /** Most recent effect type, e.g. 'feed' / 'pet'. Empty string disables. */
   effect:    string;
   /** Counter the parent bumps to retrigger the same effect. */
@@ -81,7 +83,7 @@ const STATE_SCENES: Record<CompanionState, ScenePalette> = {
   },
 };
 
-export function CompanionScene({ state, effect, effectKey, onCatClick }: CompanionSceneProps) {
+export function CompanionScene({ state, breed, effect, effectKey, onCatClick }: CompanionSceneProps) {
   const scene = STATE_SCENES[state] ?? STATE_SCENES.idle;
   const catClickProps = onCatClick ? { onClick: onCatClick } : {};
 
@@ -191,7 +193,7 @@ export function CompanionScene({ state, effect, effectKey, onCatClick }: Compani
           maskImage: 'linear-gradient(180deg, rgba(0,0,0,.45), rgba(0,0,0,.08))',
         }}
       />
-      <PixelCat state={state} {...catClickProps} />
+      <PixelCat state={state} breed={breed} {...catClickProps} />
       <ParticleOverlay effect={effect} effectKey={effectKey} />
       <div
         aria-hidden="true"

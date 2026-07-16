@@ -457,6 +457,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
         >
           <CompanionScene
             state={currentState}
+            breed={game.cat?.breed ?? 'tabby'}
             effect={effectTrigger.type}
             effectKey={effectTrigger.key}
             onCatClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); }}

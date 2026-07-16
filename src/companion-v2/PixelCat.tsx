@@ -9,23 +9,26 @@
 import { useEffect, useRef } from 'react';
 
 import {
-  PALETTE,
   charToPaletteIndex,
   computeCatLayout,
   spriteForState,
   type Sprite,
 } from './sprites';
+import { applyBreedPattern, buildBreedPalette } from './breed-renderer';
+import { getBreed } from '@/lib/companion-breeds';
 import type { CompanionState } from '@/state/companionMachine';
 
 interface PixelCatProps {
   state: CompanionState;
+  /** Saved companion breed key. Unknown keys safely fall back to tabby. */
+  breed: string;
   /** Optional click handler — fires when the user clicks on any opaque pixel. */
   onClick?: () => void;
   /** Soft floor shadow under the cat. Defaults to true. */
   showShadow?: boolean;
 }
 
-export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
+export function PixelCat({ state, breed, onClick, showShadow = true }: PixelCatProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef    = useRef<HTMLCanvasElement | null>(null);
 
@@ -35,6 +38,8 @@ export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
     if (!canvas || !container) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    const breedData = getBreed(breed);
+    const palette = buildBreedPalette(breedData);
 
     // Geometry recomputed on resize and reused across rAF ticks.
     let cw = 0, ch = 0;
@@ -107,7 +112,7 @@ export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
           if (!c) continue;
           const idx = charToPaletteIndex(c);
           if (idx === 0) continue;
-          ctx.fillStyle = PALETTE[idx]!;
+          ctx.fillStyle = palette[idx]!;
           ctx.fillRect(offsetX + x * blockPx, offsetY + y * blockPx, blockPx, blockPx);
         }
       }
@@ -123,7 +128,7 @@ export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
       const { frameIdx, sprite } = spriteForState(state, elapsedMs);
       if (frameIdx !== lastFrameIdx) {
         lastFrameIdx = frameIdx;
-        drawSprite(sprite);
+        drawSprite(applyBreedPattern(sprite, breedData));
       }
       rafId = requestAnimationFrame(tick);
     };
@@ -136,7 +141,7 @@ export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
       cancelAnimationFrame(rafId);
       ro.disconnect();
     };
-  }, [state, showShadow]);
+  }, [state, breed, showShadow]);
 
   return (
     <div
