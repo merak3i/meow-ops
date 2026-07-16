@@ -291,10 +291,10 @@ test('Scrying Sanctum: per-session roster visible', async ({ page }) => {
   await nav(page, 'Scrying Sanctum');
   // Phase B replaced the static class legend ("Healthy Ley Line"-era) with
   // a per-session roster list. Each roster row is a button containing a
-  // class label (Wolverine / Batman / Dr. Strange / etc.). At least one
+  // Arcane Order class label (Forgepaw / Gloamwhisker / Hexcaller / etc.). At least one
   // should be present once demo sessions load.
   await page.waitForFunction(
-    () => /WOLVERINE|BATMAN|DR\.\s*STRANGE|DARTH VADER|CAPTAIN AMERICA|GANDALF|TERMINATOR/i
+    () => /FORGEPAW|GLOAMWHISKER|HEXCALLER|VOIDMANE|SHIELDHEART|LOREWEAVER|NINELIVES/i
       .test(document.body.innerText),
     { timeout: 10_000 },
   );

@@ -49,7 +49,7 @@ export const AURA_PROFILES: Record<string, { speed: number; amplitude: number; s
   detective:   { speed: 1.8,  amplitude: 0.08, style: 'breathe' },  // Gloamwhisker — calm, steady
   commander:   { speed: 2.5,  amplitude: 0.12, style: 'pulse' },    // Hexcaller — mystic rhythm
   architect:   { speed: 1.2,  amplitude: 0.06, style: 'breathe' },  // Voidmane — slow, menacing
-  guardian:    { speed: 2.0,  amplitude: 0.10, style: 'pulse' },    // Cap — steady, reliable
+  guardian:    { speed: 2.0,  amplitude: 0.10, style: 'pulse' },    // Shieldheart — steady, reliable
   storyteller: { speed: 1.0,  amplitude: 0.10, style: 'breathe' },  // Loreweaver — slow, ethereal
   ghost:       { speed: 6.0,  amplitude: 0.18, style: 'flicker' },  // Ninelives — spectral flicker
 };
