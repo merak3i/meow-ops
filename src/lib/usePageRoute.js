@@ -19,7 +19,7 @@ const DEFAULT_PAGE = 'overview';
 
 function pageFromHash() {
   const raw = (typeof window !== 'undefined' ? window.location.hash : '') || '';
-  const id  = raw.replace(/^#\/?/, '');
+  const id  = raw.replace(/^#\/?/, '').split('?')[0];
   return pageById(id) ? id : DEFAULT_PAGE;
 }
 

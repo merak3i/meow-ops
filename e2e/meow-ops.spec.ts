@@ -685,6 +685,20 @@ test('Loop Ops: stale gate degrades node status and exposes evidence in inspecto
   await page.context().route('**/data/loop-ops/runs.json*', (route) => route.fulfill({
     status: 200, contentType: 'application/json', body: '[]',
   }));
+  const proposalBase = {
+    schema_version: 1, created_at: '2026-07-16T12:00:00.000Z', created_by: 'assistant:loop',
+    category: 'workflow', one_percent_target: 'Keep the Loom current',
+    evidence: [{ kind: 'rule', ref: 'loom-e2e' }], rollback: { plan: 'No write occurred' },
+    review_only: true, confidence: 0.8, risk: 'low', status: 'draft',
+  };
+  await mockLoopEng(page, {
+    proposals: [
+      { ...proposalBase, proposal_id: 'prop-dev-1', loop_id: 'meow-ops-dev', title: 'Dev proposal one' },
+      { ...proposalBase, proposal_id: 'prop-dev-2', loop_id: 'meow-ops-dev', title: 'Dev proposal two' },
+      { ...proposalBase, proposal_id: 'prop-other', loop_id: 'meow-ops-guardrails', title: 'Other entity proposal' },
+    ],
+    summary: { counts_by_status: { draft: 3 }, open_per_loop: { 'meow-ops-dev': 2, 'meow-ops-guardrails': 1 }, total: 3 },
+  });
 
   await nav(page, 'The Loom');
   await page.getByRole('button', { name: 'Expand all waves' }).click();
@@ -695,6 +709,14 @@ test('Loop Ops: stale gate degrades node status and exposes evidence in inspecto
   await expect(inspector.getByText('Eval set passed 18/18', { exact: false })).toBeVisible();
   await expect(inspector.getByText(/stale after 7 days/i)).toBeVisible();
   await expect(inspector.locator('[data-status="needs-review"]')).toBeVisible();
+  const badge = node.getByRole('button', { name: 'Open 2 proposals for meow-ops-dev' });
+  await expect(badge).toHaveText('⚑ 2');
+  await badge.click();
+  await expect(page.getByRole('heading', { name: 'Review Deck', exact: true })).toBeVisible();
+  await expect(page.locator('[data-testid="review-entity-filter"]')).toHaveText('filtered to meow-ops-dev');
+  await expect(page.getByRole('button', { name: /Dev proposal one/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Dev proposal two/ })).toBeVisible();
+  await expect(page.getByText('Other entity proposal')).toHaveCount(0);
 });
 
 test('Review Deck: empty state renders without local helper', async ({ page }) => {

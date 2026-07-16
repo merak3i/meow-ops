@@ -6,7 +6,12 @@ import type { Edge, Node } from '@xyflow/react';
 import { LOOP_GROUPS, worstStatus } from './types';
 import type { LoopEntity, LoopGroup, LoopStatus } from './types';
 
-export type EntityNodeData = Record<string, unknown> & { entity: LoopEntity; revealDelay: number };
+export type EntityNodeData = Record<string, unknown> & {
+  entity: LoopEntity;
+  revealDelay: number;
+  openProposalCount: number;
+  onOpenProposals?: (entityId: string) => void;
+};
 export type ClusterNodeData = Record<string, unknown> & {
   wave: number;
   count: number;
@@ -42,10 +47,18 @@ const revealDelay = (index: number) => Math.min(index * 30, 600);
 export function buildFlow(
   entities: LoopEntity[],
   expandedWaves: ReadonlySet<number>,
+  proposalCounts: ReadonlyMap<string, number> = new Map(),
+  onOpenProposals?: (entityId: string) => void,
 ): { nodes: LoopFlowNode[]; edges: Edge[] } {
   const nodes: LoopFlowNode[] = [];
   const edges: Edge[] = [];
   let reveal = 0;
+  const entityData = (entity: LoopEntity): EntityNodeData => ({
+    entity,
+    revealDelay: revealDelay(reveal++),
+    openProposalCount: proposalCounts.get(entity.id) ?? 0,
+    ...(onOpenProposals ? { onOpenProposals } : {}),
+  });
 
   const assistants = entities.filter((e) => e.kind === 'assistant');
   const directors = entities.filter((e) => e.kind === 'director');
@@ -60,7 +73,7 @@ export function buildFlow(
 
   if (coordinator) {
     nodes.push({
-      id: coordinator.id, type: 'entity', data: { entity: coordinator, revealDelay: revealDelay(reveal++) },
+      id: coordinator.id, type: 'entity', data: entityData(coordinator),
       position: { x: (laneCenter('tenant') + laneCenter('doer')) / 2, y: 0 },
       draggable: false, connectable: false,
     });
@@ -70,7 +83,7 @@ export function buildFlow(
     const director = directors.find((d) => d.group === g);
     if (!director) continue;
     nodes.push({
-      id: director.id, type: 'entity', data: { entity: director, revealDelay: revealDelay(reveal++) },
+      id: director.id, type: 'entity', data: entityData(director),
       position: { x: laneCenter(g), y: DIRECTOR_Y },
       draggable: false, connectable: false,
     });
@@ -98,7 +111,7 @@ export function buildFlow(
         if (expanded) {
           inWave.forEach((a, row) => {
             nodes.push({
-              id: a.id, type: 'entity', data: { entity: a, revealDelay: revealDelay(reveal++) },
+              id: a.id, type: 'entity', data: entityData(a),
               position: { x: colX, y: CONTENT_Y + 90 + row * ROW_GAP },
               draggable: false, connectable: false,
             });
@@ -109,7 +122,7 @@ export function buildFlow(
     } else {
       laneAssistants.forEach((a, row) => {
         nodes.push({
-          id: a.id, type: 'entity', data: { entity: a, revealDelay: revealDelay(reveal++) },
+          id: a.id, type: 'entity', data: entityData(a),
           position: { x: laneCenter(g), y: CONTENT_Y + row * ROW_GAP },
           draggable: false, connectable: false,
         });

@@ -1,5 +1,6 @@
 import { readLedger } from './loop-ledger.mjs';
 import { isValidLoopRun } from '../src/pages/loop-ops/run-validation.mjs';
+import { entityIdForLoopId } from '../src/pages/loop-ops/loop-entity-map.mjs';
 
 function finiteNumber(value) {
   const number = Number(value);
@@ -15,11 +16,12 @@ export function ledgerRunToLoopRun(record) {
   const sessionIds = Array.isArray(record?.session_ids)
     ? record.session_ids.filter((item) => typeof item === 'string')
     : [];
+  const entityId = entityIdForLoopId(loopId);
 
   return {
     id: typeof record?.run_id === 'string' ? record.run_id : '',
     goal: typeof record?.notes === 'string' && record.notes.trim() ? record.notes.trim() : loopId,
-    entityIds: loopId ? [loopId] : [],
+    entityIds: entityId ? [entityId] : [],
     state: finiteNumber(metrics.tool_error_count) > 0 ? 'failed' : 'passed',
     startedAt: capturedAt,
     endedAt: capturedAt || null,

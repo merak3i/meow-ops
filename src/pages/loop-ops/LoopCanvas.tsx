@@ -39,15 +39,19 @@ function FitOnExpand({ expandedWaves }: { expandedWaves: ReadonlySet<number> }) 
 interface LoopCanvasProps {
   entities: LoopEntity[];
   expandedWaves: ReadonlySet<number>;
+  proposalCounts: ReadonlyMap<string, number>;
   onToggleWave: (wave: number) => void;
   onSelectEntity: (entity: LoopEntity) => void;
+  onOpenProposals: (entityId: string) => void;
 }
 
-export function LoopCanvas({ entities, expandedWaves, onToggleWave, onSelectEntity }: LoopCanvasProps) {
+export function LoopCanvas({
+  entities, expandedWaves, proposalCounts, onToggleWave, onSelectEntity, onOpenProposals,
+}: LoopCanvasProps) {
   const theme = useSyncExternalStore(subscribeTheme, getTheme);
   const { nodes, edges } = useMemo(
-    () => buildFlow(entities, expandedWaves),
-    [entities, expandedWaves],
+    () => buildFlow(entities, expandedWaves, proposalCounts, onOpenProposals),
+    [entities, expandedWaves, proposalCounts, onOpenProposals],
   );
 
   const activate = (node: LoopFlowNode) => {

@@ -15,6 +15,7 @@ import { MobileFallback } from './loop-ops/MobileFallback';
 import { RunTimeline } from './loop-ops/RunTimeline';
 import type { LoopEntity } from './loop-ops/types';
 import { effectiveStatus } from './loop-ops/gate-status.mjs';
+import { useLoopProposals } from './loop-ops/useLoopProposals';
 
 const ALL_WAVES = [1, 2, 3, 4];
 
@@ -120,6 +121,7 @@ function EmptyState({ error }: { error: string | null }) {
 export default function LoopOps() {
   const { spec, status, gatesByEntity, loading, syncing, error, refresh } = useLoopOpsData();
   const { runs, loading: runsLoading } = useLoopRuns();
+  const proposalCounts = useLoopProposals();
   const [expandedWaves, setExpandedWaves] = useState<ReadonlySet<number>>(new Set([1]));
   const [selected, setSelected] = useState<LoopEntity | null>(null);
   const isMobile = useSyncExternalStore(subscribeMobile, () => getMobileQuery().matches);
@@ -143,6 +145,9 @@ export default function LoopOps() {
   const selectedDisplay = selected
     ? displayEntities.find((entity) => entity.id === selected.id) ?? selected
     : null;
+  const openProposals = useCallback((entityId: string) => {
+    window.location.hash = `#/loop-review?entity=${encodeURIComponent(entityId)}`;
+  }, []);
 
   if (loading) {
     return <div style={{ padding: 32, color: 'var(--text-muted)', fontSize: 14 }}>Loading the Loom…</div>;
@@ -171,8 +176,10 @@ export default function LoopOps() {
             <LoopCanvas
               entities={displayEntities}
               expandedWaves={expandedWaves}
+              proposalCounts={proposalCounts}
               onToggleWave={toggleWave}
               onSelectEntity={setSelected}
+              onOpenProposals={openProposals}
             />
           )}
         {selectedDisplay && (
