@@ -46,6 +46,123 @@ test('answers cost totals across runs', () => {
   assert.equal(ask('money spent', { runs }).answer, '$1.50 real / $3.25 notional across 2 runs.');
 });
 
+test('answers the highest-time project from verified session evidence', () => {
+  const sessions = [
+    { project: 'BergLabs', duration_seconds: 5400, started_at: '2026-07-14T08:00:00.000Z', source: 'codex' },
+    { project: 'BergLabs', duration_seconds: 1800, started_at: '2026-07-15T08:00:00.000Z', source: 'claude' },
+    { project: 'Patherle', duration_seconds: 3600, started_at: '2026-07-15T09:00:00.000Z', source: 'codex' },
+  ];
+  const result = ask('what project did I spend the most time on this week?', {
+    sessions,
+    now: new Date('2026-07-15T12:00:00.000Z'),
+  });
+
+  assert.equal(result.gate, 'known_known');
+  assert.match(result.answer, /BergLabs/);
+  assert.match(result.answer, /2h/);
+  assert.match(result.answer, /2 sessions/);
+  assert.equal(result.evidence[0].kind, 'session_aggregate');
+});
+
+test('project-time ranking ignores generic container folders', () => {
+  const result = ask('what project did I spend the most time on all time?', {
+    sessions: [
+      { project: 'Downloads', duration_seconds: 7200, started_at: '2026-07-15T00:00:00.000Z' },
+      { project: 'repos', duration_seconds: 5400, started_at: '2026-07-15T00:00:00.000Z' },
+      { project: 'BergLabs', duration_seconds: 3600, started_at: '2026-07-15T00:00:00.000Z' },
+    ],
+  });
+
+  assert.match(result.answer, /^BergLabs/);
+});
+
+test('owner-taught aliases roll folder variants into one canonical project', () => {
+  const result = ask('what project did I spend the most time on all time?', {
+    sessions: [
+      { project: 'Patherle', duration_seconds: 1800, started_at: '2026-07-15T00:00:00.000Z' },
+      { project: 'patherle-main-fix', duration_seconds: 3600, started_at: '2026-07-15T01:00:00.000Z' },
+      { project: 'BergLabs', duration_seconds: 4000, started_at: '2026-07-15T02:00:00.000Z' },
+    ],
+    claims: [{
+      claim_id: 'claim_patherle_alias', project_id: 'patherle', project_name: 'Patherle',
+      field: 'alias', value: 'patherle-main-fix', status: 'owner_confirmed', source: 'owner',
+      confidence: 1, recorded_at: '2026-07-15T00:00:00.000Z',
+    }],
+  });
+
+  assert.match(result.answer, /^Patherle/);
+  assert.match(result.answer, /1h 30m/);
+});
+
+test('answers a project vision only when the owner-confirmed claim exists', () => {
+  const result = ask('what is the vision for Patherle?', {
+    claims: [{
+      claim_id: 'claim_patherle_vision',
+      project_id: 'patherle',
+      project_name: 'Patherle',
+      field: 'vision',
+      value: 'Ship a secure, bug-free beta for first users.',
+      status: 'owner_confirmed',
+      source: 'owner',
+      confidence: 1,
+      recorded_at: '2026-07-15T00:00:00.000Z',
+    }],
+  });
+
+  assert.equal(result.gate, 'known_known');
+  assert.match(result.answer, /secure, bug-free beta/);
+  assert.equal(result.claim_id, 'claim_patherle_vision');
+});
+
+test('asks one focused teaching question when a project fact is known missing', () => {
+  const result = ask('what is the vision for BergLabs?', {
+    sessions: [{ project: 'BergLabs', duration_seconds: 60, started_at: '2026-07-15T00:00:00.000Z' }],
+  });
+
+  assert.equal(result.gate, 'known_unknown');
+  assert.equal(result.next_question, 'What is the current vision for BergLabs?');
+  assert.deepEqual(result.learning, {
+    project_id: 'berglabs', project_name: 'BergLabs', field: 'vision',
+  });
+});
+
+test('labels an inferred project claim as an unknown known hypothesis', () => {
+  const result = ask('what is the priority for Meow Ops?', {
+    sessions: [{ project: 'meow-ops', duration_seconds: 60, started_at: '2026-07-15T00:00:00.000Z' }],
+    claims: [{
+      claim_id: 'claim_meow_priority',
+      project_id: 'meow-ops',
+      project_name: 'Meow Ops',
+      field: 'priority',
+      value: 'Internal agentic workflow experimentation.',
+      status: 'inferred',
+      source: 'session_pattern',
+      confidence: 0.65,
+      recorded_at: '2026-07-15T00:00:00.000Z',
+    }],
+  });
+
+  assert.equal(result.gate, 'unknown_known');
+  assert.match(result.answer, /possible priority/);
+  assert.equal(result.claim_status, 'inferred');
+});
+
+test('lists explicit known unknowns for a named project', () => {
+  const result = ask("what don't you know about BergLabs?", {
+    claims: [{
+      claim_id: 'claim_berglabs_vision', project_id: 'berglabs', project_name: 'BergLabs',
+      field: 'vision', value: 'Agentic operations.', status: 'owner_confirmed', source: 'owner',
+      confidence: 1, recorded_at: '2026-07-15T00:00:00.000Z',
+    }],
+  });
+
+  assert.equal(result.gate, 'known_unknown');
+  assert.match(result.answer, /mission/);
+  assert.match(result.answer, /current phase/);
+  assert.doesNotMatch(result.answer, /vision/);
+  assert.equal(result.learning.project_name, 'BergLabs');
+});
+
 test('answers health from latest digest', () => {
   const result = ask('agent health', { digest });
   assert.match(result.answer, /2 agents, 1 flagged/);
@@ -55,6 +172,8 @@ test('answers health from latest digest', () => {
 test('unknown question returns fallback', () => {
   const result = ask('what should I eat?', {});
   assert.match(result.answer, /I don't know how to answer that from local evidence yet/);
+  assert.equal(result.gate, 'unknown_unknown');
+  assert.match(result.next_question, /evidence source/i);
 });
 
 test('answers sync health and creates an evidence-bound repair prompt', () => {

@@ -1,3 +1,5 @@
+import { answerProjectQuestion, buildProjectSnapshot } from './project-intelligence.mjs';
+
 export const FALLBACK_ANSWER = "I don't know how to answer that from local evidence yet. Try: what changed today, sync health, what should I fix next, pending, cost, or activity.";
 
 const asArray = (value) => (Array.isArray(value) ? value : []);
@@ -64,13 +66,22 @@ function repairPrompt(sync) {
   ].join('\n');
 }
 
-export function ask(question, { proposals, decisions, runs, digest, sync } = {}) {
+export function ask(question, {
+  proposals, decisions, runs, digest, sync, sessions, claims, now,
+} = {}) {
   const q = String(question || '').toLowerCase();
   const proposalRows = latestProposals(asArray(proposals));
   const decisionRows = asArray(decisions);
   const runRows = asArray(runs);
   const proposalMap = new Map(proposalRows.map((proposal) => [proposal.proposal_id, proposal]));
   const proposalTitle = (id) => proposalMap.get(id)?.title || id || 'Unknown proposal';
+
+  const projectAnswer = answerProjectQuestion(
+    question,
+    buildProjectSnapshot({ sessions, claims }),
+    { now: now || new Date() },
+  );
+  if (projectAnswer) return projectAnswer;
 
   if (hasKeyword(q, ['repair prompt', 'fix prompt'])) return { answer: repairPrompt(sync) };
   if (hasKeyword(q, ['sync', 'fresh', 'stale'])) return { answer: syncAnswer(sync) };
@@ -135,5 +146,12 @@ export function ask(question, { proposals, decisions, runs, digest, sync } = {})
   if (hasKeyword(q, ['execute', 'applied'])) {
     return { answer: proposalsByStatus(proposalRows, ['applied'], 'applied proposal') };
   }
-  return { answer: FALLBACK_ANSWER };
+  return {
+    answer: FALLBACK_ANSWER,
+    gate: 'unknown_unknown',
+    confidence: 0,
+    evidence: [],
+    unknowns: ['The evidence and reasoning path required to answer this question'],
+    next_question: 'What local evidence source should Companion use to learn this?',
+  };
 }

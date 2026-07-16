@@ -28,6 +28,16 @@ import { runDigest } from './loop-digest.mjs';
 import { ask, FALLBACK_ANSWER } from './ask-engine.mjs';
 import { askLlm } from './llm-gateway.mjs';
 import { loadEnv } from './load-env.mjs';
+import { buildProjectSnapshot } from './project-intelligence.mjs';
+import { appendProjectClaim, confirmProjectClaim, readProjectClaims } from './project-ledger.mjs';
+import {
+  applySoulPolicy, compileSoulInstructions, readSoulProfile, resetSoulProfile,
+  resolveSoulProfile, saveSoulProfile, SOUL_PRESETS,
+} from './companion-soul.mjs';
+import {
+  appendCompanionFeedback, applyPreferenceProposal, readPreferenceState,
+  recordPreferenceDecision,
+} from './companion-preferences.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -38,6 +48,7 @@ const PORT = Number(process.env.MEOW_LOCAL_API_PORT || process.env.MEOW_SYNC_POR
 const LOCAL_ACCESS_HEADER = 'x-meow-ops-local';
 const LOOP_OPS_DIR = join(ROOT, 'public', 'data', 'loop-ops');
 const SUPERADMIN_USAGE_FILE = join(ROOT, 'public', 'data', 'superadmin-usage.json');
+const SESSIONS_FILE = process.env.MEOW_SESSIONS_FILE || join(ROOT, 'public', 'data', 'sessions.json');
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://meow-ops.vercel.app',
   'http://localhost:5173',
@@ -108,6 +119,15 @@ function requireBrowserHeader(req, res) {
 function sendJson(res, statusCode, payload) {
   res.statusCode = statusCode;
   res.end(JSON.stringify(payload));
+}
+
+function readJsonArray(path) {
+  try {
+    const value = JSON.parse(readFileSync(path, 'utf8'));
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
 }
 
 function buildAskContext({ proposals, decisions, runs, digest, sync }) {
@@ -229,7 +249,9 @@ const server = createServer(async (req, res) => {
     path.startsWith('/sync')
     || path === '/data/sessions.json'
     || path === '/data/cost-summary.json'
-    || path.startsWith('/loop-eng/');
+    || path.startsWith('/loop-eng/')
+    || path.startsWith('/project-intelligence/')
+    || path.startsWith('/companion/');
 
   if (needsBrowserHeader && !requireBrowserHeader(req, res)) return;
 
@@ -352,6 +374,189 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/project-intelligence/snapshot' && req.method === 'GET') {
+    const snapshot = buildProjectSnapshot({
+      sessions: readJsonArray(SESSIONS_FILE),
+      claims: readProjectClaims(),
+    });
+    sendJson(res, 200, {
+      ok: true,
+      projects: snapshot.projects,
+      claim_count: snapshot.claims.length,
+      session_count: snapshot.sessions.length,
+    });
+    return;
+  }
+
+  if (path === '/project-intelligence/claims' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      const claim = appendProjectClaim({
+        project_name: body.project_name,
+        project_id: body.project_id,
+        field: body.field,
+        value: body.value,
+        status: 'owner_confirmed',
+        source: 'owner',
+        supersedes: body.supersedes,
+      });
+      sendJson(res, 201, { ok: true, claim });
+    } catch (err) {
+      ruleError(res, 400, 'project-claim', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (path === '/project-intelligence/confirm' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      const claim = confirmProjectClaim(body.claim_id);
+      sendJson(res, 200, { ok: true, claim });
+    } catch (err) {
+      ruleError(res, 400, 'project-claim', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (path === '/companion/soul' && req.method === 'GET') {
+    sendJson(res, 200, { ok: true, profile: readSoulProfile(), presets: SOUL_PRESETS });
+    return;
+  }
+
+  if (path === '/companion/soul' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req, 512_000);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      sendJson(res, 200, { ok: true, profile: saveSoulProfile(body.profile) });
+    } catch (err) {
+      ruleError(res, 400, 'companion-soul', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (path === '/companion/soul/reset' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      sendJson(res, 200, { ok: true, profile: resetSoulProfile() });
+    } catch (err) {
+      ruleError(res, 400, 'companion-soul', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (path === '/companion/preferences' && req.method === 'GET') {
+    sendJson(res, 200, { ok: true, ...readPreferenceState(readSoulProfile()) });
+    return;
+  }
+
+  if (path === '/companion/feedback' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      const feedback = appendCompanionFeedback(body);
+      sendJson(res, 201, {
+        ok: true,
+        feedback,
+        preferences: readPreferenceState(readSoulProfile()),
+      });
+    } catch (err) {
+      ruleError(res, 400, 'companion-feedback', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
+  if (path === '/companion/preferences/decision' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      ruleError(res, 400, 'json', err.message.replace(/^\[json\]\s*/, ''));
+      return;
+    }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      const current = readSoulProfile();
+      const proposal = readPreferenceState(current).proposals
+        .find((candidate) => candidate.proposal_id === body.proposal_id);
+      if (!proposal) {
+        ruleError(res, 404, 'companion-preference', 'preference proposal not found');
+        return;
+      }
+      if (!['applied', 'dismissed'].includes(body.decision)) {
+        ruleError(res, 400, 'companion-preference', 'decision must be applied or dismissed');
+        return;
+      }
+      const profile = body.decision === 'applied'
+        ? saveSoulProfile(applyPreferenceProposal(current, proposal))
+        : current;
+      const decision = recordPreferenceDecision({
+        proposal_id: proposal.proposal_id,
+        decision: body.decision,
+        soul_revision: profile.revision,
+      });
+      sendJson(res, 200, {
+        ok: true,
+        decision,
+        profile,
+        preferences: readPreferenceState(profile),
+      });
+    } catch (err) {
+      ruleError(res, 400, 'companion-preference', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
   if (path === '/loop-eng/ask' && req.method === 'POST') {
     try {
       const body = await readJsonBody(req);
@@ -365,27 +570,62 @@ const server = createServer(async (req, res) => {
         const data = readFileSync(join(ROOT, 'public', 'data', 'loop-engineering', 'digest.json'), 'utf8');
         digest = JSON.parse(data);
       } catch {}
-      const data = {
+      const storedSoul = readSoulProfile();
+      const rawData = {
         proposals: readLedger('proposal'),
         decisions: readLedger('decision'),
         runs: readLedger('run'),
+        sessions: readJsonArray(SESSIONS_FILE),
+        claims: readProjectClaims(),
         digest,
         sync: getSyncStatus({ repoRoot: ROOT }),
       };
-      const { answer } = ask(question, data);
-      let finalAnswer = answer;
+      const soul = resolveSoulProfile(
+        storedSoul,
+        question,
+        buildProjectSnapshot({ sessions: rawData.sessions, claims: rawData.claims }).projects,
+      );
+      const soulPolicy = applySoulPolicy(soul, rawData);
+      const data = soulPolicy.context;
+      const result = ask(question, data);
+      let finalAnswer = result.answer;
       let source = 'keyword';
-      if (answer === FALLBACK_ANSWER && process.env.DEEPSEEK_API_KEY) {
-        const llm = await askLlm({ question, context: buildAskContext(data), env: process.env, now: new Date() });
+      if (result.answer === FALLBACK_ANSWER && process.env.DEEPSEEK_API_KEY && soulPolicy.allow_model_synthesis) {
+        const llm = await askLlm({
+          question,
+          context: buildAskContext(data),
+          instructions: compileSoulInstructions(soul),
+          env: process.env,
+          now: new Date(),
+        });
         if (llm.status === 'ok') {
-          finalAnswer = assertRedacted(llm.answer, 'llm-answer');
+          finalAnswer = `Unverified model synthesis: ${assertRedacted(llm.answer, 'llm-answer')}`;
           source = 'llm';
         }
       }
       sendJson(res, 200, {
         ok: true,
+        ...result,
         answer: finalAnswer,
         source,
+        gate: result.gate || 'known_known',
+        confidence: result.confidence ?? 1,
+        evidence: result.evidence || [{
+          kind: 'local_reasoning',
+          ref: 'loop-eng/ask',
+          detail: 'Deterministic local ledger, digest, or sync evidence',
+        }],
+        unknowns: result.unknowns || [],
+        soul: {
+          name: soul.name,
+          preset: soul.preset,
+          revision: soul.revision,
+          uncertainty_policy: soul.uncertainty_policy,
+          project_overlay: soul.active_project_overlay ? {
+            project_id: soul.active_project_overlay.project_id,
+            project_name: soul.active_project_overlay.project_name,
+          } : null,
+        },
         suggestions: ['What changed today?', 'Is sync healthy?', 'What should I fix next?', 'Prepare a repair prompt'],
       });
     } catch (err) {
@@ -679,6 +919,12 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  POST /loop-eng/digest         - run Loop Engineering digest');
   console.log('  GET  /loop-eng/digest/history - Loop Engineering digest history');
   console.log('  POST /loop-eng/ask            - keyword query + budgeted AI fallback');
+  console.log('  GET  /project-intelligence/snapshot - project facts and evidence coverage');
+  console.log('  POST /project-intelligence/claims   - owner-confirm one project fact');
+  console.log('  POST /project-intelligence/confirm  - promote one inferred fact');
+  console.log('  GET  /companion/soul                   - current private soul profile');
+  console.log('  POST /companion/soul                   - save a versioned soul profile');
+  console.log('  POST /companion/soul/reset             - append the default soul profile');
   console.log('  POST /loop-eng/decisions      - owner decision with nonce');
   console.log('  POST /loop-eng/execute        - dry-run/push executor with nonce');
   console.log('  GET  /superadmin-usage/data   - sanitized local usage snapshot');

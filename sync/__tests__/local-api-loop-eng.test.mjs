@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,10 @@ const LOCAL_HEADERS = { Origin: BASE, 'x-meow-ops-local': '1' };
 
 let server;
 let ledgerDir;
+let sessionsFile;
+let projectDir;
+let soulDir;
+let preferenceDir;
 let previousLoopDir;
 let pendingProposal;
 let draftProposal;
@@ -118,6 +122,69 @@ async function postDecision(payload) {
   return { status: res.status, body: await res.json() };
 }
 
+async function postAsk(question) {
+  const res = await fetch(`${BASE}/loop-eng/ask`, {
+    method: 'POST',
+    headers: { ...LOCAL_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+async function postProjectClaim(payload) {
+  const res = await fetch(`${BASE}/project-intelligence/claims`, {
+    method: 'POST',
+    headers: { ...LOCAL_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, nonce: await nonce() }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+async function postProjectConfirm(claim_id) {
+  const res = await fetch(`${BASE}/project-intelligence/confirm`, {
+    method: 'POST',
+    headers: { ...LOCAL_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ claim_id, nonce: await nonce() }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+async function postSoul(profile) {
+  const res = await fetch(`${BASE}/companion/soul`, {
+    method: 'POST',
+    headers: { ...LOCAL_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ profile, nonce: await nonce() }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+async function resetSoul() {
+  const res = await fetch(`${BASE}/companion/soul/reset`, {
+    method: 'POST',
+    headers: { ...LOCAL_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nonce: await nonce() }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+async function postCompanionFeedback(payload) {
+  const res = await fetch(`${BASE}/companion/feedback`, {
+    method: 'POST',
+    headers: { ...LOCAL_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, nonce: await nonce() }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
+async function decidePreference(payload) {
+  const res = await fetch(`${BASE}/companion/preferences/decision`, {
+    method: 'POST',
+    headers: { ...LOCAL_HEADERS, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, nonce: await nonce() }),
+  });
+  return { status: res.status, body: await res.json() };
+}
+
 async function nonce() {
   const res = await getJson('/loop-eng/nonce');
   assert.equal(res.status, 200);
@@ -127,6 +194,14 @@ async function nonce() {
 
 before(async () => {
   ledgerDir = mkdtempSync(join(tmpdir(), 'meow-loop-api-ledger-'));
+  sessionsFile = join(ledgerDir, 'sessions.json');
+  projectDir = join(ledgerDir, 'project-intelligence');
+  soulDir = join(ledgerDir, 'companion-soul');
+  preferenceDir = join(ledgerDir, 'companion-preferences');
+  writeFileSync(sessionsFile, JSON.stringify([
+    { project: 'BergLabs', duration_seconds: 7200, started_at: new Date().toISOString(), source: 'codex' },
+    { project: 'Patherle', duration_seconds: 1800, started_at: new Date().toISOString(), source: 'claude' },
+  ]));
   previousLoopDir = process.env.MEOW_LOOP_DIR;
   process.env.MEOW_LOOP_DIR = ledgerDir;
 
@@ -152,7 +227,15 @@ before(async () => {
 
   server = spawn('node', [join(ROOT, 'sync', 'local-api.mjs')], {
     cwd: ROOT,
-    env: { ...process.env, MEOW_LOCAL_API_PORT: String(PORT), MEOW_LOOP_DIR: ledgerDir },
+    env: {
+      ...process.env,
+      MEOW_LOCAL_API_PORT: String(PORT),
+      MEOW_LOOP_DIR: ledgerDir,
+      MEOW_SESSIONS_FILE: sessionsFile,
+      MEOW_PROJECT_INTELLIGENCE_DIR: projectDir,
+      MEOW_COMPANION_SOUL_DIR: soulDir,
+      MEOW_COMPANION_PREFERENCE_DIR: preferenceDir,
+    },
     stdio: 'pipe',
   });
   await waitForServer();
@@ -195,6 +278,126 @@ test('GET /loop-eng endpoints return ledger-backed JSON shapes', async () => {
   assert.equal(summary.body.counts_by_status.pending_approval, 3);
   assert.equal(summary.body.counts_by_status.draft, 1);
   assert.equal(summary.body.open_per_loop['api-test-loop'], 4);
+});
+
+test('POST /loop-eng/ask answers project time from the session artifact', async () => {
+  const res = await postAsk('what project did I spend the most time on today?');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.gate, 'known_known');
+  assert.match(res.body.answer, /BergLabs/);
+  assert.match(res.body.answer, /2h/);
+  assert.equal(res.body.evidence[0].kind, 'session_aggregate');
+});
+
+test('owner can teach one project fact and Companion answers from it', async () => {
+  const taught = await postProjectClaim({
+    project_name: 'BergLabs',
+    field: 'vision',
+    value: 'Build an agentic operations company with measurable customer outcomes.',
+  });
+  assert.equal(taught.status, 201);
+  assert.equal(taught.body.claim.status, 'owner_confirmed');
+
+  const answer = await postAsk('what is the vision for BergLabs?');
+  assert.equal(answer.status, 200);
+  assert.equal(answer.body.gate, 'known_known');
+  assert.match(answer.body.answer, /agentic operations company/);
+  assert.equal(answer.body.claim_id, taught.body.claim.claim_id);
+
+  const confirmed = await postProjectConfirm(taught.body.claim.claim_id);
+  assert.equal(confirmed.status, 200);
+  assert.equal(confirmed.body.claim.status, 'owner_confirmed');
+});
+
+test('owner can personalize Companion while evidence permissions remain authoritative', async () => {
+  const initial = await getJson('/companion/soul');
+  assert.equal(initial.status, 200);
+  assert.equal(initial.body.profile.preset, 'clear-operator');
+  assert.equal(initial.body.presets.length, 4);
+
+  const saved = await postSoul({
+    ...initial.body.profile,
+    name: 'Maven',
+    preset: 'critical-partner',
+    custom_instructions: 'Challenge scope creep and identify the smallest decisive move.',
+    uncertainty_policy: 'strict',
+    memory: { session_metrics: false, project_facts: true, inferred_claims: false },
+    model_synthesis: false,
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.profile.revision, 1);
+  assert.equal(saved.body.profile.name, 'Maven');
+
+  const answer = await postAsk('what project did I spend the most time on today?');
+  assert.equal(answer.body.gate, 'known_unknown');
+  assert.match(answer.body.answer, /do not have tracked project time/i);
+  assert.equal(answer.body.soul.name, 'Maven');
+
+  const reset = await resetSoul();
+  assert.equal(reset.status, 200);
+  assert.equal(reset.body.profile.name, 'Companion');
+  assert.equal(reset.body.profile.revision, 2);
+});
+
+test('Companion soul route accepts a 100,000-character owner meta-prompt', async () => {
+  const initial = await getJson('/companion/soul');
+  const line = 'owner preference.\n';
+  const customInstructions = `${line.repeat(6_000).slice(0, 99_999)}!`;
+  const saved = await postSoul({
+    ...initial.body.profile,
+    custom_instructions: customInstructions,
+  });
+
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.profile.custom_instructions.length, 100_000);
+});
+
+test('Companion activates the matching project soul overlay for an answer', async () => {
+  const initial = await getJson('/companion/soul');
+  const saved = await postSoul({
+    ...initial.body.profile,
+    preset: 'warm-strategist',
+    project_overlays: [{
+      project_id: 'berglabs',
+      project_name: 'BergLabs',
+      enabled: true,
+      preset: 'critical-partner',
+      custom_instructions: 'Prioritize shipped customer outcomes.',
+    }],
+  });
+  assert.equal(saved.status, 200);
+
+  const answer = await postAsk('what is the vision for BergLabs?');
+  assert.equal(answer.status, 200);
+  assert.equal(answer.body.soul.preset, 'critical-partner');
+  assert.equal(answer.body.soul.project_overlay.project_id, 'berglabs');
+});
+
+test('Companion feedback stays review-only until the owner applies its proposal', async () => {
+  const soul = await getJson('/companion/soul');
+  for (let index = 1; index <= 3; index++) {
+    const feedback = await postCompanionFeedback({
+      signal: 'too_verbose',
+      response_ref: `api-preference-${index}`,
+      gate: 'known_known',
+      soul_revision: soul.body.profile.revision,
+    });
+    assert.equal(feedback.status, 201);
+  }
+
+  const before = await getJson('/companion/preferences');
+  assert.equal(before.status, 200);
+  assert.equal(before.body.proposals.length, 1);
+  assert.equal(before.body.proposals[0].status, 'review_only');
+  assert.equal(soul.body.profile.response_preferences.verbosity, 'balanced');
+
+  const decision = await decidePreference({
+    proposal_id: before.body.proposals[0].proposal_id,
+    decision: 'applied',
+  });
+  assert.equal(decision.status, 200);
+  assert.equal(decision.body.profile.response_preferences.verbosity, 'concise');
+  assert.deepEqual(decision.body.preferences.proposals, []);
 });
 
 test('GET /loop-eng/summary reports system-expired drafts outside rejected counts', async () => {

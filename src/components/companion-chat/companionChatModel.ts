@@ -1,6 +1,10 @@
 import type { SyncStatus } from '../../lib/queries';
 
 export type ChatSource = 'local' | 'deepseek';
+export type KnowledgeGate = 'known_known' | 'known_unknown' | 'unknown_known' | 'unknown_unknown';
+
+export type ChatEvidence = { kind: string; ref: string; detail: string };
+export type LearningTarget = { project_id?: string; project_name?: string; field: string };
 
 export type ChatMessage = {
   id: string;
@@ -8,10 +12,24 @@ export type ChatMessage = {
   text: string;
   createdAt: string;
   source?: ChatSource;
+  gate?: KnowledgeGate;
+  confidence?: number;
+  evidence?: ChatEvidence[];
+  unknowns?: string[];
+  nextQuestion?: string;
+  learning?: LearningTarget;
+  claimId?: string;
+  claimStatus?: 'inferred' | 'owner_confirmed' | 'stale' | 'contradicted';
+  feedbackEligible?: boolean;
+  feedbackRecorded?: boolean;
+  feedbackStatus?: 'saved' | 'error';
+  soulRevision?: number;
+  projectSoul?: { project_id: string; project_name: string };
 };
 
 export const STARTER_PROMPTS = [
   'What changed today?',
+  'Which project received the most time this week?',
   'Is sync healthy?',
   'What should I fix next?',
   'Prepare a repair prompt',
@@ -19,13 +37,19 @@ export const STARTER_PROMPTS = [
 
 const STORAGE_KEY = 'meow-ops-companion-thread-v1';
 
-export function newMessage(role: ChatMessage['role'], text: string, source?: ChatSource): ChatMessage {
+export function newMessage(
+  role: ChatMessage['role'],
+  text: string,
+  source?: ChatSource,
+  metadata: Partial<Omit<ChatMessage, 'id' | 'role' | 'text' | 'createdAt' | 'source'>> = {},
+): ChatMessage {
   return {
     id: `${role}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     role,
     text,
     createdAt: new Date().toISOString(),
     ...(source ? { source } : {}),
+    ...metadata,
   };
 }
 

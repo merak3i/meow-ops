@@ -254,6 +254,7 @@ function askSkipReason(notes) {
 export async function askLlm({
   question,
   context = '',
+  instructions = '',
   env = process.env,
   transport = globalThis.fetch,
   now = new Date(),
@@ -263,7 +264,10 @@ export async function askLlm({
     note(notes, 'llm skipped: no transport');
     return { status: 'error' };
   }
-  const system = "You are Meow-Ops, a concise operations assistant. Answer the user's question using ONLY the context below. If the context doesn't contain enough information, say so. Keep answers under 3 sentences.\n\nContext:\n" + context;
+  const identity = typeof instructions === 'string' && instructions.trim()
+    ? instructions.trim()
+    : 'You are Meow-Ops, a concise operations assistant.';
+  const system = `${identity}\n\nAnswer the user's question using ONLY the context below. If the context does not contain enough information, say so.\n\nContext:\n${context}`;
   const user = typeof question === 'string' ? question : '';
   const budgetNotes = Array.isArray(notes) ? notes : [];
   const key = budgetCheck({ env, now, prompt: `${system}\n${user}`, notes: budgetNotes });
