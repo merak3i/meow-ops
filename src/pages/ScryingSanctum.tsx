@@ -47,6 +47,10 @@ import { LichKing } from './sanctum/LichKing';
 import { Minimap } from './sanctum/Minimap';
 import { SANCTUM_PALETTE as PAL } from './sanctum/palette';
 import {
+  nextWalkFrame, PHASE_STEP, SETTLE_DURATION, START_DURATION,
+  stepPeriodForSpeed, TURN_DURATION,
+} from './sanctum/motion.js';
+import {
   ClaudeSun, deriveSunBinding,
   SUN_POSITION, SUN_SELECTION_ID,
 } from './sanctum/Sun';
@@ -815,6 +819,12 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
   const targetWpRef = useRef(Math.floor(Math.random() * WAYPOINTS.length));
   const frameRef    = useRef(0);
   const frameTimer  = useRef(Math.random() * 0.22);
+  const facingRef   = useRef<1 | -1>(1);
+  const pendingFacingRef = useRef<1 | -1>(1);
+  const turnTimerRef = useRef(0);
+  const wasMovingRef = useRef(false);
+  const startTimerRef = useRef(0);
+  const settleTimerRef = useRef(0);
   const spawnAge    = useRef(0);                       // spawn-in timer
   const isMovingRef = useRef(false);                   // for trail particles
   const hovered     = useRef(false);
@@ -936,6 +946,7 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
 
     // ── Possession: WASD drive + cursor facing + ground-order walk ──
     let moving = false;
+    let desiredFacing: 1 | -1 | null = null;
     if (possessed) {
       const mi = moveInputRef.current;
       const magSq = mi.x * mi.x + mi.z * mi.z;
@@ -947,10 +958,7 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         livePosRef.current.x += (mi.x / mag) * velocityRef.current * delta;
         livePosRef.current.z += (mi.z / mag) * velocityRef.current * delta;
         moving = true;
-        if (spriteRef.current) {
-          const faceDir = mi.x > 0 ? 1 : mi.x < 0 ? -1 : (spriteRef.current.scale.x > 0 ? 1 : -1);
-          spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
-        }
+        desiredFacing = mi.x > 0 ? 1 : mi.x < 0 ? -1 : facingRef.current;
       } else {
         // No WASD — check for one-shot move order
         const order = moveOrdersRef.current.get(pn.session.session_id);
@@ -969,19 +977,13 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
             livePosRef.current.x += (dx / dist) * Math.min(step, dist);
             livePosRef.current.z += (dz / dist) * Math.min(step, dist);
             moving = true;
-            if (spriteRef.current) {
-              const faceDir = dx > 0 ? 1 : -1;
-              spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
-            }
+            desiredFacing = dx > 0 ? 1 : -1;
           }
         } else {
           velocityRef.current = Math.max(0, velocityRef.current - delta * 4);
           // Face cursor when idle
-          if (spriteRef.current) {
-            const cx = cursorGroundRef.current.x - livePosRef.current.x;
-            const faceDir = cx > 0 ? 1 : cx < 0 ? -1 : (spriteRef.current.scale.x > 0 ? 1 : -1);
-            spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
-          }
+          const cx = cursorGroundRef.current.x - livePosRef.current.x;
+          desiredFacing = cx > 0 ? 1 : cx < 0 ? -1 : facingRef.current;
         }
       }
       // Clamp to plaza bounds
@@ -990,9 +992,9 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
       // Walk cycle
       if (moving) {
         frameTimer.current += delta;
-        if (frameTimer.current > 0.22) {
+        if (frameTimer.current > stepPeriodForSpeed(Math.max(velocityRef.current, movProf.speed * 0.35))) {
           frameTimer.current = 0;
-          frameRef.current ^= 1;
+          frameRef.current = nextWalkFrame(frameRef.current);
           if (spriteRef.current) {
             (spriteRef.current.material as THREE.SpriteMaterial).map = textures[frameRef.current]!;
             (spriteRef.current.material as THREE.SpriteMaterial).needsUpdate = true;
@@ -1041,16 +1043,13 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         livePosRef.current.z += (dz / dist) * Math.min(speed, dist);
 
         // ── Sprite facing: flip X based on direction ──
-        if (spriteRef.current) {
-          const faceDir = dx > 0 ? 1 : -1;
-          spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
-        }
+        desiredFacing = dx > 0 ? 1 : -1;
 
         // ── Walk cycle with bounce ──
         frameTimer.current += delta;
-        if (frameTimer.current > 0.22) {
+        if (frameTimer.current > stepPeriodForSpeed(Math.max(velocityRef.current, movProf.speed * 0.35))) {
           frameTimer.current = 0;
-          frameRef.current ^= 1;
+          frameRef.current = nextWalkFrame(frameRef.current);
           if (spriteRef.current) {
             (spriteRef.current.material as THREE.SpriteMaterial).map = textures[frameRef.current]!;
             (spriteRef.current.material as THREE.SpriteMaterial).needsUpdate = true;
@@ -1072,13 +1071,36 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         }
       });
     }
+    if (moving && !wasMovingRef.current) startTimerRef.current = START_DURATION;
+    if (!moving && wasMovingRef.current) {
+      settleTimerRef.current = SETTLE_DURATION;
+      frameRef.current = 0;
+      if (spriteRef.current) {
+        (spriteRef.current.material as THREE.SpriteMaterial).map = textures[0];
+        (spriteRef.current.material as THREE.SpriteMaterial).needsUpdate = true;
+      }
+    }
+    wasMovingRef.current = moving;
+    startTimerRef.current = Math.max(0, startTimerRef.current - delta);
+    settleTimerRef.current = Math.max(0, settleTimerRef.current - delta);
+
+    if (desiredFacing && desiredFacing !== facingRef.current && turnTimerRef.current <= 0) {
+      pendingFacingRef.current = desiredFacing;
+      turnTimerRef.current = TURN_DURATION;
+    }
+    if (turnTimerRef.current > 0) {
+      turnTimerRef.current = Math.max(0, turnTimerRef.current - delta);
+      if (turnTimerRef.current === 0) facingRef.current = pendingFacingRef.current;
+    }
+
     isMovingRef.current = moving;
 
     // ── Idle breathing bob + walk bounce + selection float ──
-    const breathe     = Math.sin(t * movProf.breatheSpeed + pn.idx * 1.7) * movProf.breatheAmp;
+    const idlePhase   = pn.idx * PHASE_STEP;
+    const breathe     = Math.sin(t * movProf.breatheSpeed + idlePhase) * movProf.breatheAmp;
     const walkBounce  = moving ? Math.abs(Math.sin(t * 8)) * movProf.bounceAmp : 0;
     // Selected characters float slightly higher so they pop above the crowd
-    const selectFloat = selected && !dragActive.current ? Math.sin(t * 1.5 + pn.idx) * 0.06 : 0;
+    const selectFloat = selected && !dragActive.current ? Math.sin(t * 1.5 + idlePhase) * 0.06 : 0;
     const spriteY     = breathe + walkBounce + selectFloat;
 
     if (spriteRef.current) {
@@ -1086,9 +1108,17 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
       const baseScale  = 2.0 * spawnEase;
       const hoverBoost = hovered.current ? 1.08 : 1.0;
       const dragBoost  = 1 + dragLift.current * 0.06;
-      spriteRef.current.scale.y = 3.0 * spawnEase * hoverBoost * dragBoost;
-      const dir = spriteRef.current.scale.x > 0 ? 1 : -1;
-      spriteRef.current.scale.x = baseScale * hoverBoost * dragBoost * dir;
+      const turnProgress = turnTimerRef.current / TURN_DURATION;
+      const turnSquash = turnTimerRef.current > 0 ? Math.sin(turnProgress * Math.PI) : 0;
+      const startProgress = startTimerRef.current / START_DURATION;
+      const settleProgress = settleTimerRef.current / SETTLE_DURATION;
+      const actionScaleY = 1 - turnSquash * 0.08
+        - (startTimerRef.current > 0 ? Math.sin(startProgress * Math.PI) * 0.08 : 0)
+        + (settleTimerRef.current > 0 ? Math.sin(settleProgress * Math.PI) * 0.04 : 0);
+      const actionScaleX = 1 + turnSquash * 0.06
+        + (settleTimerRef.current > 0 ? Math.sin(settleProgress * Math.PI) * 0.03 : 0);
+      spriteRef.current.scale.y = 3.0 * spawnEase * hoverBoost * dragBoost * actionScaleY;
+      spriteRef.current.scale.x = baseScale * hoverBoost * dragBoost * actionScaleX * facingRef.current;
       // Recency decay: older sessions fade toward ghost-alpha, never below 0.4
       const recencyAlpha = 0.4 + 0.6 * recencyBoost;
       (spriteRef.current.material as THREE.SpriteMaterial).opacity = spawnEase * recencyAlpha;
@@ -1121,10 +1151,10 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         auraPulse = 1 + (Math.sin(t * auraProf.speed) * Math.sin(t * 13.7) > 0.3 ? auraProf.amplitude : -auraProf.amplitude * 0.5);
       } else if (auraProf.style === 'breathe') {
         // Slow sine wave
-        auraPulse = 1 + Math.sin(t * auraProf.speed + pn.idx) * auraProf.amplitude;
+        auraPulse = 1 + Math.sin(t * auraProf.speed + pn.idx * PHASE_STEP) * auraProf.amplitude;
       } else {
         // Sharp pulse
-        auraPulse = 1 + Math.abs(Math.sin(t * auraProf.speed + pn.idx)) * auraProf.amplitude;
+        auraPulse = 1 + Math.abs(Math.sin(t * auraProf.speed + pn.idx * PHASE_STEP)) * auraProf.amplitude;
       }
       // Drag: aura expands and brightens while held
       const dragMult = 1 + dragLift.current * 0.5;

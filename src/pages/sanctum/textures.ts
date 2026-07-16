@@ -11,7 +11,7 @@
 //   getStainedGlassTexture() — gold/violet/indigo stained-glass strip for
 //                              citadel + spire windows
 //   getLichKingTexture()     — 128x192 hand-drawn pixel sprite of Arthas
-//   buildClassTexture()      — per-cat-type 2-frame walk cycle (idle + step)
+//   buildClassTexture()      — per-cat-type 4-frame walk cycle
 //                              for every champion class
 
 import * as THREE from 'three';
@@ -19,7 +19,8 @@ import { CLASS_MAP, FALLBACK_CLASS } from './classes';
 
 // ─── Cache ───────────────────────────────────────────────────────────────────
 
-const TEXTURE_CACHE = new Map<string, [THREE.CanvasTexture, THREE.CanvasTexture]>();
+type WalkTextures = [THREE.CanvasTexture, THREE.CanvasTexture, THREE.CanvasTexture, THREE.CanvasTexture];
+const TEXTURE_CACHE = new Map<string, WalkTextures>();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -435,13 +436,13 @@ export function getLichKingTexture(): THREE.CanvasTexture {
 
 // ─── Champion class textures ─────────────────────────────────────────────────
 //
-// Per cat_type, returns a [idle, walking] pair of CanvasTextures with the
+// Per cat_type, returns four CanvasTextures (contact, down, passing, up) with the
 // signature character pose for each class. Cached per cat_type so a 50-agent
 // run group still only rasterises 7 sprite pairs total. Each `case` below
 // hand-draws the iconic look for one class — Wolverine, Batman, Dr. Strange,
 // Vader, Captain America, Gandalf, Terminator (default/ghost).
 
-export function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.CanvasTexture] {
+export function buildClassTexture(catType: string): WalkTextures {
   const cached = TEXTURE_CACHE.get(catType);
   if (cached) return cached;
 
@@ -454,7 +455,7 @@ export function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.
   // const dark  = cls.emissive || '#111';
   const W = 128, H = 192;
 
-  function drawFrame(walking: boolean): THREE.CanvasTexture {
+  function drawFrame(phase: number): THREE.CanvasTexture {
     const canvas = document.createElement('canvas');
     canvas.width  = W;
     canvas.height = H;
@@ -462,10 +463,14 @@ export function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.
     ctx.clearRect(0, 0, W, H);
     ctx.imageSmoothingEnabled = false;
 
-    const aL = walking ? 72 : 68;   // arm L Y
-    const aR = walking ? 76 : 68;   // arm R Y
-    const lL = walking ? 124 : 120; // leg L Y
-    const lR = walking ? 116 : 120; // leg R Y
+    const poses = [
+      { aL: 72, aR: 68, lL: 120, lR: 116 }, // contact
+      { aL: 74, aR: 70, lL: 124, lR: 120 }, // down
+      { aL: 68, aR: 72, lL: 116, lR: 120 }, // passing
+      { aL: 70, aR: 74, lL: 120, lR: 124 }, // up
+    ];
+    const pose = poses[phase] ?? poses[0]!;
+    const { aL, aR, lL, lR } = pose;
 
     switch (catType) {
       case 'builder': { // WOLVERINE — yellow/blue suit, mask points, adamantium claws
@@ -786,7 +791,7 @@ export function buildClassTexture(catType: string): [THREE.CanvasTexture, THREE.
     return tex;
   }
 
-  const result: [THREE.CanvasTexture, THREE.CanvasTexture] = [drawFrame(false), drawFrame(true)];
+  const result: WalkTextures = [drawFrame(0), drawFrame(1), drawFrame(2), drawFrame(3)];
   TEXTURE_CACHE.set(catType, result);
   return result;
 }
