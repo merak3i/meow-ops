@@ -34,14 +34,20 @@ function sumCost(runs, key) {
   return runs.reduce((total, run) => total + (Number(run.metrics?.[key]) || 0), 0);
 }
 
-function syncAnswer(sync) {
+function syncAnswer(sync, sessionHistory) {
   if (!sync) return 'No sync status is available. Start the local helper, then run a session sync.';
   const count = Number(sync.artifact?.sessions) || 0;
-  if (sync.state === 'running') return `Sync is running: ${sync.phase || 'preflight'} is the current phase. The last verified artifact contains ${count} sessions.`;
+  const archiveTotal = Number(sessionHistory?.archive?.total) || 0;
+  const sourceCount = asArray(sessionHistory?.facets?.sources).length
+    || Object.keys(sync.artifact?.source_counts || {}).length;
+  const archiveEvidence = archiveTotal > 0
+    ? `The complete local archive contains ${new Intl.NumberFormat('en-US').format(archiveTotal)} sessions across ${sourceCount} sources${count > 0 && count < archiveTotal ? `; the browser compatibility preview contains the newest ${new Intl.NumberFormat('en-US').format(count)}` : ''}.`
+    : null;
+  if (sync.state === 'running') return `Sync is running: ${sync.phase || 'preflight'} is the current phase. ${archiveEvidence || `The last verified artifact contains ${count} sessions.`}`;
   if (sync.state === 'failed') return `Sync needs attention. It failed at ${sync.failure?.stage || sync.phase || 'an unknown phase'}: ${sync.failure?.summary || 'no failure summary was recorded'} Retry once; if it repeats, open Sync Activity and use the recorded code ${sync.failure?.code || 'unknown'}.`;
-  if (sync.state === 'partial') return `${sync.warning?.summary || 'An optional follow-up step failed.'} The verified session artifact is current and contains ${count} sessions.`;
-  if (sync.state === 'succeeded') return `Sync is healthy. The last run verified ${count} sessions across ${Object.keys(sync.artifact?.source_counts || {}).length} sources.`;
-  return sync.artifact?.available ? `No background run is active. The current artifact contains ${count} sessions.` : 'No session artifact exists yet. Run Sync sessions to create it.';
+  if (sync.state === 'partial') return `${sync.warning?.summary || 'An optional follow-up step failed.'} ${archiveEvidence || `The verified session artifact is current and contains ${count} sessions.`}`;
+  if (sync.state === 'succeeded') return `Sync is healthy. ${archiveEvidence || `The last run verified ${count} sessions across ${sourceCount} sources.`}`;
+  return sync.artifact?.available ? `No background run is active. ${archiveEvidence || `The current artifact contains ${count} sessions.`}` : 'No session artifact exists yet. Run Sync sessions to create it.';
 }
 
 function nextFix({ proposals, digest, sync }) {
@@ -67,7 +73,7 @@ function repairPrompt(sync) {
 }
 
 export function ask(question, {
-  proposals, decisions, runs, digest, sync, sessions, claims, now,
+  proposals, decisions, runs, digest, sync, sessionHistory, sessions, claims, now,
 } = {}) {
   const q = String(question || '').toLowerCase();
   const proposalRows = latestProposals(asArray(proposals));
@@ -84,7 +90,7 @@ export function ask(question, {
   if (projectAnswer) return projectAnswer;
 
   if (hasKeyword(q, ['repair prompt', 'fix prompt'])) return { answer: repairPrompt(sync) };
-  if (hasKeyword(q, ['sync', 'fresh', 'stale'])) return { answer: syncAnswer(sync) };
+  if (hasKeyword(q, ['sync', 'fresh', 'stale'])) return { answer: syncAnswer(sync, sessionHistory) };
   if (hasKeyword(q, ['fix next', 'should i fix', 'next priority', 'next move'])) {
     return { answer: nextFix({ proposals: proposalRows, digest, sync }) };
   }

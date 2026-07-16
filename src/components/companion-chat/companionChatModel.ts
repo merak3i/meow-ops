@@ -1,6 +1,6 @@
 import type { SyncStatus } from '../../lib/queries';
 
-export type ChatSource = 'local' | 'deepseek';
+export type ChatSource = 'local' | 'deepseek' | 'unknown';
 export type KnowledgeGate = 'known_known' | 'known_unknown' | 'unknown_known' | 'unknown_unknown';
 
 export type ChatEvidence = { kind: string; ref: string; detail: string };
@@ -56,7 +56,7 @@ export function newMessage(
 export function welcomeMessage(pageLabel = 'Meow Ops'): ChatMessage {
   return newMessage(
     'assistant',
-    `I’m your local operations copilot. I can explain ${pageLabel}, session sync, daily changes, and the next reviewable action. I’ll use deterministic local evidence first and label DeepSeek when it helps with an unknown.`,
+    `I’m your local operations copilot. I can explain ${pageLabel}, session sync, daily changes, and the next reviewable action. I’ll use deterministic local evidence first and label model assistance when it helps with an unknown.`,
     'local',
   );
 }

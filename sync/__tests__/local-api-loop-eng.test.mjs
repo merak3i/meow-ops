@@ -10,6 +10,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import {
   appendRecord, foldLatestById, newId, readLedger,
 } from '../loop-ledger.mjs';
+import { updateSessionHistory } from '../session-history.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 7441;
@@ -22,6 +23,7 @@ let sessionsFile;
 let projectDir;
 let soulDir;
 let preferenceDir;
+let sessionHistoryDir;
 let previousLoopDir;
 let pendingProposal;
 let draftProposal;
@@ -198,10 +200,16 @@ before(async () => {
   projectDir = join(ledgerDir, 'project-intelligence');
   soulDir = join(ledgerDir, 'companion-soul');
   preferenceDir = join(ledgerDir, 'companion-preferences');
+  sessionHistoryDir = join(ledgerDir, 'session-history');
   writeFileSync(sessionsFile, JSON.stringify([
     { project: 'BergLabs', duration_seconds: 7200, started_at: new Date().toISOString(), source: 'codex' },
     { project: 'Patherle', duration_seconds: 1800, started_at: new Date().toISOString(), source: 'claude' },
   ]));
+  updateSessionHistory([
+    { session_id: 'archive-1', project: 'BergLabs', source: 'codex', started_at: '2026-07-15T08:00:00.000Z' },
+    { session_id: 'archive-2', project: 'Patherle', source: 'claude', started_at: '2026-07-15T09:00:00.000Z' },
+    { session_id: 'archive-3', project: 'Meow Ops', source: 'codex', started_at: '2026-07-15T10:00:00.000Z' },
+  ], { dir: sessionHistoryDir });
   previousLoopDir = process.env.MEOW_LOOP_DIR;
   process.env.MEOW_LOOP_DIR = ledgerDir;
 
@@ -235,6 +243,7 @@ before(async () => {
       MEOW_PROJECT_INTELLIGENCE_DIR: projectDir,
       MEOW_COMPANION_SOUL_DIR: soulDir,
       MEOW_COMPANION_PREFERENCE_DIR: preferenceDir,
+      MEOW_SESSION_HISTORY_DIR: sessionHistoryDir,
     },
     stdio: 'pipe',
   });

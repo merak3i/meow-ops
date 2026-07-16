@@ -189,6 +189,25 @@ test('answers sync health and creates an evidence-bound repair prompt', () => {
   assert.match(repair, /smallest fix/);
 });
 
+test('sync health distinguishes the complete archive from the bounded browser preview', () => {
+  const sync = {
+    state: 'succeeded',
+    artifact: {
+      sessions: 1000,
+      source_counts: { codex: 800, claude: 150, cursor: 50 },
+    },
+  };
+  const sessionHistory = {
+    archive: { total: 1929 },
+    facets: { sources: ['claude', 'codex', 'cursor'] },
+  };
+
+  const answer = ask('is sync healthy?', { sync, sessionHistory }).answer;
+  assert.match(answer, /complete local archive contains 1,929 sessions across 3 sources/i);
+  assert.match(answer, /newest 1,000/i);
+  assert.doesNotMatch(answer, /verified 1000 sessions/i);
+});
+
 test('fix-next prioritizes a failed sync before proposals', () => {
   const answer = ask('what should I fix next?', {
     proposals,

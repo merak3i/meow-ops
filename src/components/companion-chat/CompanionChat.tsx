@@ -146,7 +146,9 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
     setMessages((current) => [...current, newMessage(
       'assistant',
       result.answer || 'No answer was returned.',
-      result.source === 'llm' ? 'deepseek' : 'local',
+      result.source === 'llm'
+        ? 'deepseek'
+        : (result.gate === 'known_unknown' || result.gate === 'unknown_unknown' ? 'unknown' : 'local'),
       metadata,
     )]);
     setBusy(false);
@@ -351,7 +353,7 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
                   <footer>
                     <span>{formatTime(message.createdAt)}</span>
                     {message.role === 'assistant' && (
-                      <span>{message.source === 'deepseek' ? 'DeepSeek copilot' : 'Local reasoning'}</span>
+                      <span>{message.source === 'deepseek' ? 'Model-assisted' : message.source === 'unknown' ? 'Unknown' : 'Local reasoning'}</span>
                     )}
                   </footer>
                   {message.id === latestAssistant && !busy && (
