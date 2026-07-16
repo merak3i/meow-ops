@@ -20,6 +20,11 @@ test('a gate older than seven days becomes needs-review', () => {
   assert.equal(effectiveStatus(entity, [stale], now), 'needs-review');
 });
 
+test('staleness never softens a failed or blocked gate', () => {
+  assert.equal(effectiveStatus(entity, [gate('failed', '2026-07-01T00:00:00.000Z')], now), 'failed');
+  assert.equal(effectiveStatus(entity, [gate('blocked', '2026-07-01T00:00:00.000Z')], now), 'blocked');
+});
+
 test('empty gates become needs-review and gates never improve entity status', () => {
   assert.equal(effectiveStatus(entity, [], now), 'needs-review');
   assert.equal(effectiveStatus({ status: 'failed' }, [gate('passed', '2026-07-16T11:00:00.000Z')], now), 'failed');

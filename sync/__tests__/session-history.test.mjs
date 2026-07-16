@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
+import {
+  mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -91,6 +93,77 @@ test('query filters the complete archive before applying cursor pagination', () 
       to: '2026-07-16',
     });
     assert.deepEqual(filtered.items.map((row) => row.session_id), ['a']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('cursor pagination remains stable when newer sessions arrive between pages', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-cursor-'));
+  try {
+    updateSessionHistory([
+      fixture('a', { ended_at: '2026-07-16T12:00:00Z' }),
+      fixture('b', { ended_at: '2026-07-15T12:00:00Z' }),
+    ], { dir });
+    const first = querySessionHistory({ dir, limit: 1 });
+    assert.deepEqual(first.items.map((row) => row.session_id), ['a']);
+
+    updateSessionHistory([
+      fixture('new', { ended_at: '2026-07-17T12:00:00Z' }),
+    ], { dir });
+    const second = querySessionHistory({ dir, limit: 1, cursor: first.nextCursor });
+    assert.deepEqual(second.items.map((row) => row.session_id), ['b']);
+    assert.equal(second.total, 2, 'the cursor remains bound to the original archive snapshot');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('cursor snapshot preserves ordering when an unseen session timestamp changes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-snapshot-'));
+  try {
+    updateSessionHistory([
+      fixture('a', { ended_at: '2026-07-16T12:00:00Z' }),
+      fixture('b', { ended_at: '2026-07-15T12:00:00Z' }),
+      fixture('c', { ended_at: '2026-07-14T12:00:00Z' }),
+    ], { dir, updatedAt: '2026-07-16T13:00:00Z' });
+    const first = querySessionHistory({ dir, limit: 1 });
+    assert.deepEqual(first.items.map((row) => row.session_id), ['a']);
+
+    updateSessionHistory([
+      fixture('b', { ended_at: '2026-07-17T12:00:00Z' }),
+    ], { dir, updatedAt: '2026-07-17T13:00:00Z' });
+    const second = querySessionHistory({ dir, limit: 1, cursor: first.nextCursor });
+    assert.deepEqual(second.items.map((row) => row.session_id), ['b']);
+    assert.equal(second.total, 3);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive rejects content-bearing fields, unsafe indexes, and worktree storage', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-privacy-'));
+  try {
+    for (const key of ['cwd', 'session_title', 'first_user_message']) {
+      assert.throws(
+        () => updateSessionHistory([fixture('unsafe', { metadata: { [key]: 'secret' } })], { dir }),
+        /forbidden-key/,
+      );
+    }
+
+    updateSessionHistory([fixture('safe')], { dir });
+    writeFileSync(join(dir, 'current.json'), JSON.stringify({
+      schemaVersion: 1,
+      sessions: [fixture('unsafe-index', { metadata: { cwd: '/private/secret' } })],
+    }));
+    assert.deepEqual(readSessionHistory({ dir }).map((row) => row.session_id), ['safe']);
+    assert.equal(statSync(join(dir, 'sessions.jsonl')).mode & 0o777, 0o600);
+
+    const repo = join(dir, 'repo');
+    mkdirSync(join(repo, '.git'), { recursive: true });
+    assert.throws(() => updateSessionHistory([fixture('blocked')], {
+      dir: join(repo, 'archive'),
+    }), /worktree-guard/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

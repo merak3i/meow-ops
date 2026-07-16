@@ -6,7 +6,7 @@
 
 import {
   appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync,
-  writeFileSync,
+  statSync, writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -52,14 +52,34 @@ function readIndex(dir) {
   if (existsSync(file)) {
     try {
       const parsed = JSON.parse(readFileSync(file, 'utf8'));
-      if (Array.isArray(parsed?.sessions)) return parsed;
+      if (Array.isArray(parsed?.sessions)) {
+        const logFile = join(dir, 'sessions.jsonl');
+        const logBytes = Number.isInteger(parsed.logBytes) && parsed.logBytes >= 0
+          ? parsed.logBytes
+          : (existsSync(logFile) ? statSync(logFile).size : 0);
+        return {
+          ...parsed,
+          logBytes,
+          sessions: parsed.sessions.map((session) => sanitizeValue(session)),
+        };
+      }
     } catch { /* recover from the append-only log below */ }
   }
+  return readLogIndex(dir);
+}
+
+function readLogIndex(dir, maxBytes = null) {
   const logFile = join(dir, 'sessions.jsonl');
-  if (!existsSync(logFile)) return { schemaVersion: 1, updatedAt: null, sessions: [] };
+  if (!existsSync(logFile)) {
+    return { schemaVersion: 1, updatedAt: null, logBytes: 0, sessions: [] };
+  }
+  const buffer = readFileSync(logFile);
+  const logBytes = Number.isInteger(maxBytes) && maxBytes >= 0
+    ? Math.min(maxBytes, buffer.length)
+    : buffer.length;
   const byId = new Map();
   let updatedAt = null;
-  for (const line of readFileSync(logFile, 'utf8').split('\n').filter(Boolean)) {
+  for (const line of buffer.subarray(0, logBytes).toString('utf8').split('\n').filter(Boolean)) {
     let revision;
     try { revision = JSON.parse(line); } catch {
       throw new Error(`[session-history] append-only log contains an invalid revision: ${logFile}`);
@@ -69,7 +89,12 @@ function readIndex(dir) {
       updatedAt = revision.archived_at || updatedAt;
     }
   }
-  return { schemaVersion: 1, updatedAt, sessions: sortedSessions(byId.values()) };
+  return {
+    schemaVersion: 1,
+    updatedAt,
+    logBytes,
+    sessions: sortedSessions(byId.values()),
+  };
 }
 
 function activityTime(session) {
@@ -116,6 +141,7 @@ export function updateSessionHistory(sessions, options = {}) {
   const current = {
     schemaVersion: 1,
     updatedAt,
+    logBytes: existsSync(logFile) ? statSync(logFile).size : 0,
     sessions: sortedSessions(byId.values()),
   };
   writeFileSync(tempFile, JSON.stringify(current), { encoding: 'utf8', mode: 0o600 });
@@ -137,17 +163,29 @@ export function readSessionHistory(options = {}) {
   return sortedSessions(readIndex(dir).sessions);
 }
 
-function encodeCursor(offset) {
-  return Buffer.from(JSON.stringify({ offset }), 'utf8').toString('base64url');
+function encodeCursor(session, snapshotBytes) {
+  return Buffer.from(JSON.stringify({
+    activity: activityTime(session),
+    sessionId: String(session.session_id),
+    snapshotBytes,
+  }), 'utf8').toString('base64url');
 }
 
 function decodeCursor(cursor) {
-  if (!cursor) return 0;
+  if (!cursor) return null;
   try {
     const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-    return Number.isInteger(value.offset) && value.offset >= 0 ? value.offset : 0;
+    if (!Number.isFinite(value.activity)
+      || typeof value.sessionId !== 'string'
+      || !Number.isInteger(value.snapshotBytes)
+      || value.snapshotBytes < 0) return null;
+    return {
+      activity: value.activity,
+      sessionId: value.sessionId,
+      snapshotBytes: value.snapshotBytes,
+    };
   } catch {
-    return 0;
+    return null;
   }
 }
 
@@ -170,7 +208,10 @@ function activityDay(session) {
 }
 
 export function querySessionHistory(options = {}) {
-  const all = readSessionHistory(options);
+  const dir = resolveSessionHistoryDir(options.dir);
+  const cursor = decodeCursor(options.cursor);
+  const index = cursor ? readLogIndex(dir, cursor.snapshotBytes) : readIndex(dir);
+  const all = sortedSessions(index.sessions);
   const limitValue = Number.parseInt(options.limit ?? DEFAULT_PAGE_SIZE, 10);
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number.isFinite(limitValue) ? limitValue : DEFAULT_PAGE_SIZE));
   const from = dateBoundary(options.from);
@@ -187,9 +228,12 @@ export function querySessionHistory(options = {}) {
     if (options.model && session.model !== options.model) return false;
     return true;
   });
-  const offset = Math.min(decodeCursor(options.cursor), filtered.length);
-  const items = filtered.slice(offset, offset + limit);
-  const nextOffset = offset + items.length;
+  const eligible = cursor ? filtered.filter((session) => {
+    const activity = activityTime(session);
+    return activity < cursor.activity
+      || (activity === cursor.activity && String(session.session_id).localeCompare(cursor.sessionId) > 0);
+  }) : filtered;
+  const items = eligible.slice(0, limit);
   const threshold = warningThreshold(options.warningThreshold);
   const unique = (key) => [...new Set(all.map((row) => row[key]).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
 
@@ -197,7 +241,9 @@ export function querySessionHistory(options = {}) {
     items,
     total: filtered.length,
     limit,
-    nextCursor: nextOffset < filtered.length ? encodeCursor(nextOffset) : null,
+    nextCursor: eligible.length > items.length && items.length > 0
+      ? encodeCursor(items[items.length - 1], index.logBytes)
+      : null,
     facets: {
       projects: unique('project'),
       sources: unique('source'),

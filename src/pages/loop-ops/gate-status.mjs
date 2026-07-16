@@ -21,6 +21,9 @@ export function effectiveStatus(entity, gates, now = new Date()) {
     return statusRank('needs-review') < statusRank(entityStatus) ? 'needs-review' : entityStatus;
   }
   const worstGate = [...gates].sort((a, b) => statusRank(a.status) - statusRank(b.status))[0];
-  const gateStatus = isGateStale(worstGate, now) ? 'needs-review' : worstGate.status;
+  const gateStatus = isGateStale(worstGate, now)
+    && statusRank(worstGate.status) >= statusRank('needs-review')
+    ? 'needs-review'
+    : worstGate.status;
   return statusRank(gateStatus) < statusRank(entityStatus) ? gateStatus : entityStatus;
 }

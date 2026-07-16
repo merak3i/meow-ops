@@ -46,12 +46,14 @@ function meowSyncPlugin() {
           res.end();
           return;
         }
+        if (blockNonLocal(req, res)) return;
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify(getSyncStatus({ repoRoot: server.config.root })));
       });
 
       server.middlewares.use('/api/sync/runs', (req, res) => {
         if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        if (blockNonLocal(req, res)) return;
         const runId = new URL(req.url || '/', 'http://localhost').pathname.split('/').filter(Boolean)[0];
         const run = getSyncRun(runId);
         res.statusCode = run ? 200 : 404;
@@ -91,6 +93,7 @@ function meowSyncPlugin() {
       ]) {
         server.middlewares.use(route, (req, res) => {
           if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+          if (blockNonLocal(req, res)) return;
           let payload;
           try {
             payload = JSON.parse(readFileSync(join(server.config.root, 'public', 'data', 'loop-ops', file), 'utf8'));
@@ -104,6 +107,7 @@ function meowSyncPlugin() {
 
       server.middlewares.use('/api/loop-ops/status', (req, res) => {
         if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        if (blockNonLocal(req, res)) return;
         const dir = join(server.config.root, 'public', 'data', 'loop-ops');
         const files = {};
         for (const name of ['spec.json', 'gates.json', 'runs.json']) {
@@ -146,6 +150,7 @@ function meowSyncPlugin() {
       // Dev-mode mirror of sync/local-api.mjs for the Capacity & Usage page.
       server.middlewares.use('/api/superadmin-usage/status', (req, res) => {
         if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        if (blockNonLocal(req, res)) return;
         try {
           const filePath = join(server.config.root, 'public', 'data', 'superadmin-usage.json');
           const stat = statSync(filePath);

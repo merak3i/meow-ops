@@ -11,7 +11,8 @@ export function countOpenProposals(proposals, decisions) {
   const counts = new Map();
   for (const proposal of Array.isArray(proposals) ? proposals : []) {
     if (!['draft', 'simulated', 'pending_approval'].includes(proposal.status)) continue;
-    if (latestDecision.has(proposal.proposal_id)) continue;
+    const decision = latestDecision.get(proposal.proposal_id);
+    if (decision && decision.decision !== 'undone') continue;
     const entityId = entityIdForLoopId(proposal.loop_id);
     if (entityId) counts.set(entityId, (counts.get(entityId) ?? 0) + 1);
   }
