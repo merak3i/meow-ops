@@ -462,23 +462,6 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             </div>
           </div>
 
-          <div className="companion-page__kpis">
-            <div className="companion-kpi">
-              <HeartPulse size={14} />
-              <span>Care</span>
-              <strong>{game.cat ? careScore : 'New'}</strong>
-            </div>
-            <div className="companion-kpi">
-              <Flame size={14} />
-              <span>Streak</span>
-              <strong>{game.cat?.streakDays ?? profile.active_streak_days}d</strong>
-            </div>
-            <div className="companion-kpi">
-              <Sparkles size={14} />
-              <span>Together</span>
-              <strong>{game.cat ? `${daysTogether}d` : `${profile.total_sessions} runs`}</strong>
-            </div>
-          </div>
         </header>
 
         <div className="companion-layout">
@@ -548,6 +531,26 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
         {/* ── Right sidebar ────────────────────────────────────────────────── */}
         <div className="companion-sidebar">
 
+          {/* Care cluster lives with the care controls. This removes the
+              duplicate streak row from analytics without removing data. */}
+          <div className="companion-page__kpis" aria-label="Companion care summary">
+            <div className="companion-kpi">
+              <HeartPulse size={14} />
+              <span>Care</span>
+              <strong>{game.cat ? careScore : 'New'}</strong>
+            </div>
+            <div className="companion-kpi">
+              <Flame size={14} />
+              <span>Streak</span>
+              <strong>{game.cat?.streakDays ?? profile.active_streak_days}d</strong>
+            </div>
+            <div className="companion-kpi">
+              <Sparkles size={14} />
+              <span>Together</span>
+              <strong>{game.cat ? `${daysTogether}d` : `${profile.total_sessions} runs`}</strong>
+            </div>
+          </div>
+
           {/* Game stats — only if a cat is alive */}
           {game.cat && game.cat.status === 'alive' && (
             <StatsPanel
@@ -595,10 +598,6 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Avg TPM</span>
               <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-secondary)' }}>{profile.avg_tokens_per_minute.toFixed(0)}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Streak</span>
-              <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-secondary)' }}>{profile.active_streak_days}d</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0' }}>
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Pets given</span>
