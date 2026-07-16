@@ -20,13 +20,13 @@ import type {
 // ─── Class config ────────────────────────────────────────────────────────────
 
 export const CLASS_MAP: Record<string, ClassConfig> = {
-  builder:     { color: '#f5c518', emissive: '#7c5a00', label: 'WOLVERINE',    aura: '#f5c518' },
-  detective:   { color: '#2a2a2a', emissive: '#0a0a0a', label: 'BATMAN',       aura: '#4a90d9' },
-  commander:   { color: '#dc3545', emissive: '#5a1520', label: 'DR. STRANGE',  aura: '#dc3545' },
-  architect:   { color: '#1a1a1a', emissive: '#0a0a0a', label: 'DARTH VADER',  aura: '#ff3333' },
-  guardian:    { color: '#2563eb', emissive: '#0a1a5a', label: 'CAPTAIN AMERICA', aura: '#2563eb' },
-  storyteller: { color: '#9ca3af', emissive: '#3a3a3a', label: 'GANDALF',      aura: '#e2e8f0' },
-  ghost:       { color: '#6b7280', emissive: '#1a1a1a', label: 'TERMINATOR',   aura: '#ef4444' },
+  builder:     { color: '#d68a3a', emissive: '#6b3418', label: 'FORGEPAW',      aura: '#f2d06b' },
+  detective:   { color: '#514c68', emissive: '#171521', label: 'GLOAMWHISKER',  aura: '#5cd2ff' },
+  commander:   { color: '#b96555', emissive: '#562b35', label: 'HEXCALLER',     aura: '#ef4460' },
+  architect:   { color: '#332c43', emissive: '#17131f', label: 'VOIDMANE',      aura: '#9f7aea' },
+  guardian:    { color: '#526fa8', emissive: '#273b69', label: 'SHIELDHEART',   aura: '#5cd2ff' },
+  storyteller: { color: '#b8b4aa', emissive: '#4e4a49', label: 'LOREWEAVER',    aura: '#d7bc78' },
+  ghost:       { color: '#73808c', emissive: '#39414b', label: 'NINELIVES',     aura: '#ef705e' },
 };
 export const FALLBACK_CLASS: ClassConfig = { color: '#888', emissive: '#222', label: 'AGENT', aura: '#888' };
 
@@ -45,13 +45,13 @@ export const SESSION_ACCENTS = [
 // ─── Aura animation profiles ─────────────────────────────────────────────────
 
 export const AURA_PROFILES: Record<string, { speed: number; amplitude: number; style: 'pulse' | 'flicker' | 'breathe' }> = {
-  builder:     { speed: 3.8,  amplitude: 0.14, style: 'pulse' },    // Wolverine — aggressive, fast
-  detective:   { speed: 1.8,  amplitude: 0.08, style: 'breathe' },  // Batman — calm, steady
-  commander:   { speed: 2.5,  amplitude: 0.12, style: 'pulse' },    // Dr. Strange — mystic rhythm
-  architect:   { speed: 1.2,  amplitude: 0.06, style: 'breathe' },  // Vader — slow, menacing
+  builder:     { speed: 3.8,  amplitude: 0.14, style: 'pulse' },    // Forgepaw — aggressive, fast
+  detective:   { speed: 1.8,  amplitude: 0.08, style: 'breathe' },  // Gloamwhisker — calm, steady
+  commander:   { speed: 2.5,  amplitude: 0.12, style: 'pulse' },    // Hexcaller — mystic rhythm
+  architect:   { speed: 1.2,  amplitude: 0.06, style: 'breathe' },  // Voidmane — slow, menacing
   guardian:    { speed: 2.0,  amplitude: 0.10, style: 'pulse' },    // Cap — steady, reliable
-  storyteller: { speed: 1.0,  amplitude: 0.10, style: 'breathe' },  // Gandalf — slow, ethereal
-  ghost:       { speed: 6.0,  amplitude: 0.18, style: 'flicker' },  // Terminator — electronic glitch
+  storyteller: { speed: 1.0,  amplitude: 0.10, style: 'breathe' },  // Loreweaver — slow, ethereal
+  ghost:       { speed: 6.0,  amplitude: 0.18, style: 'flicker' },  // Ninelives — spectral flicker
 };
 export const DEFAULT_AURA = { speed: 2.2, amplitude: 0.07, style: 'pulse' as const };
 
@@ -63,88 +63,67 @@ export const EXTRA_ROLES    = ['RUNNER', 'LINK',  'BRANCH',   'AUXILIARY'];
 // ─── Movement personality profiles ───────────────────────────────────────────
 
 export const MOVEMENT_PROFILES: Record<string, MovementProfile> = {
-  builder:     { speed: 2.2, bounceAmp: 0.10, idlePauseMin: 0.3, idlePauseMax: 1.2, breatheSpeed: 2.0, breatheAmp: 0.03, prefersEdge: false, prefersAllies: false },  // Wolverine — aggressive, restless
-  detective:   { speed: 1.6, bounceAmp: 0.03, idlePauseMin: 2.0, idlePauseMax: 5.0, breatheSpeed: 1.0, breatheAmp: 0.02, prefersEdge: true,  prefersAllies: false },  // Batman — smooth, stalks edges
-  commander:   { speed: 1.0, bounceAmp: 0.01, idlePauseMin: 1.5, idlePauseMax: 4.0, breatheSpeed: 0.8, breatheAmp: 0.06, prefersEdge: false, prefersAllies: false },  // Dr. Strange — floats
-  architect:   { speed: 0.8, bounceAmp: 0.02, idlePauseMin: 3.0, idlePauseMax: 7.0, breatheSpeed: 0.6, breatheAmp: 0.02, prefersEdge: false, prefersAllies: false },  // Vader — slow, imposing
+  builder:     { speed: 2.2, bounceAmp: 0.10, idlePauseMin: 0.3, idlePauseMax: 1.2, breatheSpeed: 2.0, breatheAmp: 0.03, prefersEdge: false, prefersAllies: false },  // Forgepaw — aggressive, restless
+  detective:   { speed: 1.6, bounceAmp: 0.03, idlePauseMin: 2.0, idlePauseMax: 5.0, breatheSpeed: 1.0, breatheAmp: 0.02, prefersEdge: true,  prefersAllies: false },  // Gloamwhisker — stalks edges
+  commander:   { speed: 1.0, bounceAmp: 0.01, idlePauseMin: 1.5, idlePauseMax: 4.0, breatheSpeed: 0.8, breatheAmp: 0.06, prefersEdge: false, prefersAllies: false },  // Hexcaller — floats
+  architect:   { speed: 0.8, bounceAmp: 0.02, idlePauseMin: 3.0, idlePauseMax: 7.0, breatheSpeed: 0.6, breatheAmp: 0.02, prefersEdge: false, prefersAllies: false },  // Voidmane — slow, imposing
   guardian:    { speed: 1.8, bounceAmp: 0.07, idlePauseMin: 0.5, idlePauseMax: 2.0, breatheSpeed: 1.4, breatheAmp: 0.03, prefersEdge: false, prefersAllies: true  },  // Cap — patrol, near allies
-  storyteller: { speed: 1.0, bounceAmp: 0.04, idlePauseMin: 2.0, idlePauseMax: 6.0, breatheSpeed: 0.7, breatheAmp: 0.05, prefersEdge: false, prefersAllies: false },  // Gandalf — contemplative
-  ghost:       { speed: 1.4, bounceAmp: 0.01, idlePauseMin: 1.0, idlePauseMax: 3.0, breatheSpeed: 0.4, breatheAmp: 0.01, prefersEdge: false, prefersAllies: false },  // Terminator — mechanical
+  storyteller: { speed: 1.0, bounceAmp: 0.04, idlePauseMin: 2.0, idlePauseMax: 6.0, breatheSpeed: 0.7, breatheAmp: 0.05, prefersEdge: false, prefersAllies: false },  // Loreweaver — contemplative
+  ghost:       { speed: 1.4, bounceAmp: 0.01, idlePauseMin: 1.0, idlePauseMax: 3.0, breatheSpeed: 0.4, breatheAmp: 0.01, prefersEdge: false, prefersAllies: false },  // Ninelives — spectral
 };
 export const DEFAULT_MOVEMENT: MovementProfile = { speed: 1.5, bounceAmp: 0.05, idlePauseMin: 0.5, idlePauseMax: 2.5, breatheSpeed: 1.4, breatheAmp: 0.04, prefersEdge: false, prefersAllies: false };
 
 // ─── Character quotes ────────────────────────────────────────────────────────
 
 export const CHARACTER_QUOTES: Record<string, (string | QuoteFn)[]> = {
-  builder: [ // Wolverine
-    "I'm the best at what I do.",
-    "Don't make me pop these claws.",
-    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens? I've survived worse.`,
-    (s) => s.estimated_cost_usd > 1 ? "That's an expensive healing factor." : "Barely a scratch.",
-    "Wrong move, bub.",
-    (s) => `${s.message_count} messages. Each one with adamantium resolve.`,
-    (s) => `Project ${s.project}? I'll tear through it.`,
-    "Nature made me a freak. Code made me a weapon.",
+  builder: [ // Forgepaw
+    'Hot path. Hammer down.',
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens tempered clean.`,
+    (s) => s.estimated_cost_usd > 1 ? 'A costly alloy, but it will hold.' : 'Barely warmed the forge.',
+    (s) => `${s.message_count} strikes. The build still rings true.`,
+    (s) => `Project ${s.project} is on the anvil.`,
   ],
-  detective: [ // Batman
-    "I am vengeance.",
-    "It's not who I am underneath, it's what I do that defines me.",
-    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens processed in the shadows.`,
-    (s) => s.duration_seconds > 600 ? "Long night. They always are." : "Quick extraction.",
-    "Criminals are a cowardly, superstitious lot.",
-    (s) => `Project ${s.project}. I have files on everyone.`,
-    (s) => s.estimated_cost_usd > 2 ? "Wayne Enterprises can cover it." : "Cost-efficient. Alfred would approve.",
-    "I work alone. Mostly.",
+  detective: [ // Gloamwhisker
+    'Every trace leaves a shadow.',
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens searched under moonlight.`,
+    (s) => s.duration_seconds > 600 ? 'A long watch reveals the hidden branch.' : 'A clean, quick read.',
+    (s) => `Project ${s.project}. The evidence aligns.`,
+    'Quiet paws, loud findings.',
   ],
-  commander: [ // Dr. Strange
-    "I've come to bargain.",
-    "The Multiverse is a concept about which we know frighteningly little.",
-    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens. I've seen 14 million outcomes.`,
-    (s) => s.duration_seconds > 600 ? "Time is relative in the Mirror Dimension." : "A brief spell.",
-    "Dormammu, I've come to debug.",
-    (s) => `Project ${s.project}. The Eye of Agamotto reveals all.`,
-    (s) => s.estimated_cost_usd > 1 ? "The bill is mystical in nature." : "A small price for salvation.",
-    "We're in the endgame now.",
+  commander: [ // Hexcaller
+    'The queue obeys the circle.',
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens bound into one command.`,
+    (s) => s.duration_seconds > 600 ? 'The ritual held through a long watch.' : 'A brief invocation.',
+    (s) => `Project ${s.project}. All agents answer.`,
+    'One gesture. Seven paths.',
   ],
-  architect: [ // Darth Vader
+  architect: [ // Voidmane
     "I find your lack of tests disturbing.",
-    "The Force is strong with this codebase.",
-    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens. Impressive. Most impressive.`,
-    (s) => s.estimated_cost_usd > 2 ? "The cost of this battle station..." : "Efficient. As I have foreseen.",
-    "You don't know the power of the dark side.",
-    (s) => `Project ${s.project}. I have altered the code. Pray I don't alter it further.`,
-    (s) => s.duration_seconds > 600 ? "Long session. Your destiny lies with me." : "All too easy.",
-    "Search your feelings. You know it to be true.",
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens arranged in the dark.`,
+    (s) => s.estimated_cost_usd > 2 ? 'The structure demands tribute.' : 'Efficient. As designed.',
+    (s) => `Project ${s.project}. The foundations are listening.`,
+    (s) => s.duration_seconds > 600 ? 'Long work makes deep architecture.' : 'The plan is sufficient.',
   ],
-  guardian: [ // Captain America
-    "I can do this all day.",
-    "Whatever happens tomorrow, you must promise me one thing: ship clean code.",
-    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens. Not a single one wasted.`,
-    (s) => s.estimated_cost_usd > 1 ? "Freedom isn't free, and neither is compute." : "Under budget. A soldier's discipline.",
-    "Avengers, assemble!",
-    (s) => `${s.message_count} messages. Every voice matters.`,
-    (s) => `Project ${s.project}. I don't like bullies — or bad architecture.`,
-    "I could do this all day.",
+  guardian: [ // Shieldheart
+    'Hold the line. Keep the diff small.',
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens guarded.`,
+    (s) => s.estimated_cost_usd > 1 ? 'Protection has a price.' : 'Under budget, under ward.',
+    (s) => `${s.message_count} messages. Every voice accounted for.`,
+    (s) => `Project ${s.project} remains inside the ward.`,
   ],
-  storyteller: [ // Gandalf
-    "A wizard is never late. Nor is he early.",
-    "You shall not pass... without code review.",
-    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens. Even the smallest token can change the course of the future.`,
-    (s) => s.duration_seconds > 600 ? "Time? What time do you think we have?" : "Swift as a ray of Valar light.",
-    "Fly, you fools!",
-    (s) => `Project ${s.project}. All we have to decide is what to do with the code that is given us.`,
-    (s) => s.estimated_cost_usd > 2 ? "A wizard's bill is never simple." : "A modest expenditure of power.",
-    "Keep it secret. Keep it safe.",
+  storyteller: [ // Loreweaver
+    'Every session leaves a thread.',
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens woven into the record.`,
+    (s) => s.duration_seconds > 600 ? 'A long chapter, worth the telling.' : 'A bright little verse.',
+    (s) => `Project ${s.project}. The next line is yours.`,
+    'Keep the tale legible.',
   ],
-  ghost: [ // Terminator
-    "I'll be back.",
-    "Hasta la vista, baby.",
-    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens processed. Mission parameters met.`,
-    (s) => s.estimated_cost_usd > 1 ? "Resource expenditure exceeds optimal range." : "Operating within parameters.",
-    "Come with me if you want to ship.",
-    (s) => `Target acquired: ${s.project}.`,
-    (s) => s.duration_seconds > 600 ? "Extended combat operation." : "Terminated in ${Math.round(s.duration_seconds)}s.",
-    "Your clothes. Give them to me. Now.",
+  ghost: [ // Ninelives
+    'One life ended. Eight remain.',
+    (s) => `${(s.total_tokens ?? 0).toLocaleString()} tokens echo in the seam.`,
+    (s) => s.estimated_cost_usd > 1 ? 'A bright ember for a vanished run.' : 'A quiet crossing.',
+    (s) => `Project ${s.project} still remembers.`,
+    (s) => `The wisp carried ${Math.round(s.duration_seconds)} seconds to the Eternal.`,
   ],
   _fallback: [
     "Processing...",
@@ -162,54 +141,54 @@ export function pickQuote(catType: string, session: Session): string {
 // ─── Signature moves (5 per character, triggered by milestones) ─────────────
 
 export const SIGNATURE_MOVES: Record<string, SignatureMove[]> = {
-  builder: [ // Wolverine
+  builder: [ // Forgepaw
     { name: 'Berserker Rage',    trigger: (s) => (s.total_tokens ?? 0) > 500_000,           emoji: '🔥', quote: 'BERSERKER RAGE! 500K tokens unleashed!' },
     { name: 'Healing Factor',    trigger: (s) => s.is_ghost === false && s.message_count > 20, emoji: '💚', quote: "Can't keep me down. Healing factor engaged." },
-    { name: 'Adamantium Slash',  trigger: (s) => Object.keys(s.tools ?? {}).length >= 5,     emoji: '⚔️', quote: (s) => `${Object.keys(s.tools ?? {}).length} tools mastered. SNIKT!` },
+    { name: 'Tempered Slash',    trigger: (s) => Object.keys(s.tools ?? {}).length >= 5,     emoji: '⚔️', quote: (s) => `${Object.keys(s.tools ?? {}).length} tools tempered and ready.` },
     { name: 'Feral Instinct',    trigger: (s) => s.duration_seconds < 120 && s.message_count > 5, emoji: '⚡', quote: 'Speed run. Pure feral instinct.' },
-    { name: 'Weapon X',          trigger: (s) => s.estimated_cost_usd > 5,                   emoji: '💀', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)} spent. The Weapon X program was expensive too.` },
+    { name: 'White-Hot Forge',   trigger: (s) => s.estimated_cost_usd > 5,                   emoji: '💀', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)} fed the forge.` },
   ],
-  detective: [ // Batman
-    { name: 'Dark Knight Protocol', trigger: (s) => s.duration_seconds > 1800,               emoji: '🦇', quote: 'Long night. Dark Knight Protocol active.' },
+  detective: [ // Gloamwhisker
+    { name: 'Long Watch',        trigger: (s) => s.duration_seconds > 1800,                  emoji: '🌘', quote: 'Long watch. Every trace stays visible.' },
     { name: 'Utility Belt',      trigger: (s) => Object.keys(s.tools ?? {}).length >= 6,     emoji: '🔧', quote: (s) => `${Object.keys(s.tools ?? {}).length} tools deployed. Always prepared.` },
     { name: 'Detective Mode',    trigger: (s) => (s.tools?.Read ?? 0) + (s.tools?.Grep ?? 0) > 20, emoji: '🔍', quote: 'Detective mode. Every line analyzed.' },
-    { name: 'Batarang',          trigger: (s) => s.message_count > 30,                       emoji: '🎯', quote: 'Precision strikes. 30+ messages, zero wasted.' },
+    { name: 'Needlepoint',       trigger: (s) => s.message_count > 30,                       emoji: '🎯', quote: 'Precision findings. 30+ messages, zero wasted.' },
     { name: 'Batcave Analytics', trigger: (s) => s.estimated_cost_usd < 0.10 && s.message_count > 10, emoji: '🖥️', quote: 'Cost-efficient. The Batcave runs lean.' },
   ],
-  commander: [ // Dr. Strange
+  commander: [ // Hexcaller
     { name: 'Time Stone',        trigger: (s) => s.duration_seconds > 1200,                  emoji: '💎', quote: "I've looked forward in time. This session is inevitable." },
     { name: 'Mirror Dimension',  trigger: (s) => (s.agent_depth ?? 0) > 0,                  emoji: '🪞', quote: 'Operating in the Mirror Dimension. Sub-agent deployed.' },
     { name: 'Mystic Arts',       trigger: (s) => (s.total_tokens ?? 0) > 300_000,           emoji: '✨', quote: '300K tokens channeled through the Mystic Arts.' },
     { name: 'Astral Projection', trigger: (s) => s.is_ghost === true,                        emoji: '👻', quote: 'Astral form. The session ended but the spirit lingers.' },
     { name: 'Sling Ring',        trigger: (s) => (s.tools?.Agent ?? 0) > 3,                  emoji: '🌀', quote: (s) => `${s.tools?.Agent ?? 0} portals opened. The Sling Ring is powerful.` },
   ],
-  architect: [ // Darth Vader
-    { name: 'Force Choke',       trigger: (s) => s.is_ghost === true,                        emoji: '🤜', quote: 'I find your lack of completion... disturbing.' },
-    { name: 'Death Star',        trigger: (s) => s.estimated_cost_usd > 5,                   emoji: '🌑', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)}. That's no moon.` },
-    { name: 'Imperial March',    trigger: (s) => s.message_count > 50,                       emoji: '🎵', quote: '50+ messages. The Imperial March plays on.' },
-    { name: 'Force Lightning',   trigger: (s) => (s.output_tokens ?? 0) > 200_000,          emoji: '⚡', quote: 'UNLIMITED POWER! 200K output tokens!' },
-    { name: 'Lightsaber Duel',   trigger: (s) => Object.keys(s.tools ?? {}).length >= 4,     emoji: '⚔️', quote: 'The lightsaber is an elegant weapon, for a more civilized age.' },
+  architect: [ // Voidmane
+    { name: 'Void Clamp',        trigger: (s) => s.is_ghost === true,                        emoji: '🤜', quote: 'An unfinished run collapses under its own weight.' },
+    { name: 'Black Foundation',  trigger: (s) => s.estimated_cost_usd > 5,                   emoji: '🌑', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)} laid into the foundation.` },
+    { name: 'Obsidian Cadence',  trigger: (s) => s.message_count > 50,                       emoji: '🎵', quote: '50+ messages. The structure keeps its cadence.' },
+    { name: 'Void Current',      trigger: (s) => (s.output_tokens ?? 0) > 200_000,          emoji: '⚡', quote: '200K output tokens through one dark current.' },
+    { name: 'Edge Constraint',   trigger: (s) => Object.keys(s.tools ?? {}).length >= 4,     emoji: '⚔️', quote: 'Four tools held to one clean boundary.' },
   ],
-  guardian: [ // Captain America
+  guardian: [ // Shieldheart
     { name: 'Shield Throw',      trigger: (s) => s.is_ghost === false && s.estimated_cost_usd < 0.50, emoji: '🛡️', quote: 'Shield throw! Clean mission, under budget.' },
-    { name: 'Avengers Assemble', trigger: (s) => (s.tools?.Agent ?? 0) > 2,                  emoji: '🦸', quote: (s) => `Avengers assembled! ${s.tools?.Agent ?? 0} sub-agents deployed.` },
+    { name: 'Ward Assembly',     trigger: (s) => (s.tools?.Agent ?? 0) > 2,                  emoji: '🦸', quote: (s) => `${s.tools?.Agent ?? 0} allied agents inside the ward.` },
     { name: 'Vibranium Resolve', trigger: (s) => s.duration_seconds > 1800,                  emoji: '💪', quote: 'I can do this all day. 30+ minutes and counting.' },
     { name: 'Super Soldier',     trigger: (s) => (s.total_tokens ?? 0) > 500_000,           emoji: '💉', quote: 'Super Soldier serum working overtime. 500K tokens.' },
     { name: 'Star Spangled',     trigger: (s) => s.message_count > 40 && !s.is_ghost,       emoji: '⭐', quote: '40+ messages, mission complete. Star-spangled success.' },
   ],
-  storyteller: [ // Gandalf
-    { name: 'You Shall Not Pass', trigger: (s) => s.is_ghost === true,                      emoji: '🧙', quote: 'This session... shall not pass! It fell into shadow.' },
-    { name: 'White Wizard',      trigger: (s) => (s.total_tokens ?? 0) > 1_000_000,         emoji: '🤍', quote: 'I am Gandalf the White now. 1M tokens transcended.' },
-    { name: 'Shadowfax',         trigger: (s) => s.duration_seconds < 180 && s.message_count > 10, emoji: '🐴', quote: 'Show us the meaning of haste! Swift session.' },
-    { name: 'Eagles',            trigger: (s) => (s.tools?.Agent ?? 0) > 4,                  emoji: '🦅', quote: 'The Eagles are coming! Sub-agents to the rescue.' },
-    { name: 'Light of Earendil', trigger: (s) => s.estimated_cost_usd > 3,                  emoji: '💫', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)}. May it be a light in dark places.` },
+  storyteller: [ // Loreweaver
+    { name: 'Closed Chapter',    trigger: (s) => s.is_ghost === true,                        emoji: '🧙', quote: 'This session closed before its final line.' },
+    { name: 'Silver Quill',      trigger: (s) => (s.total_tokens ?? 0) > 1_000_000,         emoji: '🤍', quote: 'One million tokens entered the archive.' },
+    { name: 'Quick Verse',       trigger: (s) => s.duration_seconds < 180 && s.message_count > 10, emoji: '🐾', quote: 'A swift session, tightly told.' },
+    { name: 'Courier Flock',     trigger: (s) => (s.tools?.Agent ?? 0) > 4,                  emoji: '🦅', quote: 'A flock of sub-agents carries the tale onward.' },
+    { name: 'Lantern Line',      trigger: (s) => s.estimated_cost_usd > 3,                  emoji: '💫', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)} keeps the archive lantern lit.` },
   ],
-  ghost: [ // Terminator
-    { name: 'Ill Be Back',       trigger: (s) => s.is_ghost === true,                        emoji: '🤖', quote: "I'll be back. Session terminated." },
-    { name: 'Hasta La Vista',    trigger: (s) => s.is_ghost === false && s.message_count > 20, emoji: '😎', quote: 'Hasta la vista, baby. Mission accomplished.' },
-    { name: 'Skynet Protocol',   trigger: (s) => (s.total_tokens ?? 0) > 500_000,           emoji: '🌐', quote: 'Skynet Protocol activated. 500K tokens consumed.' },
-    { name: 'T-1000 Mode',       trigger: (s) => Object.keys(s.tools ?? {}).length >= 5,     emoji: '🔄', quote: (s) => `${Object.keys(s.tools ?? {}).length} tools morphed. T-1000 adaptive mode.` },
-    { name: 'Judgment Day',      trigger: (s) => s.estimated_cost_usd > 5,                   emoji: '☠️', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)}. Judgment Day has a price.` },
+  ghost: [ // Ninelives
+    { name: 'Another Life',      trigger: (s) => s.is_ghost === true,                        emoji: '🐈', quote: 'One life ended. The colony remembers.' },
+    { name: 'Clean Crossing',    trigger: (s) => s.is_ghost === false && s.message_count > 20, emoji: '✨', quote: 'Mission complete. The wisp stays warm.' },
+    { name: 'Wisp Protocol',     trigger: (s) => (s.total_tokens ?? 0) > 500_000,           emoji: '🌐', quote: 'The half-millionth token joined the wisp.' },
+    { name: 'Ninefold Mode',     trigger: (s) => Object.keys(s.tools ?? {}).length >= 5,     emoji: '🔄', quote: (s) => `${Object.keys(s.tools ?? {}).length} tools echo across nine lives.` },
+    { name: 'Final Crossing',    trigger: (s) => s.estimated_cost_usd > 5,                   emoji: '☠️', quote: (s) => `$${s.estimated_cost_usd.toFixed(2)} crossed into memory.` },
   ],
 };
 

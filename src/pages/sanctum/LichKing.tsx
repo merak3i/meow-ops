@@ -5,7 +5,7 @@
 // hand-drawn mounted pixel-art sprite (see textures.ts → getLichKingTexture).
 // Doesn't roam, doesn't participate in the per-session selection flow. He IS
 // the eternal axis: while champions (current run group) come and go, the
-// Lich King is always there with the all-time numbers above his helm.
+// The Eternal is always there with the all-time numbers above the helm.
 //
 // Eternal-stat mapping:
 //   - totalSpend   → headline number on the floating label, also drives the
@@ -192,7 +192,7 @@ export function LichKing({ eternal, roarKey = 0 }: { eternal: EternalStats; roar
         </mesh>
       ))}
 
-      {/* Mounted Lich King — hand-drawn sprite: spiked rider, armored undead
+      {/* The Eternal — hand-drawn sprite: spiked rider, armored custodian
           horse, torn cloak, and ice base. Wide billboard to match the
           side-facing reference composition. */}
       <group ref={mountRef}>
@@ -323,7 +323,7 @@ export function LichKing({ eternal, roarKey = 0 }: { eternal: EternalStats; roar
             fontSize: 9, fontWeight: 700, opacity: 0.85,
             letterSpacing: 3, marginBottom: 3,
           }}>
-            ETERNAL · LICH KING
+            THE ETERNAL
           </div>
           <div style={{ fontWeight: 'bold' }}>{spendLabel} spent</div>
           <div style={{ fontSize: 8, opacity: 0.85, marginTop: 1 }}>

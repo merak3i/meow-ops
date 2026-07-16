@@ -42,7 +42,7 @@ export function sessionIdentifier(s: Session): SessionIdentifier {
   return { tag, hashShort, accent, accentIdx };
 }
 
-// ─── Eternal stats (Lich King's domain) ──────────────────────────────────────
+// ─── Eternal stats (the custodian's domain) ──────────────────────────────────
 
 export function deriveEternal(sessions: ReadonlyArray<Session>): EternalStats {
   let totalSpend = 0;

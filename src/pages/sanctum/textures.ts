@@ -212,9 +212,9 @@ export function getStainedGlassTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-// ─── Lich King ───────────────────────────────────────────────────────────────
+// ─── The Eternal ─────────────────────────────────────────────────────────────
 //
-// 256x192 hand-drawn mounted sprite for the permanent Lich King figure.
+// 256x192 hand-drawn mounted sprite for the permanent Eternal figure.
 // Reference notes: armored undead horse facing right, horned rider, sword
 // stretched left, torn cloak, bronze/steel horse barding, chains, and an icy
 // plinth. Frostmourne also has a small 3D glow in LichKing.tsx.
@@ -439,17 +439,17 @@ export function getLichKingTexture(): THREE.CanvasTexture {
 // Per cat_type, returns four CanvasTextures (contact, down, passing, up) with the
 // signature character pose for each class. Cached per cat_type so a 50-agent
 // run group still only rasterises 7 sprite pairs total. Each `case` below
-// hand-draws the iconic look for one class — Wolverine, Batman, Dr. Strange,
-// Vader, Captain America, Gandalf, Terminator (default/ghost).
+// The legacy renderer is retained as a migration reference only; the exported
+// renderer below draws the original seven-cat Arcane Order silhouettes.
 
-export function buildClassTexture(catType: string): WalkTextures {
+export function buildLegacyClassTexture(catType: string): WalkTextures {
   const cached = TEXTURE_CACHE.get(catType);
   if (cached) return cached;
 
   const cls   = CLASS_MAP[catType] ?? FALLBACK_CLASS;
   const color = cls.color;
   // The original implementation pulled `dark` here for use inside the
-  // switch but only Vader's branch happens to need it; keep the binding
+  // switch but only the legacy architect branch happens to need it
   // for parity with the legacy file (the unused-var warning was already
   // pre-existing).
   // const dark  = cls.emissive || '#111';
@@ -473,7 +473,7 @@ export function buildClassTexture(catType: string): WalkTextures {
     const { aL, aR, lL, lR } = pose;
 
     switch (catType) {
-      case 'builder': { // WOLVERINE — yellow/blue suit, mask points, adamantium claws
+      case 'builder': { // legacy builder
         px(ctx, 40, 0,  8, 16, color);
         px(ctx, 80, 0,  8, 16, color);
         px(ctx, 44, 8,  40, 24, color);
@@ -515,7 +515,7 @@ export function buildClassTexture(catType: string): WalkTextures {
         px(ctx, 64, lR + 26, 24, 12, color);
         break;
       }
-      case 'detective': { // BATMAN
+      case 'detective': { // legacy detective
         px(ctx, 20, 52, 88, 96, '#0a0a14');
         px(ctx, 12, 80, 104, 72, '#0a0a14');
         px(ctx, 44, 0,  8, 20, '#1a1a2a');
@@ -554,7 +554,7 @@ export function buildClassTexture(catType: string): WalkTextures {
         px(ctx, 64, lR + 28, 24, 10, '#101018');
         break;
       }
-      case 'commander': { // DR. STRANGE
+      case 'commander': { // legacy commander
         px(ctx, 46, 4,  36, 12, '#1a1a2a');
         px(ctx, 44, 8,  4,  8,  '#aaaaaa');
         px(ctx, 80, 8,  4,  8,  '#aaaaaa');
@@ -598,7 +598,7 @@ export function buildClassTexture(catType: string): WalkTextures {
         px(ctx, 64, lR + 26, 22, 12, '#3a2a1a');
         break;
       }
-      case 'architect': { // DARTH VADER
+      case 'architect': { // legacy architect
         px(ctx, 16, 48, 96, 104, '#0a0a0a');
         px(ctx, 10, 80, 108, 72, '#0a0a0a');
         px(ctx, 42, 0,  44, 40, '#1a1a1a');
@@ -636,7 +636,7 @@ export function buildClassTexture(catType: string): WalkTextures {
         px(ctx, 64, lR + 28, 24, 10, '#0a0a0a');
         break;
       }
-      case 'guardian': { // CAPTAIN AMERICA
+      case 'guardian': { // legacy guardian
         px(ctx, 44, 2,  40, 32, color);
         px(ctx, 46, 4,  36, 28, '#1e4fc0');
         px(ctx, 60, 4,  8, 16, '#ffffff');
@@ -699,7 +699,7 @@ export function buildClassTexture(catType: string): WalkTextures {
         px(ctx, 64, lR + 26, 24, 12, '#cc2222');
         break;
       }
-      case 'storyteller': { // GANDALF
+      case 'storyteller': { // legacy storyteller
         px(ctx, 58, 0,  12, 8,  '#6b7280');
         px(ctx, 54, 8,  20, 8,  '#6b7280');
         px(ctx, 48, 16, 32, 12, '#6b7280');
@@ -738,7 +738,7 @@ export function buildClassTexture(catType: string): WalkTextures {
         px(ctx, 68, lR + 8, 20, 8, '#7a838f');
         break;
       }
-      default: { // TERMINATOR T-800 (also handles 'ghost')
+      default: { // legacy ghost
         px(ctx, 44, 2,  40, 12, '#2a2018');
         px(ctx, 42, 6,  44, 8,  '#1a1008');
         px(ctx, 44, 14, 20, 28, '#d4a47c');
@@ -793,5 +793,56 @@ export function buildClassTexture(catType: string): WalkTextures {
 
   const result: WalkTextures = [drawFrame(0), drawFrame(1), drawFrame(2), drawFrame(3)];
   TEXTURE_CACHE.set(catType, result);
+  return result;
+}
+
+const ORDER_STYLE: Record<string, { fur: string; shade: string; eye: string; accent: string; mark: string }> = {
+  builder:     { fur: '#d68a3a', shade: '#8a4b22', eye: '#f8df73', accent: '#f2d06b', mark: 'belt' },
+  detective:   { fur: '#252334', shade: '#11101a', eye: '#7ee6ff', accent: '#5cd2ff', mark: 'lens' },
+  commander:   { fur: '#b96555', shade: '#713641', eye: '#f2d06b', accent: '#ef4460', mark: 'orb' },
+  architect:   { fur: '#332c43', shade: '#17131f', eye: '#ef4460', accent: '#9f7aea', mark: 'runes' },
+  guardian:    { fur: '#526fa8', shade: '#273b69', eye: '#d7f3ff', accent: '#5cd2ff', mark: 'shield' },
+  storyteller: { fur: '#b8b4aa', shade: '#6f6b69', eye: '#f2d06b', accent: '#d7bc78', mark: 'staff' },
+  ghost:       { fur: '#73808c', shade: '#39414b', eye: '#ef705e', accent: '#5cd2ff', mark: 'seam' },
+};
+
+export function buildClassTexture(catType: string): WalkTextures {
+  const cacheKey = `arcane-order:${catType}`;
+  const cached = TEXTURE_CACHE.get(cacheKey);
+  if (cached) return cached;
+  const style = ORDER_STYLE[catType] ?? ORDER_STYLE.ghost!;
+  const W = 128, H = 192;
+  const draw = (phase: number) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    const bob = phase === 1 ? 4 : phase === 3 ? -3 : 0;
+    const leftFoot = phase < 2 ? 112 : 120;
+    const rightFoot = phase < 2 ? 120 : 112;
+    // Tail, body, head, ears: a readable cat silhouette at 40px display size.
+    px(ctx, 88, 84 + bob, 24, 12, style.shade); px(ctx, 104, 72 + bob, 10, 28, style.shade);
+    px(ctx, 34, 58 + bob, 60, 72, style.fur); px(ctx, 40, 28 + bob, 50, 46, style.fur);
+    px(ctx, 38, 14 + bob, 14, 24, style.fur); px(ctx, 78, 14 + bob, 14, 24, style.fur);
+    px(ctx, 45, 16 + bob, 8, 16, style.shade); px(ctx, 77, 16 + bob, 8, 16, style.shade);
+    px(ctx, 49, 44 + bob, 9, 7, style.eye); px(ctx, 72, 44 + bob, 9, 7, style.eye);
+    px(ctx, 61, 55 + bob, 8, 5, '#231820'); px(ctx, 58, 61 + bob, 14, 3, style.shade);
+    px(ctx, 42, 76 + bob, 10, 36, style.shade); px(ctx, 78, 76 + bob, 10, 36, style.shade);
+    px(ctx, 40, leftFoot + bob, 22, 18, style.fur); px(ctx, 68, rightFoot + bob, 22, 18, style.fur);
+    // One profession prop per silhouette; all are original, compact signals.
+    if (style.mark === 'belt') { px(ctx, 35, 91 + bob, 58, 8, style.accent); px(ctx, 58, 89 + bob, 12, 12, '#3d2b20'); }
+    if (style.mark === 'lens') { ctx.strokeStyle = style.accent; ctx.lineWidth = 4; ctx.strokeRect(68, 40 + bob, 18, 15); }
+    if (style.mark === 'orb') { ctx.fillStyle = style.accent; ctx.beginPath(); ctx.arc(101, 70 + bob, 10, 0, Math.PI * 2); ctx.fill(); }
+    if (style.mark === 'runes') { px(ctx, 55, 83 + bob, 20, 5, style.accent); px(ctx, 61, 76 + bob, 8, 20, style.accent); }
+    if (style.mark === 'shield') { px(ctx, 19, 76 + bob, 20, 34, style.accent); px(ctx, 25, 82 + bob, 8, 18, '#d7f3ff'); }
+    if (style.mark === 'staff') { px(ctx, 99, 38 + bob, 6, 88, '#70543a'); px(ctx, 96, 32 + bob, 12, 12, style.accent); }
+    if (style.mark === 'seam') { px(ctx, 64, 30 + bob, 3, 96, style.accent); px(ctx, 58, 74 + bob, 15, 3, style.accent); }
+    addOutline(ctx, W, H);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; tex.generateMipmaps = false;
+    return tex;
+  };
+  const result: WalkTextures = [draw(0), draw(1), draw(2), draw(3)];
+  TEXTURE_CACHE.set(cacheKey, result);
   return result;
 }

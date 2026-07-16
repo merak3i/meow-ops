@@ -39,7 +39,7 @@ export interface SessionIdentifier {
   accentIdx:  number;
 }
 
-// ─── Eternal stats (the Lich King's domain) ──────────────────────────────────
+// ─── Eternal stats (the custodian's domain) ──────────────────────────────────
 
 export interface EternalStats {
   totalSpend:    number;  // sum of estimated_cost_usd across every session

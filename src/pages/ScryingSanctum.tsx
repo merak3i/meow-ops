@@ -503,7 +503,7 @@ function StageRim() {
 // ─── Atmospheric Fog Bands ───────────────────────────────────────────────────
 //
 // Stacked additive planes at the back of the scene push the Citadel and
-// Lich King visually deeper into haze, so the foreground action pops. Sits
+// The Eternal sits visually deeper into haze, so foreground action pops.
 // in front of the existing `<fog>` distance fog (which fades the wall but
 // is too uniform to give directional depth on its own). Gated behind
 // perfLevel since 4 large additive quads cost real fillrate on weak GPUs.
@@ -1151,7 +1151,7 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
     if (ringRef.current) {
       let auraPulse: number;
       if (auraProf.style === 'flicker') {
-        // Terminator: electronic glitch
+        // Ninelives: spectral glitch
         auraPulse = 1 + (Math.sin(t * auraProf.speed) * Math.sin(t * 13.7) > 0.3 ? auraProf.amplitude : -auraProf.amplitude * 0.5);
       } else if (auraProf.style === 'breathe') {
         // Slow sine wave
@@ -1865,7 +1865,7 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
         <PlazaEnvironment />
       </Suspense>
 
-      {/* Lich King — permanent custodian of eternal cumulative-spend +
+      {/* The Eternal — permanent custodian of cumulative spend +
           ghost-count stats. Mirrors the Violet Citadel from the opposite
           back corner. Rendered here in Scene (not inside PlazaEnvironment)
           because PlazaEnvironment doesn't receive the eternal prop —
@@ -2160,7 +2160,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
     return () => window.removeEventListener('keydown', rehearse);
   }, [enqueueBeats, flatNodes]);
   // Eternal stats — cumulative across ALL sessions (not run group). Drives
-  // the Lich King's label + aura scale + ghost wisp count.
+  // The Eternal's label + aura scale + ghost wisp count.
   const eternal = useMemo(() => deriveEternal(sessions), [sessions]);
 
   // Selection handler — used by both the 3D Scene's onSelect prop and the
@@ -2428,7 +2428,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
         {/* WebGL Canvas */}
         <div style={{ flex: '1 1 0', minHeight: 0, position: 'relative' }}>
           {/* Cinematic vignette: keeps the eye on the central plaza while
-              leaving the Lich King and far towers readable. Pure CSS overlay
+              leaving the Eternal and far towers readable. Pure CSS overlay
               with `pointer-events: none` so Canvas interaction stays intact. */}
           <div style={{
             position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
