@@ -19,7 +19,7 @@
 // spiked helm, sword stretched left, torn cloak, and blue ice base. All
 // additive blending so the figure reads against the violet floor.
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -27,7 +27,7 @@ import * as THREE from 'three';
 import type { EternalStats } from './types';
 import { getLichKingTexture } from './textures';
 
-export function LichKing({ eternal }: { eternal: EternalStats }) {
+export function LichKing({ eternal, roarKey = 0 }: { eternal: EternalStats; roarKey?: number }) {
   const mountRef = useRef<THREE.Group>(null);
   const wispsRef = useRef<THREE.Group>(null);
   const capeRefs = useRef<(THREE.Mesh | null)[]>([]);
@@ -40,6 +40,13 @@ export function LichKing({ eternal }: { eternal: EternalStats }) {
   const roarWaveRef = useRef<THREE.Mesh>(null);
   const roarCrownRef = useRef<THREE.Mesh>(null);
   const auraRef  = useRef<THREE.Mesh>(null);
+  const roarStartedRef = useRef(-99);
+  const pendingRoarRef = useRef(false);
+  const nextAmbientRoarRef = useRef(45 + Math.random() * 45);
+
+  useEffect(() => {
+    if (roarKey > 0) pendingRoarRef.current = true;
+  }, [roarKey]);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -77,9 +84,16 @@ export function LichKing({ eternal }: { eternal: EternalStats }) {
       const pulse = 0.45 + Math.sin(t * 1.9) * 0.28;
       (eyeHaloRef.current.material as THREE.MeshBasicMaterial).opacity = pulse;
     }
+    if (pendingRoarRef.current || t >= nextAmbientRoarRef.current) {
+      roarStartedRef.current = t;
+      pendingRoarRef.current = false;
+      nextAmbientRoarRef.current = t + 45 + Math.random() * 45;
+    }
+    const roarElapsed = t - roarStartedRef.current;
+    const roarCycle = Math.max(0, Math.min(1, roarElapsed / 2.45));
+    const roar = roarElapsed >= 0 && roarElapsed < 2.45 ? 1 - roarCycle : 0;
     if (swordRef.current) {
-      const roarCycle = (t % 7.2) / 7.2;
-      const roarBoost = roarCycle < 0.16 ? 0.35 * (1 - roarCycle / 0.16) : 0;
+      const roarBoost = roarElapsed >= 0 && roarElapsed < 0.4 ? 0.35 * (1 - roarElapsed / 0.4) : 0;
       (swordRef.current.material as THREE.MeshBasicMaterial).opacity = 0.78 + Math.sin(t * 1.15) * 0.18 + roarBoost;
     }
     if (swordGroupRef.current) {
@@ -91,21 +105,19 @@ export function LichKing({ eternal }: { eternal: EternalStats }) {
       (frostRingRef.current.material as THREE.MeshBasicMaterial).opacity = 0.18 + Math.sin(t * 1.35) * 0.07;
     }
 
-    // Rare high-energy beat: every ~7s an icy roar rolls out from the dais.
-    const cycle = (t % 7.2) / 7.2;
-    const roarActive = cycle < 0.34;
-    const roar = roarActive ? 1 - cycle / 0.34 : 0;
+    // Ghost transitions trigger the roar; a rare 45–90s ambient fallback
+    // keeps the custodian alive without turning the beat into wallpaper.
     if (roarRingRef.current) {
-      roarRingRef.current.scale.setScalar(0.85 + cycle * 4.6);
+      roarRingRef.current.scale.setScalar(0.85 + roarCycle * 4.6);
       (roarRingRef.current.material as THREE.MeshBasicMaterial).opacity = roar * 0.42;
     }
     if (roarWaveRef.current) {
-      roarWaveRef.current.scale.setScalar(0.6 + cycle * 2.4);
+      roarWaveRef.current.scale.setScalar(0.6 + roarCycle * 2.4);
       (roarWaveRef.current.material as THREE.MeshBasicMaterial).opacity = roar * 0.18;
     }
     if (roarCrownRef.current) {
       roarCrownRef.current.rotation.y = t * 0.7;
-      roarCrownRef.current.position.y = 2.55 + cycle * 1.2;
+      roarCrownRef.current.position.y = 2.55 + roarCycle * 1.2;
       (roarCrownRef.current.material as THREE.MeshBasicMaterial).opacity = roar * 0.26;
     }
     if (auraRef.current) auraRef.current.scale.setScalar((auraScale) * (1 + Math.sin(t * 0.45) * 0.04));

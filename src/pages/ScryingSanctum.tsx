@@ -51,6 +51,10 @@ import {
   stepPeriodForSpeed, TURN_DURATION,
 } from './sanctum/motion.js';
 import {
+  diffEventSnapshots, EVENT_DURATIONS, snapshotSessions,
+  type EventSnapshot, type SanctumEventBeat,
+} from './sanctum/events.js';
+import {
   ClaudeSun, deriveSunBinding,
   SUN_POSITION, SUN_SELECTION_ID,
 } from './sanctum/Sun';
@@ -1716,7 +1720,66 @@ function WoWTooltipOverlay({ session, cls, name, role, onClose }: {
 
 // ─── Full 3D Scene ────────────────────────────────────────────────────────────
 
-function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessedId, moveInputRef, cursorGroundRef, moveOrdersRef, eternal }: {
+function CostGauge({ ratio, pulse }: { ratio: number; pulse: boolean }) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame((state) => {
+    if (!ref.current) return;
+    const lift = pulse ? Math.max(0, Math.sin(state.clock.elapsedTime * 9)) : 0;
+    ref.current.scale.setScalar(1 + lift * 0.025);
+    (ref.current.material as THREE.MeshBasicMaterial).opacity = 0.34 + lift * 0.42;
+  });
+  const sweep = Math.max(0.03, Math.min(1, ratio)) * Math.PI * 2;
+  return (
+    <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
+      <ringGeometry args={[8.45, 8.62, 96, 1, -Math.PI / 2, sweep]} />
+      <meshBasicMaterial color={PAL.gold} transparent opacity={0.34}
+        blending={THREE.AdditiveBlending} depthWrite={false} />
+    </mesh>
+  );
+}
+
+function EventBeatVisual({ beat, livePosMap }: {
+  beat?: SanctumEventBeat;
+  livePosMap: React.MutableRefObject<Map<string, THREE.Vector3>>;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const start = useRef<number | null>(null);
+  const origin = beat?.sessionId ? livePosMap.current.get(beat.sessionId) : null;
+  const x = origin?.x ?? 0;
+  const z = origin?.z ?? 0;
+  const ghostCurve = useMemo(() => new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(x, 0.9, z), new THREE.Vector3(2.5, 5.2, -3.4), new THREE.Vector3(5, 2.4, -7.3),
+  ), [x, z]);
+  useFrame((state) => {
+    if (!groupRef.current || !beat) return;
+    start.current ??= state.clock.elapsedTime;
+    const p = Math.min(1, (state.clock.elapsedTime - start.current) / (EVENT_DURATIONS[beat.type] / 1000));
+    groupRef.current.scale.setScalar(0.65 + p * 1.9);
+    groupRef.current.children.forEach((child) => {
+      const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+      if (material) material.opacity = Math.max(0, (1 - p) * 0.8);
+    });
+  });
+  if (!beat || beat.type === 'E5') return null;
+  return (
+    <group ref={groupRef} position={beat.type === 'E1' ? [0, 0.08, 0] : [x, 0.08, z]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.45, 0.66, 40]} />
+        <meshBasicMaterial color={beat.type === 'E3' ? PAL.cyan : PAL.gold}
+          transparent opacity={0.8} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
+      {beat.type === 'E3' && (
+        <mesh position={[-x, 0, -z]}>
+          <tubeGeometry args={[ghostCurve, 32, 0.025, 5, false]} />
+          <meshBasicMaterial color={PAL.cyan} transparent opacity={0.55}
+            blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessedId, moveInputRef, cursorGroundRef, moveOrdersRef, eternal, eventBeat, eventBeatKey = 0, costGauge = 0 }: {
   group: SessionRunGroup; selectedId: string | null; onSelect: (id: string | null) => void;
   livePosMapOut:   React.MutableRefObject<Map<string, THREE.Vector3>>;
   nowEpoch:        number;
@@ -1725,6 +1788,9 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
   cursorGroundRef: React.MutableRefObject<THREE.Vector3>;
   moveOrdersRef:   React.MutableRefObject<Map<string, THREE.Vector3 | null>>;
   eternal:         EternalStats;
+  eventBeat?:       SanctumEventBeat;
+  eventBeatKey?:    number;
+  costGauge?:       number;
 }) {
   const nodes     = useMemo(() => layoutNodes(group.roots), [group]);
   const maxCost   = useMemo(() => Math.max(...nodes.map((n) => n.session.estimated_cost_usd), 0.001), [nodes]);
@@ -1806,7 +1872,9 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
           having it inside there caused a ReferenceError that tripped the
           SceneErrorBoundary in production minified builds (caught
           2026-04-28 hotfix). */}
-      <LichKing eternal={eternal} />
+      <LichKing eternal={eternal} roarKey={eventBeat?.type === 'E3' ? eventBeatKey : 0} />
+      <CostGauge ratio={costGauge} pulse={eventBeat?.type === 'E4'} />
+      <EventBeatVisual key={eventBeatKey} beat={eventBeat} livePosMap={livePosMap} />
 
       {connections.map((conn) => (
         <DynamicLeyLine key={conn.key} childId={conn.childId} parentId={conn.parentId}
@@ -2050,6 +2118,47 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
   const flatNodes    = useMemo(() => group ? layoutNodes(group.roots) : [], [group]);
   const selectedNode = flatNodes.find((n) => n.session.session_id === selected) ?? null;
+  const groupCost = group?.totalCost ?? 0;
+  const dayMaxCost = useMemo(() => {
+    if (!group) return 1;
+    const day = toISTDate(group.startedAt);
+    return Math.max(1, ...groups.filter((candidate) => toISTDate(candidate.startedAt) === day)
+      .map((candidate) => candidate.totalCost));
+  }, [group, groups]);
+  const costGauge = Math.min(1, groupCost / dayMaxCost);
+
+  const [eventQueue, setEventQueue] = useState<Array<{ beat: SanctumEventBeat; key: number }>>([]);
+  const eventSequenceRef = useRef(0);
+  const previousEventSnapshot = useRef<EventSnapshot | null>(null);
+  const enqueueBeats = useCallback((beats: SanctumEventBeat[]) => {
+    if (!beats.length) return;
+    setEventQueue((queue) => [...queue, ...beats.map((beat) => ({ beat, key: ++eventSequenceRef.current }))]);
+  }, []);
+
+  useEffect(() => {
+    const next = snapshotSessions(flatNodes.map((node) => node.session), selected, groupCost);
+    enqueueBeats(diffEventSnapshots(previousEventSnapshot.current, next));
+    previousEventSnapshot.current = next;
+  }, [enqueueBeats, flatNodes, groupCost, selected]);
+
+  const activeEvent = eventQueue[0];
+  useEffect(() => {
+    if (!activeEvent) return;
+    const id = window.setTimeout(() => setEventQueue((queue) => queue.slice(1)), EVENT_DURATIONS[activeEvent.beat.type]);
+    return () => window.clearTimeout(id);
+  }, [activeEvent]);
+
+  // Dev rehearsal: 1 = portal arrival, 3 = ghost wisp + Eternal roar.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const rehearse = (event: KeyboardEvent) => {
+      if (event.key !== '1' && event.key !== '3') return;
+      const target = flatNodes[0]?.session.session_id;
+      enqueueBeats([{ type: event.key === '1' ? 'E1' : 'E3', ...(target ? { sessionId: target } : {}) }]);
+    };
+    window.addEventListener('keydown', rehearse);
+    return () => window.removeEventListener('keydown', rehearse);
+  }, [enqueueBeats, flatNodes]);
   // Eternal stats — cumulative across ALL sessions (not run group). Drives
   // the Lich King's label + aura scale + ghost wisp count.
   const eternal = useMemo(() => deriveEternal(sessions), [sessions]);
@@ -2359,6 +2468,8 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                   moveInputRef={moveInputRef}
                   cursorGroundRef={cursorGroundRef}
                   moveOrdersRef={moveOrdersRef}
+                  {...(activeEvent ? { eventBeat: activeEvent.beat, eventBeatKey: activeEvent.key } : {})}
+                  costGauge={costGauge}
                 />}
               </SceneErrorBoundary>
             </Suspense>
@@ -2371,6 +2482,18 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                 D4/D5 (wide additive spheres around bright sources) cover
                 ~80% of what real bloom would add at zero risk. */}
           </Canvas>
+
+          {activeEvent && (
+            <div style={{
+              position: 'absolute', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 22,
+              padding: '6px 12px', borderRadius: 8, pointerEvents: 'none', fontFamily: 'monospace',
+              color: activeEvent.beat.type === 'E3' ? PAL.cyan : PAL.gold,
+              background: 'rgba(8,5,20,.72)', border: '1px solid rgba(242,208,107,.20)',
+              backdropFilter: 'blur(14px)', letterSpacing: 1.4, fontSize: 10,
+            }}>
+              {activeEvent.beat.type} · {{ E1: 'PORTAL ARRIVAL', E2: 'VICTORY', E3: 'WISP ASCENSION', E4: 'SPEND PULSE', E5: 'CHAMPION FOCUS' }[activeEvent.beat.type]}
+            </div>
+          )}
 
           {/* Possession HUD — top-center chip while driving an agent */}
           {possessedId && possessionHint && (
