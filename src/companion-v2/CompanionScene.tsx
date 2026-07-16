@@ -11,7 +11,7 @@ import { ParticleOverlay } from './ParticleOverlay';
 import { buildRoomVisual } from './room-renderer.js';
 import type { CompanionState } from '@/state/companionMachine';
 import type { CSSProperties } from 'react';
-import type { CompanionPose } from './pose-renderer.js';
+import type { CompanionPose, TailState } from './pose-renderer.js';
 
 interface CompanionSceneProps {
   state:     CompanionState;
@@ -21,6 +21,11 @@ interface CompanionSceneProps {
   room:      string;
   /** Optional body pose supplied by the dev cycler or action queue. */
   pose?:      CompanionPose;
+  tailState?: TailState;
+  /** Horizontal action-stage offset, expressed as viewport percentage. */
+  catOffset?: number;
+  /** Live work beat: illuminate the room desk while the cat pairs. */
+  deskActive?: boolean;
   /** Most recent effect type, e.g. 'feed' / 'pet'. Empty string disables. */
   effect:    string;
   /** Counter the parent bumps to retrigger the same effect. */
@@ -121,7 +126,7 @@ function RoomSignatureProps({ props, accent, highlight }: {
   ))}</>;
 }
 
-export function CompanionScene({ state, breed, room, pose, effect, effectKey, onCatClick }: CompanionSceneProps) {
+export function CompanionScene({ state, breed, room, pose, tailState, catOffset = 0, deskActive = false, effect, effectKey, onCatClick }: CompanionSceneProps) {
   const scene = STATE_SCENES[state] ?? STATE_SCENES.idle;
   const roomVisual = buildRoomVisual(room);
   const catClickProps = onCatClick ? { onClick: onCatClick } : {};
@@ -164,7 +169,9 @@ export function CompanionScene({ state, breed, room, pose, effect, effectKey, on
           right: '8%',
           top: '10%',
           height: '52%',
-          border: `1px solid color-mix(in oklab, ${scene.accent} 24%, transparent)`,
+          borderWidth: 1,
+          borderStyle: 'solid',
+          borderColor: `color-mix(in oklab, ${scene.accent} 24%, transparent)`,
           borderBottomColor: 'rgba(255,255,255,.04)',
           borderRadius: 10,
           background: `
@@ -242,12 +249,32 @@ export function CompanionScene({ state, breed, room, pose, effect, effectKey, on
       />
       <RoomSignatureProps props={roomVisual.props}
         accent={roomVisual.palette.accent} highlight={roomVisual.palette.highlight} />
-      <PixelCat
-        state={state}
-        breed={breed}
-        {...(pose ? { pose } : {})}
-        {...catClickProps}
-      />
+      <div aria-hidden="true" style={{ position: 'absolute', left: '31%', bottom: '17%', width: 64, height: 22,
+        borderRadius: '12px 12px 24px 24px', background: 'linear-gradient(180deg,#d49b4c,#6d431e)',
+        border: '2px solid rgba(255,220,150,.34)', boxShadow: '0 8px 18px rgba(0,0,0,.42)' }} />
+      <div aria-hidden="true" style={{
+        position: 'absolute', right: '10%', bottom: '20%', width: '27%', height: 104,
+        borderRadius: 8, background: 'linear-gradient(180deg, rgba(24,22,31,.96), rgba(10,8,14,.96))',
+        border: `1px solid color-mix(in oklab, ${scene.accent} 32%, transparent)`,
+        boxShadow: deskActive ? `0 0 44px ${scene.glow}, 0 12px 30px rgba(0,0,0,.5)` : '0 12px 30px rgba(0,0,0,.5)',
+        opacity: deskActive ? .94 : .52, transition: 'opacity .4s ease, box-shadow .4s ease',
+      }}>
+        <div style={{ position: 'absolute', left: '16%', right: '16%', top: 12, height: 52,
+          borderRadius: 5, background: deskActive ? scene.window : '#111018',
+          boxShadow: deskActive ? `0 0 24px ${scene.window}` : 'none', transition: 'all .4s ease' }} />
+        <div style={{ position: 'absolute', left: '-8%', right: '-8%', bottom: -8, height: 14,
+          borderRadius: 4, background: '#241a16' }} />
+      </div>
+      <div style={{ position: 'absolute', inset: 0, transform: `translateX(${catOffset}%)`,
+        transition: 'transform 320ms cubic-bezier(.2,.8,.2,1)' }}>
+        <PixelCat
+          state={state}
+          breed={breed}
+          {...(pose ? { pose } : {})}
+          {...(tailState ? { tailState } : {})}
+          {...catClickProps}
+        />
+      </div>
       <ParticleOverlay effect={effect} effectKey={effectKey} />
       <div
         aria-hidden="true"

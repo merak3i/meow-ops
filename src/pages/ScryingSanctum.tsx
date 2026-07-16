@@ -1874,7 +1874,7 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
           2026-04-28 hotfix). */}
       <LichKing eternal={eternal} roarKey={eventBeat?.type === 'E3' ? eventBeatKey : 0} />
       <CostGauge ratio={costGauge} pulse={eventBeat?.type === 'E4'} />
-      <EventBeatVisual key={eventBeatKey} beat={eventBeat} livePosMap={livePosMap} />
+      <EventBeatVisual key={eventBeatKey} {...(eventBeat ? { beat: eventBeat } : {})} livePosMap={livePosMap} />
 
       {connections.map((conn) => (
         <DynamicLeyLine key={conn.key} childId={conn.childId} parentId={conn.parentId}

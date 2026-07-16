@@ -12,7 +12,7 @@ import {
   buildTailSprite,
   poseForState,
   tailForState,
-  type CompanionPose,
+  type CompanionPose, type TailState,
 } from './pose-renderer.js';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
@@ -386,6 +386,7 @@ export function spriteForState(
   state: CompanionState,
   elapsedMs = 0,
   pose?: CompanionPose,
+  tailState?: TailState,
 ): { frameIdx: number; sprite: Sprite; tail: Sprite } {
   const { idx, frame } = pickEyeFrame(state, elapsedMs);
   const ears = EARS_BY_STATE[state] ?? EARS_ALERT;
@@ -402,7 +403,7 @@ export function spriteForState(
   return {
     frameIdx: idx * 100 + tailFrame * 4 + microFrame,
     sprite: buildPoseSprite(out, pose ?? poseForState(state), elapsedMs),
-    tail: buildTailSprite(tailForState(state), tailFrame),
+    tail: buildTailSprite(tailState ?? tailForState(state), tailFrame),
   };
 }
 

@@ -17,7 +17,7 @@ import {
 import { applyBreedPattern, buildBreedPalette } from './breed-renderer';
 import { getBreed } from '@/lib/companion-breeds';
 import type { CompanionState } from '@/state/companionMachine';
-import type { CompanionPose } from './pose-renderer.js';
+import type { CompanionPose, TailState } from './pose-renderer.js';
 
 interface PixelCatProps {
   state: CompanionState;
@@ -25,13 +25,14 @@ interface PixelCatProps {
   breed: string;
   /** Optional body-pose override used by actions and the dev pose cycler. */
   pose?: CompanionPose;
+  tailState?: TailState;
   /** Optional click handler — fires when the user clicks on any opaque pixel. */
   onClick?: () => void;
   /** Soft floor shadow under the cat. Defaults to true. */
   showShadow?: boolean;
 }
 
-export function PixelCat({ state, breed, pose, onClick, showShadow = true }: PixelCatProps) {
+export function PixelCat({ state, breed, pose, tailState, onClick, showShadow = true }: PixelCatProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef    = useRef<HTMLCanvasElement | null>(null);
 
@@ -132,7 +133,7 @@ export function PixelCat({ state, breed, pose, onClick, showShadow = true }: Pix
 
     const tick = (now: number): void => {
       const elapsedMs = now - startTime;
-      const { frameIdx, sprite, tail } = spriteForState(state, elapsedMs, pose);
+      const { frameIdx, sprite, tail } = spriteForState(state, elapsedMs, pose, tailState);
       if (frameIdx !== lastFrameIdx) {
         lastFrameIdx = frameIdx;
         drawSprite(sprite, tail);
@@ -148,7 +149,7 @@ export function PixelCat({ state, breed, pose, onClick, showShadow = true }: Pix
       cancelAnimationFrame(rafId);
       ro.disconnect();
     };
-  }, [state, breed, pose, showShadow]);
+  }, [state, breed, pose, tailState, showShadow]);
 
   return (
     <div

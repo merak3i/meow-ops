@@ -19,6 +19,10 @@ import type { Session }        from '@/types/session';
 import type { CompanionState } from '@/state/companionMachine';
 import type { MemoryMark }     from './useCompanionGame';
 import { COMPANION_POSES, type CompanionPose } from './pose-renderer.js';
+import {
+  enqueueAction, frameAt, scheduleBehavior,
+  type ActionFrame, type CompanionAction,
+} from './action-scheduler.js';
 import './companion-page.css';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -144,6 +148,33 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   }, []);
 
   const game    = useCompanionGame(sessions);
+  const [actionFrames, setActionFrames] = useState<ActionFrame[]>([]);
+  const [actionNow, setActionNow] = useState(() => Date.now());
+  const lastScheduledRef = useRef(0);
+  const queueAction = useCallback((action: CompanionAction) => {
+    const now = Date.now();
+    setActionNow(now);
+    setActionFrames((queue) => enqueueAction(queue, action, now));
+  }, []);
+  useEffect(() => {
+    const id = window.setInterval(() => setActionNow(Date.now()), 120);
+    return () => window.clearInterval(id);
+  }, []);
+  const activeAction = frameAt(actionFrames, actionNow);
+  const hasLiveSession = sessions.some((session) => {
+    const age = Date.now() - Date.parse(session.ended_at);
+    return !session.is_ghost && age >= 0 && age < 120_000;
+  });
+  useEffect(() => {
+    if (activeAction || actionNow - lastScheduledRef.current < 12_000) return;
+    const behavior = scheduleBehavior({
+      hunger: game.cat?.stats.hunger ?? 100,
+      hasLiveSession,
+    });
+    if (!behavior) return;
+    lastScheduledRef.current = actionNow;
+    queueAction(behavior);
+  }, [actionNow, activeAction, game.cat?.stats.hunger, hasLiveSession, queueAction]);
   // Profile walks every session — memoise against the array reference so we
   // don't redo the walk on unrelated re-renders (cursor moves, tick events).
   const profile = useMemo(() => buildDeveloperProfile(sessions), [sessions]);
@@ -317,11 +348,15 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
       } else if (e.key === '\\') {
         setDebugState(null);
         setDebugPose(null);
+      } else if (e.key === '4') {
+        queueAction('hungry');
+      } else if (e.key === '5') {
+        queueAction('session');
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [queueAction]);
 
   const currentState: CompanionState = debugState ?? machineState;
 
@@ -379,7 +414,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
         open={game.drawers.foodOpen}
         onClose={() => game.drawers.setFoodOpen(false)}
         cat={game.cat}
-        onFeed={(key) => { game.actions.feed(key); triggerEffect('feed'); }}
+        onFeed={(key) => { game.actions.feed(key); triggerEffect('feed'); queueAction('feed'); }}
       />
       <WardrobeDrawer
         open={game.drawers.wardrobeOpen}
@@ -465,16 +500,22 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             state={currentState}
             breed={game.cat?.breed ?? 'tabby'}
             room={game.cat?.room?.key ?? 'corner_mat'}
-            {...(debugPose ? { pose: debugPose } : {})}
+            {...((debugPose ?? activeAction?.pose) ? { pose: (debugPose ?? activeAction?.pose)! } : {})}
+            {...(activeAction?.tailState ? { tailState: activeAction.tailState } : {})}
+            catOffset={activeAction?.offset ?? 0}
+            deskActive={activeAction?.action === 'session'}
             effect={effectTrigger.type}
             effectKey={effectTrigger.key}
-            onCatClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); }}
+            onCatClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); queueAction('play'); }}
           />
 
           {/* State badge overlay */}
           <div className="companion-state-badge">
             <span style={{ fontSize: 16 }}>{stateEmoji(currentState)}</span>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{stateLabel(currentState)}</span>
+            {activeAction && (
+              <span style={{ fontSize: 10, color: 'var(--amber)', letterSpacing: .6 }}>{activeAction.label}</span>
+            )}
             {(debugState || debugPose) && (
               <span style={{ fontSize: 10, color: '#f5c518', letterSpacing: 1, marginLeft: 4 }}>
                 DBG {debugState ?? currentState} · {debugPose ?? 'auto'}
@@ -514,9 +555,9 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
               mood={game.mood}
               drawers={game.drawers}
               trait={game.trait}
-              onPlay={() => { game.actions.play(); triggerEffect('play'); }}
-              onGroom={() => { game.actions.groom(); triggerEffect('groom'); }}
-              onSleep={() => { game.actions.sleep(); triggerEffect('sleep'); }}
+              onPlay={() => { game.actions.play(); triggerEffect('play'); queueAction('play'); }}
+              onGroom={() => { game.actions.groom(); triggerEffect('groom'); queueAction('groom'); }}
+              onSleep={() => { game.actions.sleep(); triggerEffect('sleep'); queueAction('sleep'); }}
               onShare={handleShare}
             />
           )}
