@@ -7,9 +7,12 @@ import { fetchLoopRuns, fetchSessionCosts } from './api';
 import type { SessionCost } from './api';
 import type { LoopRun } from './types';
 import { isValidLoopRun } from './run-validation.mjs';
+import { fetchLoopComparisons } from '@/lib/loop-api';
+import type { Comparison } from '@/types/loop';
 
 export interface EnrichedRun extends LoopRun {
   joined: SessionCost | null;
+  comparison: Comparison | null;
 }
 
 export function useLoopRuns(): { runs: EnrichedRun[]; loading: boolean } {
@@ -20,8 +23,9 @@ export function useLoopRuns(): { runs: EnrichedRun[]; loading: boolean } {
     let cancelled = false;
     (async () => {
       try {
-        const raw = await fetchLoopRuns();
+        const [raw, comparisons] = await Promise.all([fetchLoopRuns(), fetchLoopComparisons()]);
         const valid = Array.isArray(raw) ? raw.filter(isValidLoopRun) : [];
+        const comparisonByRun = new Map(comparisons.map((comparison) => [comparison.run_id, comparison]));
         const allIds = [...new Set(valid.flatMap((r) => r.sessionIds))];
         const costs = await fetchSessionCosts(allIds);
         if (cancelled) return;
@@ -33,7 +37,7 @@ export function useLoopRuns(): { runs: EnrichedRun[]; loading: boolean } {
             durationSeconds: acc.durationSeconds + c.durationSeconds,
             models: [...new Set([...acc.models, ...c.models])],
           }));
-          return { ...run, joined };
+          return { ...run, joined, comparison: comparisonByRun.get(run.id) ?? null };
         });
         // Newest first.
         enriched.sort((a, b) => b.startedAt.localeCompare(a.startedAt));

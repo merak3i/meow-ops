@@ -7,6 +7,7 @@ import type { CSSProperties } from 'react';
 import { StatusChip } from './StatusChip';
 import type { EnrichedRun } from './useLoopRuns';
 import type { LoopStatus, LoopRun } from './types';
+import { formatSignedPercent, selectRunDeltas } from './run-deltas.mjs';
 
 const RUN_STATUS: Record<LoopRun['state'], LoopStatus> = {
   planned: 'covered',
@@ -30,6 +31,7 @@ function fmtCost(run: EnrichedRun): string {
 
 function RunCard({ run }: { run: EnrichedRun }) {
   const [open, setOpen] = useState(false);
+  const deltas = selectRunDeltas(run.comparison);
   return (
     <div data-testid="loop-run" style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 0' }}>
       <button
@@ -49,6 +51,21 @@ function RunCard({ run }: { run: EnrichedRun }) {
         </span>
         <span style={small}>{run.startedAt.slice(0, 10)}</span>
         <span style={small}>{fmtCost(run)}</span>
+        {deltas.map((delta) => (
+          <span
+            key={delta.metric}
+            data-testid="loop-run-delta"
+            data-tone={delta.tone}
+            style={{
+              ...small,
+              color: delta.tone === 'improving'
+                ? 'var(--green)'
+                : delta.tone === 'worsening' ? 'var(--warning)' : 'var(--text-muted)',
+            }}
+          >
+            {delta.label} {formatSignedPercent(delta.deltaPct)}
+          </span>
+        ))}
         <span style={small}>{run.artifacts.length} artifact{run.artifacts.length === 1 ? '' : 's'}</span>
       </button>
       {open && (

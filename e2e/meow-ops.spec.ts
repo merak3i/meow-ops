@@ -627,6 +627,15 @@ test('Loop Ops: ledger-backed run timeline shows real cost and operator details'
   await page.context().route('**/data/loop-ops/runs.json*', (route) => route.fulfill({
     status: 200, contentType: 'application/json', body: JSON.stringify(runs),
   }));
+  await mockLoopEng(page, { comparisons: [{
+    schema_version: 1, comparison_id: 'cmp-ledger-e2e', run_id: 'run-ledger-e2e',
+    baseline_run_id: 'run-baseline', loop_id: 'meow-ops-dev', flags: [],
+    deltas: {
+      cost_usd_real: { before: 1, after: 35.6594, delta_pct: 3465.94 },
+      total_tokens: { before: 100, after: 507.15, delta_pct: 407.15 },
+      tool_error_count: { before: 2, after: 0, delta_pct: -100 },
+    },
+  }] });
 
   await nav(page, 'The Loom');
   const timeline = page.locator('[data-testid="loop-run-timeline"]');
@@ -634,6 +643,8 @@ test('Loop Ops: ledger-backed run timeline shows real cost and operator details'
   const card = timeline.locator('[data-testid="loop-run"]');
   await expect(card).toBeVisible();
   await expect(card.getByText(/^\$12\.50/)).toBeVisible();
+  await expect(card.locator('[data-testid="loop-run-delta"]')).toHaveCount(3);
+  await expect(card.getByText(/real cost \+3465\.94%/)).toBeVisible();
   await card.getByRole('button').click();
   await expect(card.getByText('operator: claude+codex')).toBeVisible();
 });
