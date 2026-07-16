@@ -45,6 +45,15 @@ import {
 } from './sanctum/perf';
 import { LichKing } from './sanctum/LichKing';
 import { Minimap } from './sanctum/Minimap';
+import { SANCTUM_PALETTE as PAL } from './sanctum/palette';
+import {
+  nextWalkFrame, PHASE_STEP, SETTLE_DURATION, START_DURATION,
+  stepPeriodForSpeed, TURN_DURATION,
+} from './sanctum/motion.js';
+import {
+  diffEventSnapshots, EVENT_DURATIONS, snapshotSessions,
+  type EventSnapshot, type SanctumEventBeat,
+} from './sanctum/events.js';
 import {
   ClaudeSun, deriveSunBinding,
   SUN_POSITION, SUN_SELECTION_ID,
@@ -55,144 +64,7 @@ export type { PerfStats };
 
 // ─── Arcane Sanctum Environment ──────────────────────────────────────────────
 
-function FloatingParticles() {
-  const perf  = usePerfLevel();
-  const refs = useRef<(THREE.Mesh | null)[]>([]);
-  const data = useMemo(() => {
-    const particles = [];
-    // 40 floating particles (original)
-    for (let i = 0; i < 40; i++) {
-      particles.push({
-        radius: 2 + Math.random() * 9,
-        speed: 0.15 + Math.random() * 0.3,
-        phase: Math.random() * Math.PI * 2,
-        baseY: 0.5 + Math.random() * 4,
-        yOsc: 0.3 + Math.random() * 0.8,
-        ySpeed: 0.4 + Math.random() * 0.6,
-        size: 0.04 + Math.random() * 0.06,
-        color: i % 3 === 0 ? '#c8a855' : i % 3 === 1 ? '#8b5cf6' : '#60a5fa',
-        ground: false,
-        flickerSpeed: 1.4 + Math.random() * 2.8,
-        flickerPhase: Math.random() * Math.PI * 2,
-      });
-    }
-    // 15 ground-level dust motes — very small, slow, dim
-    for (let i = 0; i < 15; i++) {
-      particles.push({
-        radius: 1.5 + Math.random() * 8,
-        speed: 0.04 + Math.random() * 0.08,
-        phase: Math.random() * Math.PI * 2,
-        baseY: 0.05 + Math.random() * 0.25,
-        yOsc: 0.05 + Math.random() * 0.1,
-        ySpeed: 0.2 + Math.random() * 0.3,
-        size: 0.02 + Math.random() * 0.03,
-        color: '#c8a855',
-        ground: true,
-        flickerSpeed: 0.8 + Math.random() * 1.2,
-        flickerPhase: Math.random() * Math.PI * 2,
-      });
-    }
-    return particles;
-  }, []);
-
-  useFrame((state) => {
-    if (perf === 'low') return;
-    const t = state.clock.elapsedTime;
-    data.forEach((d, i) => {
-      const mesh = refs.current[i];
-      if (!mesh) return;
-      const angle = d.phase + t * d.speed;
-      const y = d.baseY + Math.sin(t * d.ySpeed + d.phase) * d.yOsc;
-      mesh.position.set(
-        Math.cos(angle) * d.radius,
-        y,
-        Math.sin(angle) * d.radius,
-      );
-      // Depth variation: lower = dimmer, higher = brighter; plus per-firefly flicker
-      const heightFade = d.ground ? 0.25 : (0.35 + Math.min(0.65, y / 4));
-      const flicker    = 0.75 + Math.sin(t * d.flickerSpeed + d.flickerPhase) * 0.25;
-      (mesh.material as THREE.MeshBasicMaterial).opacity = heightFade * flicker;
-    });
-  });
-
-  if (perf === 'low') return null;
-  return (
-    <>
-      {data.map((d, i) => (
-        <mesh key={i} ref={(el) => { refs.current[i] = el; }}>
-          <sphereGeometry args={[d.size, d.ground ? 4 : 6, d.ground ? 4 : 6]} />
-          <meshBasicMaterial color={d.color} transparent opacity={0.5} />
-        </mesh>
-      ))}
-    </>
-  );
-}
-
-// ─── Arcane Weather (falling sparks + wind streaks) ─────────────────────────
-
-function ArcaneWeather() {
-  const perf      = usePerfLevel();
-  const sparkRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const streakRefs = useRef<(THREE.Mesh | null)[]>([]);
-
-  const sparks = useMemo(() => Array.from({ length: 20 }, (_, i) => ({
-    x: (Math.random() - 0.5) * 20,
-    z: (Math.random() - 0.5) * 20,
-    y: Math.random() * 6,
-    speed: 0.3 + Math.random() * 0.3,
-    phase: Math.random() * Math.PI * 2,
-    color: i % 3 === 0 ? '#8b5cf6' : '#c8a855',
-  })), []);
-
-  const streaks = useMemo(() => Array.from({ length: 8 }, () => ({
-    x: (Math.random() - 0.5) * 24,
-    y: 1.5 + Math.random() * 2.5,
-    z: (Math.random() - 0.5) * 20,
-    speed: 0.8 + Math.random() * 1.2,
-  })), []);
-
-  useFrame((state, delta) => {
-    if (perf === 'low') return;
-    const t = state.clock.elapsedTime;
-    sparks.forEach((s, i) => {
-      const mesh = sparkRefs.current[i];
-      if (!mesh) return;
-      s.y -= s.speed * delta;
-      if (s.y < 0) { s.y = 5 + Math.random() * 2; s.x = (Math.random() - 0.5) * 20; s.z = (Math.random() - 0.5) * 20; }
-      mesh.position.set(s.x + Math.sin(t + s.phase) * 0.3, s.y, s.z + Math.cos(t * 0.7 + s.phase) * 0.2);
-      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.25 + Math.sin(t * 3 + s.phase) * 0.15;
-    });
-    streaks.forEach((s, i) => {
-      const mesh = streakRefs.current[i];
-      if (!mesh) return;
-      s.x += s.speed * delta;
-      if (s.x > 12) s.x = -12;
-      mesh.position.set(s.x, s.y, s.z);
-    });
-  });
-
-  if (perf === 'low') return null;
-  return (
-    <>
-      {sparks.map((s, i) => (
-        <mesh key={`sp${i}`} ref={(el) => { sparkRefs.current[i] = el; }}
-          position={[s.x, s.y, s.z]}>
-          <sphereGeometry args={[0.02, 4, 4]} />
-          <meshBasicMaterial color={s.color} transparent opacity={0.35} />
-        </mesh>
-      ))}
-      {streaks.map((s, i) => (
-        <mesh key={`st${i}`} ref={(el) => { streakRefs.current[i] = el; }}
-          position={[s.x, s.y, s.z]} rotation={[0, 0, 0]}>
-          <planeGeometry args={[2.5, 0.008]} />
-          <meshBasicMaterial color="#c8a855" transparent opacity={0.04} side={THREE.DoubleSide} />
-        </mesh>
-      ))}
-    </>
-  );
-}
-
-function CrystalPillar({ position, color }: { position: [number, number, number]; color: string }) {
+function CrystalPillar({ position }: { position: [number, number, number] }) {
   const crystalRef = useRef<THREE.Mesh>(null);
   const beamRef = useRef<THREE.Mesh>(null);
   const runeRefs = useRef<(THREE.Mesh | null)[]>([]);
@@ -221,28 +93,28 @@ function CrystalPillar({ position, color }: { position: [number, number, number]
       {/* Stone base */}
       <mesh position={[0, 0.3, 0]}>
         <cylinderGeometry args={[0.35, 0.45, 0.6, 6]} />
-        <meshStandardMaterial color="#2a2040" roughness={0.9} />
+        <meshStandardMaterial color={PAL.stone500} roughness={0.9} />
       </mesh>
       {/* Crystal */}
       <mesh ref={crystalRef} position={[0, 1.2, 0]}>
         <octahedronGeometry args={[0.4, 0]} />
-        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.5}
+        <meshStandardMaterial color={PAL.gold} emissive={PAL.gold} emissiveIntensity={0.7}
           transparent opacity={0.85} roughness={0.2} metalness={0.3} />
       </mesh>
       {/* Light column */}
       <mesh ref={beamRef} position={[0, 4, 0]}>
         <cylinderGeometry args={[0.08, 0.02, 6, 8]} />
-        <meshBasicMaterial color={color} transparent opacity={0.07} side={THREE.DoubleSide} />
+        <meshBasicMaterial color={PAL.gold} transparent opacity={0.05} side={THREE.DoubleSide} />
       </mesh>
       {/* Orbiting rune stones */}
       {[0, 1, 2].map((i) => (
         <mesh key={i} ref={(el) => { runeRefs.current[i] = el; }}>
           <octahedronGeometry args={[0.08, 0]} />
-          <meshBasicMaterial color={color} transparent opacity={0.5} />
+          <meshBasicMaterial color={PAL.stone300} transparent opacity={0.28} />
         </mesh>
       ))}
       {/* Glow light */}
-      <pointLight position={[0, 1.2, 0]} color={color} intensity={0.25} distance={5} />
+      <pointLight position={[0, 1.2, 0]} color={PAL.gold} intensity={0.16} distance={5} />
     </group>
   );
 }
@@ -253,90 +125,9 @@ function CrystalPillar({ position, color }: { position: [number, number, number]
 // (which pulls duplicate three+react and breaks hooks). Procedural emissive
 // halos give a "bloomed" look on stylized scenes ~80% as well as real bloom.
 //
-//   DalaranLamppost — slim violet pole + warm gold pulsing wisp orb on top
-//                     + wide additive halo that fakes bloom around it
 //   SunGodrays     — six vertical light shafts radiating from the LLM Sun
 //                     straight down to the ground, slowly rotating
-//   AtmosphericMotes — wraps drei's <Sparkles> in three layers (near
-//                     lavender, mid gold, far white-blue) for depth feel
-
-function DalaranLamppost({ position, phase }: {
-  position: [number, number, number];
-  phase: number;
-}) {
-  const wispRef = useRef<THREE.Mesh>(null);
-  const haloRef = useRef<THREE.Mesh>(null);
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (wispRef.current) {
-      const pulse = 0.85 + Math.sin(t * 1.6 + phase) * 0.15;
-      wispRef.current.scale.setScalar(pulse);
-      const wispMat = wispRef.current.material as THREE.MeshBasicMaterial;
-      wispMat.opacity = 0.85 + Math.sin(t * 1.6 + phase) * 0.10;
-    }
-    if (haloRef.current) {
-      const haloMat = haloRef.current.material as THREE.MeshBasicMaterial;
-      haloMat.opacity = 0.20 + Math.sin(t * 1.6 + phase) * 0.06;
-    }
-  });
-  return (
-    <group position={position}>
-      {/* Base — small stone block */}
-      <mesh position={[0, 0.10, 0]}>
-        <boxGeometry args={[0.25, 0.20, 0.25]} />
-        <meshBasicMaterial color="#1a0f28" />
-      </mesh>
-      {/* Pole — slim cylinder */}
-      <mesh position={[0, 1.2, 0]}>
-        <cylinderGeometry args={[0.05, 0.06, 2.2, 6]} />
-        <meshBasicMaterial color="#2a1a3e" />
-      </mesh>
-      {/* Lantern frame — small cage at top */}
-      <mesh position={[0, 2.45, 0]}>
-        <boxGeometry args={[0.20, 0.20, 0.20]} />
-        <meshBasicMaterial color="#3a2a1c" transparent opacity={0.7} />
-      </mesh>
-      {/* Wisp orb — warm gold inside the lantern */}
-      <mesh ref={wispRef} position={[0, 2.45, 0]}>
-        <sphereGeometry args={[0.10, 12, 12]} />
-        <meshBasicMaterial color="#ffcb6a" transparent opacity={0.9}
-          blending={THREE.AdditiveBlending} fog={false} />
-      </mesh>
-      {/* Bloom-fake halo — wide additive sphere fakes a glow halo */}
-      <mesh ref={haloRef} position={[0, 2.45, 0]}>
-        <sphereGeometry args={[0.45, 16, 12]} />
-        <meshBasicMaterial color="#ffb84a" transparent opacity={0.20}
-          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
-      </mesh>
-    </group>
-  );
-}
-
-function DalaranLampposts() {
-  // Eight lampposts evenly spaced at radius 8.5, between the agent area
-  // (~5–7) and the gothic colonnade (10.5). Phases offset so the lamps
-  // don't pulse in lockstep.
-  const lamps = useMemo(() => {
-    const out: { x: number; z: number; phase: number }[] = [];
-    const N = 8;
-    for (let i = 0; i < N; i++) {
-      const a = (i / N) * Math.PI * 2 + Math.PI / N;  // half-step from gates
-      out.push({
-        x: Math.cos(a) * 8.5,
-        z: Math.sin(a) * 8.5,
-        phase: i * 0.7,
-      });
-    }
-    return out;
-  }, []);
-  return (
-    <>
-      {lamps.map((l, i) => (
-        <DalaranLamppost key={i} position={[l.x, 0, l.z]} phase={l.phase} />
-      ))}
-    </>
-  );
-}
+//   AtmosphericMotes — one restrained gold layer for depth.
 
 function SunGodrays() {
   // Six vertical light shafts radiating from the LLM Sun position straight
@@ -391,50 +182,9 @@ function SunGodrays() {
 }
 
 function AtmosphericMotes() {
-  // Three drei <Sparkles> layers at different depths/sizes for parallax.
-  // Near = lavender, mid = gold, far = pale blue. The whole field reads as
-  // drifting magical motes filling the violet ambient.
   return (
-    <>
-      <Sparkles count={80}  scale={[14, 6, 14]}  size={2.0} color="#c4a4ff"
-        speed={0.4} opacity={0.7} position={[0, 1, 0]} />
-      <Sparkles count={120} scale={[20, 8, 20]} size={1.4} color="#ffd97a"
-        speed={0.25} opacity={0.5} position={[0, 2, 0]} />
-      <Sparkles count={200} scale={[28, 10, 28]} size={0.9} color="#cce0ff"
-        speed={0.15} opacity={0.4} position={[0, 3, 0]} />
-    </>
-  );
-}
-
-function Brazier({ position }: { position: [number, number, number] }) {
-  const flameRef = useRef<THREE.Mesh>(null);
-  useFrame((state) => {
-    if (flameRef.current) {
-      const t = state.clock.elapsedTime;
-      flameRef.current.scale.y = 0.8 + Math.sin(t * 5 + position[0]) * 0.2;
-      flameRef.current.scale.x = 0.8 + Math.sin(t * 4.3 + position[2]) * 0.15;
-    }
-  });
-  return (
-    <group position={position}>
-      {/* Bowl */}
-      <mesh position={[0, 0.4, 0]}>
-        <cylinderGeometry args={[0.3, 0.2, 0.5, 8]} />
-        <meshStandardMaterial color="#3a2a18" roughness={0.8} metalness={0.4} />
-      </mesh>
-      {/* Stand */}
-      <mesh position={[0, 0.1, 0]}>
-        <cylinderGeometry args={[0.08, 0.15, 0.2, 6]} />
-        <meshStandardMaterial color="#2a1e10" roughness={0.9} />
-      </mesh>
-      {/* Flame */}
-      <mesh ref={flameRef} position={[0, 0.8, 0]}>
-        <sphereGeometry args={[0.18, 8, 6]} />
-        <meshBasicMaterial color="#ff8c22" transparent opacity={0.9} />
-      </mesh>
-      {/* Warm light */}
-      <pointLight position={[0, 0.9, 0]} color="#ff8c22" intensity={0.3} distance={5} />
-    </group>
+    <Sparkles count={120} scale={[20, 8, 20]} size={1.4} color={PAL.gold}
+      speed={0.25} opacity={0.42} position={[0, 2, 0]} />
   );
 }
 
@@ -460,30 +210,6 @@ function ArcaneFloor() {
     return lines;
   }, []);
 
-  // Generate hex tile grid positions within radius 12 — inner sanctum vs outer courtyard.
-  // `tone` gives the floor subtle Dalaran stone variation without turning it
-  // into a patchwork.
-  const hexTiles = useMemo(() => {
-    const tiles: { x: number; z: number; dark: boolean; inner: boolean; tone: number }[] = [];
-    const size = 1.1;
-    const h = size * Math.sqrt(3);
-    for (let row = -12; row <= 12; row++) {
-      for (let col = -12; col <= 12; col++) {
-        const x = col * size * 1.5;
-        const z = row * h + (col % 2 !== 0 ? h / 2 : 0);
-        if (x * x + z * z > 12 * 12) continue;
-        tiles.push({
-          x,
-          z,
-          dark: (row + col) % 2 === 0,
-          inner: x * x + z * z < 5 * 5,
-          tone: Math.abs((row * 5 + col * 3) % 5),
-        });
-      }
-    }
-    return tiles;
-  }, []);
-
   return (
     <>
       {/* Main dark ground — Dalaran D3 marble texture, now lit (PBR-lite).
@@ -494,40 +220,14 @@ function ArcaneFloor() {
           color tint stays so the night palette is preserved. */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.05, 0]}>
         <circleGeometry args={[14, 64]} />
-        <meshStandardMaterial map={getMarbleTexture()} color="#b18cff"
-          emissive="#1b0f40" emissiveIntensity={0.18}
-          roughness={0.42} metalness={0.24} />
+        <meshStandardMaterial map={getMarbleTexture()} color={PAL.night700}
+          emissive={PAL.night900} emissiveIntensity={0.10}
+          roughness={0.7} metalness={0.1} />
       </mesh>
-      {/* Hex stone tile pattern — unified violet stone with faint blue/gold
-          shifts so the color is present but no longer confetti-like. */}
-      {hexTiles.map((tile, i) => {
-        const base = tile.inner ? '#3d2a65' : '#241a3c';
-        const tint = tile.tone === 0 ? '#5cd2ff'
-          : tile.tone === 1 ? '#a78bfa'
-          : tile.tone === 2 ? '#ffd36a'
-          : '#4b3a74';
-        const color = blendHex(base, tint, tile.inner ? 0.075 : 0.045);
-        const finalColor = tile.dark
-          ? blendHex(color, '#090613', tile.inner ? 0.10 : 0.14)
-          : color;
-        return (
-          <mesh key={i} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.048, tile.z]}>
-            <circleGeometry args={[0.52, 6]} />
-            <meshBasicMaterial color={finalColor} />
-          </mesh>
-        );
-      })}
-      {/* Hex tile gap lines — faint grid overlay */}
-      {hexTiles.map((tile, i) => (
-        <mesh key={`r${i}`} rotation={[-Math.PI / 2, 0, 0]} position={[tile.x, -0.046, tile.z]}>
-          <ringGeometry args={[0.50, 0.54, 6]} />
-          <meshBasicMaterial color={tile.inner ? '#130d24' : '#0a0714'} transparent opacity={0.42} />
-        </mesh>
-      ))}
       {/* Ward ring — boundary between inner sanctum and outer courtyard */}
       <mesh ref={wardRingRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.038, 0]}>
         <ringGeometry args={[4.9, 5.15, 64]} />
-        <meshBasicMaterial color="#ffd36a" transparent opacity={0.28}
+        <meshBasicMaterial color={PAL.gold} transparent opacity={0.18}
           blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       {/* Ward rune markers — counter-rotating hex dots at radius 5 */}
@@ -537,7 +237,7 @@ function ArcaneFloor() {
           return (
             <mesh key={i} position={[Math.cos(angle) * 5, Math.sin(angle) * 5, 0]}>
               <circleGeometry args={[0.15, 6]} />
-              <meshBasicMaterial color={i % 2 === 0 ? '#5cd2ff' : '#ffd36a'} transparent opacity={0.56}
+              <meshBasicMaterial color={PAL.gold} transparent opacity={0.28}
                 blending={THREE.AdditiveBlending} depthWrite={false} />
             </mesh>
           );
@@ -546,31 +246,24 @@ function ArcaneFloor() {
       {/* Outer edge ring */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, 0]}>
         <ringGeometry args={[11, 11.2, 64]} />
-        <meshBasicMaterial color="#56d7ff" transparent opacity={0.28}
+        <meshBasicMaterial color={PAL.stone300} transparent opacity={0.12}
           blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
-      {/* Concentric arcane rings */}
-      {[
-        { r: 1.5, color: '#ffd36a', opacity: 0.26 },
-        { r: 3.0, color: '#ff6bd6', opacity: 0.20 },
-        { r: 5.0, color: '#5cd2ff', opacity: 0.24 },
-        { r: 8.0, color: '#a78bfa', opacity: 0.22 },
-      ].map(({ r, color, opacity }, i) => (
-        <mesh key={r} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04 + i * 0.002, 0]}>
-          <ringGeometry args={[r - 0.06, r + 0.06, 64]} />
-          <meshBasicMaterial color={color} transparent opacity={opacity}
-            blending={THREE.AdditiveBlending} depthWrite={false} />
-        </mesh>
-      ))}
+      {/* One functional ring; S4 turns its sweep into the spend gauge. */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.038, 0]}>
+        <ringGeometry args={[7.94, 8.06, 64]} />
+        <meshBasicMaterial color={PAL.gold} transparent opacity={0.16}
+          blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
       {/* Center glow */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.03, 0]}>
         <circleGeometry args={[1.2, 32]} />
-        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.24}
+        <meshBasicMaterial color={PAL.cyan} transparent opacity={0.12}
           blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.025, 0]}>
         <circleGeometry args={[0.5, 24]} />
-        <meshBasicMaterial color="#ffd36a" transparent opacity={0.55}
+        <meshBasicMaterial color={PAL.gold} transparent opacity={0.32}
           blending={THREE.AdditiveBlending} depthWrite={false} />
       </mesh>
       {/* Rotating rune segments */}
@@ -584,8 +277,8 @@ function ArcaneFloor() {
             <mesh key={i} position={[cx * midR, cy * midR, 0]}
               rotation={[0, 0, r.angle + Math.PI / 2]}>
               <planeGeometry args={[0.04, len]} />
-              <meshBasicMaterial color={i % 3 === 0 ? '#ffd36a' : i % 3 === 1 ? '#5cd2ff' : '#ff6bd6'}
-                transparent opacity={0.24} side={THREE.DoubleSide}
+              <meshBasicMaterial color={PAL.stone300}
+                transparent opacity={0.10} side={THREE.DoubleSide}
                 blending={THREE.AdditiveBlending} depthWrite={false} />
             </mesh>
           );
@@ -594,69 +287,7 @@ function ArcaneFloor() {
       {/* Ground fog disc */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
         <circleGeometry args={[10, 48]} />
-        <meshBasicMaterial color="#3a1f72" transparent opacity={0.12} />
-      </mesh>
-    </>
-  );
-}
-
-function CenterPortal() {
-  const outerRef = useRef<THREE.Mesh>(null);
-  const innerRef = useRef<THREE.Mesh>(null);
-  const glowRef  = useRef<THREE.Mesh>(null);
-  const orbitalARef = useRef<THREE.Mesh>(null);
-  const orbitalBRef = useRef<THREE.Mesh>(null);
-  const equatorialRef = useRef<THREE.Mesh>(null);
-  const eyeRef = useRef<THREE.Mesh>(null);
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (outerRef.current) outerRef.current.rotation.z = t * 0.2;
-    if (innerRef.current) innerRef.current.rotation.z = -t * 0.35;
-    if (glowRef.current) {
-      (glowRef.current.material as THREE.MeshBasicMaterial).opacity = 0.15 + Math.sin(t * 1.5) * 0.08;
-    }
-    // Astrolabe orbital rings
-    if (orbitalARef.current) orbitalARef.current.rotation.y = t * 0.4;
-    if (orbitalBRef.current) orbitalBRef.current.rotation.y = -t * 0.6;
-    if (equatorialRef.current) equatorialRef.current.rotation.y = t * 0.15;
-    if (eyeRef.current) eyeRef.current.scale.setScalar(1 + Math.sin(t * 2) * 0.15);
-  });
-
-  return (
-    <>
-      {/* Flat ground portal rings */}
-      <group rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.02, 0]}>
-        <mesh ref={outerRef}>
-          <ringGeometry args={[1.0, 1.15, 6]} />
-          <meshBasicMaterial color="#c8a855" transparent opacity={0.35} side={THREE.DoubleSide} />
-        </mesh>
-        <mesh ref={innerRef}>
-          <ringGeometry args={[0.55, 0.7, 4]} />
-          <meshBasicMaterial color="#8b5cf6" transparent opacity={0.3} side={THREE.DoubleSide} />
-        </mesh>
-        <mesh ref={glowRef}>
-          <circleGeometry args={[0.45, 16]} />
-          <meshBasicMaterial color="#c8a855" transparent opacity={0.18} />
-        </mesh>
-      </group>
-      {/* Astrolabe — tilted orbital rings above portal */}
-      <mesh ref={orbitalARef} position={[0, 0.6, 0]} rotation={[Math.PI / 3, 0, 0]}>
-        <torusGeometry args={[1.4, 0.03, 8, 32]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.3} />
-      </mesh>
-      <mesh ref={orbitalBRef} position={[0, 0.6, 0]} rotation={[Math.PI / 6, Math.PI / 4, 0]}>
-        <torusGeometry args={[1.0, 0.025, 8, 24]} />
-        <meshBasicMaterial color="#8b5cf6" transparent opacity={0.25} />
-      </mesh>
-      <mesh ref={equatorialRef} position={[0, 0.6, 0]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[1.6, 0.02, 8, 32]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.15} />
-      </mesh>
-      {/* Center eye */}
-      <mesh ref={eyeRef} position={[0, 0.6, 0]}>
-        <sphereGeometry args={[0.2, 12, 12]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.5} />
+        <meshBasicMaterial color={PAL.night700} transparent opacity={0.18} />
       </mesh>
     </>
   );
@@ -699,52 +330,6 @@ function ArcanePaths() {
         </mesh>
       ))}
     </>
-  );
-}
-
-function RunicGlyphs() {
-  // Twelve small glowing glyphs inscribed just outside the ward ring at
-  // radius 5.4. Slow group rotation + per-glyph opacity pulse make them
-  // read as ancient inlays gradually waking up. All on the same y-plane
-  // as the ward (-0.034) so they sit flush with the floor.
-  const groupRef = useRef<THREE.Group>(null);
-  const phases = useMemo(
-    () => Array.from({ length: 12 }, () => Math.random() * Math.PI * 2),
-    [],
-  );
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (!groupRef.current) return;
-    groupRef.current.rotation.z = t * 0.045; // slow glyph procession
-    groupRef.current.children.forEach((child, i) => {
-      const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
-      mat.opacity = 0.30 + Math.sin(t * 0.8 + (phases[i] ?? 0)) * 0.18;
-    });
-  });
-
-  const N = 12;
-  const RADIUS = 5.4;
-  return (
-    <group ref={groupRef} position={[0, -0.034, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      {Array.from({ length: N }, (_, i) => {
-        const a = (i / N) * Math.PI * 2;
-        const x = Math.cos(a) * RADIUS;
-        const y = Math.sin(a) * RADIUS;
-        const variant = i % 4;
-        return (
-          <mesh key={i} position={[x, y, 0]} rotation={[0, 0, a + Math.PI / 2]}>
-            {variant === 0 && <ringGeometry args={[0.06, 0.11, 6]} />}
-            {variant === 1 && <planeGeometry args={[0.20, 0.045]} />}
-            {variant === 2 && <ringGeometry args={[0.07, 0.13, 4, 1, 0, Math.PI]} />}
-            {variant === 3 && <planeGeometry args={[0.045, 0.20]} />}
-            <meshBasicMaterial color="#ffd97a" transparent opacity={0.35}
-              blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
-              depthWrite={false} fog={false} />
-          </mesh>
-        );
-      })}
-    </group>
   );
 }
 
@@ -814,10 +399,6 @@ function DalaranBackdropSpire({ position, height, radius, phase, crown = false }
 }
 
 function DalaranBackdrop() {
-  const perf = usePerfLevel();
-  const crystalRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const runeRefs = useRef<(THREE.Mesh | null)[]>([]);
-
   const spires = useMemo(() => [
     { x: -11.5, z: -15.2, h: 4.9, r: 0.46, crown: false },
     { x: -7.4,  z: -16.0, h: 6.4, r: 0.58, crown: false },
@@ -826,21 +407,6 @@ function DalaranBackdrop() {
     { x: 7.4,   z: -15.7, h: 5.7, r: 0.54, crown: false },
     { x: 11.5,  z: -15.0, h: 4.7, r: 0.44, crown: false },
   ], []);
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    crystalRefs.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      mesh.rotation.y = t * (0.28 + i * 0.04);
-      mesh.position.y = 4.0 + Math.sin(t * 0.7 + i * 1.4) * 0.18;
-      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.40 + Math.sin(t * 0.9 + i) * 0.12;
-    });
-    runeRefs.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      mesh.rotation.z = t * (0.08 + i * 0.015);
-      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.12 + Math.sin(t * 0.8 + i * 0.9) * 0.06;
-    });
-  });
 
   return (
     <group>
@@ -885,385 +451,10 @@ function DalaranBackdrop() {
         );
       })}
 
-      {perf !== 'low' && [
-        [-5.0, -14.3, '#8b5cf6'],
-        [0.0, -14.9, '#ffd36a'],
-        [5.1, -14.4, '#5cd2ff'],
-      ].map(([x, z, color], i) => (
-        <mesh
-          key={`back-crystal-${i}`}
-          ref={(m) => { crystalRefs.current[i] = m; }}
-          position={[x as number, 4.0, z as number]}
-          rotation={[0.15, i * 0.8, 0.35]}
-        >
-          <octahedronGeometry args={[0.22 + i * 0.04, 0]} />
-          <meshBasicMaterial color={color as string} transparent opacity={0.44}
-            blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
-        </mesh>
-      ))}
-
-      {[
-        [-8.8, 5.3, -14.8, '#ffd36a'],
-        [-0.2, 6.2, -15.3, '#a78bfa'],
-        [8.6, 5.4, -14.8, '#5cd2ff'],
-      ].map(([x, y, z, color], i) => (
-        <mesh
-          key={`sky-rune-${i}`}
-          ref={(m) => { runeRefs.current[i] = m; }}
-          position={[x as number, y as number, z as number]}
-          rotation={[0, 0, i * 0.7]}
-        >
-          <ringGeometry args={[0.32, 0.40, 6]} />
-          <meshBasicMaterial color={color as string} transparent opacity={0.16}
-            blending={THREE.AdditiveBlending} depthWrite={false}
-            side={THREE.DoubleSide} fog={false} />
-        </mesh>
-      ))}
     </group>
   );
 }
 
-
-// ─── Ground Scatter (texture decals) ────────────────────────────────────────
-
-function GroundScatter() {
-  const scratches = useMemo(() => [
-    { x: 7.5, z: 2.0, rot: 0.4 }, { x: -5.0, z: -8.0, rot: 1.1 },
-    { x: 2.0, z: 8.5, rot: 2.3 }, { x: -8.5, z: -2.0, rot: 0.7 },
-    { x: 9.0, z: 5.0, rot: 1.8 }, { x: -2.0, z: -9.5, rot: 2.9 },
-  ], []);
-  const moss = useMemo(() => [
-    [-10.5, -7.0], [10.5, 7.0], [-10.0, 1.0], [10.0, -1.0], [-5.5, -10.0], [5.5, 10.0],
-  ], []);
-  const runes = useMemo(() => [
-    [1.5, -8.0], [-1.5, 8.0], [8.0, 1.5], [-8.0, -1.5], [5.0, -5.0], [-5.0, 5.0],
-  ], []);
-
-  return (
-    <>
-      {scratches.map((s, i) => (
-        <mesh key={`sc${i}`} rotation={[-Math.PI / 2, 0, s.rot]} position={[s.x, -0.043, s.z]}>
-          <planeGeometry args={[0.8, 0.04]} />
-          <meshBasicMaterial color="#3a2a4a" transparent opacity={0.2} side={THREE.DoubleSide} />
-        </mesh>
-      ))}
-      {moss.map(([x, z], i) => (
-        <mesh key={`ms${i}`} rotation={[-Math.PI / 2, 0, i * 0.8]} position={[x!, -0.044, z!]}>
-          <circleGeometry args={[0.3, 5]} />
-          <meshBasicMaterial color="#1a2a1e" transparent opacity={0.15} />
-        </mesh>
-      ))}
-      {runes.map(([x, z], i) => (
-        <mesh key={`rn${i}`} rotation={[-Math.PI / 2, 0, 0]} position={[x!, -0.042, z!]}>
-          <ringGeometry args={[0.15, 0.2, 5]} />
-          <meshBasicMaterial color="#c8a855" transparent opacity={0.08} />
-        </mesh>
-      ))}
-    </>
-  );
-}
-
-// ─── Arcane Crystal Trees ───────────────────────────────────────────────────
-
-const TREE_VARIANTS: Record<string, { canopyA: string; canopyB: string; crystal: string }> = {
-  purple: { canopyA: '#2a1848', canopyB: '#3a2058', crystal: '#8b5cf6' },
-  teal:   { canopyA: '#1a3038', canopyB: '#1e3a42', crystal: '#60dbc8' },
-  gold:   { canopyA: '#2a2418', canopyB: '#3a3020', crystal: '#c8a855' },
-  blue:   { canopyA: '#1a2040', canopyB: '#222a4a', crystal: '#60a5fa' },
-};
-
-function ArcaneCrystalTree({ position, variant }: { position: [number, number, number]; variant: string }) {
-  const perf = usePerfLevel();
-  const v = TREE_VARIANTS[variant] ?? TREE_VARIANTS.purple!;
-  const crystalRef = useRef<THREE.Mesh>(null);
-  const shimmerRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const canopyRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const phase = useMemo(() => position[0] * 0.7 + position[2] * 0.3, [position]);
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (crystalRef.current) crystalRef.current.rotation.y = t * 0.8;
-    canopyRefs.current.forEach((ref) => {
-      if (ref) ref.rotation.y = Math.sin(t * 0.4 + phase) * 0.03;
-    });
-    if (perf !== 'low') {
-      shimmerRefs.current.forEach((ref, i) => {
-        if (!ref) return;
-        const speed = [1.2, -0.8, 1.5][i]!;
-        const h = [1.8, 2.3, 2.8][i]!;
-        const angle = t * speed + i * 2.1 + phase;
-        ref.position.set(Math.cos(angle) * 0.5, h, Math.sin(angle) * 0.5);
-        (ref.material as THREE.MeshBasicMaterial).opacity = 0.3 + Math.sin(t * 3 + i * 1.5) * 0.15;
-      });
-    }
-  });
-
-  return (
-    <group position={position}>
-      {/* Ground shadow ring */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <ringGeometry args={[0.2, 0.6, 8]} />
-        <meshBasicMaterial color="#0a0818" transparent opacity={0.25} />
-      </mesh>
-      {/* Root flare */}
-      <mesh position={[0, 0.15, 0]}>
-        <cylinderGeometry args={[0.22, 0.12, 0.3, 6]} />
-        <meshBasicMaterial color="#1a1020" />
-      </mesh>
-      {/* Trunk */}
-      <mesh position={[0, 0.9, 0]}>
-        <cylinderGeometry args={[0.12, 0.18, 1.8, 6]} />
-        <meshBasicMaterial color="#1e1428" />
-      </mesh>
-      {/* Lower canopy */}
-      <mesh ref={(el) => { canopyRefs.current[0] = el; }} position={[0, 2.0, 0]}>
-        <coneGeometry args={[0.9, 1.0, 6]} />
-        <meshBasicMaterial color={v.canopyA} />
-      </mesh>
-      {/* Upper canopy */}
-      <mesh ref={(el) => { canopyRefs.current[1] = el; }} position={[0, 2.7, 0]}>
-        <coneGeometry args={[0.65, 0.8, 6]} />
-        <meshBasicMaterial color={v.canopyB} />
-      </mesh>
-      {/* Crystal tip */}
-      <mesh ref={crystalRef} position={[0, 3.2, 0]}>
-        <octahedronGeometry args={[0.15, 0]} />
-        <meshBasicMaterial color={v.crystal} transparent opacity={0.7} />
-      </mesh>
-      {/* Shimmer particles — skipped in low perf mode */}
-      {perf !== 'low' && [0, 1, 2].map((i) => (
-        <mesh key={i} ref={(el) => { shimmerRefs.current[i] = el; }}>
-          <sphereGeometry args={[0.04, 4, 4]} />
-          <meshBasicMaterial color={v.crystal} transparent opacity={0.4} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-// ─── Scattered Props ────────────────────────────────────────────────────────
-
-function ScatteredDetailProps() {
-  const lanternRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const pedestalRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const spellRefs = useRef<(THREE.Mesh | null)[]>([]);
-
-  const LANTERN_POS: [number, number, number][] = [[7.0, 0, -9.5], [-7.0, 0, 9.5], [-9.5, 0, -3.0]];
-  const PEDESTAL_POS: [number, number, number][] = [[10.0, 0, -3.5], [-3.5, 0, -10.0], [3.5, 0, 10.0]];
-  const PEDESTAL_COLORS = ['#8b5cf6', '#c8a855', '#60a5fa'];
-  const SPELL_POS: [number, number, number][] = [[8.0, -0.043, 3.0], [-8.0, -0.043, -3.0], [3.0, -0.043, 9.0], [-3.0, -0.043, -9.0]];
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    lanternRefs.current.forEach((ref, i) => {
-      if (ref) (ref.material as THREE.MeshBasicMaterial).opacity = 0.5 + Math.sin(t * 2 + i * 2) * 0.2;
-    });
-    pedestalRefs.current.forEach((ref, i) => {
-      if (!ref) return;
-      ref.rotation.y = t * 1.2;
-      ref.position.y = 0.55 + Math.sin(t * 1.5 + i * 1.8) * 0.08;
-    });
-    spellRefs.current.forEach((ref) => {
-      if (ref) ref.rotation.z += 0.002;
-    });
-  });
-
-  return (
-    <>
-      {/* Lantern posts */}
-      {LANTERN_POS.map((pos, i) => (
-        <group key={`ln${i}`} position={pos}>
-          <mesh position={[0, 0.6, 0]}>
-            <cylinderGeometry args={[0.03, 0.03, 1.2, 4]} />
-            <meshBasicMaterial color="#3a2a18" />
-          </mesh>
-          <mesh position={[0.12, 1.15, 0]}>
-            <boxGeometry args={[0.25, 0.03, 0.03]} />
-            <meshBasicMaterial color="#3a2a18" />
-          </mesh>
-          <mesh ref={(el) => { lanternRefs.current[i] = el; }} position={[0.22, 1.08, 0]}>
-            <sphereGeometry args={[0.08, 6, 6]} />
-            <meshBasicMaterial color="#c8a855" transparent opacity={0.6} />
-          </mesh>
-        </group>
-      ))}
-      {/* Arcane pedestals */}
-      {PEDESTAL_POS.map((pos, i) => (
-        <group key={`pd${i}`} position={pos}>
-          <mesh position={[0, 0.25, 0]}>
-            <cylinderGeometry args={[0.25, 0.3, 0.5, 6]} />
-            <meshBasicMaterial color="#2a2040" />
-          </mesh>
-          <mesh position={[0, 0.52, 0]}>
-            <cylinderGeometry args={[0.28, 0.25, 0.08, 6]} />
-            <meshBasicMaterial color="#241a38" />
-          </mesh>
-          <mesh ref={(el) => { pedestalRefs.current[i] = el; }} position={[0, 0.55, 0]}>
-            <octahedronGeometry args={[0.1, 0]} />
-            <meshBasicMaterial color={PEDESTAL_COLORS[i] ?? '#c8a855'} transparent opacity={0.7} />
-          </mesh>
-        </group>
-      ))}
-      {/* Stone benches */}
-      <group position={[8.5, 0, -9.0]}>
-        <mesh position={[0, 0.2, 0]}><boxGeometry args={[1.0, 0.15, 0.35]} /><meshBasicMaterial color="#2a2040" /></mesh>
-        <mesh position={[0, 0.08, 0]}><boxGeometry args={[0.9, 0.16, 0.15]} /><meshBasicMaterial color="#221a36" /></mesh>
-      </group>
-      <group position={[-8.5, 0, 9.0]}>
-        <mesh position={[0, 0.2, 0]}><boxGeometry args={[1.0, 0.15, 0.35]} /><meshBasicMaterial color="#2a2040" /></mesh>
-        <mesh position={[0, 0.08, 0]}><boxGeometry args={[0.9, 0.16, 0.15]} /><meshBasicMaterial color="#221a36" /></mesh>
-      </group>
-      {/* Spell circles on ground */}
-      {SPELL_POS.map((pos, i) => (
-        <group key={`sp${i}`} ref={(el) => { if (el) spellRefs.current[i] = el.children[0] as THREE.Mesh; }}
-          rotation={[-Math.PI / 2, 0, i * 0.8]} position={pos}>
-          <mesh>
-            <ringGeometry args={[0.6, 0.7, 6]} />
-            <meshBasicMaterial color="#8b5cf6" transparent opacity={0.12} side={THREE.DoubleSide} />
-          </mesh>
-          <mesh>
-            <ringGeometry args={[0.2, 0.25, 3]} />
-            <meshBasicMaterial color="#c8a855" transparent opacity={0.15} side={THREE.DoubleSide} />
-          </mesh>
-        </group>
-      ))}
-      {/* Barrel clusters */}
-      <group position={[-10.0, 0, 4.0]}>
-        <mesh position={[0, 0.3, 0]}><cylinderGeometry args={[0.25, 0.22, 0.6, 8]} /><meshBasicMaterial color="#3a2a18" /></mesh>
-        <mesh position={[0.35, 0.2, 0]}><cylinderGeometry args={[0.15, 0.14, 0.4, 8]} /><meshBasicMaterial color="#4a3820" /></mesh>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.61, 0]}><circleGeometry args={[0.25, 8]} /><meshBasicMaterial color="#2a1e10" /></mesh>
-      </group>
-      <group position={[10.0, 0, -4.0]}>
-        <mesh position={[0, 0.3, 0]}><cylinderGeometry args={[0.25, 0.22, 0.6, 8]} /><meshBasicMaterial color="#3a2a18" /></mesh>
-        <mesh position={[0.35, 0.2, 0]}><cylinderGeometry args={[0.15, 0.14, 0.4, 8]} /><meshBasicMaterial color="#4a3820" /></mesh>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.61, 0]}><circleGeometry args={[0.25, 8]} /><meshBasicMaterial color="#2a1e10" /></mesh>
-      </group>
-      {/* Weapon rack */}
-      <group position={[-6.5, 0, 8.8]}>
-        <mesh position={[0, 0.5, 0]}><boxGeometry args={[0.08, 1.0, 0.6]} /><meshBasicMaterial color="#3a2a18" /></mesh>
-        <mesh position={[0.04, 0.6, -0.18]}><boxGeometry args={[0.03, 0.6, 0.06]} /><meshBasicMaterial color="#c8a855" /></mesh>
-        <mesh position={[0.04, 0.55, 0]}><boxGeometry args={[0.03, 0.7, 0.06]} /><meshBasicMaterial color="#8b5cf6" /></mesh>
-        <mesh position={[0.04, 0.5, 0.18]}><boxGeometry args={[0.03, 0.5, 0.06]} /><meshBasicMaterial color="#60a5fa" /></mesh>
-      </group>
-    </>
-  );
-}
-
-// ─── Arcane Fountain ────────────────────────────────────────────────────────
-
-function ArcaneFountain() {
-  const perf      = usePerfLevel();
-  const waterRef  = useRef<THREE.Mesh>(null);
-  const crystalRef = useRef<THREE.Mesh>(null);
-  const jetRef    = useRef<THREE.Mesh>(null);
-  const splashRefs = useRef<(THREE.Mesh | null)[]>([]);
-  const rippleRef = useRef<THREE.Mesh>(null);
-
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (waterRef.current) (waterRef.current.material as THREE.MeshBasicMaterial).opacity = 0.35 + Math.sin(t * 1.2) * 0.1;
-    if (crystalRef.current) {
-      crystalRef.current.rotation.y = t * 0.6;
-      crystalRef.current.position.y = 1.1 + Math.sin(t * 1.0) * 0.05;
-    }
-    if (jetRef.current) jetRef.current.scale.y = 0.8 + Math.sin(t * 3) * 0.2;
-    if (perf !== 'low') {
-      splashRefs.current.forEach((ref, i) => {
-        if (!ref) return;
-        ref.position.y = 0.28 + Math.abs(Math.sin(t * 2.5 + i * 1.5)) * 0.15;
-        (ref.material as THREE.MeshBasicMaterial).opacity = 0.2 + Math.abs(Math.sin(t * 2.5 + i * 1.5)) * 0.3;
-      });
-      if (rippleRef.current) {
-        const cycle = (t * 0.5) % 1;
-        const s = 1 + cycle;
-        rippleRef.current.scale.setScalar(s);
-        (rippleRef.current.material as THREE.MeshBasicMaterial).opacity = 0.2 * (1 - cycle);
-      }
-    }
-  });
-
-  return (
-    <group position={[4.0, 0, 9.5]}>
-      {/* Ground rune ring */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
-        <ringGeometry args={[1.1, 1.2, 8]} />
-        <meshBasicMaterial color="#60a5fa" transparent opacity={0.1} />
-      </mesh>
-      {/* Base platform */}
-      <mesh position={[0, 0.1, 0]}>
-        <cylinderGeometry args={[1.0, 1.1, 0.2, 8]} />
-        <meshBasicMaterial color="#2a2040" />
-      </mesh>
-      {/* Basin wall */}
-      <mesh position={[0, 0.3, 0]}>
-        <torusGeometry args={[0.85, 0.12, 6, 8]} />
-        <meshBasicMaterial color="#241a38" />
-      </mesh>
-      {/* Water surface */}
-      <mesh ref={waterRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.25, 0]}>
-        <circleGeometry args={[0.75, 12]} />
-        <meshBasicMaterial color="#1a3050" transparent opacity={0.4} />
-      </mesh>
-      {/* Ripple ring — skipped in low perf mode */}
-      {perf !== 'low' && (
-        <mesh ref={rippleRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.26, 0]}>
-          <ringGeometry args={[0.3, 0.35, 12]} />
-          <meshBasicMaterial color="#60a5fa" transparent opacity={0.15} />
-        </mesh>
-      )}
-      {/* Central column */}
-      <mesh position={[0, 0.6, 0]}>
-        <cylinderGeometry args={[0.08, 0.12, 0.8, 6]} />
-        <meshBasicMaterial color="#2a2040" />
-      </mesh>
-      {/* Water jet */}
-      <mesh ref={jetRef} position={[0, 0.9, 0]}>
-        <cylinderGeometry args={[0.02, 0.01, 0.4, 4]} />
-        <meshBasicMaterial color="#60a5fa" transparent opacity={0.4} />
-      </mesh>
-      {/* Crystal top */}
-      <mesh ref={crystalRef} position={[0, 1.1, 0]}>
-        <octahedronGeometry args={[0.12, 0]} />
-        <meshBasicMaterial color="#60a5fa" transparent opacity={0.7} />
-      </mesh>
-      {/* Splash particles — skipped in low perf mode */}
-      {perf !== 'low' && [0, 1, 2, 3].map((i) => (
-        <mesh key={i} ref={(el) => { splashRefs.current[i] = el; }}
-          position={[Math.cos(i * Math.PI / 2) * 0.6, 0.3, Math.sin(i * Math.PI / 2) * 0.6]}>
-          <sphereGeometry args={[0.03, 4, 4]} />
-          <meshBasicMaterial color="#60a5fa" transparent opacity={0.3} />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-function ArcaneBanner({ position, color, phase }: { position: [number, number, number]; color: string; phase: number }) {
-  const fabricRef = useRef<THREE.Mesh>(null);
-  useFrame((state) => {
-    if (fabricRef.current) fabricRef.current.rotation.z = Math.sin(state.clock.elapsedTime * 0.8 + phase) * 0.05;
-  });
-  return (
-    <group position={position}>
-      <mesh position={[0, 1.25, 0]}>
-        <cylinderGeometry args={[0.04, 0.04, 2.5, 4]} />
-        <meshBasicMaterial color="#3a2a18" />
-      </mesh>
-      <mesh position={[0, 2.4, 0]}>
-        <boxGeometry args={[0.6, 0.04, 0.04]} />
-        <meshBasicMaterial color="#3a2a18" />
-      </mesh>
-      <mesh ref={fabricRef} position={[0, 1.6, 0]}>
-        <planeGeometry args={[0.5, 1.2]} />
-        <meshBasicMaterial color={color} transparent opacity={0.7} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh position={[0, 1.0, 0]}>
-        <planeGeometry args={[0.5, 0.06]} />
-        <meshBasicMaterial color="#c8a855" transparent opacity={0.5} side={THREE.DoubleSide} />
-      </mesh>
-    </group>
-  );
-}
 
 // ─── Stage Rim ──────────────────────────────────────────────────────────────
 //
@@ -1312,7 +503,7 @@ function StageRim() {
 // ─── Atmospheric Fog Bands ───────────────────────────────────────────────────
 //
 // Stacked additive planes at the back of the scene push the Citadel and
-// Lich King visually deeper into haze, so the foreground action pops. Sits
+// The Eternal sits visually deeper into haze, so foreground action pops.
 // in front of the existing `<fog>` distance fog (which fades the wall but
 // is too uniform to give directional depth on its own). Gated behind
 // perfLevel since 4 large additive quads cost real fillrate on weak GPUs.
@@ -1353,137 +544,27 @@ function AtmosphericFog() {
   );
 }
 
-// ─── Stage Lights ───────────────────────────────────────────────────────────
-//
-// Six tall warm-gold glow columns at the rim (radius 8.7), offset 30°
-// so none align with the cardinal axes. Each pairs a soft additive
-// cylinder ("flame body"), a brighter pulsing core sphere ("flame head"),
-// a stone pedestal at the base, and a small ground rune ring. Adds the
-// "ten thousand candles" stage feel and balances the cyan/violet palette
-// with a warm complement. Cores pulse asynchronously via per-light phase
-// offset so the stage doesn't strobe in unison.
-
-function StageLights() {
-  const positions = useMemo<Array<[number, number]>>(() => {
-    const arr: Array<[number, number]> = [];
-    for (let i = 0; i < 6; i++) {
-      const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
-      arr.push([Math.cos(a) * 8.7, Math.sin(a) * 8.7]);
-    }
-    return arr;
-  }, []);
-
-  const coreRefs = useRef<(THREE.Mesh | null)[]>([]);
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    coreRefs.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      const phase = t * 1.4 + i * 0.7;
-      (mesh.material as THREE.MeshBasicMaterial).opacity = 0.65 + Math.sin(phase) * 0.20;
-    });
-  });
-
-  return (
-    <>
-      {positions.map(([x, z], i) => (
-        <group key={i} position={[x, 0, z]}>
-          {/* Stone pedestal */}
-          <mesh position={[0, 0.10, 0]}>
-            <cylinderGeometry args={[0.20, 0.24, 0.20, 12]} />
-            <meshBasicMaterial color="#1a0f28" />
-          </mesh>
-          {/* Flame body — tall additive cylinder */}
-          <mesh position={[0, 1.05, 0]}>
-            <cylinderGeometry args={[0.18, 0.10, 2.0, 12, 1, true]} />
-            <meshBasicMaterial color="#f5c518" transparent opacity={0.22}
-              blending={THREE.AdditiveBlending} side={THREE.DoubleSide}
-              depthWrite={false} fog={false} />
-          </mesh>
-          {/* Flame core — bright pulsing head */}
-          <mesh
-            ref={(m) => { coreRefs.current[i] = m; }}
-            position={[0, 0.55, 0]}
-          >
-            <sphereGeometry args={[0.13, 12, 12]} />
-            <meshBasicMaterial color="#ffd97a" transparent opacity={0.85}
-              blending={THREE.AdditiveBlending} fog={false} depthWrite={false} />
-          </mesh>
-          {/* Ground rune ring at the base */}
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.045, 0]}>
-            <ringGeometry args={[0.32, 0.42, 18]} />
-            <meshBasicMaterial color="#f5c518" transparent opacity={0.40}
-              blending={THREE.AdditiveBlending} depthWrite={false}
-              side={THREE.DoubleSide} fog={false} />
-          </mesh>
-        </group>
-      ))}
-    </>
-  );
-}
-
 function PlazaEnvironment() {
-  const pillarPositions: { pos: [number, number, number]; color: string }[] = [
-    { pos: [0, 0, -9], color: '#8b5cf6' },   // N — purple
-    { pos: [9, 0, 0], color: '#60a5fa' },     // E — blue
-    { pos: [0, 0, 9], color: '#34d399' },     // S — green
-    { pos: [-9, 0, 0], color: '#f59e0b' },    // W — gold
-    { pos: [6.4, 0, -6.4], color: '#c084fc' }, // NE — light purple
-    { pos: [-6.4, 0, 6.4], color: '#a78bfa' }, // SW — violet
-  ];
-
-  const brazierPositions: [number, number, number][] = [
-    [4.5, 0, -4.5], [-4.5, 0, -4.5],
-    [4.5, 0, 4.5], [-4.5, 0, 4.5],
+  const pillarPositions: [number, number, number][] = [
+    [0, 0, -9], [9, 0, 0], [0, 0, 9], [-9, 0, 0],
   ];
 
   return (
     <>
       <ArcaneFloor />
-      <CenterPortal />
-      {/* Stage frame — defines the inside/outside of the performance area
-          so the eye reads the plaza as a stage instead of an open courtyard.
-          The rim alone gives the floor an edge; the warm rim lights add the
-          theatre feel and balance the cyan/violet palette with gold. The
-          back fog band pushes the Citadel + Lich King visually deeper so
-          the foreground action pops. */}
       <StageRim />
-      <StageLights />
       <AtmosphericFog />
       <DalaranBackdrop />
-      {pillarPositions.map((p, i) => (
-        <CrystalPillar key={i} position={p.pos} color={p.color} />
+      {pillarPositions.map((position, i) => (
+        <CrystalPillar key={i} position={position} />
       ))}
-      {brazierPositions.map((pos, i) => (
-        <Brazier key={i} position={pos} />
-      ))}
-      <FloatingParticles />
-      <ArcaneWeather />
-      {/* Arcane banners between pillars */}
-      <ArcaneBanner position={[4.5, 0, -7.2]} color="#8b5cf6" phase={0} />
-      <ArcaneBanner position={[-4.5, 0, -7.2]} color="#f59e0b" phase={1.2} />
-      <ArcaneBanner position={[7.2, 0, 4.5]} color="#34d399" phase={2.4} />
-      <ArcaneBanner position={[-7.2, 0, 4.5]} color="#a78bfa" phase={3.6} />
       {/* Perimeter buildings intentionally hidden: the Sanctum now reads as
           an open ritual floor rather than a crowded city perimeter. */}
-      {/* Dalaran D3 — runic glyphs ring just outside the ward ring,
-          slowly rotating with per-glyph pulse. */}
-      <RunicGlyphs />
       {/* Dalaran D4 — magical lights + sparkles + faked godrays. All
           procedural; no postprocessing dep. */}
-      <DalaranLampposts />
       <SunGodrays />
       <AtmosphericMotes />
-      {/* Ground detail */}
       <ArcanePaths />
-      <GroundScatter />
-      {/* Crystal trees */}
-      <ArcaneCrystalTree position={[-8.5, 0, -8.0]} variant="teal" />
-      <ArcaneCrystalTree position={[8.5, 0, 8.0]} variant="purple" />
-      <ArcaneCrystalTree position={[-9.0, 0, 6.0]} variant="blue" />
-      {/* Scattered props */}
-      <ScatteredDetailProps />
-      {/* Fountain */}
-      <ArcaneFountain />
     </>
   );
 }
@@ -1519,7 +600,7 @@ function WoWNameplate({ pn, maxCost, selected, nowEpoch, possessed }: {
 
   return (
     <Html center position={[0, 3.8, 0]} style={{ pointerEvents: 'none' }}>
-      <div style={{
+      <div className="sanctum-hud-panel" style={{
         width: 190, background: 'rgba(8,6,14,.88)',
         border: `1px solid ${possessed ? '#f59e0b' : selected ? '#63f7b3' : c.color}99`,
         borderRadius: 3, padding: '4px 7px 5px',
@@ -1742,6 +823,12 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
   const targetWpRef = useRef(Math.floor(Math.random() * WAYPOINTS.length));
   const frameRef    = useRef(0);
   const frameTimer  = useRef(Math.random() * 0.22);
+  const facingRef   = useRef<1 | -1>(1);
+  const pendingFacingRef = useRef<1 | -1>(1);
+  const turnTimerRef = useRef(0);
+  const wasMovingRef = useRef(false);
+  const startTimerRef = useRef(0);
+  const settleTimerRef = useRef(0);
   const spawnAge    = useRef(0);                       // spawn-in timer
   const isMovingRef = useRef(false);                   // for trail particles
   const hovered     = useRef(false);
@@ -1863,6 +950,7 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
 
     // ── Possession: WASD drive + cursor facing + ground-order walk ──
     let moving = false;
+    let desiredFacing: 1 | -1 | null = null;
     if (possessed) {
       const mi = moveInputRef.current;
       const magSq = mi.x * mi.x + mi.z * mi.z;
@@ -1874,10 +962,7 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         livePosRef.current.x += (mi.x / mag) * velocityRef.current * delta;
         livePosRef.current.z += (mi.z / mag) * velocityRef.current * delta;
         moving = true;
-        if (spriteRef.current) {
-          const faceDir = mi.x > 0 ? 1 : mi.x < 0 ? -1 : (spriteRef.current.scale.x > 0 ? 1 : -1);
-          spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
-        }
+        desiredFacing = mi.x > 0 ? 1 : mi.x < 0 ? -1 : facingRef.current;
       } else {
         // No WASD — check for one-shot move order
         const order = moveOrdersRef.current.get(pn.session.session_id);
@@ -1896,19 +981,13 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
             livePosRef.current.x += (dx / dist) * Math.min(step, dist);
             livePosRef.current.z += (dz / dist) * Math.min(step, dist);
             moving = true;
-            if (spriteRef.current) {
-              const faceDir = dx > 0 ? 1 : -1;
-              spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
-            }
+            desiredFacing = dx > 0 ? 1 : -1;
           }
         } else {
           velocityRef.current = Math.max(0, velocityRef.current - delta * 4);
           // Face cursor when idle
-          if (spriteRef.current) {
-            const cx = cursorGroundRef.current.x - livePosRef.current.x;
-            const faceDir = cx > 0 ? 1 : cx < 0 ? -1 : (spriteRef.current.scale.x > 0 ? 1 : -1);
-            spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
-          }
+          const cx = cursorGroundRef.current.x - livePosRef.current.x;
+          desiredFacing = cx > 0 ? 1 : cx < 0 ? -1 : facingRef.current;
         }
       }
       // Clamp to plaza bounds
@@ -1917,9 +996,9 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
       // Walk cycle
       if (moving) {
         frameTimer.current += delta;
-        if (frameTimer.current > 0.22) {
+        if (frameTimer.current > stepPeriodForSpeed(Math.max(velocityRef.current, movProf.speed * 0.35))) {
           frameTimer.current = 0;
-          frameRef.current ^= 1;
+          frameRef.current = nextWalkFrame(frameRef.current);
           if (spriteRef.current) {
             (spriteRef.current.material as THREE.SpriteMaterial).map = textures[frameRef.current]!;
             (spriteRef.current.material as THREE.SpriteMaterial).needsUpdate = true;
@@ -1968,16 +1047,13 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         livePosRef.current.z += (dz / dist) * Math.min(speed, dist);
 
         // ── Sprite facing: flip X based on direction ──
-        if (spriteRef.current) {
-          const faceDir = dx > 0 ? 1 : -1;
-          spriteRef.current.scale.x = Math.abs(spriteRef.current.scale.x) * faceDir;
-        }
+        desiredFacing = dx > 0 ? 1 : -1;
 
         // ── Walk cycle with bounce ──
         frameTimer.current += delta;
-        if (frameTimer.current > 0.22) {
+        if (frameTimer.current > stepPeriodForSpeed(Math.max(velocityRef.current, movProf.speed * 0.35))) {
           frameTimer.current = 0;
-          frameRef.current ^= 1;
+          frameRef.current = nextWalkFrame(frameRef.current);
           if (spriteRef.current) {
             (spriteRef.current.material as THREE.SpriteMaterial).map = textures[frameRef.current]!;
             (spriteRef.current.material as THREE.SpriteMaterial).needsUpdate = true;
@@ -1999,13 +1075,36 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
         }
       });
     }
+    if (moving && !wasMovingRef.current) startTimerRef.current = START_DURATION;
+    if (!moving && wasMovingRef.current) {
+      settleTimerRef.current = SETTLE_DURATION;
+      frameRef.current = 0;
+      if (spriteRef.current) {
+        (spriteRef.current.material as THREE.SpriteMaterial).map = textures[0];
+        (spriteRef.current.material as THREE.SpriteMaterial).needsUpdate = true;
+      }
+    }
+    wasMovingRef.current = moving;
+    startTimerRef.current = Math.max(0, startTimerRef.current - delta);
+    settleTimerRef.current = Math.max(0, settleTimerRef.current - delta);
+
+    if (desiredFacing && desiredFacing !== facingRef.current && turnTimerRef.current <= 0) {
+      pendingFacingRef.current = desiredFacing;
+      turnTimerRef.current = TURN_DURATION;
+    }
+    if (turnTimerRef.current > 0) {
+      turnTimerRef.current = Math.max(0, turnTimerRef.current - delta);
+      if (turnTimerRef.current === 0) facingRef.current = pendingFacingRef.current;
+    }
+
     isMovingRef.current = moving;
 
     // ── Idle breathing bob + walk bounce + selection float ──
-    const breathe     = Math.sin(t * movProf.breatheSpeed + pn.idx * 1.7) * movProf.breatheAmp;
+    const idlePhase   = pn.idx * PHASE_STEP;
+    const breathe     = Math.sin(t * movProf.breatheSpeed + idlePhase) * movProf.breatheAmp;
     const walkBounce  = moving ? Math.abs(Math.sin(t * 8)) * movProf.bounceAmp : 0;
     // Selected characters float slightly higher so they pop above the crowd
-    const selectFloat = selected && !dragActive.current ? Math.sin(t * 1.5 + pn.idx) * 0.06 : 0;
+    const selectFloat = selected && !dragActive.current ? Math.sin(t * 1.5 + idlePhase) * 0.06 : 0;
     const spriteY     = breathe + walkBounce + selectFloat;
 
     if (spriteRef.current) {
@@ -2013,9 +1112,17 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
       const baseScale  = 2.0 * spawnEase;
       const hoverBoost = hovered.current ? 1.08 : 1.0;
       const dragBoost  = 1 + dragLift.current * 0.06;
-      spriteRef.current.scale.y = 3.0 * spawnEase * hoverBoost * dragBoost;
-      const dir = spriteRef.current.scale.x > 0 ? 1 : -1;
-      spriteRef.current.scale.x = baseScale * hoverBoost * dragBoost * dir;
+      const turnProgress = turnTimerRef.current / TURN_DURATION;
+      const turnSquash = turnTimerRef.current > 0 ? Math.sin(turnProgress * Math.PI) : 0;
+      const startProgress = startTimerRef.current / START_DURATION;
+      const settleProgress = settleTimerRef.current / SETTLE_DURATION;
+      const actionScaleY = 1 - turnSquash * 0.08
+        - (startTimerRef.current > 0 ? Math.sin(startProgress * Math.PI) * 0.08 : 0)
+        + (settleTimerRef.current > 0 ? Math.sin(settleProgress * Math.PI) * 0.04 : 0);
+      const actionScaleX = 1 + turnSquash * 0.06
+        + (settleTimerRef.current > 0 ? Math.sin(settleProgress * Math.PI) * 0.03 : 0);
+      spriteRef.current.scale.y = 3.0 * spawnEase * hoverBoost * dragBoost * actionScaleY;
+      spriteRef.current.scale.x = baseScale * hoverBoost * dragBoost * actionScaleX * facingRef.current;
       // Recency decay: older sessions fade toward ghost-alpha, never below 0.4
       const recencyAlpha = 0.4 + 0.6 * recencyBoost;
       (spriteRef.current.material as THREE.SpriteMaterial).opacity = spawnEase * recencyAlpha;
@@ -2044,14 +1151,14 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
     if (ringRef.current) {
       let auraPulse: number;
       if (auraProf.style === 'flicker') {
-        // Terminator: electronic glitch
+        // Ninelives: spectral glitch
         auraPulse = 1 + (Math.sin(t * auraProf.speed) * Math.sin(t * 13.7) > 0.3 ? auraProf.amplitude : -auraProf.amplitude * 0.5);
       } else if (auraProf.style === 'breathe') {
         // Slow sine wave
-        auraPulse = 1 + Math.sin(t * auraProf.speed + pn.idx) * auraProf.amplitude;
+        auraPulse = 1 + Math.sin(t * auraProf.speed + pn.idx * PHASE_STEP) * auraProf.amplitude;
       } else {
         // Sharp pulse
-        auraPulse = 1 + Math.abs(Math.sin(t * auraProf.speed + pn.idx)) * auraProf.amplitude;
+        auraPulse = 1 + Math.abs(Math.sin(t * auraProf.speed + pn.idx * PHASE_STEP)) * auraProf.amplitude;
       }
       // Drag: aura expands and brightens while held
       const dragMult = 1 + dragLift.current * 0.5;
@@ -2156,11 +1263,6 @@ function WoWChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosUpdat
           {ident.tag}
         </div>
       </Html>
-      {/* Selection pulse rings */}
-      {selected && <SelectionPulseRings color={c.aura} />}
-      {/* Trail particles */}
-      <CharacterTrail color={trailColor} isMoving={isMovingRef} />
-      <FootstepDust isMoving={isMovingRef} />
       {/* Nameplate is click-to-open: hidden by default, shows only when this
           character is selected (or possessed by an admin). Keeps the Sanctum
           floor readable instead of plastered with HUD cards. */}
@@ -2501,7 +1603,7 @@ function WoWTooltipOverlay({ session, cls, name, role, onClose }: {
   }, [catType, session]);
 
   return (
-    <div style={{
+    <div className="sanctum-hud-panel" style={{
       position: 'absolute', top: 20, right: 16, zIndex: 40,
       minWidth: 260, maxWidth: 320,
       background: 'linear-gradient(180deg, #0a0818 0%, #040210 100%)',
@@ -2618,7 +1720,66 @@ function WoWTooltipOverlay({ session, cls, name, role, onClose }: {
 
 // ─── Full 3D Scene ────────────────────────────────────────────────────────────
 
-function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessedId, moveInputRef, cursorGroundRef, moveOrdersRef, eternal }: {
+function CostGauge({ ratio, pulse }: { ratio: number; pulse: boolean }) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame((state) => {
+    if (!ref.current) return;
+    const lift = pulse ? Math.max(0, Math.sin(state.clock.elapsedTime * 9)) : 0;
+    ref.current.scale.setScalar(1 + lift * 0.025);
+    (ref.current.material as THREE.MeshBasicMaterial).opacity = 0.34 + lift * 0.42;
+  });
+  const sweep = Math.max(0.03, Math.min(1, ratio)) * Math.PI * 2;
+  return (
+    <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.012, 0]}>
+      <ringGeometry args={[8.45, 8.62, 96, 1, -Math.PI / 2, sweep]} />
+      <meshBasicMaterial color={PAL.gold} transparent opacity={0.34}
+        blending={THREE.AdditiveBlending} depthWrite={false} />
+    </mesh>
+  );
+}
+
+function EventBeatVisual({ beat, livePosMap }: {
+  beat?: SanctumEventBeat;
+  livePosMap: React.MutableRefObject<Map<string, THREE.Vector3>>;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const start = useRef<number | null>(null);
+  const origin = beat?.sessionId ? livePosMap.current.get(beat.sessionId) : null;
+  const x = origin?.x ?? 0;
+  const z = origin?.z ?? 0;
+  const ghostCurve = useMemo(() => new THREE.QuadraticBezierCurve3(
+    new THREE.Vector3(x, 0.9, z), new THREE.Vector3(2.5, 5.2, -3.4), new THREE.Vector3(5, 2.4, -7.3),
+  ), [x, z]);
+  useFrame((state) => {
+    if (!groupRef.current || !beat) return;
+    start.current ??= state.clock.elapsedTime;
+    const p = Math.min(1, (state.clock.elapsedTime - start.current) / (EVENT_DURATIONS[beat.type] / 1000));
+    groupRef.current.scale.setScalar(0.65 + p * 1.9);
+    groupRef.current.children.forEach((child) => {
+      const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+      if (material) material.opacity = Math.max(0, (1 - p) * 0.8);
+    });
+  });
+  if (!beat || beat.type === 'E5') return null;
+  return (
+    <group ref={groupRef} position={beat.type === 'E1' ? [0, 0.08, 0] : [x, 0.08, z]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.45, 0.66, 40]} />
+        <meshBasicMaterial color={beat.type === 'E3' ? PAL.cyan : PAL.gold}
+          transparent opacity={0.8} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </mesh>
+      {beat.type === 'E3' && (
+        <mesh position={[-x, 0, -z]}>
+          <tubeGeometry args={[ghostCurve, 32, 0.025, 5, false]} />
+          <meshBasicMaterial color={PAL.cyan} transparent opacity={0.55}
+            blending={THREE.AdditiveBlending} depthWrite={false} />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessedId, moveInputRef, cursorGroundRef, moveOrdersRef, eternal, eventBeat, eventBeatKey = 0, costGauge = 0 }: {
   group: SessionRunGroup; selectedId: string | null; onSelect: (id: string | null) => void;
   livePosMapOut:   React.MutableRefObject<Map<string, THREE.Vector3>>;
   nowEpoch:        number;
@@ -2627,6 +1788,9 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
   cursorGroundRef: React.MutableRefObject<THREE.Vector3>;
   moveOrdersRef:   React.MutableRefObject<Map<string, THREE.Vector3 | null>>;
   eternal:         EternalStats;
+  eventBeat?:       SanctumEventBeat;
+  eventBeatKey?:    number;
+  costGauge?:       number;
 }) {
   const nodes     = useMemo(() => layoutNodes(group.roots), [group]);
   const maxCost   = useMemo(() => Math.max(...nodes.map((n) => n.session.estimated_cost_usd), 0.001), [nodes]);
@@ -2701,14 +1865,16 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
         <PlazaEnvironment />
       </Suspense>
 
-      {/* Lich King — permanent custodian of eternal cumulative-spend +
+      {/* The Eternal — permanent custodian of cumulative spend +
           ghost-count stats. Mirrors the Violet Citadel from the opposite
           back corner. Rendered here in Scene (not inside PlazaEnvironment)
           because PlazaEnvironment doesn't receive the eternal prop —
           having it inside there caused a ReferenceError that tripped the
           SceneErrorBoundary in production minified builds (caught
           2026-04-28 hotfix). */}
-      <LichKing eternal={eternal} />
+      <LichKing eternal={eternal} roarKey={eventBeat?.type === 'E3' ? eventBeatKey : 0} />
+      <CostGauge ratio={costGauge} pulse={eventBeat?.type === 'E4'} />
+      <EventBeatVisual key={eventBeatKey} {...(eventBeat ? { beat: eventBeat } : {})} livePosMap={livePosMap} />
 
       {connections.map((conn) => (
         <DynamicLeyLine key={conn.key} childId={conn.childId} parentId={conn.parentId}
@@ -2952,8 +2118,62 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
   const flatNodes    = useMemo(() => group ? layoutNodes(group.roots) : [], [group]);
   const selectedNode = flatNodes.find((n) => n.session.session_id === selected) ?? null;
+  const groupCost = group?.totalCost ?? 0;
+  const dayMaxCost = useMemo(() => {
+    if (!group) return 1;
+    const day = toISTDate(group.startedAt);
+    return Math.max(1, ...groups.filter((candidate) => toISTDate(candidate.startedAt) === day)
+      .map((candidate) => candidate.totalCost));
+  }, [group, groups]);
+  const costGauge = Math.min(1, groupCost / dayMaxCost);
+
+  const [eventQueue, setEventQueue] = useState<Array<{ beat: SanctumEventBeat; key: number }>>([]);
+  const [eventNow, setEventNow] = useState(() => Date.now());
+  const eventSequenceRef = useRef(0);
+  const previousEventSnapshot = useRef<EventSnapshot | null>(null);
+  const eventContextRef = useRef(group?.id ?? null);
+  const enqueueBeats = useCallback((beats: SanctumEventBeat[]) => {
+    if (!beats.length) return;
+    setEventQueue((queue) => [...queue, ...beats.map((beat) => ({ beat, key: ++eventSequenceRef.current }))]);
+  }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setEventNow(Date.now()), 10_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const contextId = group?.id ?? null;
+    if (eventContextRef.current !== contextId) {
+      eventContextRef.current = contextId;
+      previousEventSnapshot.current = null;
+      setEventQueue([]);
+    }
+    const next = snapshotSessions(flatNodes.map((node) => node.session), selected, groupCost, contextId, eventNow);
+    enqueueBeats(diffEventSnapshots(previousEventSnapshot.current, next));
+    previousEventSnapshot.current = next;
+  }, [enqueueBeats, eventNow, flatNodes, group?.id, groupCost, selected]);
+
+  const activeEvent = eventQueue[0];
+  useEffect(() => {
+    if (!activeEvent) return;
+    const id = window.setTimeout(() => setEventQueue((queue) => queue.slice(1)), EVENT_DURATIONS[activeEvent.beat.type]);
+    return () => window.clearTimeout(id);
+  }, [activeEvent]);
+
+  // Dev rehearsal: 1 = portal arrival, 3 = ghost wisp + Eternal roar.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const rehearse = (event: KeyboardEvent) => {
+      if (event.key !== '1' && event.key !== '3') return;
+      const target = flatNodes[0]?.session.session_id;
+      enqueueBeats([{ type: event.key === '1' ? 'E1' : 'E3', ...(target ? { sessionId: target } : {}) }]);
+    };
+    window.addEventListener('keydown', rehearse);
+    return () => window.removeEventListener('keydown', rehearse);
+  }, [enqueueBeats, flatNodes]);
   // Eternal stats — cumulative across ALL sessions (not run group). Drives
-  // the Lich King's label + aura scale + ghost wisp count.
+  // The Eternal's label + aura scale + ghost wisp count.
   const eternal = useMemo(() => deriveEternal(sessions), [sessions]);
 
   // Selection handler — used by both the 3D Scene's onSelect prop and the
@@ -2981,7 +2201,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
         display: 'flex', flexDirection: 'column',
       }}>
         {/* Header */}
-        <div style={{
+        <div className="sanctum-hud-panel" style={{
           minHeight: 70,
           padding: '12px 22px', borderBottom: '1px solid rgba(219,184,94,.18)',
           display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
@@ -3002,7 +2222,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
               <Activity size={17} strokeWidth={1.8} />
             </div>
             <div>
-              <div style={{
+              <div className="sanctum-hud-title" style={{
                 fontFamily: '"Cinzel", serif', fontWeight: 700,
                 fontSize: 14, color: '#dfc16f',
                 letterSpacing: 4.2, textTransform: 'uppercase',
@@ -3128,7 +2348,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
             indistinguishable. Each row binds a session to its character
             class + identifier (branch tail or hash). Click a row to select
             that champion (same plumbing as clicking it in the 3D scene). */}
-        <div style={{
+        <div className="sanctum-hud-panel" style={{
           position: 'absolute', top: 118, left: 22, zIndex: 10,
           display: 'flex', flexDirection: 'column', gap: 4,
           width: 244, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto',
@@ -3200,7 +2420,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
         </div>
 
         {/* Controls hint */}
-        <div style={{
+        <div className="sanctum-hud-panel" style={{
           position: 'absolute', top: 118,
           right: selectedNode ? 292 : 22,
           zIndex: 10, pointerEvents: 'none', fontFamily: 'monospace',
@@ -3221,7 +2441,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
         {/* WebGL Canvas */}
         <div style={{ flex: '1 1 0', minHeight: 0, position: 'relative' }}>
           {/* Cinematic vignette: keeps the eye on the central plaza while
-              leaving the Lich King and far towers readable. Pure CSS overlay
+              leaving the Eternal and far towers readable. Pure CSS overlay
               with `pointer-events: none` so Canvas interaction stays intact. */}
           <div style={{
             position: 'absolute', inset: 0, zIndex: 5, pointerEvents: 'none',
@@ -3245,7 +2465,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                 across all bright sources. */}
             <color attach="background" args={['#160726']} />
             <fog attach="fog" args={['#1a0830', 28, 90]} />
-            <Stars radius={60} depth={20} count={1500} factor={2} fade speed={0.3} />
+            <Stars radius={60} depth={20} count={800} factor={2} fade speed={0.3} />
             <PerfReader statsRef={perfStatsRef} />
             <WebGLContextWatcher onContextLost={handleContextLost} onContextRestored={handleContextRestored} />
             <Suspense fallback={null}>
@@ -3261,6 +2481,8 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                   moveInputRef={moveInputRef}
                   cursorGroundRef={cursorGroundRef}
                   moveOrdersRef={moveOrdersRef}
+                  {...(activeEvent ? { eventBeat: activeEvent.beat, eventBeatKey: activeEvent.key } : {})}
+                  costGauge={costGauge}
                 />}
               </SceneErrorBoundary>
             </Suspense>
@@ -3274,9 +2496,21 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                 ~80% of what real bloom would add at zero risk. */}
           </Canvas>
 
+          {activeEvent && (
+            <div className="sanctum-hud-panel" style={{
+              position: 'absolute', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 22,
+              padding: '6px 12px', borderRadius: 8, pointerEvents: 'none', fontFamily: 'monospace',
+              color: activeEvent.beat.type === 'E3' ? PAL.cyan : PAL.gold,
+              background: 'rgba(8,5,20,.72)', border: '1px solid rgba(242,208,107,.20)',
+              backdropFilter: 'blur(14px)', letterSpacing: 1.4, fontSize: 10,
+            }}>
+              {activeEvent.beat.type} · {{ E1: 'PORTAL ARRIVAL', E2: 'VICTORY', E3: 'WISP ASCENSION', E4: 'SPEND PULSE', E5: 'CHAMPION FOCUS' }[activeEvent.beat.type]}
+            </div>
+          )}
+
           {/* Possession HUD — top-center chip while driving an agent */}
           {possessedId && possessionHint && (
-            <div style={{
+            <div className="sanctum-hud-panel" style={{
               position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
               zIndex: 25, fontFamily: 'monospace', fontSize: 10,
               background: 'rgba(10,6,18,.92)', border: '1px solid #f59e0b88',
@@ -3305,7 +2539,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
           {/* ── Perf HUD overlay (` key) ────────────────────────────────────── */}
           {hudVisible && (
-            <div style={{
+            <div className="sanctum-hud-panel" style={{
               position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
               zIndex: 30, fontFamily: 'monospace', fontSize: 10,
               background: 'rgba(4,2,12,.88)', border: '1px solid #c8a85544',
@@ -3340,7 +2574,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
           {/* ── Error / context-lost warning badge ──────────────────────────── */}
           {(errorCount > 0 || contextLost) && (
-            <div style={{
+            <div className="sanctum-hud-panel" style={{
               position: 'absolute', bottom: 130, right: 12, zIndex: 30,
               fontFamily: 'monospace', fontSize: 9,
               background: 'rgba(239,68,68,.12)', border: '1px solid #ef444455',

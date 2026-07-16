@@ -39,14 +39,14 @@ export interface SunBinding {
 }
 
 const TIER_PALETTE: Record<ModelTier, {
-  core: string; inner: string; halo: string; corona: string; ray: string; label: string;
+  core: string; halo: string; corona: string; ray: string; label: string;
 }> = {
-  haiku:   { core: '#fff8d0', inner: '#fffbe8', halo: '#ffe89a', corona: '#ffd060', ray: '#ffe5a0', label: 'HAIKU'   },
-  sonnet:  { core: '#ffd97a', inner: '#fff4c4', halo: '#ffb84a', corona: '#f59e0b', ray: '#ffcb6a', label: 'SONNET'  },
-  opus:    { core: '#ff9a3c', inner: '#ffc880', halo: '#ff7a20', corona: '#d65010', ray: '#ff8c40', label: 'OPUS'    },
-  codex:   { core: '#a0d8ff', inner: '#d8eeff', halo: '#70b8ff', corona: '#3a8cd0', ray: '#a0c8ff', label: 'CODEX'   },
-  mixed:   { core: '#e0c0ff', inner: '#f0e0ff', halo: '#b890ff', corona: '#8060d0', ray: '#c0a0ff', label: 'MIXED'   },
-  unknown: { core: '#cccccc', inner: '#eeeeee', halo: '#999999', corona: '#666666', ray: '#bbbbbb', label: '—'       },
+  haiku:   { core: '#fff8d0', halo: '#ffe89a', corona: '#ffd060', ray: '#ffe5a0', label: 'HAIKU'   },
+  sonnet:  { core: '#ffd97a', halo: '#ffb84a', corona: '#f59e0b', ray: '#ffcb6a', label: 'SONNET'  },
+  opus:    { core: '#ff9a3c', halo: '#ff7a20', corona: '#d65010', ray: '#ff8c40', label: 'OPUS'    },
+  codex:   { core: '#a0d8ff', halo: '#70b8ff', corona: '#3a8cd0', ray: '#a0c8ff', label: 'CODEX'   },
+  mixed:   { core: '#e0c0ff', halo: '#b890ff', corona: '#8060d0', ray: '#c0a0ff', label: 'MIXED'   },
+  unknown: { core: '#cccccc', halo: '#999999', corona: '#666666', ray: '#bbbbbb', label: '—'       },
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -229,9 +229,9 @@ export function ClaudeSun({ binding, selected, onClick }: {
 
   const palette  = TIER_PALETTE[binding.modelTier];
   const eclipsed = binding.eclipsed;
-  // Eclipse dims everything to ~12%. Otherwise: 0.55 baseline + up to 0.45 from
+  // Eclipse dims everything to 6%. Otherwise: 0.55 baseline + up to 0.45 from
   // load factor — even an idle Sanctum reads as "API is awake."
-  const brightness = eclipsed ? 0.12 : (0.55 + binding.loadFactor * 0.45);
+  const brightness = eclipsed ? 0.06 : (0.55 + binding.loadFactor * 0.45);
 
   const rayGeom = useMemo(() => new THREE.PlaneGeometry(0.6, 6), []);
   const rayMats = useMemo(
@@ -287,34 +287,16 @@ export function ClaudeSun({ binding, selected, onClick }: {
         <sphereGeometry args={[1.2, 24, 24]} />
         <meshBasicMaterial color={palette.core} transparent opacity={0.95} fog={false} />
       </mesh>
-      {/* Inner hot core */}
-      <mesh>
-        <sphereGeometry args={[0.75, 16, 16]} />
-        <meshBasicMaterial color={palette.inner} transparent opacity={1} fog={false} />
-      </mesh>
       {/* Soft halo */}
       <mesh ref={haloRef}>
         <sphereGeometry args={[1.8, 24, 24]} />
         <meshBasicMaterial color={palette.halo} transparent opacity={0.30}
           blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
       </mesh>
-      {/* Outer corona */}
+      {/* Wide corona */}
       <mesh ref={halo2Ref}>
-        <sphereGeometry args={[2.6, 24, 24]} />
-        <meshBasicMaterial color={palette.corona} transparent opacity={0.14}
-          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
-      </mesh>
-      {/* Dalaran D5 — wide bloom-fake corona. Very low opacity additive
-          sphere at 2× the corona radius. No animation; sits steady so the
-          sun reads as bloomed without postprocessing. */}
-      <mesh>
-        <sphereGeometry args={[5.0, 16, 16]} />
-        <meshBasicMaterial color={palette.halo} transparent opacity={0.05}
-          blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
-      </mesh>
-      <mesh>
-        <sphereGeometry args={[7.5, 16, 16]} />
-        <meshBasicMaterial color={palette.core} transparent opacity={0.025}
+        <sphereGeometry args={[4.2, 20, 20]} />
+        <meshBasicMaterial color={palette.corona} transparent opacity={0.10}
           blending={THREE.AdditiveBlending} depthWrite={false} fog={false} />
       </mesh>
       {/* Selection ring — visible only when the sun is the active selection */}

@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "test:sync": "node --test sync/__tests__/*.test.mjs",
+    "test:companion": "node --test src/companion-v2/__tests__/*.test.mjs",
+    "test:sanctum": "node --test src/pages/sanctum/__tests__/*.test.mjs",
     "test:e2e": "playwright test",
     "loop:capture": "node sync/loop-capture.mjs",
     "loop:propose": "node sync/loop-propose.mjs",

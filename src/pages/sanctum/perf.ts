@@ -14,7 +14,7 @@
 //                                black-screening the page.
 //
 // All four were defined inline in ScryingSanctum.tsx; pulling them here lets
-// the env / champion / Sun / Lich King sub-modules import what they need
+// the env / champion / Sun / Eternal sub-modules import what they need
 // without dragging the 5500-line page file in.
 
 import { Component, createContext, useContext, useEffect, useRef, type ReactNode } from 'react';

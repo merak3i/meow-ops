@@ -76,7 +76,7 @@ export function Minimap({ livePosMap, nodes, selectedId }: {
   }, [livePosMap, nodes, selectedId]);
 
   return (
-    <canvas ref={canvasRef} width={SIZE} height={SIZE} style={{
+    <canvas className="sanctum-hud-panel sanctum-hud-round" ref={canvasRef} width={SIZE} height={SIZE} style={{
       position: 'absolute', bottom: 12, right: 12, zIndex: 10,
       width: SIZE, height: SIZE, borderRadius: '50%',
       border: '1px solid #c8a85522', pointerEvents: 'none',

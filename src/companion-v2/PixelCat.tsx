@@ -9,23 +9,30 @@
 import { useEffect, useRef } from 'react';
 
 import {
-  PALETTE,
   charToPaletteIndex,
   computeCatLayout,
   spriteForState,
   type Sprite,
 } from './sprites';
+import { applyBreedPattern, buildBreedPalette } from './breed-renderer';
+import { getBreed } from '@/lib/companion-breeds';
 import type { CompanionState } from '@/state/companionMachine';
+import type { CompanionPose, TailState } from './pose-renderer.js';
 
 interface PixelCatProps {
   state: CompanionState;
+  /** Saved companion breed key. Unknown keys safely fall back to tabby. */
+  breed: string;
+  /** Optional body-pose override used by actions and the dev pose cycler. */
+  pose?: CompanionPose;
+  tailState?: TailState;
   /** Optional click handler — fires when the user clicks on any opaque pixel. */
   onClick?: () => void;
   /** Soft floor shadow under the cat. Defaults to true. */
   showShadow?: boolean;
 }
 
-export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
+export function PixelCat({ state, breed, pose, tailState, onClick, showShadow = true }: PixelCatProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef    = useRef<HTMLCanvasElement | null>(null);
 
@@ -35,6 +42,8 @@ export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
     if (!canvas || !container) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    const breedData = getBreed(breed);
+    const palette = buildBreedPalette(breedData);
 
     // Geometry recomputed on resize and reused across rAF ticks.
     let cw = 0, ch = 0;
@@ -67,7 +76,22 @@ export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
       lastFrameIdx = -1;
     };
 
-    const drawSprite = (sprite: Sprite): void => {
+    const drawLayer = (sprite: Sprite): void => {
+      for (let y = 0; y < sprite.length; y++) {
+        const row = sprite[y];
+        if (!row) continue;
+        for (let x = 0; x < row.length; x++) {
+          const c = row[x];
+          if (!c) continue;
+          const idx = charToPaletteIndex(c);
+          if (idx === 0) continue;
+          ctx.fillStyle = palette[idx]!;
+          ctx.fillRect(offsetX + x * blockPx, offsetY + y * blockPx, blockPx, blockPx);
+        }
+      }
+    };
+
+    const drawSprite = (sprite: Sprite, tail: Sprite): void => {
       ctx.clearRect(0, 0, cw, ch);
 
       // Faint horizon line — gives the cat a place to be instead of floating
@@ -98,19 +122,8 @@ export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
         ctx.restore();
       }
 
-      // Paint the sprite, one block per source pixel.
-      for (let y = 0; y < sprite.length; y++) {
-        const row = sprite[y];
-        if (!row) continue;
-        for (let x = 0; x < row.length; x++) {
-          const c = row[x];
-          if (!c) continue;
-          const idx = charToPaletteIndex(c);
-          if (idx === 0) continue;
-          ctx.fillStyle = PALETTE[idx]!;
-          ctx.fillRect(offsetX + x * blockPx, offsetY + y * blockPx, blockPx, blockPx);
-        }
-      }
+      drawLayer(applyBreedPattern(tail, breedData));
+      drawLayer(applyBreedPattern(sprite, breedData));
     };
 
     measure();
@@ -120,10 +133,10 @@ export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
 
     const tick = (now: number): void => {
       const elapsedMs = now - startTime;
-      const { frameIdx, sprite } = spriteForState(state, elapsedMs);
+      const { frameIdx, sprite, tail } = spriteForState(state, elapsedMs, pose, tailState);
       if (frameIdx !== lastFrameIdx) {
         lastFrameIdx = frameIdx;
-        drawSprite(sprite);
+        drawSprite(sprite, tail);
       }
       rafId = requestAnimationFrame(tick);
     };
@@ -136,7 +149,7 @@ export function PixelCat({ state, onClick, showShadow = true }: PixelCatProps) {
       cancelAnimationFrame(rafId);
       ro.disconnect();
     };
-  }, [state, showShadow]);
+  }, [state, breed, pose, tailState, showShadow]);
 
   return (
     <div

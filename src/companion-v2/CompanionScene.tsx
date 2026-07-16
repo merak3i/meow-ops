@@ -8,10 +8,24 @@
 
 import { PixelCat }        from './PixelCat';
 import { ParticleOverlay } from './ParticleOverlay';
+import { buildRoomVisual } from './room-renderer.js';
 import type { CompanionState } from '@/state/companionMachine';
+import type { CSSProperties } from 'react';
+import type { CompanionPose, TailState } from './pose-renderer.js';
 
 interface CompanionSceneProps {
   state:     CompanionState;
+  /** Saved companion breed key, forwarded to the pixel compositor. */
+  breed:     string;
+  /** Saved room key, used for tier furniture and palette. */
+  room:      string;
+  /** Optional body pose supplied by the dev cycler or action queue. */
+  pose?:      CompanionPose;
+  tailState?: TailState;
+  /** Horizontal action-stage offset, expressed as viewport percentage. */
+  catOffset?: number;
+  /** Live work beat: illuminate the room desk while the cat pairs. */
+  deskActive?: boolean;
   /** Most recent effect type, e.g. 'feed' / 'pet'. Empty string disables. */
   effect:    string;
   /** Counter the parent bumps to retrigger the same effect. */
@@ -81,8 +95,40 @@ const STATE_SCENES: Record<CompanionState, ScenePalette> = {
   },
 };
 
-export function CompanionScene({ state, effect, effectKey, onCatClick }: CompanionSceneProps) {
+const ROOM_PROP_LAYOUTS: Record<string, CSSProperties> = {
+  mat:           { left: '36%', bottom: '12%', width: '28%', height: 42, borderRadius: '50%' },
+  crate:         { left: '10%', bottom: '17%', width: 64, height: 52, borderRadius: 4 },
+  cushion:       { left: '34%', bottom: '12%', width: '32%', height: 58, borderRadius: '50%' },
+  tapestry:      { right: '12%', top: '14%', width: 74, height: 116, borderRadius: '36px 36px 5px 5px' },
+  'snow-window': { left: '11%', top: '14%', width: 104, height: 128, borderRadius: '52px 52px 8px 8px' },
+  'wood-stove':  { right: '12%', bottom: '25%', width: 72, height: 92, borderRadius: '35px 35px 6px 6px' },
+  mushrooms:     { left: '12%', bottom: '20%', width: 88, height: 34, borderRadius: '50% 50% 30% 30%' },
+  fireflies:     { right: '16%', top: '24%', width: 86, height: 86, borderRadius: '50%' },
+  banner:        { left: '13%', top: '12%', width: 62, height: 132, clipPath: 'polygon(0 0,100% 0,100% 82%,50% 100%,0 82%)' },
+  'stone-bench': { right: '10%', bottom: '22%', width: 126, height: 34, borderRadius: 5 },
+  throne:        { right: '11%', bottom: '20%', width: 118, height: 158, clipPath: 'polygon(12% 0,88% 0,100% 100%,0 100%)' },
+  braziers:      { left: '12%', bottom: '22%', width: 70, height: 70, borderRadius: '50% 50% 18% 18%' },
+};
+
+function RoomSignatureProps({ props, accent, highlight }: {
+  props: string[]; accent: string; highlight: string;
+}) {
+  return <>{props.map((prop, index) => (
+    <div key={prop} aria-hidden="true" data-room-prop={prop} style={{
+      position: 'absolute',
+      ...ROOM_PROP_LAYOUTS[prop],
+      background: `linear-gradient(145deg, ${highlight}, ${accent})`,
+      border: `1px solid color-mix(in oklab, ${highlight} 45%, transparent)`,
+      boxShadow: `0 10px 26px color-mix(in oklab, ${accent} 34%, transparent)`,
+      opacity: index === 0 ? 0.48 : 0.34,
+    }}
+    />
+  ))}</>;
+}
+
+export function CompanionScene({ state, breed, room, pose, tailState, catOffset = 0, deskActive = false, effect, effectKey, onCatClick }: CompanionSceneProps) {
   const scene = STATE_SCENES[state] ?? STATE_SCENES.idle;
+  const roomVisual = buildRoomVisual(room);
   const catClickProps = onCatClick ? { onClick: onCatClick } : {};
 
   return (
@@ -92,7 +138,7 @@ export function CompanionScene({ state, effect, effectKey, onCatClick }: Compani
         height:   '100%',
         position: 'relative',
         overflow: 'hidden',
-        background: scene.backdrop,
+        background: roomVisual.backdrop,
         transition: 'background 1.2s var(--ease, ease)',
       }}
     >
@@ -103,10 +149,18 @@ export function CompanionScene({ state, effect, effectKey, onCatClick }: Compani
           inset: 0,
           background: `
             radial-gradient(circle at 50% 53%, ${scene.glow} 0%, transparent 27%),
+            linear-gradient(180deg, ${scene.wall} 0%, transparent 42%),
             linear-gradient(180deg, transparent 0%, transparent 55%, ${scene.floor} 55%, ${scene.floor} 100%)
           `,
         }}
       />
+      <div aria-hidden="true" style={{
+        position: 'absolute', inset: 0,
+        background: roomVisual.time.tint,
+        opacity: roomVisual.time.strength,
+        mixBlendMode: 'soft-light',
+        pointerEvents: 'none',
+      }} />
       <div
         aria-hidden="true"
         style={{
@@ -115,11 +169,15 @@ export function CompanionScene({ state, effect, effectKey, onCatClick }: Compani
           right: '8%',
           top: '10%',
           height: '52%',
-          border: `1px solid color-mix(in oklab, ${scene.accent} 24%, transparent)`,
+          borderWidth: 1,
+          borderStyle: 'solid',
+          borderTopColor: `color-mix(in oklab, ${scene.accent} 24%, transparent)`,
+          borderRightColor: `color-mix(in oklab, ${scene.accent} 24%, transparent)`,
           borderBottomColor: 'rgba(255,255,255,.04)',
+          borderLeftColor: `color-mix(in oklab, ${scene.accent} 24%, transparent)`,
           borderRadius: 10,
           background: `
-            linear-gradient(135deg, ${scene.wall}, transparent 70%),
+            linear-gradient(135deg, color-mix(in oklab, ${roomVisual.palette.accent} 64%, ${scene.wall}), transparent 70%),
             repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 42px)
           `,
           boxShadow: `0 0 42px ${scene.glow} inset`,
@@ -191,7 +249,34 @@ export function CompanionScene({ state, effect, effectKey, onCatClick }: Compani
           maskImage: 'linear-gradient(180deg, rgba(0,0,0,.45), rgba(0,0,0,.08))',
         }}
       />
-      <PixelCat state={state} {...catClickProps} />
+      <RoomSignatureProps props={roomVisual.props}
+        accent={roomVisual.palette.accent} highlight={roomVisual.palette.highlight} />
+      <div aria-hidden="true" style={{ position: 'absolute', left: '31%', bottom: '17%', width: 64, height: 22,
+        borderRadius: '12px 12px 24px 24px', background: 'linear-gradient(180deg,#d49b4c,#6d431e)',
+        border: '2px solid rgba(255,220,150,.34)', boxShadow: '0 8px 18px rgba(0,0,0,.42)' }} />
+      <div aria-hidden="true" style={{
+        position: 'absolute', right: '10%', bottom: '20%', width: '27%', height: 104,
+        borderRadius: 8, background: 'linear-gradient(180deg, rgba(24,22,31,.96), rgba(10,8,14,.96))',
+        border: `1px solid color-mix(in oklab, ${scene.accent} 32%, transparent)`,
+        boxShadow: deskActive ? `0 0 44px ${scene.glow}, 0 12px 30px rgba(0,0,0,.5)` : '0 12px 30px rgba(0,0,0,.5)',
+        opacity: deskActive ? .94 : .52, transition: 'opacity .4s ease, box-shadow .4s ease',
+      }}>
+        <div style={{ position: 'absolute', left: '16%', right: '16%', top: 12, height: 52,
+          borderRadius: 5, background: deskActive ? scene.window : '#111018',
+          boxShadow: deskActive ? `0 0 24px ${scene.window}` : 'none', transition: 'all .4s ease' }} />
+        <div style={{ position: 'absolute', left: '-8%', right: '-8%', bottom: -8, height: 14,
+          borderRadius: 4, background: '#241a16' }} />
+      </div>
+      <div style={{ position: 'absolute', inset: 0, transform: `translateX(${catOffset}%)`,
+        transition: 'transform 320ms cubic-bezier(.2,.8,.2,1)' }}>
+        <PixelCat
+          state={state}
+          breed={breed}
+          {...(pose ? { pose } : {})}
+          {...(tailState ? { tailState } : {})}
+          {...catClickProps}
+        />
+      </div>
       <ParticleOverlay effect={effect} effectKey={effectKey} />
       <div
         aria-hidden="true"

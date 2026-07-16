@@ -18,6 +18,11 @@ import { buildDeveloperProfile }                    from '@/analytics/profile';
 import type { Session }        from '@/types/session';
 import type { CompanionState } from '@/state/companionMachine';
 import type { MemoryMark }     from './useCompanionGame';
+import { COMPANION_POSES, type CompanionPose } from './pose-renderer.js';
+import {
+  enqueueAction, frameAt, scheduleBehavior,
+  type ActionFrame, type CompanionAction,
+} from './action-scheduler.js';
 import './companion-page.css';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -143,6 +148,44 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   }, []);
 
   const game    = useCompanionGame(sessions);
+  const [actionFrames, setActionFrames] = useState<ActionFrame[]>([]);
+  const [actionNow, setActionNow] = useState(() => Date.now());
+  const [behaviorTick, setBehaviorTick] = useState(0);
+  const lastScheduledRef = useRef(0);
+  const queueAction = useCallback((action: CompanionAction) => {
+    const now = Date.now();
+    setActionNow(now);
+    setActionFrames((queue) => enqueueAction(queue, action, now));
+  }, []);
+  useEffect(() => {
+    if (!actionFrames.length) return;
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      setActionNow(now);
+      setActionFrames((queue) => queue.some((frame) => frame.end > now) ? queue : []);
+    }, 120);
+    return () => window.clearInterval(id);
+  }, [actionFrames.length]);
+  useEffect(() => {
+    const id = window.setInterval(() => setBehaviorTick((tick) => tick + 1), 12_000);
+    return () => window.clearInterval(id);
+  }, []);
+  const activeAction = frameAt(actionFrames, actionNow);
+  const hasLiveSession = sessions.some((session) => {
+    const age = Date.now() - Date.parse(session.ended_at);
+    return !session.is_ghost && age >= 0 && age < 120_000;
+  });
+  useEffect(() => {
+    const now = Date.now();
+    if (activeAction || now - lastScheduledRef.current < 12_000) return;
+    const behavior = scheduleBehavior({
+      hunger: game.cat?.stats.hunger ?? 100,
+      hasLiveSession,
+    });
+    if (!behavior) return;
+    lastScheduledRef.current = now;
+    queueAction(behavior);
+  }, [behaviorTick, activeAction, game.cat?.stats.hunger, hasLiveSession, queueAction]);
   // Profile walks every session — memoise against the array reference so we
   // don't redo the walk on unrelated re-renders (cursor moves, tick events).
   const profile = useMemo(() => buildDeveloperProfile(sessions), [sessions]);
@@ -293,29 +336,38 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
   const ctx          = actorRef.context;
   const morph        = profile.morph_weights;
 
-  // Dev-only state cycler — press [ / ] to walk through every CompanionState
-  // so you can eyeball each pose. Press \ to clear the override. STATE_CYCLE
-  // is defined at module scope above.
+  // Dev-only matrix cycler: [ advances emotional states, ] advances poses,
+  // and \ returns both axes to live behavior.
   const [debugState, setDebugState] = useState<CompanionState | null>(null);
+  const [debugPose, setDebugPose] = useState<CompanionPose | null>(null);
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (e.key === '[' || e.key === ']') {
+      if (e.key === '[') {
         setDebugState((prev) => {
           const i = prev ? STATE_CYCLE.indexOf(prev) : -1;
-          const dir = e.key === ']' ? 1 : -1;
-          const next = (i + dir + STATE_CYCLE.length) % STATE_CYCLE.length;
+          const next = (i + 1) % STATE_CYCLE.length;
           return STATE_CYCLE[next] ?? null;
+        });
+      } else if (e.key === ']') {
+        setDebugPose((prev) => {
+          const i = prev ? COMPANION_POSES.indexOf(prev) : -1;
+          return COMPANION_POSES[(i + 1) % COMPANION_POSES.length] ?? null;
         });
       } else if (e.key === '\\') {
         setDebugState(null);
+        setDebugPose(null);
+      } else if (e.key === '4') {
+        queueAction('hungry');
+      } else if (e.key === '5') {
+        queueAction('session');
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [queueAction]);
 
   const currentState: CompanionState = debugState ?? machineState;
 
@@ -373,7 +425,7 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
         open={game.drawers.foodOpen}
         onClose={() => game.drawers.setFoodOpen(false)}
         cat={game.cat}
-        onFeed={(key) => { game.actions.feed(key); triggerEffect('feed'); }}
+        onFeed={(key) => { game.actions.feed(key); triggerEffect('feed'); queueAction('feed'); }}
       />
       <WardrobeDrawer
         open={game.drawers.wardrobeOpen}
@@ -421,23 +473,6 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             </div>
           </div>
 
-          <div className="companion-page__kpis">
-            <div className="companion-kpi">
-              <HeartPulse size={14} />
-              <span>Care</span>
-              <strong>{game.cat ? careScore : 'New'}</strong>
-            </div>
-            <div className="companion-kpi">
-              <Flame size={14} />
-              <span>Streak</span>
-              <strong>{game.cat?.streakDays ?? profile.active_streak_days}d</strong>
-            </div>
-            <div className="companion-kpi">
-              <Sparkles size={14} />
-              <span>Together</span>
-              <strong>{game.cat ? `${daysTogether}d` : `${profile.total_sessions} runs`}</strong>
-            </div>
-          </div>
         </header>
 
         <div className="companion-layout">
@@ -457,18 +492,27 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
         >
           <CompanionScene
             state={currentState}
+            breed={game.cat?.breed ?? 'tabby'}
+            room={game.cat?.room?.key ?? 'corner_mat'}
+            {...((debugPose ?? activeAction?.pose) ? { pose: (debugPose ?? activeAction?.pose)! } : {})}
+            {...(activeAction?.tailState ? { tailState: activeAction.tailState } : {})}
+            catOffset={activeAction?.offset ?? 0}
+            deskActive={activeAction?.action === 'session'}
             effect={effectTrigger.type}
             effectKey={effectTrigger.key}
-            onCatClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); }}
+            onCatClick={() => { send({ type: 'PET' }); triggerEffect('pet'); game.actions.play(); queueAction('play'); }}
           />
 
           {/* State badge overlay */}
           <div className="companion-state-badge">
             <span style={{ fontSize: 16 }}>{stateEmoji(currentState)}</span>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{stateLabel(currentState)}</span>
-            {debugState && (
+            {activeAction && (
+              <span style={{ fontSize: 10, color: 'var(--amber)', letterSpacing: .6 }}>{activeAction.label}</span>
+            )}
+            {(debugState || debugPose) && (
               <span style={{ fontSize: 10, color: '#f5c518', letterSpacing: 1, marginLeft: 4 }}>
-                DBG [ ]
+                DBG {debugState ?? currentState} · {debugPose ?? 'auto'}
               </span>
             )}
           </div>
@@ -498,6 +542,26 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
         {/* ── Right sidebar ────────────────────────────────────────────────── */}
         <div className="companion-sidebar">
 
+          {/* Care cluster lives with the care controls. This removes the
+              duplicate streak row from analytics without removing data. */}
+          <div className="companion-page__kpis" aria-label="Companion care summary">
+            <div className="companion-kpi">
+              <HeartPulse size={14} />
+              <span>Care</span>
+              <strong>{game.cat ? careScore : 'New'}</strong>
+            </div>
+            <div className="companion-kpi">
+              <Flame size={14} />
+              <span>Streak</span>
+              <strong>{game.cat?.streakDays ?? profile.active_streak_days}d</strong>
+            </div>
+            <div className="companion-kpi">
+              <Sparkles size={14} />
+              <span>Together</span>
+              <strong>{game.cat ? `${daysTogether}d` : `${profile.total_sessions} runs`}</strong>
+            </div>
+          </div>
+
           {/* Game stats — only if a cat is alive */}
           {game.cat && game.cat.status === 'alive' && (
             <StatsPanel
@@ -505,9 +569,9 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
               mood={game.mood}
               drawers={game.drawers}
               trait={game.trait}
-              onPlay={() => { game.actions.play(); triggerEffect('play'); }}
-              onGroom={() => { game.actions.groom(); triggerEffect('groom'); }}
-              onSleep={() => { game.actions.sleep(); triggerEffect('sleep'); }}
+              onPlay={() => { game.actions.play(); triggerEffect('play'); queueAction('play'); }}
+              onGroom={() => { game.actions.groom(); triggerEffect('groom'); queueAction('groom'); }}
+              onSleep={() => { game.actions.sleep(); triggerEffect('sleep'); queueAction('sleep'); }}
               onShare={handleShare}
             />
           )}
@@ -545,10 +609,6 @@ export default function CompanionPageV2({ sessions }: CompanionPageV2Props) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Avg TPM</span>
               <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-secondary)' }}>{profile.avg_tokens_per_minute.toFixed(0)}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Streak</span>
-              <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-secondary)' }}>{profile.active_streak_days}d</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '4px 0' }}>
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Pets given</span>

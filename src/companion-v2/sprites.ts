@@ -7,6 +7,13 @@
 // per-frame durations). The renderer picks a frame based on elapsed time.
 
 import type { CompanionState } from '@/state/companionMachine';
+import {
+  buildPoseSprite,
+  buildTailSprite,
+  poseForState,
+  tailForState,
+  type CompanionPose, type TailState,
+} from './pose-renderer.js';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
 // Index 0 = transparent. Indices 1+ = CSS color strings.
@@ -32,7 +39,8 @@ const CHAR_MAP: Record<string, number> = {
 
 export type Sprite = readonly string[];
 
-export const SPRITE_SIZE = 32;
+const AUTHOR_SPRITE_SIZE = 32;
+export const SPRITE_SIZE = 48;
 
 /** Resolve a single character to a palette index (0 if unknown). */
 export function charToPaletteIndex(ch: string): number {
@@ -377,7 +385,9 @@ function pickEyeFrame(
 export function spriteForState(
   state: CompanionState,
   elapsedMs = 0,
-): { frameIdx: number; sprite: Sprite } {
+  pose?: CompanionPose,
+  tailState?: TailState,
+): { frameIdx: number; sprite: Sprite; tail: Sprite } {
   const { idx, frame } = pickEyeFrame(state, elapsedMs);
   const ears = EARS_BY_STATE[state] ?? EARS_ALERT;
   const out = BASE_BODY.slice();
@@ -388,20 +398,26 @@ export function spriteForState(
   out[9]  = frame.row9;
   out[10] = frame.row10;
   out[13] = frame.row13;
-  return { frameIdx: idx, sprite: out };
+  const tailFrame = Math.floor(elapsedMs / 280) % 8;
+  const microFrame = Math.floor(elapsedMs / 800) % 4;
+  return {
+    frameIdx: idx * 100 + tailFrame * 4 + microFrame,
+    sprite: buildPoseSprite(out, pose ?? poseForState(state), elapsedMs),
+    tail: buildTailSprite(tailState ?? tailForState(state), tailFrame),
+  };
 }
 
 // ─── Sanity check ─────────────────────────────────────────────────────────────
 // Surface sprite-sizing errors early instead of silent half-drawn pixel art.
 if (import.meta.env.DEV) {
   const checkRow = (label: string, row: string): void => {
-    if (row.length !== SPRITE_SIZE) {
-      console.warn(`[sprites] ${label} has ${row.length} chars, expected ${SPRITE_SIZE}: "${row}"`);
+    if (row.length !== AUTHOR_SPRITE_SIZE) {
+      console.warn(`[sprites] ${label} has ${row.length} chars, expected ${AUTHOR_SPRITE_SIZE}: "${row}"`);
     }
   };
 
-  if (BASE_BODY.length !== SPRITE_SIZE) {
-    console.warn(`[sprites] BASE_BODY has ${BASE_BODY.length} rows, expected ${SPRITE_SIZE}`);
+  if (BASE_BODY.length !== AUTHOR_SPRITE_SIZE) {
+    console.warn(`[sprites] BASE_BODY has ${BASE_BODY.length} rows, expected ${AUTHOR_SPRITE_SIZE}`);
   }
   BASE_BODY.forEach((row, i) => checkRow(`BASE_BODY[${i}]`, row));
 
