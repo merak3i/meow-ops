@@ -112,4 +112,5 @@ The answer badge adds more context: **Verified**, **Needs teaching**, **Hypothes
 - Feature phases complete through Companion Project Intelligence Phase 3C.
 - Companion Project Intelligence release: [#57](https://github.com/merak3i/meow-ops/pull/57)
 - Complete session archive and all-time reporting release: [#59](https://github.com/merak3i/meow-ops/pull/59)
+- Companion SOP validation and evidence-label alignment: [#60](https://github.com/merak3i/meow-ops/pull/60)
 - Production: [meow-ops.vercel.app](https://meow-ops.vercel.app)
