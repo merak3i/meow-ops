@@ -5,7 +5,8 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import http from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -29,11 +30,22 @@ const SPEC_PRESENT = existsSync(join(ROOT, 'public', 'data', 'loop-ops', 'spec.j
 const WORKBOOK = process.env.LOOP_OPS_SPEC || '';
 
 let server;
+let ledgerDir;
 
 before(async () => {
+  ledgerDir = mkdtempSync(join(tmpdir(), 'meow-loop-api-'));
+  writeFileSync(join(ledgerDir, 'runs.jsonl'), `${JSON.stringify({
+    run_id: 'run-api-fixture',
+    loop_id: 'meow-ops-dev',
+    captured_at: '2026-07-16T12:00:00.000Z',
+    sources: ['codex'],
+    session_ids: ['session-api'],
+    metrics: { sessions: 1, duration_seconds: 2, total_tokens: 150, cost_usd_real: 1.5, message_count: 2, tool_error_count: 0 },
+    schema_version: 1,
+  })}\n`, 'utf8');
   server = spawn('node', [join(ROOT, 'sync', 'local-api.mjs')], {
     cwd: ROOT,
-    env: { ...process.env, MEOW_LOCAL_API_PORT: String(PORT) },
+    env: { ...process.env, MEOW_LOCAL_API_PORT: String(PORT), MEOW_LOOP_DIR: ledgerDir },
     stdio: 'pipe',
   });
   // Wait for the listener — poll instead of trusting startup logs.
@@ -48,7 +60,10 @@ before(async () => {
   throw new Error('local-api did not start on test port');
 });
 
-after(() => { server?.kill(); });
+after(() => {
+  server?.kill();
+  rmSync(ledgerDir, { recursive: true, force: true });
+});
 
 test('GET /loop-ops/status reports files and the writes-disabled invariant', async () => {
   const res = await fetch(`${BASE}/loop-ops/status`);
@@ -73,11 +88,13 @@ test('GET /loop-ops/spec 404s with guidance when the file is absent', { skip: SP
   assert.match((await res.json()).error, /loop-ops\/sync/);
 });
 
-test('GET /loop-ops/runs returns [] when no runs are recorded', async () => {
+test('GET /loop-ops/runs serves transformed local ledger runs when runs.json is absent', async () => {
   const res = await fetch(`${BASE}/loop-ops/runs`);
   assert.equal(res.status, 200);
   const runs = await res.json();
-  assert.ok(Array.isArray(runs));
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0].id, 'run-api-fixture');
+  assert.equal(runs[0].cost.usd, 1.5);
 });
 
 test('unknown loop-ops path still 404s', async () => {

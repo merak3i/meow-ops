@@ -39,6 +39,7 @@ import {
   recordPreferenceDecision,
 } from './companion-preferences.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
+import { readLedgerLoopRuns } from './loop-ledger-to-runs.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -785,7 +786,7 @@ const server = createServer(async (req, res) => {
       res.end(readFileSync(join(LOOP_OPS_DIR, file), 'utf8'));
     } catch {
       if (path === '/loop-ops/runs') {
-        res.end('[]');
+        res.end(JSON.stringify(readLedgerLoopRuns()));
       } else {
         res.statusCode = 404;
         res.end(JSON.stringify({ ok: false, error: 'spec.json not found - POST /loop-ops/sync to import a Loop Ops workbook' }));

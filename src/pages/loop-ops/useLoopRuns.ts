@@ -6,25 +6,10 @@ import { useEffect, useState } from 'react';
 import { fetchLoopRuns, fetchSessionCosts } from './api';
 import type { SessionCost } from './api';
 import type { LoopRun } from './types';
+import { isValidLoopRun } from './run-validation.mjs';
 
 export interface EnrichedRun extends LoopRun {
   joined: SessionCost | null;
-}
-
-const RUN_STATES = ['planned', 'running', 'passed', 'failed', 'stopped'];
-
-function isValidRun(value: unknown): value is LoopRun {
-  if (typeof value !== 'object' || value === null) return false;
-  const r = value as Partial<LoopRun>;
-  return typeof r.id === 'string'
-    && typeof r.goal === 'string'
-    && RUN_STATES.includes(r.state as string)
-    && typeof r.startedAt === 'string'
-    && Array.isArray(r.entityIds)
-    && Array.isArray(r.sessionIds)
-    && Array.isArray(r.artifacts)
-    && Array.isArray(r.verified)
-    && Array.isArray(r.notVerified);
 }
 
 export function useLoopRuns(): { runs: EnrichedRun[]; loading: boolean } {
@@ -36,7 +21,7 @@ export function useLoopRuns(): { runs: EnrichedRun[]; loading: boolean } {
     (async () => {
       try {
         const raw = await fetchLoopRuns();
-        const valid = Array.isArray(raw) ? raw.filter(isValidRun) : [];
+        const valid = Array.isArray(raw) ? raw.filter(isValidLoopRun) : [];
         const allIds = [...new Set(valid.flatMap((r) => r.sessionIds))];
         const costs = await fetchSessionCosts(allIds);
         if (cancelled) return;

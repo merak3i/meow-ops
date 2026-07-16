@@ -593,6 +593,51 @@ test('Loop Ops: run timeline renders a recorded run with joined session cost', a
   await expect(timeline.locator('text=/not verified:/').first()).toBeVisible();
 });
 
+test('Loop Ops: ledger-backed run timeline shows real cost and operator details', async ({ page }) => {
+  const entity = (id: string, kind: 'coordinator' | 'director' | 'assistant', group: string | null, wave: number | null) => ({
+    id, kind, label: id, group, surfaceKey: kind === 'assistant' ? id : null,
+    archetype: null, riskClass: null, wave, status: 'passed', sources: [], repoLinks: [],
+    allowedActions: [], detail: {},
+  });
+  const spec = {
+    meta: {
+      specVersion: 1, generatedBy: 'e2e', generatedAt: '2026-07-16T12:00:00.000Z',
+      masterSpec: 'fixture', entityCount: 6, assistantCount: 1,
+      productionWritesEnabled: false, links: {},
+    },
+    entities: [
+      entity('coordinator', 'coordinator', null, null),
+      entity('director-tenant', 'director', 'tenant', null),
+      entity('director-customer', 'director', 'customer', null),
+      entity('director-admin', 'director', 'admin', null),
+      entity('director-doer', 'director', 'doer', null),
+      entity('meow-ops-dev', 'assistant', 'tenant', 1),
+    ],
+    edges: [],
+  };
+  const runs = [{
+    id: 'run-ledger-e2e', goal: 'Light the cockpit', entityIds: ['meow-ops-dev'],
+    state: 'passed', startedAt: '2026-07-16T12:00:00.000Z', endedAt: '2026-07-16T12:00:00.000Z',
+    operator: 'claude+codex', sessionIds: [], artifacts: [], cost: { usd: 12.5, tokens: 4200 },
+    verified: [], notVerified: [],
+  }];
+  await page.context().route('**/data/loop-ops/spec.json*', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(spec),
+  }));
+  await page.context().route('**/data/loop-ops/runs.json*', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(runs),
+  }));
+
+  await nav(page, 'The Loom');
+  const timeline = page.locator('[data-testid="loop-run-timeline"]');
+  await expect(timeline.getByText('No runs recorded')).toHaveCount(0);
+  const card = timeline.locator('[data-testid="loop-run"]');
+  await expect(card).toBeVisible();
+  await expect(card.getByText(/^\$12\.50/)).toBeVisible();
+  await card.getByRole('button').click();
+  await expect(card.getByText('operator: claude+codex')).toBeVisible();
+});
+
 test('Review Deck: empty state renders without local helper', async ({ page }) => {
   await page.context().route('**/loop-eng/**', route => route.abort());
   await page.goto('/#/loop-review');
