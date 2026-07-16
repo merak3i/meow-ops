@@ -4,14 +4,15 @@
 // (gitignored); the hosted build without a running local API intentionally
 // shows the instructional empty state.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchLoopSpecRaw, fetchLoopStatus, postLoopSync } from './api';
+import { fetchLoopGates, fetchLoopSpecRaw, fetchLoopStatus, postLoopSync } from './api';
 import type { LoopOpsStatus } from './api';
 import { STATUS_SEVERITY } from './types';
-import type { LoopEntity, LoopSpec, LoopStatus } from './types';
+import type { LoopEntity, LoopGate, LoopSpec, LoopStatus } from './types';
 
 interface LoopOpsData {
   spec: LoopSpec | null;
   status: LoopOpsStatus | null;
+  gatesByEntity: ReadonlyMap<string, LoopGate[]>;
   loading: boolean;
   syncing: boolean;
   error: string | null;
@@ -43,9 +44,20 @@ function isValidSpec(value: unknown): value is LoopSpec {
     && typeof (candidate.meta as { generatedAt?: unknown }).generatedAt === 'string';
 }
 
+function isValidGate(value: unknown): value is LoopGate {
+  if (typeof value !== 'object' || value === null) return false;
+  const gate = value as Partial<LoopGate>;
+  return typeof gate.id === 'string'
+    && typeof gate.entityId === 'string'
+    && ['eval', 'guardrail', 'hitl', 'release-check', 'contract'].includes(gate.gateType as string)
+    && STATUS_SEVERITY.includes(gate.status as LoopStatus)
+    && (gate.lastCheckedAt === null || typeof gate.lastCheckedAt === 'string');
+}
+
 export function useLoopOpsData(): LoopOpsData {
   const [spec, setSpec] = useState<LoopSpec | null>(null);
   const [status, setStatus] = useState<LoopOpsStatus | null>(null);
+  const [gatesByEntity, setGatesByEntity] = useState<ReadonlyMap<string, LoopGate[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,11 +71,17 @@ export function useLoopOpsData(): LoopOpsData {
 
   const load = useCallback(async () => {
     try {
-      const [rawSpec, freshStatus] = await Promise.all([fetchLoopSpecRaw(), fetchLoopStatus()]);
+      const [rawSpec, freshStatus, rawGates] = await Promise.all([
+        fetchLoopSpecRaw(), fetchLoopStatus(), fetchLoopGates(),
+      ]);
       if (!alive.current) return;
       if (!isValidSpec(rawSpec)) throw new Error('spec failed shape validation');
       setSpec(rawSpec);
       setStatus(freshStatus);
+      const gates = Array.isArray(rawGates) ? rawGates.filter(isValidGate) : [];
+      const grouped = new Map<string, LoopGate[]>();
+      for (const gate of gates) grouped.set(gate.entityId, [...(grouped.get(gate.entityId) ?? []), gate]);
+      setGatesByEntity(grouped);
       setError(null);
     } catch (err) {
       if (!alive.current) return;
@@ -91,5 +109,5 @@ export function useLoopOpsData(): LoopOpsData {
     }
   }, [load]);
 
-  return { spec, status, loading, syncing, error, refresh };
+  return { spec, status, gatesByEntity, loading, syncing, error, refresh };
 }

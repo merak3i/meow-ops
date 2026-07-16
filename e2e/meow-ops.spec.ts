@@ -638,6 +638,54 @@ test('Loop Ops: ledger-backed run timeline shows real cost and operator details'
   await expect(card.getByText('operator: claude+codex')).toBeVisible();
 });
 
+test('Loop Ops: stale gate degrades node status and exposes evidence in inspector', async ({ page }) => {
+  const entity = (id: string, kind: 'coordinator' | 'director' | 'assistant', group: string | null, wave: number | null) => ({
+    id, kind, label: id, group, surfaceKey: kind === 'assistant' ? id : null,
+    archetype: null, riskClass: null, wave, status: 'passed', sources: [], repoLinks: [],
+    allowedActions: [], detail: {},
+  });
+  const spec = {
+    meta: {
+      specVersion: 1, generatedBy: 'e2e', generatedAt: '2026-07-16T12:00:00.000Z',
+      masterSpec: 'fixture', entityCount: 6, assistantCount: 1,
+      productionWritesEnabled: false, links: {},
+    },
+    entities: [
+      entity('coordinator', 'coordinator', null, null),
+      entity('director-tenant', 'director', 'tenant', null),
+      entity('director-customer', 'director', 'customer', null),
+      entity('director-admin', 'director', 'admin', null),
+      entity('director-doer', 'director', 'doer', null),
+      entity('meow-ops-dev', 'assistant', 'tenant', 1),
+    ],
+    edges: [],
+  };
+  const gates = [{
+    id: 'gate-stale', entityId: 'meow-ops-dev', gateType: 'eval', status: 'passed',
+    evidence: 'Eval set passed 18/18', blockingReason: null,
+    lastCheckedAt: '2026-07-01T12:00:00.000Z',
+  }];
+  await page.context().route('**/data/loop-ops/spec.json*', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(spec),
+  }));
+  await page.context().route('**/data/loop-ops/gates.json*', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(gates),
+  }));
+  await page.context().route('**/data/loop-ops/runs.json*', (route) => route.fulfill({
+    status: 200, contentType: 'application/json', body: '[]',
+  }));
+
+  await nav(page, 'The Loom');
+  await page.getByRole('button', { name: 'Expand all waves' }).click();
+  const node = page.locator('[data-entity-id="meow-ops-dev"]');
+  await expect(node.locator('[data-status="needs-review"]')).toBeVisible();
+  await node.click();
+  const inspector = page.locator('[data-testid="loop-inspector"]');
+  await expect(inspector.getByText('Eval set passed 18/18', { exact: false })).toBeVisible();
+  await expect(inspector.getByText(/stale after 7 days/i)).toBeVisible();
+  await expect(inspector.locator('[data-status="needs-review"]')).toBeVisible();
+});
+
 test('Review Deck: empty state renders without local helper', async ({ page }) => {
   await page.context().route('**/loop-eng/**', route => route.abort());
   await page.goto('/#/loop-review');

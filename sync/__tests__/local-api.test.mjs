@@ -97,6 +97,12 @@ test('GET /loop-ops/runs serves transformed local ledger runs when runs.json is 
   assert.equal(runs[0].cost.usd, 1.5);
 });
 
+test('GET /loop-ops/gates is GET-only and returns an empty local fallback', async () => {
+  const res = await fetch(`${BASE}/loop-ops/gates`);
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), []);
+});
+
 test('unknown loop-ops path still 404s', async () => {
   const res = await fetch(`${BASE}/loop-ops/deploy`);
   assert.equal(res.status, 404);

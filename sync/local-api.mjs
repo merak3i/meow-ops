@@ -776,17 +776,19 @@ const server = createServer(async (req, res) => {
   }
 
   // ── Loop-Ops endpoints (spec §Phase 4) — read/local-only ─────────────────
-  // GET /loop-ops/spec and /loop-ops/runs serve the gitignored local JSON;
+  // GET /loop-ops/spec, /loop-ops/runs, and /loop-ops/gates serve local JSON;
   // POST /loop-ops/sync re-runs the workbook importer. No push path exists
   // here by construction — the importer never touches git.
 
-  if (req.method === 'GET' && (path === '/loop-ops/spec' || path === '/loop-ops/runs')) {
-    const file = path === '/loop-ops/spec' ? 'spec.json' : 'runs.json';
+  if (req.method === 'GET' && ['/loop-ops/spec', '/loop-ops/runs', '/loop-ops/gates'].includes(path)) {
+    const file = path === '/loop-ops/spec' ? 'spec.json' : path === '/loop-ops/runs' ? 'runs.json' : 'gates.json';
     try {
       res.end(readFileSync(join(LOOP_OPS_DIR, file), 'utf8'));
     } catch {
       if (path === '/loop-ops/runs') {
         res.end(JSON.stringify(readLedgerLoopRuns()));
+      } else if (path === '/loop-ops/gates') {
+        res.end('[]');
       } else {
         res.statusCode = 404;
         res.end(JSON.stringify({ ok: false, error: 'spec.json not found - POST /loop-ops/sync to import a Loop Ops workbook' }));
@@ -911,6 +913,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /loop-ops/spec           - Loop-Ops entities (local import)');
   console.log('  GET  /loop-ops/status         - Loop-Ops file freshness');
   console.log('  GET  /loop-ops/runs           - recorded loop runs');
+  console.log('  GET  /loop-ops/gates          - local verification gates');
   console.log('  POST /loop-ops/sync           - re-import the Loop Ops workbook');
   console.log('  GET  /loop-eng/proposals      - Loop Engineering proposals');
   console.log('  GET  /loop-eng/simulations    - Loop Engineering simulations');
