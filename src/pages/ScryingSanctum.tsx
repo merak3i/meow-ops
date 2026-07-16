@@ -600,7 +600,7 @@ function WoWNameplate({ pn, maxCost, selected, nowEpoch, possessed }: {
 
   return (
     <Html center position={[0, 3.8, 0]} style={{ pointerEvents: 'none' }}>
-      <div style={{
+      <div className="sanctum-hud-panel" style={{
         width: 190, background: 'rgba(8,6,14,.88)',
         border: `1px solid ${possessed ? '#f59e0b' : selected ? '#63f7b3' : c.color}99`,
         borderRadius: 3, padding: '4px 7px 5px',
@@ -1603,7 +1603,7 @@ function WoWTooltipOverlay({ session, cls, name, role, onClose }: {
   }, [catType, session]);
 
   return (
-    <div style={{
+    <div className="sanctum-hud-panel" style={{
       position: 'absolute', top: 20, right: 16, zIndex: 40,
       minWidth: 260, maxWidth: 320,
       background: 'linear-gradient(180deg, #0a0818 0%, #040210 100%)',
@@ -2188,7 +2188,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
         display: 'flex', flexDirection: 'column',
       }}>
         {/* Header */}
-        <div style={{
+        <div className="sanctum-hud-panel" style={{
           minHeight: 70,
           padding: '12px 22px', borderBottom: '1px solid rgba(219,184,94,.18)',
           display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
@@ -2209,7 +2209,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
               <Activity size={17} strokeWidth={1.8} />
             </div>
             <div>
-              <div style={{
+              <div className="sanctum-hud-title" style={{
                 fontFamily: '"Cinzel", serif', fontWeight: 700,
                 fontSize: 14, color: '#dfc16f',
                 letterSpacing: 4.2, textTransform: 'uppercase',
@@ -2335,7 +2335,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
             indistinguishable. Each row binds a session to its character
             class + identifier (branch tail or hash). Click a row to select
             that champion (same plumbing as clicking it in the 3D scene). */}
-        <div style={{
+        <div className="sanctum-hud-panel" style={{
           position: 'absolute', top: 118, left: 22, zIndex: 10,
           display: 'flex', flexDirection: 'column', gap: 4,
           width: 244, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto',
@@ -2407,7 +2407,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
         </div>
 
         {/* Controls hint */}
-        <div style={{
+        <div className="sanctum-hud-panel" style={{
           position: 'absolute', top: 118,
           right: selectedNode ? 292 : 22,
           zIndex: 10, pointerEvents: 'none', fontFamily: 'monospace',
@@ -2484,7 +2484,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
           </Canvas>
 
           {activeEvent && (
-            <div style={{
+            <div className="sanctum-hud-panel" style={{
               position: 'absolute', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 22,
               padding: '6px 12px', borderRadius: 8, pointerEvents: 'none', fontFamily: 'monospace',
               color: activeEvent.beat.type === 'E3' ? PAL.cyan : PAL.gold,
@@ -2497,7 +2497,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
           {/* Possession HUD — top-center chip while driving an agent */}
           {possessedId && possessionHint && (
-            <div style={{
+            <div className="sanctum-hud-panel" style={{
               position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
               zIndex: 25, fontFamily: 'monospace', fontSize: 10,
               background: 'rgba(10,6,18,.92)', border: '1px solid #f59e0b88',
@@ -2526,7 +2526,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
           {/* ── Perf HUD overlay (` key) ────────────────────────────────────── */}
           {hudVisible && (
-            <div style={{
+            <div className="sanctum-hud-panel" style={{
               position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)',
               zIndex: 30, fontFamily: 'monospace', fontSize: 10,
               background: 'rgba(4,2,12,.88)', border: '1px solid #c8a85544',
@@ -2561,7 +2561,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
 
           {/* ── Error / context-lost warning badge ──────────────────────────── */}
           {(errorCount > 0 || contextLost) && (
-            <div style={{
+            <div className="sanctum-hud-panel" style={{
               position: 'absolute', bottom: 130, right: 12, zIndex: 30,
               fontFamily: 'monospace', fontSize: 9,
               background: 'rgba(239,68,68,.12)', border: '1px solid #ef444455',
