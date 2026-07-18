@@ -171,6 +171,65 @@ export async function fetchProjectIntelligenceSnapshot() {
   return data && typeof data === 'object' ? data : null;
 }
 
+export async function fetchProjectControlPortfolio() {
+  const data = await fetchLoopJson('/projects');
+  return data && typeof data === 'object' ? data : { ok: false, projects: [] };
+}
+
+export async function fetchProjectControlSnapshot(projectId) {
+  const data = await fetchLoopJson(`/projects/${encodeURIComponent(projectId)}/control-snapshot`);
+  return data && typeof data === 'object' ? data : null;
+}
+
+export async function fetchProjectLearningState(projectId) {
+  const data = await fetchLoopJson(`/projects/${encodeURIComponent(projectId)}/learning-state`);
+  return data && typeof data === 'object' ? data : null;
+}
+
+export async function fetchProjectEvidence(projectId, { limit = 100, source = '' } = {}) {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (source) query.set('source', source);
+  const data = await fetchLoopJson(`/projects/${encodeURIComponent(projectId)}/evidence?${query}`);
+  return data && typeof data === 'object' ? data : null;
+}
+
+export async function previewProjectContextAdapters(projectId) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const result = await postJson(
+    `${base}/projects/${encodeURIComponent(projectId)}/adapters/preview`,
+    {},
+  );
+  return result && typeof result === 'object' ? result : null;
+}
+
+export async function applyProjectContextAdapters(projectId, preview) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+  const expected_checksums = Object.fromEntries(
+    (preview?.targets || []).map((target) => [target.agent, target.checksum]),
+  );
+  const result = await postJson(
+    `${base}/projects/${encodeURIComponent(projectId)}/adapters/apply`,
+    { nonce, expected_checksums },
+  );
+  return result && typeof result === 'object' ? result : null;
+}
+
+export async function rollbackProjectContextAdapters(projectId, syncId) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+  const result = await postJson(
+    `${base}/projects/${encodeURIComponent(projectId)}/adapters/rollback`,
+    { nonce, sync_id: syncId },
+  );
+  return result && typeof result === 'object' ? result : null;
+}
+
 export async function fetchCompanionSoul() {
   const data = await fetchLoopJson('/companion/soul');
   return data && typeof data === 'object' ? data : null;

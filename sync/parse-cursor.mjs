@@ -102,6 +102,7 @@ function parseCursorLog(content, filePath, stat) {
     cat_type:              'architect',   // Cursor usage is plan-heavy by nature
     session_title:         title || null,
     first_user_message:    title || null,
+    raw_ref:               filePath,
   });
 }
 

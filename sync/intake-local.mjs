@@ -14,7 +14,9 @@ export const DEFAULT_LIMIT = 10;
 const MAX_CHUNK_CHARS = 16_000;
 const TASK_KINDS = new Set(['build', 'debug', 'refactor', 'research', 'content', 'ops', 'other']);
 const OUTCOMES = new Set(['completed', 'partial', 'abandoned', 'unknown']);
-export const INTAKE_SOURCES = new Set(['claude', 'codex', 'antigravity', 'screenshot']);
+export const INTAKE_SOURCES = new Set([
+  'claude', 'codex', 'cursor', 'antigravity', 'hermes', 'screenshot',
+]);
 export const INTAKE_SUMMARY_FIELDS = [
   'intake_id', 'session_id', 'source', 'summarized_at', 'task_kind', 'outcome',
   'failure_signatures', 'waste_indicators', 'friction_score', 'model_calls',

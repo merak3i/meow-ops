@@ -89,3 +89,9 @@ Standard global prefixes: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`. Co-au
 - No emojis in user-facing copy unless explicitly requested. The README opens with a paw emoji 🐾 — that's a deliberate brand mark, not a license to scatter emojis.
 - No em dashes (`—`) in marketing copy / new prose.
 - No banned-vocab list items (see global AGENTS.md §3).
+
+<!-- meow-ops:learning-state:start -->
+## Meow Ops project learning
+
+Read `.meow/learning-state/INDEX.md` before planning or changing this project. Load linked learning topics only when relevant.
+<!-- meow-ops:learning-state:end -->

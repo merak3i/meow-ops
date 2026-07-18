@@ -72,8 +72,80 @@ function repairPrompt(sync) {
   ].join('\n');
 }
 
+function findControlProject(question, controls) {
+  const q = question.toLowerCase();
+  const rows = asArray(controls);
+  const match = rows.find((control) => [
+    control.project?.name,
+    ...(control.project?.aliases || []),
+  ].filter(Boolean).some((name) => q.includes(String(name).toLowerCase())));
+  return match || (rows.length === 1 ? rows[0] : null);
+}
+
+function learningEvidence(candidates) {
+  return candidates.flatMap((candidate) => asArray(candidate.evidence)).slice(0, 10);
+}
+
+function answerProjectControl(question, controls) {
+  const q = question.toLowerCase();
+  const isCoverage = hasKeyword(q, ['which agents', 'agents know', 'agent coverage', 'blind spot']);
+  const isSkill = hasKeyword(q, ['become a skill', 'should be a skill', 'skill candidate']);
+  const isLearning = (
+    hasKeyword(q, ['project learned', 'project learning', 'what does'])
+    || (q.includes('what') && hasKeyword(q, ['learned', 'learnt', 'know']))
+  ) && hasKeyword(q, ['learn', 'learnt', 'know']);
+  if (!isCoverage && !isSkill && !isLearning) return null;
+  const control = findControlProject(q, controls);
+  if (!control) {
+    return {
+      answer: 'I can answer that after you name the governed project.',
+      gate: 'known_unknown', confidence: 1, evidence: [], unknowns: ['Target governed project'],
+      next_question: 'Which project should I inspect, and why does that project matter for this decision?',
+    };
+  }
+  const name = control.project.name;
+  if (isCoverage) {
+    const observed = asArray(control.agents?.observed);
+    const blind = asArray(control.agents?.blind_spots);
+    return {
+      answer: `${name} has verified local evidence from ${observed.join(', ') || 'no agents yet'}. Blind spots: ${blind.join(', ') || 'none'}.`,
+      gate: 'known_known', confidence: 1,
+      evidence: [{ kind: 'project_control', ref: control.project.project_id, detail: 'Observed source coverage from local evidence' }],
+      unknowns: blind.map((agent) => `${agent} project evidence`),
+    };
+  }
+  const candidates = asArray(control.learning?.candidates);
+  if (isSkill) {
+    const skills = candidates.filter((candidate) => candidate.kind === 'skill');
+    return skills.length > 0 ? {
+      answer: `${name} has ${skills.length} skill candidate${skills.length === 1 ? '' : 's'}: ${skills.map((candidate) => `${candidate.title} (${candidate.status})`).join('; ')}.`,
+      gate: 'known_known', confidence: 1, evidence: learningEvidence(skills), unknowns: [],
+    } : {
+      answer: `${name} has no evidence-backed skill candidate yet.`,
+      gate: 'known_unknown', confidence: 1, evidence: [], unknowns: ['A recurring or high-impact capability pattern'],
+      next_question: 'Which repeated project task feels valuable enough to standardize, and what outcome would it improve?',
+    };
+  }
+  const published = candidates.filter((candidate) => candidate.status === 'published');
+  const pending = candidates.filter((candidate) => candidate.status === 'proposed' || candidate.status === 'deferred');
+  if (published.length === 0) {
+    return {
+      answer: `${name} has no published learning yet${pending.length ? ` and ${pending.length} candidate${pending.length === 1 ? ' is' : 's are'} awaiting owner review` : ''}.`,
+      gate: 'known_unknown', confidence: 1, evidence: learningEvidence(pending),
+      unknowns: ['Owner-approved project learning'],
+      next_question: 'What is the highest-value lesson you want this project to retain, and which outcome would it protect?',
+    };
+  }
+  return {
+    answer: `${name} has published ${published.length} learning item${published.length === 1 ? '' : 's'}: ${published.map((candidate) => candidate.title).join('; ')}. ${pending.length} pending owner review.`,
+    gate: 'known_known', confidence: 1, evidence: learningEvidence(published),
+    unknowns: pending.map((candidate) => `Decision on ${candidate.title}`),
+  };
+}
+
 export function ask(question, {
   proposals, decisions, runs, digest, sync, sessionHistory, sessions, claims, now,
+  projectControls,
 } = {}) {
   const q = String(question || '').toLowerCase();
   const proposalRows = latestProposals(asArray(proposals));
@@ -88,6 +160,9 @@ export function ask(question, {
     { now: now || new Date() },
   );
   if (projectAnswer) return projectAnswer;
+
+  const projectControlAnswer = answerProjectControl(question, projectControls);
+  if (projectControlAnswer) return projectControlAnswer;
 
   if (hasKeyword(q, ['repair prompt', 'fix prompt'])) return { answer: repairPrompt(sync) };
   if (hasKeyword(q, ['sync', 'fresh', 'stale'])) return { answer: syncAnswer(sync, sessionHistory) };

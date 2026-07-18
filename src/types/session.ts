@@ -23,7 +23,7 @@ export interface Session {
   cat_type:                 CatType;
   is_ghost:                 boolean;
   is_subagent?:             boolean;
-  source:                   'claude' | 'codex' | 'cursor' | 'aider';
+  source:                   'claude' | 'codex' | 'cursor' | 'aider' | 'antigravity' | 'hermes';
   cwd?:                     string;
   tools?:                   Record<string, number>;
   // Human-visible title from the source app when available. Codex Desktop

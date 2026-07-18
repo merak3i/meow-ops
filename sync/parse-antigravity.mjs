@@ -85,6 +85,7 @@ export function parseAntigravityTranscript(filePath, uuid) {
     usage_available: false,
     pricing_source: 'unavailable',
     estimated_cost_usd: 0,
+    raw_ref: filePath,
   });
 
   const cwdCounts = new Map();

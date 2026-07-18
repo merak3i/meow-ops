@@ -62,6 +62,13 @@ function isTopProjectTimeQuestion(question) {
   );
 }
 
+function isCurrentProjectQuestion(question) {
+  const q = question.toLowerCase();
+  return q.includes('project') && [
+    'working on', 'onto right now', 'on right now', 'current project', 'which project',
+  ].some((phrase) => q.includes(phrase));
+}
+
 function isGenericProject(name) {
   const clean = name.toLowerCase();
   return GENERIC_PROJECT_NAMES.has(clean)
@@ -235,6 +242,35 @@ function answerTopProjectTime(question, sessions, projects, now, timeZone) {
   };
 }
 
+function answerCurrentProject(sessions, projects) {
+  const latest = [...sessions]
+    .filter((session) => {
+      const project = String(session.project || '').trim();
+      return project && !isGenericProject(project);
+    })
+    .sort((a, b) => Date.parse(b.ended_at || b.started_at || '') - Date.parse(a.ended_at || a.started_at || ''))[0];
+  if (!latest) {
+    return {
+      answer: 'I do not have a recent project session to identify your current project.',
+      gate: 'known_unknown', confidence: 1, evidence: [],
+      unknowns: ['Current project session'],
+      next_question: 'Which project are you working on right now?',
+    };
+  }
+  const project = canonicalProjectName(latest.project, projects);
+  return {
+    answer: `Your most recent tracked project is ${project}.`,
+    gate: 'known_known',
+    confidence: 0.95,
+    evidence: [{
+      kind: 'session',
+      ref: latest.session_id || project,
+      detail: `${latest.source || 'local'} session at ${latest.ended_at || latest.started_at || 'unknown time'}`,
+    }],
+    unknowns: [],
+  };
+}
+
 export function buildProjectSnapshot({ sessions = [], claims = [] } = {}) {
   const sessionRows = rows(sessions);
   const claimRows = foldClaims(rows(claims));
@@ -270,6 +306,9 @@ export function answerProjectQuestion(question, snapshot, {
 } = {}) {
   const clean = String(question || '').trim();
   if (!clean) return null;
+  if (isCurrentProjectQuestion(clean)) {
+    return answerCurrentProject(rows(snapshot?.sessions), rows(snapshot?.projects));
+  }
   if (isTopProjectTimeQuestion(clean)) {
     return answerTopProjectTime(
       clean,
