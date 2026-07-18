@@ -83,6 +83,85 @@ export interface ProjectIntelligenceSnapshot {
   session_count: number;
 }
 export function fetchProjectIntelligenceSnapshot(): Promise<ProjectIntelligenceSnapshot | null>;
+export interface ProjectControlCatalogEntry {
+  project_id: string;
+  name: string;
+  aliases: string[];
+  root: string;
+  learning_state_path: string;
+  git_remote: string | null;
+}
+export interface ProjectControlLearning {
+  learning_id: string;
+  project_id: string;
+  kind: string;
+  title: string;
+  rationale: string;
+  impact: 'low' | 'medium' | 'high';
+  confidence: number;
+  status: 'proposed' | 'approved' | 'published' | 'rejected' | 'deferred';
+  evidence: Array<{ kind: string; ref: string; detail?: string }>;
+}
+export interface ProjectControlSnapshot {
+  ok?: boolean;
+  project: ProjectControlCatalogEntry;
+  constitution: {
+    fields: Record<string, ProjectClaim | null>;
+    coverage: { confirmed: number; total: number; ratio: number };
+  };
+  agents: { observed: string[]; blind_spots: string[] };
+  learning: { counts: Record<string, number>; candidates: ProjectControlLearning[] };
+}
+export interface ProjectControlPortfolio {
+  ok: boolean;
+  projects: ProjectControlSnapshot[];
+}
+export interface ProjectLearningStateResponse {
+  ok: boolean;
+  project: ProjectControlCatalogEntry;
+  files: Record<string, string | null>;
+}
+export interface ProjectEvidenceResponse {
+  ok: boolean;
+  project_id: string;
+  total: number;
+  items: Array<Record<string, unknown>>;
+  next_cursor?: string | null;
+}
+export interface ProjectAdapterPreview {
+  ok: boolean;
+  preview: {
+    generated_at: string;
+    targets: Array<{
+      agent: string;
+      path: string;
+      exists: boolean;
+      changed: boolean;
+      checksum: string;
+    }>;
+  };
+}
+export function fetchProjectControlPortfolio(): Promise<ProjectControlPortfolio>;
+export function fetchProjectControlSnapshot(projectId: string): Promise<ProjectControlSnapshot | null>;
+export function fetchProjectLearningState(projectId: string): Promise<ProjectLearningStateResponse | null>;
+export function fetchProjectEvidence(
+  projectId: string,
+  options?: { limit?: number; source?: string },
+): Promise<ProjectEvidenceResponse | null>;
+export function previewProjectContextAdapters(projectId: string): Promise<ProjectAdapterPreview | null>;
+export interface ProjectAdapterMutationResult {
+  ok: boolean;
+  result?: { sync_id: string; applied?: unknown[]; restored?: unknown[] };
+  error?: string;
+}
+export function applyProjectContextAdapters(
+  projectId: string,
+  preview: ProjectAdapterPreview['preview'],
+): Promise<ProjectAdapterMutationResult | null>;
+export function rollbackProjectContextAdapters(
+  projectId: string,
+  syncId: string,
+): Promise<ProjectAdapterMutationResult | null>;
 export function postProjectClaim(input: {
   project_name: string;
   project_id?: string;

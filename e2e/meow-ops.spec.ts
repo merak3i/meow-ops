@@ -6,6 +6,10 @@
  */
 import { expect, test } from '@playwright/test';
 
+// Network-backed cockpit tests need route mocks to reach Playwright instead of
+// being answered by a previously installed production service worker.
+test.use({ serviceWorkers: 'block' });
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Wait for the React root to mount and return its inner HTML length. */
@@ -49,7 +53,7 @@ test('sidebar renders all nav buttons', async ({ page }) => {
   const expectedNav = [
     'Overview', 'Sessions', 'By Project', 'By Day', 'By Action',
     'Cost Tracker', 'Analytics', 'Agent Ops', 'Scrying Sanctum',
-    'The Loom', 'Review Deck', 'Capacity & Usage', 'Companion', 'Focus Timer',
+    'The Loom', 'Review Deck', 'Project Control', 'Capacity & Usage', 'Companion', 'Focus Timer',
   ];
   for (const label of expectedNav) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -57,6 +61,49 @@ test('sidebar renders all nav buttons', async ({ page }) => {
       page.getByRole('button', { name: new RegExp(`^${escaped}`) }).first(),
     ).toBeVisible();
   }
+});
+
+test('Project Control: Eagle Eye and Surgical views use governed local evidence', async ({ page }) => {
+  const project = {
+    project: {
+      project_id: 'meow-ops-4efe35ade3', name: 'Meow Ops', aliases: ['meow-ops'],
+      learning_state_path: '/work/meow-ops/.meow/learning-state',
+    },
+    constitution: {
+      coverage: { confirmed: 7, total: 7, ratio: 1 },
+      fields: { mission: { value: 'Keep project learning evidence-bound and owner-governed.' } },
+    },
+    agents: { observed: ['codex', 'claude'], blind_spots: ['antigravity', 'cursor', 'hermes'] },
+    learning: { counts: { proposed: 1 }, candidates: [] },
+  };
+  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, (route) => {
+    const headers = {
+      'access-control-allow-origin': '*',
+      'access-control-allow-headers': 'x-meow-ops-local, content-type',
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+    };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
+    if (path === '/projects') return route.fulfill({ headers, json: { ok: true, projects: [project] } });
+    if (path.endsWith('/learning-state')) {
+      return route.fulfill({ headers, json: { ok: true, files: { 'INDEX.md': '# Meow Ops', 'constitution.md': '# Constitution' } } });
+    }
+    if (path.endsWith('/evidence')) {
+      return route.fulfill({ headers, json: { ok: true, items: [{ session_id: 'session-1', source: 'codex', content: 'Owner approved the constitution.', started_at: '2026-07-19T10:00:00.000Z' }] } });
+    }
+    return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
+  });
+
+  await nav(page, 'Project Control');
+  await expect(page.getByRole('heading', { name: 'Meow Ops', exact: true })).toBeVisible();
+  await expect(page.getByText('100%')).toBeVisible();
+  await expect(page.getByText('2/5')).toBeVisible();
+  await expect(page.getByText('Owner-approved constitution')).toBeVisible();
+  await page.getByRole('button', { name: 'Surgical View' }).click();
+  await expect(page.getByText('Owner approved the constitution.')).toBeVisible();
+  await expect(page.getByText('INDEX.md')).toBeVisible();
+  await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
 test('Capacity & Usage: local-first usage cockpit renders', async ({ page }) => {

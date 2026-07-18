@@ -31,6 +31,12 @@ import { loadEnv } from './load-env.mjs';
 import { buildProjectSnapshot } from './project-intelligence.mjs';
 import { appendProjectClaim, confirmProjectClaim, readProjectClaims } from './project-ledger.mjs';
 import {
+  appendLearningCandidate, applyProjectAdapters, buildProjectControlSnapshot,
+  decideLearningCandidate, previewProjectAdapters, readLearningCandidates,
+  publishLearningCandidate, readProjectCatalog, rollbackProjectAdapters,
+} from './project-control.mjs';
+import { queryAgentEvidence } from './project-evidence.mjs';
+import {
   applySoulPolicy, compileSoulInstructions, readSoulProfile, resetSoulProfile,
   resolveSoulProfile, saveSoulProfile, SOUL_PRESETS,
 } from './companion-soul.mjs';
@@ -256,6 +262,8 @@ const server = createServer(async (req, res) => {
     || path === '/data/cost-summary.json'
     || path.startsWith('/session-history/')
     || path.startsWith('/loop-eng/')
+    || path === '/projects'
+    || path.startsWith('/projects/')
     || path.startsWith('/project-intelligence/')
     || path.startsWith('/companion/');
 
@@ -396,6 +404,148 @@ const server = createServer(async (req, res) => {
       sendJson(res, 200, lines.slice(-30).reverse());
     } catch {
       sendJson(res, 200, []);
+    }
+    return;
+  }
+
+  // Project Control Plane. The private catalog maps stable project IDs to
+  // roots; responses never discover or accept an arbitrary filesystem path.
+  if (path === '/projects' && req.method === 'GET') {
+    const sessions = readJsonArray(SESSIONS_FILE);
+    const claims = readProjectClaims();
+    const projects = readProjectCatalog().map((project) => buildProjectControlSnapshot({
+      project_id: project.project_id, sessions, claims,
+    }));
+    sendJson(res, 200, { ok: true, projects });
+    return;
+  }
+
+  const projectRoute = path.match(/^\/projects\/([^/]+)\/(control-snapshot|learning-state|evidence|learnings|adapters\/(?:preview|apply|rollback))$/);
+  const learningDecisionRoute = path.match(/^\/projects\/([^/]+)\/learnings\/([^/]+)\/decision$/);
+  const catalogProject = (id) => readProjectCatalog().find((project) => project.project_id === decodeURIComponent(id));
+
+  if (projectRoute) {
+    const project = catalogProject(projectRoute[1]);
+    if (!project) {
+      ruleError(res, 404, 'project-control', 'project not found');
+      return;
+    }
+    const action = projectRoute[2];
+    if (action === 'control-snapshot' && req.method === 'GET') {
+      sendJson(res, 200, {
+        ok: true,
+        ...buildProjectControlSnapshot({
+          project_id: project.project_id,
+          sessions: readJsonArray(SESSIONS_FILE),
+          claims: readProjectClaims(),
+        }),
+      });
+      return;
+    }
+    if (action === 'learning-state' && req.method === 'GET') {
+      const files = {};
+      for (const name of ['INDEX.md', 'constitution.md', 'current-state.md', 'manifest.json']) {
+        try { files[name] = readFileSync(join(project.learning_state_path, name), 'utf8'); }
+        catch { files[name] = null; }
+      }
+      sendJson(res, 200, { ok: true, project, files });
+      return;
+    }
+    if (action === 'evidence' && req.method === 'GET') {
+      const normalized = queryAgentEvidence({
+        project_id: project.project_id,
+        limit: requestUrl.searchParams.get('limit') || 100,
+        from: requestUrl.searchParams.get('from'),
+        to: requestUrl.searchParams.get('to'),
+        source: requestUrl.searchParams.get('source'),
+        event_type: requestUrl.searchParams.get('event_type'),
+        search: requestUrl.searchParams.get('search'),
+      });
+      if (normalized.total > 0) {
+        sendJson(res, 200, { ok: true, project_id: project.project_id, evidence_kind: 'agent_event', ...normalized });
+        return;
+      }
+      const fallback = querySessionHistory({
+        limit: requestUrl.searchParams.get('limit') || 100,
+        cursor: requestUrl.searchParams.get('cursor'),
+        from: requestUrl.searchParams.get('from'),
+        to: requestUrl.searchParams.get('to'),
+        project: project.name,
+        source: requestUrl.searchParams.get('source'),
+        model: requestUrl.searchParams.get('model'),
+      });
+      sendJson(res, 200, { ok: true, project_id: project.project_id, evidence_kind: 'session_summary', ...fallback });
+      return;
+    }
+    if (action === 'learnings' && req.method === 'POST') {
+      let body;
+      try { body = await readJsonBody(req, 64_000); }
+      catch (err) { ruleError(res, 400, 'json', err.message); return; }
+      if (!consumeNonce(body.nonce)) {
+        ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+        return;
+      }
+      try {
+        const learning = appendLearningCandidate({ ...body, project_id: project.project_id });
+        sendJson(res, 201, { ok: true, learning });
+      } catch (err) {
+        ruleError(res, 400, 'project-control', err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+    if (action === 'adapters/preview' && req.method === 'POST') {
+      sendJson(res, 200, { ok: true, preview: previewProjectAdapters({ projectRoot: project.root }) });
+      return;
+    }
+    if ((action === 'adapters/apply' || action === 'adapters/rollback') && req.method === 'POST') {
+      let body;
+      try { body = await readJsonBody(req, 64_000); }
+      catch (err) { ruleError(res, 400, 'json', err.message); return; }
+      if (!consumeNonce(body.nonce)) {
+        ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+        return;
+      }
+      try {
+        const result = action === 'adapters/apply'
+          ? applyProjectAdapters({
+            projectRoot: project.root,
+            expectedChecksums: body.expected_checksums,
+          })
+          : rollbackProjectAdapters(body.sync_id);
+        sendJson(res, 200, { ok: true, result });
+      } catch (err) {
+        ruleError(res, 400, 'project-control', err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+  }
+
+  if (learningDecisionRoute && req.method === 'POST') {
+    const project = catalogProject(learningDecisionRoute[1]);
+    if (!project) { ruleError(res, 404, 'project-control', 'project not found'); return; }
+    let body;
+    try { body = await readJsonBody(req); }
+    catch (err) { ruleError(res, 400, 'json', err.message); return; }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      const learningId = decodeURIComponent(learningDecisionRoute[2]);
+      const candidate = readLearningCandidates().find((item) => item.learning_id === learningId);
+      if (!candidate || candidate.project_id !== project.project_id) {
+        ruleError(res, 404, 'project-control', 'learning not found for project');
+        return;
+      }
+      const decided = decideLearningCandidate(learningId, {
+        decision: body.decision, reason: body.reason, decided_by: 'owner',
+      });
+      const learning = decided.status === 'approved'
+        ? publishLearningCandidate(learningId)
+        : decided;
+      sendJson(res, 200, { ok: true, learning });
+    } catch (err) {
+      ruleError(res, 400, 'project-control', err instanceof Error ? err.message : String(err));
     }
     return;
   }
@@ -607,6 +757,11 @@ const server = createServer(async (req, res) => {
         sync: getSyncStatus({ repoRoot: ROOT }),
         sessionHistory: querySessionHistory({ limit: 1 }),
       };
+      rawData.projectControls = readProjectCatalog().map((project) => buildProjectControlSnapshot({
+        project_id: project.project_id,
+        sessions: rawData.sessions,
+        claims: rawData.claims,
+      }));
       const soul = resolveSoulProfile(
         storedSoul,
         question,
@@ -653,7 +808,7 @@ const server = createServer(async (req, res) => {
             project_name: soul.active_project_overlay.project_name,
           } : null,
         },
-        suggestions: ['What changed today?', 'Is sync healthy?', 'What should I fix next?', 'Prepare a repair prompt'],
+        suggestions: ['What has this project learned?', 'Which agents know this project?', 'What should become a skill?', 'What should I fix next?'],
       });
     } catch (err) {
       sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });

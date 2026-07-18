@@ -64,6 +64,48 @@ test('answers the highest-time project from verified session evidence', () => {
   assert.equal(result.evidence[0].kind, 'session_aggregate');
 });
 
+test('answers the current project from the most recent non-generic session', () => {
+  const result = ask('what project am I working on right now?', {
+    sessions: [
+      { session_id: 'old', project: 'BergLabs', source: 'claude', started_at: '2026-07-18T09:00:00.000Z' },
+      { session_id: 'generic', project: 'Downloads', source: 'codex', started_at: '2026-07-19T11:00:00.000Z' },
+      { session_id: 'latest', project: 'Meow Ops', source: 'codex', started_at: '2026-07-19T10:00:00.000Z' },
+    ],
+  });
+  assert.equal(result.gate, 'known_known');
+  assert.match(result.answer, /Meow Ops/);
+  assert.equal(result.evidence[0].ref, 'latest');
+});
+
+test('answers what a project learned and which agents know it', () => {
+  const projectControls = [{
+    project: { project_id: 'meow-ops-1', name: 'Meow Ops', aliases: ['meow-ops'] },
+    agents: { observed: ['claude', 'codex'], blind_spots: ['antigravity', 'cursor', 'hermes'] },
+    learning: {
+      counts: { published: 1, proposed: 1 },
+      candidates: [
+        {
+          learning_id: 'learn-1', title: 'Read evidence first', kind: 'practice',
+          status: 'published', rationale: 'Prevents unsupported claims.',
+          evidence: [{ kind: 'session', ref: 'latest' }],
+        },
+        {
+          learning_id: 'learn-2', title: 'Create a repair skill', kind: 'skill',
+          status: 'proposed', rationale: 'Repeated repair work.', evidence: [{ kind: 'session', ref: 'old' }],
+        },
+      ],
+    },
+  }];
+  const learned = ask('what has Meow Ops learned?', { projectControls });
+  assert.match(learned.answer, /Read evidence first/);
+  assert.match(learned.answer, /1 pending owner review/);
+  assert.equal(learned.evidence[0].ref, 'latest');
+
+  const coverage = ask('which agents know Meow Ops?', { projectControls });
+  assert.match(coverage.answer, /claude, codex/);
+  assert.match(coverage.answer, /antigravity, cursor, hermes/);
+});
+
 test('project-time ranking ignores generic container folders', () => {
   const result = ask('what project did I spend the most time on all time?', {
     sessions: [

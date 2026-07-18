@@ -24,6 +24,7 @@ const ScryingSanctum     = lazy(() => import('./pages/ScryingSanctum'));
 const LoopOps            = lazy(() => import('./pages/LoopOps'));
 // Owner approval deck for Loop Engineering proposals
 const LoopReview         = lazy(() => import('./pages/LoopReview'));
+const ProjectControl     = lazy(() => import('./pages/ProjectControl'));
 // Local-only subscription, capacity, and GitHub Actions usage cockpit
 const CapacityUsage      = lazy(() => import('./pages/CapacityUsage'));
 import {
@@ -250,6 +251,13 @@ export default function App() {
       return (
         <Suspense fallback={<PageLoader />}>
           <CapacityUsage />
+        </Suspense>
+      );
+    }
+    if (page === 'project-control') {
+      return (
+        <Suspense fallback={<PageLoader />}>
+          <ProjectControl />
         </Suspense>
       );
     }

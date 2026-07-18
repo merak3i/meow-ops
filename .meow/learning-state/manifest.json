@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "project_id": "meow-ops-4efe35ade3",
+  "project_name": "Meow Ops",
+  "canonical_root": ".meow/learning-state",
+  "revision": 1,
+  "approved_at": "2026-07-19",
+  "approved_by": "owner",
+  "review_policy": "Review when objectives, governance, or supported agent sources change",
+  "raw_evidence_in_git": false
+}

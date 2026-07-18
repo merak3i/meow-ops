@@ -10,14 +10,18 @@ import { scanCodexSessions }  from './parse-codex.mjs';
 import { scanCursorSessions } from './parse-cursor.mjs';
 import { scanAiderProjects }  from './parse-aider.mjs';
 import { scanAntigravitySessions, DEFAULT_ANTIGRAVITY_DIR } from './parse-antigravity.mjs';
+import { scanHermesMessageEvidence, scanHermesSessions, DEFAULT_HERMES_DB } from './parse-hermes.mjs';
 import { readSessionHistory, updateSessionHistory } from './session-history.mjs';
 import { buildSessionRollups } from './session-rollups.mjs';
+import { archiveMessageEvidence, archiveSessionEvidence } from './project-evidence.mjs';
+import { readProjectCatalog } from './project-control.mjs';
 
 const CLAUDE_DIR = join(process.env.HOME, '.claude', 'projects');
 const CODEX_DIR  = join(process.env.HOME, '.codex', 'sessions');
 // Google Antigravity agent sessions (~/.gemini/antigravity/brain/<uuid>/...).
 // Override the root with ANTIGRAVITY_DIR.
 const ANTIGRAVITY_DIR = process.env.ANTIGRAVITY_DIR || DEFAULT_ANTIGRAVITY_DIR;
+const HERMES_STATE_DB = process.env.HERMES_STATE_DB || DEFAULT_HERMES_DB;
 
 // Read a (possibly very large) JSONL file into an array of non-empty lines
 // without ever materializing the whole file as one JS string. Reading the
@@ -105,6 +109,7 @@ function walkJsonl(dir, projectDir, isSubagent = false) {
           s.session_id = isSubagent ? `agent-${fileKey}-${s.session_id}` : `${s.session_id}-${fileKey}`;
           s.is_subagent = isSubagent;
           s.source = 'claude';
+          s.raw_ref = full;
           if (isSubagent) s.entrypoint = 'subagent';
         }
         allSessions.push(...sessions);
@@ -160,6 +165,7 @@ function toPublicSession(session) {
     cwd,
     session_title,
     first_user_message,
+    raw_ref,
     ...safe
   } = session;
   return safe;
@@ -216,6 +222,20 @@ if (ANTIGRAVITY_DIR && existsSync(ANTIGRAVITY_DIR)) {
   console.log('No Antigravity directory found — skipping (set ANTIGRAVITY_DIR to enable)');
 }
 
+// Merge Hermes Agent sessions from its canonical local SQLite state. The
+// parser opens the database read-only and preserves Hermes' own usage values.
+if (HERMES_STATE_DB && existsSync(HERMES_STATE_DB)) {
+  const hermesSessions = scanHermesSessions(HERMES_STATE_DB);
+  if (hermesSessions.length > 0) {
+    console.log(`Found ${hermesSessions.length} Hermes session(s)`);
+    allSessions.push(...hermesSessions);
+  } else {
+    console.log('Hermes state database found but no sessions parsed — skipping');
+  }
+} else {
+  console.log('No Hermes state database found — skipping (set HERMES_STATE_DB to enable)');
+}
+
 // De-duplicate by session_id (real dedupe, not just a rename). A re-run or an
 // overlapping scan can surface the same id twice; keep the richer record
 // (more messages) so a partial re-read never shrinks a session.
@@ -227,6 +247,21 @@ for (const s of allSessions) {
 const allUnique = [...byId.values()];
 const dupCount = allSessions.length - allUnique.length;
 console.log(`Total unique session entries: ${allUnique.length}${dupCount > 0 ? ` (deduped ${dupCount})` : ''}`);
+
+// Preserve private project evidence before content-bearing labels are removed
+// from the public dashboard artifact. Only registered projects and supported
+// agent sources enter the private vault.
+try {
+  const catalog = readProjectCatalog();
+  const evidence = archiveSessionEvidence(allUnique, { catalog });
+  console.log(`Project evidence: ${evidence.appended} new event(s), ${evidence.duplicates} duplicate(s), ${evidence.skipped} unregistered/unsupported session(s)`);
+  if (HERMES_STATE_DB && existsSync(HERMES_STATE_DB)) {
+    const hermesMessages = archiveMessageEvidence(scanHermesMessageEvidence(HERMES_STATE_DB), { catalog });
+    console.log(`Hermes evidence: ${hermesMessages.appended} new message event(s), ${hermesMessages.duplicates} duplicate(s), ${hermesMessages.skipped} unregistered message(s)`);
+  }
+} catch (error) {
+  console.warn(`Project evidence archive skipped: ${error instanceof Error ? error.message : String(error)}`);
+}
 
 // Sort by most-recent activity (ended_at) descending.
 // This ensures long-running Claude sessions still active today aren't

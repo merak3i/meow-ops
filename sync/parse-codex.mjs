@@ -115,6 +115,7 @@ export function parseCodexFile(filePath) {
     entrypoint: 'codex-desktop',
     // Codex sessions are always "architect" — plan-heavy agentic tasks
     cat_type: 'architect',
+    raw_ref: filePath,
   });
 
   // Last non-null token_count info wins (cumulative totals at turn end).
