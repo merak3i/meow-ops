@@ -37,6 +37,9 @@ import {
 } from './project-control.mjs';
 import { queryAgentEvidence } from './project-evidence.mjs';
 import {
+  appendLearningEvent, buildLearningQuestSnapshot, deleteLearningTopic, upsertLearningTopic,
+} from './learning-quest.mjs';
+import {
   applySoulPolicy, compileSoulInstructions, readSoulProfile, resetSoulProfile,
   resolveSoulProfile, saveSoulProfile, SOUL_PRESETS,
 } from './companion-soul.mjs';
@@ -71,6 +74,7 @@ const EXTRA_ALLOWED_ORIGINS = (process.env.MEOW_DASHBOARD_ORIGIN || '')
   .map((origin) => origin.trim())
   .filter(Boolean);
 const ALLOWED_ORIGINS = new Set([...DEFAULT_ALLOWED_ORIGINS, ...EXTRA_ALLOWED_ORIGINS]);
+const PRIVATE_PROJECT_ORIGINS = new Set(DEFAULT_ALLOWED_ORIGINS.filter((origin) => origin.startsWith('http://')));
 const NONCES = [];
 const NONCE_SET = new Set();
 
@@ -256,6 +260,13 @@ const server = createServer(async (req, res) => {
 
   const requestUrl = new URL(req.url, `http://localhost:${PORT}`);
   const path = requestUrl.pathname;
+  const exposesPrivateProjectData = path === '/projects'
+    || path.startsWith('/projects/')
+    || path.startsWith('/project-intelligence/');
+  if (exposesPrivateProjectData && req.headers.origin && !PRIVATE_PROJECT_ORIGINS.has(req.headers.origin)) {
+    sendJson(res, 403, { ok: false, error: 'Private project data requires the local dashboard.' });
+    return;
+  }
   const needsBrowserHeader =
     path.startsWith('/sync')
     || path === '/data/sessions.json'
@@ -265,6 +276,7 @@ const server = createServer(async (req, res) => {
     || path === '/projects'
     || path.startsWith('/projects/')
     || path.startsWith('/project-intelligence/')
+    || path.startsWith('/learning-quest/')
     || path.startsWith('/companion/');
 
   if (needsBrowserHeader && !requireBrowserHeader(req, res)) return;
@@ -423,6 +435,49 @@ const server = createServer(async (req, res) => {
   const projectRoute = path.match(/^\/projects\/([^/]+)\/(control-snapshot|learning-state|evidence|learnings|adapters\/(?:preview|apply|rollback))$/);
   const learningDecisionRoute = path.match(/^\/projects\/([^/]+)\/learnings\/([^/]+)\/decision$/);
   const catalogProject = (id) => readProjectCatalog().find((project) => project.project_id === decodeURIComponent(id));
+
+  // Learning Quest exposes only an allowlisted conceptual projection. Stored
+  // topics, project links, event records, paths, and proof metadata stay local.
+  if (path === '/learning-quest/snapshot' && req.method === 'GET') {
+    sendJson(res, 200, { ok: true, ...buildLearningQuestSnapshot() });
+    return;
+  }
+
+  if (path === '/learning-quest/topics' && req.method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req, 32_000); }
+    catch (err) { ruleError(res, 400, 'json', err.message); return; }
+    if (!consumeNonce(body.nonce)) { ruleError(res, 403, 'nonce', 'invalid or already used nonce'); return; }
+    try {
+      upsertLearningTopic({ ...body, approved_for_projection: body.approved_for_projection === true });
+      sendJson(res, 200, { ok: true, ...buildLearningQuestSnapshot() });
+    } catch (err) { ruleError(res, 400, 'learning-quest', err instanceof Error ? err.message : String(err)); }
+    return;
+  }
+
+  if (path === '/learning-quest/topics/delete' && req.method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req, 8_000); }
+    catch (err) { ruleError(res, 400, 'json', err.message); return; }
+    if (!consumeNonce(body.nonce)) { ruleError(res, 403, 'nonce', 'invalid or already used nonce'); return; }
+    try {
+      deleteLearningTopic(body.topic_id);
+      sendJson(res, 200, { ok: true, ...buildLearningQuestSnapshot() });
+    } catch (err) { ruleError(res, 400, 'learning-quest', err instanceof Error ? err.message : String(err)); }
+    return;
+  }
+
+  if (path === '/learning-quest/events' && req.method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req, 16_000); }
+    catch (err) { ruleError(res, 400, 'json', err.message); return; }
+    if (!consumeNonce(body.nonce)) { ruleError(res, 403, 'nonce', 'invalid or already used nonce'); return; }
+    try {
+      appendLearningEvent(body);
+      sendJson(res, 200, { ok: true, ...buildLearningQuestSnapshot() });
+    } catch (err) { ruleError(res, 400, 'learning-quest', err instanceof Error ? err.message : String(err)); }
+    return;
+  }
 
   if (projectRoute) {
     const project = catalogProject(projectRoute[1]);
@@ -1106,6 +1161,9 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /loop-eng/digest/history - Loop Engineering digest history');
   console.log('  POST /loop-eng/ask            - keyword query + budgeted AI fallback');
   console.log('  GET  /project-intelligence/snapshot - project facts and evidence coverage');
+  console.log('  GET  /learning-quest/snapshot     - privacy-safe learning projection');
+  console.log('  POST /learning-quest/topics       - owner-nonce topic create/update');
+  console.log('  POST /learning-quest/events       - owner-nonce learning evidence');
   console.log('  POST /project-intelligence/claims   - owner-confirm one project fact');
   console.log('  POST /project-intelligence/confirm  - promote one inferred fact');
   console.log('  GET  /companion/soul                   - current private soul profile');
