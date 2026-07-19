@@ -81,6 +81,16 @@ Primary analysis:
 - cross-lane transfer
 - fatigue and repeated-failure guardrails
 
+The browser receives aggregates only: rates, averages, counts, stage funnels, and lane summaries. Event IDs, event times, proof fingerprints, topic-project links, and raw event rows are never projected.
+
+## Curriculum
+
+The built-in seed contains the 12-project agent-engineering code spine plus four optional product, marketing, GTM, and sales side quests. `npm run learning:seed` writes it to the private local store. A private Git project link may be supplied through `MEOW_LEARNING_PROJECT_ROOT`; it is stored locally, never printed, and never included in the browser projection.
+
+The detailed workshop sequence, free learning shelf, and local-LLM capstone are in `docs/learning-quest-syllabus.md`.
+
+The existing `Patherle Agent Lab Weekend` heartbeat remains the time-based entry point. Each run must read the safe snapshot first, choose one incomplete or recall-due topic, ask one question at a time, and record only bounded actions through the local API. Scheduling never advances mastery.
+
 ## Delivery phases
 
 1. Private ledger, stage derivation, recall scheduler, safe projection, and API boundary.
