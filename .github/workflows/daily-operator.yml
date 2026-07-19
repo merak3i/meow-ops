@@ -18,8 +18,6 @@ jobs:
     name: Repository review (local sync deferred)
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      MEOW_CLOUD_OUT: ${{ runner.temp }}/meow-ops-daily
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -29,6 +27,8 @@ jobs:
       - run: npm ci
       - name: Run cloud-safe daily review
         run: npm run daily:cloud
+        env:
+          MEOW_CLOUD_OUT: ${{ runner.temp }}/meow-ops-daily
       - name: Upload daily report
         if: always()
         uses: actions/upload-artifact@v7
