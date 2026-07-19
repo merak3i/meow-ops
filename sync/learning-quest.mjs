@@ -60,6 +60,15 @@ function atomicJson(path, value) {
 function topicsPath() { return join(resolveLearningQuestDir(), 'topics.json'); }
 function eventsPath() { return join(resolveLearningQuestDir(), 'events.jsonl'); }
 
+function gitHead(root) {
+  if (!root) return null;
+  try {
+    return execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
+    }).trim();
+  } catch { return null; }
+}
+
 export function readLearningTopics() {
   const rows = readJson(topicsPath(), []);
   return Array.isArray(rows) ? rows : [];
@@ -72,8 +81,14 @@ export function upsertLearningTopic(input = {}) {
   if (input.approved_for_projection === true && SENSITIVE_CONCEPT.test([title, summary, ...tags].join(' '))) {
     throw new Error('[learning-quest] concept contains private or identifying material');
   }
+  const topic_id = safeId(input.topic_id || `topic-${Date.now().toString(36)}`, 'topic_id');
+  const rows = readLearningTopics();
+  const existing = rows.find((row) => row.topic_id === topic_id);
+  const source_project_root = input.source_project_root
+    ? resolve(clean(input.source_project_root, 'source_project_root', 500))
+    : existing?.source_project_root || null;
   const topic = {
-    topic_id: safeId(input.topic_id || `topic-${Date.now().toString(36)}`, 'topic_id'),
+    topic_id,
     title,
     summary,
     lane: LEARNING_LANES.includes(input.lane) ? input.lane : 'code',
@@ -84,11 +99,12 @@ export function upsertLearningTopic(input = {}) {
     approved_for_projection: input.approved_for_projection === true,
     // Private linkage is stored locally and intentionally omitted from every projection.
     source_project_id: input.source_project_id ? clean(input.source_project_id, 'source_project_id', 160) : null,
-    source_project_root: input.source_project_root ? resolve(clean(input.source_project_root, 'source_project_root', 500)) : null,
+    source_project_root,
+    source_revision_baseline: existing?.source_revision_baseline || gitHead(source_project_root),
   };
-  const rows = readLearningTopics().filter((row) => row.topic_id !== topic.topic_id);
-  rows.push(topic);
-  atomicJson(topicsPath(), rows.sort((a, b) => a.topic_id.localeCompare(b.topic_id)));
+  const next = rows.filter((row) => row.topic_id !== topic.topic_id);
+  next.push(topic);
+  atomicJson(topicsPath(), next.sort((a, b) => a.topic_id.localeCompare(b.topic_id)));
   return topic;
 }
 
@@ -98,18 +114,20 @@ export function appendVerifiedLearningProof(input = {}) {
   if (!action) throw new Error('[learning-quest] only local commit verification is currently supported');
   const topic = readLearningTopics().find((row) => row.topic_id === topic_id);
   if (!topic?.source_project_root) throw new Error('[learning-quest] topic has no private local project link');
-  let sha;
-  try {
-    sha = execFileSync('git', ['-C', topic.source_project_root, 'rev-parse', 'HEAD'], {
-      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 5_000,
-    }).trim();
-  } catch {
-    throw new Error('[learning-quest] linked project has no verifiable Git commit');
+  const sha = gitHead(topic.source_project_root);
+  if (!sha) throw new Error('[learning-quest] linked project has no verifiable Git commit');
+  if (topic.source_revision_baseline && sha === topic.source_revision_baseline) {
+    throw new Error('[learning-quest] linked project has no new commit since this topic started');
   }
   const proof = createHash('sha256').update(`commit:${sha}`).digest('hex');
+  const proof_fingerprint = `sha256:${proof}`;
+  if (readLearningEvents().some((event) => event.proof_fingerprint === proof_fingerprint
+    && event.topic_id !== topic_id)) {
+    throw new Error('[learning-quest] this commit already proves another topic');
+  }
   return appendLearningEvent({
     topic_id, action, result: 'passed', assistance: 'none', variation: 'local-git',
-    proof_fingerprint: `sha256:${proof}`,
+    proof_fingerprint,
   });
 }
 

@@ -99,6 +99,10 @@ test('local Git verifier derives opaque shipped proof without projecting commit 
   execFileSync('git', ['-C', repo, 'add', 'work.txt']);
   execFileSync('git', ['-C', repo, 'commit', '-qm', 'prove work']);
   upsertLearningTopic({ ...topic, source_project_root: repo });
+  assert.throws(() => appendVerifiedLearningProof({ topic_id: topic.topic_id, action: 'commit_verified' }), /no new commit/);
+  writeFileSync(join(repo, 'work.txt'), 'verified work\nnew learning proof\n');
+  execFileSync('git', ['-C', repo, 'add', 'work.txt']);
+  execFileSync('git', ['-C', repo, 'commit', '-qm', 'complete learning proof']);
   for (const action of ['lesson_opened', 'concept_preview_completed', 'exercise_attempted', 'code_changed',
     'tests_passed', 'broken_case_repaired']) {
     appendLearningEvent({ topic_id: topic.topic_id, action, result: 'passed' });
