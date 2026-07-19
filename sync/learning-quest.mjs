@@ -59,6 +59,7 @@ function atomicJson(path, value) {
 
 function topicsPath() { return join(resolveLearningQuestDir(), 'topics.json'); }
 function eventsPath() { return join(resolveLearningQuestDir(), 'events.jsonl'); }
+function workshopsPath() { return join(resolveLearningQuestDir(), 'workshops.json'); }
 
 function gitHead(root) {
   if (!root) return null;
@@ -146,6 +147,66 @@ export function readLearningEvents() {
   } catch { return []; }
 }
 
+function readLearningWorkshops() {
+  const rows = readJson(workshopsPath(), []);
+  return Array.isArray(rows) ? rows : [];
+}
+
+function activeWorkshop() {
+  return readLearningWorkshops().findLast((row) => !row.completed_at) || null;
+}
+
+function touchActiveWorkshop(topicId, occurredAt) {
+  const rows = readLearningWorkshops();
+  const index = rows.findLastIndex((row) => !row.completed_at);
+  if (index < 0) return;
+  rows[index] = {
+    ...rows[index],
+    last_activity_at: occurredAt,
+    topic_ids: [...new Set([...rows[index].topic_ids, topicId])],
+  };
+  atomicJson(workshopsPath(), rows);
+}
+
+export function updateLearningWorkshop(input = {}, { now = Date.now() } = {}) {
+  const action = clean(input.action, 'workshop action', 40);
+  if (!['start', 'complete'].includes(action)) throw new Error('[learning-quest] unsupported workshop action');
+  const topics = readLearningTopics().filter((topic) => topic.approved_for_projection);
+  const rows = readLearningWorkshops();
+  const activeIndex = rows.findLastIndex((row) => !row.completed_at);
+  if (action === 'complete') {
+    if (activeIndex < 0) throw new Error('[learning-quest] no active workshop');
+    const eventCounts = Object.fromEntries(rows[activeIndex].topic_ids.map((id) => [id,
+      readLearningEvents().filter((event) => event.topic_id === id).length]));
+    const advanced = rows[activeIndex].topic_ids.some((id) =>
+      eventCounts[id] > (rows[activeIndex].baseline_action_counts[id] || 0));
+    if (!advanced) throw new Error('[learning-quest] complete one learning action before finishing');
+    rows[activeIndex] = { ...rows[activeIndex], completed_at: new Date(now).toISOString() };
+    atomicJson(workshopsPath(), rows);
+    return rows[activeIndex];
+  }
+  if (activeIndex >= 0) return rows[activeIndex];
+  const requested = [...new Set((Array.isArray(input.topic_ids) ? input.topic_ids : [])
+    .map((id) => safeId(id, 'topic_id')))];
+  const allowed = new Set(topics.map((topic) => topic.topic_id));
+  const topicIds = requested.filter((id) => allowed.has(id)).slice(0, 5);
+  if (!topicIds.length) throw new Error('[learning-quest] workshop requires an approved topic');
+  const date = new Date(now);
+  const workshop = {
+    workshop_id: `lqw_${date.getTime().toString(36)}_${randomBytes(4).toString('hex')}`,
+    started_at: date.toISOString(),
+    last_activity_at: date.toISOString(),
+    completed_at: null,
+    origin: [0, 6].includes(date.getUTCDay()) ? 'weekend' : 'spontaneous',
+    topic_ids: topicIds,
+    baseline_action_counts: Object.fromEntries(topicIds.map((id) => [id,
+      readLearningEvents().filter((event) => event.topic_id === id).length])),
+  };
+  rows.push(workshop);
+  atomicJson(workshopsPath(), rows);
+  return workshop;
+}
+
 export function appendLearningEvent(input = {}) {
   const topic_id = safeId(input.topic_id, 'topic_id');
   if (!readLearningTopics().some((row) => row.topic_id === topic_id)) throw new Error('[learning-quest] topic not found');
@@ -184,6 +245,7 @@ export function appendLearningEvent(input = {}) {
   };
   mkdirSync(dirname(eventsPath()), { recursive: true });
   appendFileSync(eventsPath(), `${JSON.stringify(event)}\n`, { mode: 0o600 });
+  touchActiveWorkshop(topic_id, event.occurred_at);
   return event;
 }
 
@@ -248,6 +310,23 @@ function buildAnalytics(topics, allEvents, now) {
     topics.filter((topic) => MASTERY_STAGES.indexOf(topic.stage) >= MASTERY_STAGES.indexOf(stage)).length]));
   const due = topics.filter((topic) => topic.progress.action_count > 0
     && (topic.recall.refresh_due || Date.parse(topic.recall.next_due_at) <= now)).length;
+  const recentBoundary = now - 30 * 86_400_000;
+  const recentCompleted = completed.filter((event) => Date.parse(event.occurred_at) >= recentBoundary);
+  const recentIndependent = recentCompleted.filter((event) => event.assistance === 'none');
+  const exactStageCounts = {
+    'not started': topics.filter((topic) => !topic.stage).length,
+    ...Object.fromEntries(MASTERY_STAGES.map((stage) => [stage,
+      topics.filter((topic) => topic.stage === stage).length])),
+  };
+  const bottleneck = ['not started', ...MASTERY_STAGES].reduce((best, stage) =>
+    exactStageCounts[stage] > exactStageCounts[best] ? stage : best, 'not started');
+  const recentRate = recentCompleted.length ? recentIndependent.length / recentCompleted.length : 0;
+  const allRate = completed.length ? independent.length / completed.length : 0;
+  const intervention = due > 0 ? 'refresh_due_recall'
+    : topics.some((topic) => topic.stage === 'practiced') ? 'repair_and_explain'
+      : topics.some((topic) => topic.stage === 'proven') ? 'ship_verified_proof'
+        : topics.some((topic) => !topic.stage) ? 'open_smallest_lesson'
+          : 'choose_new_topic';
   return {
     recall: {
       attempts: recalls.length,
@@ -271,6 +350,12 @@ function buildAnalytics(topics, allEvents, now) {
     },
     stage_funnel: stageCounts,
     by_lane: byLane,
+    guidance: {
+      bottleneck_stage: bottleneck,
+      independence_direction: recentCompleted.length < 2 || Math.abs(recentRate - allRate) < 0.1
+        ? 'steady' : recentRate > allRate ? 'rising' : 'falling',
+      next_intervention: intervention,
+    },
   };
 }
 
@@ -291,7 +376,48 @@ function buildRewards(topics, allEvents) {
       cursor -= 86_400_000;
     }
   }
-  return { xp, level: Math.floor(Math.sqrt(xp / 100)) + 1, streak_days: streak };
+  const dimensions = {
+    understanding: completed.filter((event) => event.action === 'feynman_passed').length,
+    independence: completed.filter((event) => event.assistance === 'none').length,
+    shipping: topics.filter((topic) => topic.stage === 'shipped').length,
+    consistency: activeDays.length,
+  };
+  const badges = [
+    dimensions.understanding > 0 && 'first-principles',
+    dimensions.independence >= 5 && 'independent-builder',
+    dimensions.shipping > 0 && 'proof-shipper',
+    dimensions.consistency >= 4 && 'steady-craft',
+  ].filter(Boolean);
+  return { xp, level: Math.floor(Math.sqrt(xp / 100)) + 1, streak_days: streak, dimensions, badges };
+}
+
+function buildWorkshopProjection(topics, allEvents, now) {
+  const workshop = activeWorkshop();
+  if (!workshop) return { state: 'none', health: 100, age_days: 0, inactive_days: 0,
+    pending_count: 0, completed_count: 0, can_resume: false, can_complete: false,
+    origin: 'spontaneous', focus_topic_id: topics.find((topic) => topic.recall.refresh_due)?.topic_id
+      || topics.find((topic) => topic.stage !== 'shipped')?.topic_id || topics[0]?.topic_id || null,
+    reminder: 'Choose any lane when curiosity strikes.' };
+  const ageDays = Math.max(0, Math.floor((now - Date.parse(workshop.started_at)) / 86_400_000));
+  const inactiveDays = Math.max(0, Math.floor((now - Date.parse(workshop.last_activity_at)) / 86_400_000));
+  const counts = Object.fromEntries(workshop.topic_ids.map((id) => [id,
+    allEvents.filter((event) => event.topic_id === id).length]));
+  const completedCount = workshop.topic_ids.filter((id) =>
+    counts[id] > (workshop.baseline_action_counts[id] || 0)).length;
+  const pendingCount = Math.max(0, workshop.topic_ids.length - completedCount);
+  const health = Math.max(20, Math.min(100, 100 - inactiveDays * 9 + completedCount * 12));
+  const reminder = ageDays >= 7 ? "Last weekend's workshop is still yours to finish."
+    : inactiveDays >= 3 ? 'Your workshop is resting, not lost.'
+      : pendingCount ? 'One honest action will restore momentum.'
+        : 'The learning action is complete. Close the workshop when ready.';
+  return {
+    state: 'active', health, age_days: ageDays, inactive_days: inactiveDays,
+    pending_count: pendingCount, completed_count: completedCount, can_resume: true,
+    can_complete: completedCount > 0, origin: workshop.origin,
+    focus_topic_id: workshop.topic_ids.find((id) => topics.some((topic) => topic.topic_id === id))
+      || topics[0]?.topic_id || null,
+    reminder,
+  };
 }
 
 function safeQuestion(topic, events) {
@@ -334,7 +460,7 @@ export function buildLearningQuestSnapshot({ now = Date.now() } = {}) {
     return snapshot;
   });
   const snapshot = {
-    schema_version: 1,
+    schema_version: 2,
     topics,
     summary: {
       total_topics: topics.length,
@@ -344,6 +470,7 @@ export function buildLearningQuestSnapshot({ now = Date.now() } = {}) {
     },
     analytics: buildAnalytics(topics, allEvents, now),
     rewards: buildRewards(topics, allEvents),
+    workshop: buildWorkshopProjection(topics, allEvents, now),
   };
   assertProjectionSafe(snapshot);
   return snapshot;

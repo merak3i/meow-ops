@@ -205,6 +205,10 @@ export function verifyLearningQuestProof(topicId, action = 'commit_verified') {
   return mutateLearningQuest('/learning-quest/verify', { topic_id: topicId, action });
 }
 
+export function updateLearningQuestWorkshop(action, topicIds = []) {
+  return mutateLearningQuest('/learning-quest/workshop', { action, topic_ids: topicIds });
+}
+
 export async function fetchProjectControlSnapshot(projectId) {
   const data = await fetchLoopJson(`/projects/${encodeURIComponent(projectId)}/control-snapshot`);
   return data && typeof data === 'object' ? data : null;

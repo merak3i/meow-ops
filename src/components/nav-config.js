@@ -30,7 +30,7 @@ export const NAV_SECTIONS = [
       { id: 'loop-ops',  label: 'The Loom',        icon: Workflow,  usesDateFilter: false, fullBleed: true },
       { id: 'loop-review', label: 'Review Deck',   icon: ClipboardCheck, usesDateFilter: false             },
       { id: 'project-control', label: 'Project Control', icon: ScanEye, usesDateFilter: false              },
-      { id: 'learning-quest', label: 'Learning Quest', icon: GraduationCap, usesDateFilter: false         },
+      { id: 'learning-quest', label: "Builder's Journey", icon: GraduationCap, usesDateFilter: false    },
     ],
   },
   {

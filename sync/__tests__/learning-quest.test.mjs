@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 
 import {
   appendLearningEvent, appendVerifiedLearningProof, buildLearningQuestSnapshot, deleteLearningTopic, RECALL_DAYS,
-  readLearningTopics, upsertLearningTopic,
+  readLearningTopics, updateLearningWorkshop, upsertLearningTopic,
 } from '../learning-quest.mjs';
 import { AGENT_ENGINEERING_CURRICULUM, SIDE_QUESTS } from '../learning-quest-curriculum.mjs';
 
@@ -154,6 +154,43 @@ test('event boundary rejects arbitrary actions and unknown topics', () => withQu
   upsertLearningTopic(topic);
   assert.throws(() => appendLearningEvent({ topic_id: topic.topic_id, action: 'set_stage_shipped' }), /unsupported action/);
   assert.throws(() => appendLearningEvent({ topic_id: 'missing', action: 'lesson_opened' }), /topic not found/);
+}));
+
+test('unfinished workshops expose gentle aggregate health without continuity records', () => withQuest((dir) => {
+  upsertLearningTopic(topic);
+  const started = Date.parse('2026-07-11T10:00:00.000Z');
+  updateLearningWorkshop({ action: 'start', topic_ids: [topic.topic_id] }, { now: started });
+  const snapshot = buildLearningQuestSnapshot({ now: started + 8 * 86_400_000 });
+  assert.equal(snapshot.schema_version, 2);
+  assert.equal(snapshot.workshop.state, 'active');
+  assert.equal(snapshot.workshop.age_days, 8);
+  assert.equal(snapshot.workshop.health, 28);
+  assert.equal(snapshot.workshop.can_resume, true);
+  assert.match(snapshot.workshop.reminder, /Last weekend/);
+  assert.doesNotMatch(JSON.stringify(snapshot), /started_at|last_activity_at|completed_at|baseline_action_counts|workshop_id/);
+  assert.match(readFileSync(join(dir, 'workshops.json'), 'utf8'), /started_at/);
+}));
+
+test('workshops require a real learning action before completion', () => withQuest(() => {
+  upsertLearningTopic(topic);
+  updateLearningWorkshop({ action: 'start', topic_ids: [topic.topic_id] });
+  assert.throws(() => updateLearningWorkshop({ action: 'complete' }), /complete one learning action/);
+  appendLearningEvent({ topic_id: topic.topic_id, action: 'lesson_opened' });
+  const progressed = buildLearningQuestSnapshot();
+  assert.equal(progressed.workshop.completed_count, 1);
+  assert.equal(progressed.workshop.can_complete, true);
+  updateLearningWorkshop({ action: 'complete' });
+  assert.equal(buildLearningQuestSnapshot().workshop.state, 'none');
+}));
+
+test('rewards and guidance project decisions instead of raw learning rows', () => withQuest(() => {
+  upsertLearningTopic(topic);
+  appendLearningEvent({ topic_id: topic.topic_id, action: 'lesson_opened', assistance: 'none' });
+  const snapshot = buildLearningQuestSnapshot();
+  assert.equal(snapshot.rewards.dimensions.independence, 1);
+  assert.equal(snapshot.analytics.guidance.next_intervention, 'refresh_due_recall');
+  assert.ok(['rising', 'steady', 'falling'].includes(snapshot.analytics.guidance.independence_direction));
+  assert.doesNotMatch(JSON.stringify(snapshot.analytics.guidance), /occurred_at|event_id|proof/i);
 }));
 
 test('built-in curriculum is generic, sequential, and projection-safe', () => withQuest(() => {

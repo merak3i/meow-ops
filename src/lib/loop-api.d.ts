@@ -175,14 +175,39 @@ export interface LearningQuestSnapshot {
     effort: { average_attempts: number; average_duration_seconds: number };
     stage_funnel: Record<string, number>;
     by_lane: Record<LearningQuestLane, { topics: number; shipped: number; recall_confidence: number }>;
+    guidance: {
+      bottleneck_stage: string;
+      independence_direction: 'rising' | 'steady' | 'falling';
+      next_intervention: string;
+    };
   };
-  rewards: { xp: number; level: number; streak_days: number };
+  rewards: {
+    xp: number;
+    level: number;
+    streak_days: number;
+    dimensions: { understanding: number; independence: number; shipping: number; consistency: number };
+    badges: string[];
+  };
+  workshop: {
+    state: 'none' | 'active';
+    health: number;
+    age_days: number;
+    inactive_days: number;
+    pending_count: number;
+    completed_count: number;
+    can_resume: boolean;
+    can_complete: boolean;
+    origin: 'weekend' | 'spontaneous';
+    focus_topic_id: string | null;
+    reminder: string;
+  };
 }
 export function fetchLearningQuestSnapshot(): Promise<LearningQuestSnapshot>;
 export function saveLearningQuestTopic(topic: Record<string, unknown>): Promise<LearningQuestSnapshot | null>;
 export function removeLearningQuestTopic(topicId: string): Promise<LearningQuestSnapshot | null>;
 export function recordLearningQuestEvent(event: Record<string, unknown>): Promise<LearningQuestSnapshot | null>;
 export function verifyLearningQuestProof(topicId: string, action?: 'commit_verified'): Promise<LearningQuestSnapshot | null>;
+export function updateLearningQuestWorkshop(action: 'start' | 'complete', topicIds?: string[]): Promise<LearningQuestSnapshot | null>;
 export function fetchProjectControlSnapshot(projectId: string): Promise<ProjectControlSnapshot | null>;
 export function fetchProjectLearningState(projectId: string): Promise<ProjectLearningStateResponse | null>;
 export function fetchProjectEvidence(

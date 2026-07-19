@@ -115,6 +115,20 @@ Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, **Cur
 | **Cost Tracker** | Daily cost line, cumulative burn, per-model breakdown |
 | **Live Sessions** | Real-time agent cards with tool-usage bars |
 | **Capacity & Usage** | GitHub Actions capacity, SaaS subscriptions, renewals, and SuperAdmin usage wiring |
+| **Builder's Journey** | A private learning workshop from vibe-led exploration to first-principles understanding and verified shipping |
+
+### The Builder's Journey
+
+Builder's Journey is a calm, game-shaped learning workshop for becoming less dependent on generated answers and more capable of explaining, repairing, and shipping systems from first principles.
+
+- Open it spontaneously and start from any code, product, marketing, GTM, or sales path.
+- Resume an unfinished workshop from last weekend with a gentle health and reminder signal. Nothing resets or expires.
+- See one next proof instead of an overwhelming curriculum dashboard.
+- Use the mobile-friendly Quick Recall view for two-minute retrieval checks up to a 360-day interval.
+- Earn separate progress for understanding, independent work, verified shipping, and consistency.
+- Keep private learning records local. The browser receives only approved concepts and aggregate progress.
+
+Mastery is evidence-derived: `Discovered -> Practiced -> Proven -> Shipped`. A failed recall check schedules a nearer return but never removes earned mastery. See `docs/learning-quest-architecture.md` for the privacy contract and `docs/learning-quest-syllabus.md` for the 12-project agent-engineering path and local-LLM capstone.
 
 ### Source Breakdown
 

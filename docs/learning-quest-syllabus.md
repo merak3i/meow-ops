@@ -2,7 +2,7 @@
 
 ## Rhythm
 
-Use one 3-4 hour weekend workshop per project. The calendar is a guide, not a deadline. If evidence is incomplete, repeat the project instead of advancing the stage manually.
+Open the Builder's Journey whenever curiosity strikes. A 3-4 hour weekend workshop remains available, but the calendar is a guide, not a deadline. An unfinished workshop stays resumable, including across the following weekend. Its health bar is a continuity signal, not a grade.
 
 1. `20 min` - open the lesson, preview the concept, and answer one prediction question.
 2. `90 min` - build the smallest working slice with AI scaffolding; explain every critical boundary before accepting generated code.
@@ -31,7 +31,7 @@ Recall runs after `1, 3, 7, 14, 30, 60, 90, 180, 270, and 360` successful-day in
 
 ## Side quests
 
-Side quests are asynchronous and optional. They unlock from shipped technical proof rather than replacing code practice.
+The five paths are asynchronous, optional, and independently selectable. Code remains the central engineering path, while business paths can be practiced whenever the current work creates a useful learning opportunity.
 
 - Product: translate a mechanism into a user promise and acceptance condition.
 - Marketing: tell a before, mechanism, and verified-after proof story.

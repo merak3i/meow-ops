@@ -2,7 +2,7 @@
 
 ## Outcome
 
-Learning Quest turns approved generic competencies into a local learning game. Code is the main quest. Product, marketing, GTM, and sales are optional side quests that unlock from relevant technical milestones.
+The Builder's Journey turns approved generic competencies into a calm, local learning world: from vibe-led experimentation to first-principles understanding and verified craft. Code, product, marketing, GTM, and sales are independently selectable paths. Code remains the central engineering path without gating the others.
 
 The public repository contains the reusable engine and synthetic examples. Personal curricula, progress, project links, answers, and proof remain outside Git under `~/.meow-ops/learning-quest/`.
 
@@ -30,6 +30,8 @@ Allowed topic fields:
 - aggregate action and attempt counts
 
 Forbidden output includes project IDs, repository details, filesystem paths, learning-state files, raw evidence, artifacts, metadata, timestamps from source systems, session records, prompts, excerpts, customer details, and private content.
+
+Workshop continuity is app-owned and remains local. The browser receives only state, health, age in whole days, aggregate progress, an opaque focus topic, and generic reminder copy. Internal workshop identifiers, exact dates, baselines, and activity records never leave the helper.
 
 Projection is deny-by-default. A topic is invisible until `approved_for_projection` is explicitly true. Private linkage may exist in local storage but is omitted from every response.
 
@@ -83,13 +85,35 @@ Primary analysis:
 
 The browser receives aggregates only: rates, averages, counts, stage funnels, and lane summaries. Event IDs, event times, proof fingerprints, topic-project links, and raw event rows are never projected.
 
+## Experience model
+
+The default surface is Today, not the full curriculum map. It answers four questions: what to do next, why now, how to resume, and what proof counts.
+
+- A workshop starts spontaneously from any selected path.
+- An unfinished workshop remains resumable across weekends.
+- Health combines recency and real progress, bottoms out gently, and never represents personal worth.
+- Health recovers through a learning action, not by opening the page.
+- The interface presents one next proof at a time; the full stage model remains visible as context.
+- AI-assistance level is progressively disclosed and recorded as a bounded tier.
+- Quick Recall is optimized for short mobile returns.
+- Insights translate aggregate evidence into a recommended intervention.
+- Rewards separately recognize understanding, independence, verified shipping, and consistency.
+
+Evidence capture uses the least manual mechanism that remains honest. Local Git proof is verified automatically. Actions the helper cannot observe safely use one explicit confirmation. Written explanation appears only for first-principles and recall checks, and explanation text is never persisted.
+
 ## Curriculum
 
-The built-in seed contains the 12-project agent-engineering code spine plus four optional product, marketing, GTM, and sales side quests. `npm run learning:seed` writes it to the private local store. A private Git project link may be supplied through `MEOW_LEARNING_PROJECT_ROOT`; it is stored locally, never printed, and never included in the browser projection.
+The built-in seed contains the 12-project agent-engineering code path plus product, marketing, GTM, and sales paths. All paths are independently selectable. `npm run learning:seed` writes them to the private local store. A private Git project link may be supplied through `MEOW_LEARNING_PROJECT_ROOT`; it is stored locally, never printed, and never included in the browser projection.
 
 The detailed workshop sequence, free learning shelf, and local-LLM capstone are in `docs/learning-quest-syllabus.md`.
 
-The existing `Patherle Agent Lab Weekend` heartbeat remains the time-based entry point. Each run must read the safe snapshot first, choose one incomplete or recall-due topic, ask one question at a time, and record only bounded actions through the local API. Scheduling never advances mastery.
+The existing weekend heartbeat remains an optional time-based entry point, while spontaneous app use is primary. Each run must read the safe snapshot first, prefer an open workshop or recall-due topic, ask one question at a time, and record only bounded actions through the local API. Scheduling and reminders never advance mastery.
+
+## Research rationale
+
+- Distributed practice and retrieval practice improve retention across a broad body of education research: https://pubmed.ncbi.nlm.nih.gov/37615780/
+- Gamification can improve engagement, but evidence quality varies and the game can distract from learning: https://pmc.ncbi.nlm.nih.gov/articles/PMC6458534/
+- The design therefore uses autonomy, visible competence, gentle continuity, retrieval prompts, and proof-backed rewards without leaderboards, punishment, or compulsory streaks.
 
 ## Delivery phases
 

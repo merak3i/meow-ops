@@ -37,7 +37,8 @@ import {
 } from './project-control.mjs';
 import { queryAgentEvidence } from './project-evidence.mjs';
 import {
-  appendLearningEvent, appendVerifiedLearningProof, buildLearningQuestSnapshot, deleteLearningTopic, upsertLearningTopic,
+  appendLearningEvent, appendVerifiedLearningProof, buildLearningQuestSnapshot, deleteLearningTopic,
+  updateLearningWorkshop, upsertLearningTopic,
 } from './learning-quest.mjs';
 import {
   applySoulPolicy, compileSoulInstructions, readSoulProfile, resetSoulProfile,
@@ -486,6 +487,18 @@ const server = createServer(async (req, res) => {
     if (!consumeNonce(body.nonce)) { ruleError(res, 403, 'nonce', 'invalid or already used nonce'); return; }
     try {
       appendVerifiedLearningProof(body);
+      sendJson(res, 200, { ok: true, ...buildLearningQuestSnapshot() });
+    } catch (err) { ruleError(res, 400, 'learning-quest', err instanceof Error ? err.message : String(err)); }
+    return;
+  }
+
+  if (path === '/learning-quest/workshop' && req.method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req, 8_000); }
+    catch (err) { ruleError(res, 400, 'json', err.message); return; }
+    if (!consumeNonce(body.nonce)) { ruleError(res, 403, 'nonce', 'invalid or already used nonce'); return; }
+    try {
+      updateLearningWorkshop(body);
       sendJson(res, 200, { ok: true, ...buildLearningQuestSnapshot() });
     } catch (err) { ruleError(res, 400, 'learning-quest', err instanceof Error ? err.message : String(err)); }
     return;
@@ -1177,6 +1190,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  POST /learning-quest/topics       - owner-nonce topic create/update');
   console.log('  POST /learning-quest/events       - owner-nonce learning evidence');
   console.log('  POST /learning-quest/verify       - owner-nonce local proof verification');
+  console.log('  POST /learning-quest/workshop     - owner-nonce workshop continuity');
   console.log('  POST /project-intelligence/claims   - owner-confirm one project fact');
   console.log('  POST /project-intelligence/confirm  - promote one inferred fact');
   console.log('  GET  /companion/soul                   - current private soul profile');
