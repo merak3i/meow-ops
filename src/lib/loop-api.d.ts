@@ -142,6 +142,47 @@ export interface ProjectAdapterPreview {
   };
 }
 export function fetchProjectControlPortfolio(): Promise<ProjectControlPortfolio>;
+export type LearningQuestStage = 'discovered' | 'practiced' | 'proven' | 'shipped' | null;
+export type LearningQuestLane = 'code' | 'product' | 'marketing' | 'gtm' | 'sales';
+export interface LearningQuestTopic {
+  topic_id: string;
+  title: string;
+  summary: string;
+  lane: LearningQuestLane;
+  difficulty: number;
+  tags: string[];
+  prerequisite_ids: string[];
+  stage: LearningQuestStage;
+  recall: { confidence: number; refresh_due: boolean; interval_days: number; next_due_at: string };
+  next_question: { question_id: string; kind: string; question_text: string };
+  progress: { action_count: number; attempts: number; completed_actions: string[]; next_actions: string[] };
+}
+export interface LearningQuestSnapshot {
+  ok: boolean;
+  schema_version: number;
+  topics: LearningQuestTopic[];
+  summary: {
+    total_topics: number;
+    by_stage: Record<string, number>;
+    by_lane: Record<LearningQuestLane, number>;
+    durable_capability: number;
+  };
+  analytics: {
+    recall: { attempts: number; pass_rate: number; refresh_due: number; reached_360_days: number };
+    independence: { completed_actions: number; unassisted_rate: number; average_hints: number };
+    explanation: { passes: number; rubric_average: number };
+    calibration_error: number;
+    effort: { average_attempts: number; average_duration_seconds: number };
+    stage_funnel: Record<string, number>;
+    by_lane: Record<LearningQuestLane, { topics: number; shipped: number; recall_confidence: number }>;
+  };
+  rewards: { xp: number; level: number; streak_days: number };
+}
+export function fetchLearningQuestSnapshot(): Promise<LearningQuestSnapshot>;
+export function saveLearningQuestTopic(topic: Record<string, unknown>): Promise<LearningQuestSnapshot | null>;
+export function removeLearningQuestTopic(topicId: string): Promise<LearningQuestSnapshot | null>;
+export function recordLearningQuestEvent(event: Record<string, unknown>): Promise<LearningQuestSnapshot | null>;
+export function verifyLearningQuestProof(topicId: string, action?: 'commit_verified'): Promise<LearningQuestSnapshot | null>;
 export function fetchProjectControlSnapshot(projectId: string): Promise<ProjectControlSnapshot | null>;
 export function fetchProjectLearningState(projectId: string): Promise<ProjectLearningStateResponse | null>;
 export function fetchProjectEvidence(

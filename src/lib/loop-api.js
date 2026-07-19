@@ -176,6 +176,35 @@ export async function fetchProjectControlPortfolio() {
   return data && typeof data === 'object' ? data : { ok: false, projects: [] };
 }
 
+export async function fetchLearningQuestSnapshot() {
+  const data = await fetchLoopJson('/learning-quest/snapshot');
+  return data && typeof data === 'object' ? data : { ok: false, topics: [], summary: null };
+}
+
+async function mutateLearningQuest(path, payload) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+  return postJson(`${base}${path}`, { ...payload, nonce });
+}
+
+export function saveLearningQuestTopic(topic) {
+  return mutateLearningQuest('/learning-quest/topics', topic);
+}
+
+export function removeLearningQuestTopic(topicId) {
+  return mutateLearningQuest('/learning-quest/topics/delete', { topic_id: topicId });
+}
+
+export function recordLearningQuestEvent(event) {
+  return mutateLearningQuest('/learning-quest/events', event);
+}
+
+export function verifyLearningQuestProof(topicId, action = 'commit_verified') {
+  return mutateLearningQuest('/learning-quest/verify', { topic_id: topicId, action });
+}
+
 export async function fetchProjectControlSnapshot(projectId) {
   const data = await fetchLoopJson(`/projects/${encodeURIComponent(projectId)}/control-snapshot`);
   return data && typeof data === 'object' ? data : null;

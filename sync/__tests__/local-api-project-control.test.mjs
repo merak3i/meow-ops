@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 import { registerProject } from '../project-control.mjs';
+import { upsertLearningTopic } from '../learning-quest.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 7451;
@@ -20,6 +21,7 @@ let server;
 let temp;
 let project;
 let previousControl;
+let previousQuest;
 let serverOutput = '';
 
 async function get(path) {
@@ -53,8 +55,15 @@ before(async () => {
   ]));
 
   previousControl = process.env.MEOW_PROJECT_CONTROL_DIR;
+  previousQuest = process.env.MEOW_LEARNING_QUEST_DIR;
   process.env.MEOW_PROJECT_CONTROL_DIR = controlDir;
+  process.env.MEOW_LEARNING_QUEST_DIR = join(temp, 'learning-quest');
   project = registerProject({ name: 'Meow Ops', root: projectRoot, aliases: ['meow-ops'] });
+  upsertLearningTopic({
+    topic_id: 'structured-output', title: 'Structured output',
+    summary: 'Validate an agent response against a schema', lane: 'code',
+    approved_for_projection: true, source_project_id: project.project_id,
+  });
 
   server = spawn('node', [join(ROOT, 'sync', 'local-api.mjs')], {
     cwd: ROOT,
@@ -62,6 +71,7 @@ before(async () => {
       ...process.env,
       MEOW_LOCAL_API_PORT: String(PORT),
       MEOW_PROJECT_CONTROL_DIR: controlDir,
+      MEOW_LEARNING_QUEST_DIR: process.env.MEOW_LEARNING_QUEST_DIR,
       MEOW_PROJECT_INTELLIGENCE_DIR: join(temp, 'intelligence'),
       MEOW_LOOP_DIR: join(temp, 'loops'),
       MEOW_SESSION_HISTORY_DIR: join(temp, 'history'),
@@ -86,6 +96,8 @@ after(() => {
   server?.kill();
   if (previousControl === undefined) delete process.env.MEOW_PROJECT_CONTROL_DIR;
   else process.env.MEOW_PROJECT_CONTROL_DIR = previousControl;
+  if (previousQuest === undefined) delete process.env.MEOW_LEARNING_QUEST_DIR;
+  else process.env.MEOW_LEARNING_QUEST_DIR = previousQuest;
   rmSync(temp, { recursive: true, force: true });
 });
 
@@ -98,6 +110,33 @@ test('project routes expose an Eagle Eye snapshot and learning state', async () 
   const state = await get(`/projects/${project.project_id}/learning-state`);
   assert.equal(state.status, 200);
   assert.match(state.body.files['INDEX.md'], /Project learning/);
+});
+
+test('hosted UI receives only the safe quest projection, never private project records', async () => {
+  const hostedHeaders = { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1' };
+  const privateResponse = await fetch(`${BASE}/projects`, { headers: hostedHeaders });
+  assert.equal(privateResponse.status, 403);
+
+  const questResponse = await fetch(`${BASE}/learning-quest/snapshot`, { headers: hostedHeaders });
+  assert.equal(questResponse.status, 200);
+  const body = await questResponse.json();
+  assert.equal(body.topics[0].topic_id, 'structured-output');
+  assert.doesNotMatch(JSON.stringify(body), /source_project|project_id|learning-state|\.meow|path|evidence|metadata/i);
+});
+
+test('quest writes require one-use owner nonces and return only recomputed snapshots', async () => {
+  const eventNonce = await nonce();
+  const recorded = await post('/learning-quest/events', {
+    nonce: eventNonce, topic_id: 'structured-output', action: 'lesson_opened', result: 'completed',
+  });
+  assert.equal(recorded.status, 200);
+  assert.equal(recorded.body.topics[0].progress.action_count, 1);
+  assert.equal(recorded.body.event, undefined);
+
+  const replay = await post('/learning-quest/events', {
+    nonce: eventNonce, topic_id: 'structured-output', action: 'lesson_opened', result: 'completed',
+  });
+  assert.equal(replay.status, 403);
 });
 
 test('learning proposal and decision routes enforce one-use owner nonces', async () => {

@@ -25,6 +25,7 @@ const LoopOps            = lazy(() => import('./pages/LoopOps'));
 // Owner approval deck for Loop Engineering proposals
 const LoopReview         = lazy(() => import('./pages/LoopReview'));
 const ProjectControl     = lazy(() => import('./pages/ProjectControl'));
+const LearningQuest      = lazy(() => import('./pages/LearningQuest'));
 // Local-only subscription, capacity, and GitHub Actions usage cockpit
 const CapacityUsage      = lazy(() => import('./pages/CapacityUsage'));
 import {
@@ -261,6 +262,13 @@ export default function App() {
         </Suspense>
       );
     }
+    if (page === 'learning-quest') {
+      return (
+        <Suspense fallback={<PageLoader />}>
+          <LearningQuest />
+        </Suspense>
+      );
+    }
 
     if (noData) return <NoDataScreen />;
 
@@ -368,7 +376,7 @@ export default function App() {
           </div>
         )}
 
-        {loading && page !== 'loop-ops' && page !== 'loop-review' && page !== 'capacity-usage' ? (
+        {loading && !['loop-ops', 'loop-review', 'capacity-usage', 'project-control', 'learning-quest'].includes(page) ? (
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             height: 400, color: 'var(--text-muted)', fontSize: 14,
