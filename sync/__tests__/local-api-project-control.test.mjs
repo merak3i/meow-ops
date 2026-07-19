@@ -125,6 +125,13 @@ test('hosted UI receives only the safe quest projection, never private project r
 });
 
 test('quest writes require one-use owner nonces and return only recomputed snapshots', async () => {
+  const workshopNonce = await nonce();
+  const started = await post('/learning-quest/workshop', {
+    nonce: workshopNonce, action: 'start', topic_ids: ['structured-output'],
+  });
+  assert.equal(started.status, 200);
+  assert.equal(started.body.workshop.state, 'active');
+
   const eventNonce = await nonce();
   const recorded = await post('/learning-quest/events', {
     nonce: eventNonce, topic_id: 'structured-output', action: 'lesson_opened', result: 'completed',
@@ -137,6 +144,11 @@ test('quest writes require one-use owner nonces and return only recomputed snaps
     nonce: eventNonce, topic_id: 'structured-output', action: 'lesson_opened', result: 'completed',
   });
   assert.equal(replay.status, 403);
+
+  const finishNonce = await nonce();
+  const finished = await post('/learning-quest/workshop', { nonce: finishNonce, action: 'complete' });
+  assert.equal(finished.status, 200);
+  assert.equal(finished.body.workshop.state, 'none');
 });
 
 test('learning proposal and decision routes enforce one-use owner nonces', async () => {

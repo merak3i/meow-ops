@@ -54,6 +54,7 @@ test('sidebar renders all nav buttons', async ({ page }) => {
     'Overview', 'Sessions', 'By Project', 'By Day', 'By Action',
     'Cost Tracker', 'Analytics', 'Agent Ops', 'Scrying Sanctum',
     'The Loom', 'Review Deck', 'Project Control', 'Capacity & Usage', 'Companion', 'Focus Timer',
+    "Builder's Journey",
   ];
   for (const label of expectedNav) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -104,6 +105,42 @@ test('Project Control: Eagle Eye and Surgical views use governed local evidence'
   await expect(page.getByText('Owner approved the constitution.')).toBeVisible();
   await expect(page.getByText('INDEX.md')).toBeVisible();
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
+});
+
+test("Builder's Journey prioritizes spontaneous work, independent paths, and quick recall", async ({ page }) => {
+  const topic = (id: string, title: string, lane: string, refreshDue = false) => ({
+    topic_id: id, title, summary: `${title} explained as a generic mechanism`, lane,
+    difficulty: 2, tags: [], prerequisite_ids: [], stage: null,
+    recall: { confidence: 0, refresh_due: refreshDue, interval_days: 1, next_due_at: '2026-07-20T00:00:00.000Z' },
+    next_question: { question_id: `${id}-q`, kind: 'analogy', question_text: `Explain ${title} with an everyday analogy.` },
+    progress: { action_count: refreshDue ? 1 : 0, attempts: 0, completed_actions: refreshDue ? ['lesson_opened'] : [], next_actions: ['lesson_opened', 'concept_preview_completed'] },
+  });
+  const topics = [topic('structured-output', 'Structured output', 'code', true), topic('proof-led-sales', 'Proof-led sales', 'sales')];
+  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, (route) => {
+    const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
+    if (path === '/learning-quest/snapshot') return route.fulfill({ headers, json: {
+      ok: true, schema_version: 2, topics,
+      summary: { total_topics: 2, by_stage: { discovered: 0, practiced: 0, proven: 0, shipped: 0 }, by_lane: { code: 1, product: 0, marketing: 0, gtm: 0, sales: 1 }, durable_capability: 0 },
+      analytics: { recall: { attempts: 0, pass_rate: 0, refresh_due: 1, reached_360_days: 0 }, independence: { completed_actions: 0, unassisted_rate: 0, average_hints: 0 }, explanation: { passes: 0, rubric_average: 0 }, calibration_error: 0, effort: { average_attempts: 0, average_duration_seconds: 0 }, stage_funnel: {}, by_lane: {}, guidance: { bottleneck_stage: 'not started', independence_direction: 'steady', next_intervention: 'refresh_due_recall' } },
+      rewards: { xp: 0, level: 1, streak_days: 0, dimensions: { understanding: 0, independence: 0, shipping: 0, consistency: 0 }, badges: [] },
+      workshop: { state: 'none', health: 100, age_days: 0, inactive_days: 0, pending_count: 0, completed_count: 0, can_resume: false, can_complete: false, origin: 'spontaneous', focus_topic_id: 'structured-output', reminder: 'Choose any lane.' },
+    } });
+    return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
+  });
+
+  await nav(page, "Builder's Journey");
+  await expect(page.getByRole('heading', { name: 'From vibe to first principles.' })).toBeVisible();
+  await expect(page.getByRole('progressbar', { name: 'Workshop health' })).toHaveAttribute('aria-valuenow', '100');
+  await expect(page.getByRole('button', { name: /Start with Structured output/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Paths', exact: true }).click();
+  await page.getByRole('tab', { name: /Sales/ }).click();
+  await expect(page.getByText('Proof-led sales')).toBeVisible();
+  await page.getByRole('button', { name: /Quick recall/, exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Pull the idea from memory.' })).toBeVisible();
+  await expect(page.getByLabel('Explain in your own words')).toBeVisible();
 });
 
 test('Capacity & Usage: local-first usage cockpit renders', async ({ page }) => {
