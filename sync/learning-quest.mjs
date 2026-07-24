@@ -12,7 +12,12 @@ export const RECALL_DAYS = [0, 1, 3, 7, 14, 30, 60, 90, 180, 270, 360];
 
 const ACTIONS = new Set([
   'lesson_opened', 'concept_preview_completed', 'exercise_attempted', 'code_changed',
-  'tests_passed', 'broken_case_repaired', 'feynman_passed', 'recall_passed', 'recall_failed',
+  'tests_passed', 'broken_case_repaired', 'feynman_attempted', 'feynman_passed', 'recall_passed', 'recall_failed',
+  'product_slice_attempted', 'acceptance_criteria_written', 'acceptance_checked',
+  'story_drafted', 'claim_evidence_checked', 'audience_tested',
+  'experiment_designed', 'channel_tested', 'signal_reviewed',
+  'qualification_practiced', 'objection_repaired', 'commitment_reviewed',
+  'outcome_owner_confirmed',
   'commit_verified', 'pr_verified', 'release_verified', 'production_verified',
 ]);
 const ASSISTANCE = new Set(['none', 'scaffold', 'hint', 'explanation', 'partial_solution', 'full_solution']);
@@ -24,8 +29,42 @@ const STAGE_RULES = {
   proven: ['tests_passed', 'broken_case_repaired', 'feynman_passed'],
   shipped: ['commit_verified|pr_verified|release_verified|production_verified'],
 };
-const ACTION_STAGE = new Map(Object.entries(STAGE_RULES).flatMap(([stage, rules]) =>
-  rules.flatMap((rule) => rule.split('|').map((action) => [action, stage]))));
+const LANE_STAGE_RULES = {
+  code: STAGE_RULES,
+  product: {
+    discovered: STAGE_RULES.discovered,
+    practiced: ['product_slice_attempted', 'acceptance_criteria_written'],
+    proven: ['acceptance_checked', 'broken_case_repaired', 'feynman_passed'],
+    shipped: ['outcome_owner_confirmed'],
+  },
+  marketing: {
+    discovered: STAGE_RULES.discovered,
+    practiced: ['story_drafted', 'claim_evidence_checked'],
+    proven: ['audience_tested', 'broken_case_repaired', 'feynman_passed'],
+    shipped: ['outcome_owner_confirmed'],
+  },
+  gtm: {
+    discovered: STAGE_RULES.discovered,
+    practiced: ['experiment_designed', 'channel_tested'],
+    proven: ['signal_reviewed', 'broken_case_repaired', 'feynman_passed'],
+    shipped: ['outcome_owner_confirmed'],
+  },
+  sales: {
+    discovered: STAGE_RULES.discovered,
+    practiced: ['qualification_practiced', 'objection_repaired'],
+    proven: ['commitment_reviewed', 'broken_case_repaired', 'feynman_passed'],
+    shipped: ['outcome_owner_confirmed'],
+  },
+};
+
+function stageRules(lane) {
+  return LANE_STAGE_RULES[lane] || STAGE_RULES;
+}
+
+function actionStage(action, lane) {
+  return Object.entries(stageRules(lane)).find(([, rules]) =>
+    rules.some((rule) => rule.split('|').includes(action)))?.[0] || null;
+}
 
 const clean = (value, name, max = 240) => {
   const text = String(value || '').trim();
@@ -122,18 +161,55 @@ export function appendVerifiedLearningProof(input = {}) {
   }
   const proof = createHash('sha256').update(`commit:${sha}`).digest('hex');
   const proof_fingerprint = `sha256:${proof}`;
-  if (readLearningEvents().some((event) => event.proof_fingerprint === proof_fingerprint
-    && event.topic_id !== topic_id)) {
-    throw new Error('[learning-quest] this commit already proves another topic');
+  if (readLearningEvents().some((event) => event.proof_fingerprint === proof_fingerprint)) {
+    throw new Error('[learning-quest] this verified commit proof is already recorded');
   }
   return appendLearningEvent({
     topic_id, action, result: 'passed', assistance: 'none', variation: 'local-git',
     proof_fingerprint,
-  });
+  }, { verifiedProof: true });
+}
+
+const OUTCOME_KIND_BY_LANE = {
+  product: 'accepted_product_result',
+  marketing: 'published_marketing_asset',
+  gtm: 'reviewed_experiment_signal',
+  sales: 'reviewed_customer_commitment',
+};
+
+export function appendOwnerConfirmedLearningOutcome(input = {}) {
+  const topic_id = safeId(input.topic_id, 'topic_id');
+  const topic = readLearningTopics().find((row) => row.topic_id === topic_id);
+  if (!topic) throw new Error('[learning-quest] topic not found');
+  const expectedKind = OUTCOME_KIND_BY_LANE[topic.lane];
+  if (!expectedKind) throw new Error('[learning-quest] code topics require the local Git verifier');
+  if (input.confirmed !== true) throw new Error('[learning-quest] owner confirmation is required');
+  const outcomeKind = safeId(input.outcome_kind, 'outcome_kind');
+  if (outcomeKind !== expectedKind) throw new Error('[learning-quest] outcome kind does not match this learning lane');
+  const note = clean(input.note, 'outcome note', 500);
+  if (note.length < 20) throw new Error('[learning-quest] outcome note must describe the real-world evidence');
+  const digest = createHash('sha256')
+    .update(`owner-outcome:${topic_id}:${outcomeKind}:${note.toLowerCase()}`)
+    .digest('hex');
+  const proof_fingerprint = `sha256:${digest}`;
+  if (readLearningEvents().some((event) => event.proof_fingerprint === proof_fingerprint)) {
+    throw new Error('[learning-quest] this owner-confirmed outcome is already recorded');
+  }
+  return appendLearningEvent({
+    topic_id,
+    action: 'outcome_owner_confirmed',
+    result: 'passed',
+    assistance: 'none',
+    variation: outcomeKind,
+    proof_fingerprint,
+  }, { verifiedProof: true });
 }
 
 export function deleteLearningTopic(topicId) {
   const id = safeId(topicId, 'topic_id');
+  if (activeWorkshop()?.topic_ids?.includes(id)) {
+    throw new Error('[learning-quest] active workshop topics cannot be deleted; finish or abandon the workshop first');
+  }
   const rows = readLearningTopics();
   const next = rows.filter((row) => row.topic_id !== id);
   if (next.length === rows.length) throw new Error('[learning-quest] topic not found');
@@ -170,10 +246,20 @@ function touchActiveWorkshop(topicId, occurredAt) {
 
 export function updateLearningWorkshop(input = {}, { now = Date.now() } = {}) {
   const action = clean(input.action, 'workshop action', 40);
-  if (!['start', 'complete'].includes(action)) throw new Error('[learning-quest] unsupported workshop action');
+  if (!['start', 'complete', 'abandon'].includes(action)) throw new Error('[learning-quest] unsupported workshop action');
   const topics = readLearningTopics().filter((topic) => topic.approved_for_projection);
   const rows = readLearningWorkshops();
   const activeIndex = rows.findLastIndex((row) => !row.completed_at);
+  if (action === 'abandon') {
+    if (activeIndex < 0) throw new Error('[learning-quest] no active workshop');
+    rows[activeIndex] = {
+      ...rows[activeIndex],
+      completed_at: new Date(now).toISOString(),
+      abandoned_at: new Date(now).toISOString(),
+    };
+    atomicJson(workshopsPath(), rows);
+    return rows[activeIndex];
+  }
   if (action === 'complete') {
     if (activeIndex < 0) throw new Error('[learning-quest] no active workshop');
     const eventCounts = Object.fromEntries(rows[activeIndex].topic_ids.map((id) => [id,
@@ -207,20 +293,30 @@ export function updateLearningWorkshop(input = {}, { now = Date.now() } = {}) {
   return workshop;
 }
 
-export function appendLearningEvent(input = {}) {
+export function appendLearningEvent(input = {}, options = {}) {
   const topic_id = safeId(input.topic_id, 'topic_id');
-  if (!readLearningTopics().some((row) => row.topic_id === topic_id)) throw new Error('[learning-quest] topic not found');
+  const topic = readLearningTopics().find((row) => row.topic_id === topic_id);
+  if (!topic) throw new Error('[learning-quest] topic not found');
   const action = clean(input.action, 'action', 80);
   if (!ACTIONS.has(action)) throw new Error('[learning-quest] unsupported action');
   const result = ['passed', 'partial', 'failed', 'completed'].includes(input.result) ? input.result : 'completed';
   const existing = readLearningEvents().filter((row) => row.topic_id === topic_id);
-  const requiredStage = ACTION_STAGE.get(action);
+  const requiredStage = actionStage(action, topic.lane);
   const requiredIndex = requiredStage ? MASTERY_STAGES.indexOf(requiredStage) : -1;
-  const currentStage = masteryFor(existing);
+  const currentStage = masteryFor(existing, topic.lane);
   const currentIndex = currentStage ? MASTERY_STAGES.indexOf(currentStage) : -1;
   if (requiredIndex > currentIndex + 1) throw new Error('[learning-quest] action is ahead of the current mastery stage');
-  if (requiredStage === 'shipped' && !input.proof_fingerprint) {
-    throw new Error('[learning-quest] shipped evidence requires a verified proof fingerprint');
+  if (requiredStage === 'shipped' && options.verifiedProof !== true) {
+    throw new Error('[learning-quest] shipped evidence must come from a verifier-owned proof path');
+  }
+  const occurredAtMs = Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now();
+  if ((action === 'recall_passed' || action === 'recall_failed')) {
+    const previousChecks = existing.filter(
+      (event) => event.action === 'recall_passed' || event.action === 'recall_failed',
+    );
+    if (previousChecks.length > 0 && !recallFor(existing, occurredAtMs).refresh_due) {
+      throw new Error('[learning-quest] this recall check is not due yet');
+    }
   }
   if (action === 'feynman_passed' && ['passed', 'completed'].includes(result)
     && ['accuracy', 'clarity', 'causality', 'transfer'].some((key) => bounded(input.rubric?.[key]) < 0.75)) {
@@ -229,7 +325,7 @@ export function appendLearningEvent(input = {}) {
   const event = {
     event_id: `lqe_${Date.now().toString(36)}_${randomBytes(5).toString('hex')}`,
     topic_id, action, result,
-    occurred_at: new Date(input.occurred_at || Date.now()).toISOString(),
+    occurred_at: new Date(occurredAtMs).toISOString(),
     duration_seconds: Math.max(0, Math.min(86_400, Number(input.duration_seconds) || 0)),
     attempts: Math.max(1, Math.min(100, Number(input.attempts) || 1)),
     hints: Math.max(0, Math.min(100, Number(input.hints) || 0)),
@@ -249,11 +345,11 @@ export function appendLearningEvent(input = {}) {
   return event;
 }
 
-function masteryFor(events) {
+function masteryFor(events, lane = 'code') {
   const passed = new Set(events.filter((event) => ['passed', 'completed'].includes(event.result)).map((event) => event.action));
   let stage = null;
   for (const name of MASTERY_STAGES) {
-    const met = STAGE_RULES[name].every((rule) => rule.split('|').some((action) => passed.has(action)));
+    const met = stageRules(lane)[name].every((rule) => rule.split('|').some((action) => passed.has(action)));
     if (!met) break;
     stage = name;
   }
@@ -268,7 +364,7 @@ function recallFor(events, now) {
   const latest = checks.at(-1)?.occurred_at || events.at(-1)?.occurred_at || new Date(now).toISOString();
   return {
     confidence: checks.length ? passes / checks.length : 0,
-    refresh_due: lastFailed || Date.parse(latest) + interval * 86_400_000 <= now,
+    refresh_due: Date.parse(latest) + interval * 86_400_000 <= now,
     interval_days: interval,
     next_due_at: new Date(Date.parse(latest) + interval * 86_400_000).toISOString(),
   };
@@ -278,12 +374,12 @@ function completedActions(events) {
   return [...new Set(events.filter((event) => ['passed', 'completed'].includes(event.result)).map((event) => event.action))];
 }
 
-function nextActions(events) {
+function nextActions(events, lane = 'code') {
   const completed = new Set(completedActions(events));
-  const stage = masteryFor(events);
+  const stage = masteryFor(events, lane);
   const nextStage = MASTERY_STAGES[stage ? MASTERY_STAGES.indexOf(stage) + 1 : 0];
   if (!nextStage) return [];
-  return STAGE_RULES[nextStage].flatMap((rule) => rule.split('|')).filter((action) => !completed.has(action));
+  return stageRules(lane)[nextStage].flatMap((rule) => rule.split('|')).filter((action) => !completed.has(action));
 }
 
 function mean(rows) {
@@ -395,7 +491,8 @@ function buildWorkshopProjection(topics, allEvents, now) {
   const workshop = activeWorkshop();
   if (!workshop) return { state: 'none', health: 100, age_days: 0, inactive_days: 0,
     pending_count: 0, completed_count: 0, can_resume: false, can_complete: false,
-    origin: 'spontaneous', focus_topic_id: topics.find((topic) => topic.recall.refresh_due)?.topic_id
+    origin: 'spontaneous', focus_topic_id: topics.find((topic) =>
+      topic.progress.action_count > 0 && topic.recall.refresh_due)?.topic_id
       || topics.find((topic) => topic.stage !== 'shipped')?.topic_id || topics[0]?.topic_id || null,
     reminder: 'Choose any lane when curiosity strikes.' };
   const ageDays = Math.max(0, Math.floor((now - Date.parse(workshop.started_at)) / 86_400_000));
@@ -449,12 +546,12 @@ export function buildLearningQuestSnapshot({ now = Date.now() } = {}) {
     const snapshot = {
       topic_id: topic.topic_id, title: topic.title, summary: topic.summary, lane: topic.lane,
       difficulty: topic.difficulty, tags: topic.tags, prerequisite_ids: topic.prerequisite_ids,
-      stage: masteryFor(events), recall: recallFor(events, now), next_question: safeQuestion(topic, events),
+      stage: masteryFor(events, topic.lane), recall: recallFor(events, now), next_question: safeQuestion(topic, events),
       progress: {
         action_count: events.length,
         attempts: events.reduce((sum, row) => sum + row.attempts, 0),
         completed_actions: completedActions(events),
-        next_actions: nextActions(events),
+        next_actions: nextActions(events, topic.lane),
       },
     };
     return snapshot;

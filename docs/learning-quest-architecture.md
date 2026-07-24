@@ -44,7 +44,7 @@ Stages are derived from append-only evidence events and cannot be directly assig
 | Discovered | lesson opened and concept preview completed |
 | Practiced | exercise attempted and code changed |
 | Proven | tests passed, broken case repaired, and Feynman explanation passed |
-| Shipped | verified commit, PR, release, or production proof |
+| Shipped | code: verifier-owned local Git proof; non-code: lane-bound owner-confirmed real-world outcome |
 
 A failed recall check never erases an earned stage. It lowers current confidence, adds a refresh requirement, and schedules a nearer check.
 
@@ -99,11 +99,11 @@ The default surface is Today, not the full curriculum map. It answers four quest
 - Insights translate aggregate evidence into a recommended intervention.
 - Rewards separately recognize understanding, independence, verified shipping, and consistency.
 
-Evidence capture uses the least manual mechanism that remains honest. Local Git proof is verified automatically. Actions the helper cannot observe safely use one explicit confirmation. Written explanation appears only for first-principles and recall checks, and explanation text is never persisted.
+Evidence capture uses the least manual mechanism that remains honest. Code shipment uses automatically verified local Git proof that cannot be replayed. Browser-supplied PR, release, and production fingerprints are rejected. Product, marketing, GTM, and sales finish through a lane-bound, nonce-protected owner confirmation that requires a private evidence note and explicitly says it is not automated external verification. Actions the helper cannot observe safely open a bounded proof task before one explicit owner confirmation. Written explanation appears only for first-principles and recall checks, and explanation text is never persisted. The four-dimension explanation rubric is labeled as an owner self-check rather than an automated truth score. Recall outcomes, including a failed recall retry, are accepted only when the server-derived schedule is due.
 
 ## Curriculum
 
-The built-in seed contains the 12-project agent-engineering code path plus product, marketing, GTM, and sales paths. All paths are independently selectable. `npm run learning:seed` writes them to the private local store. A private Git project link may be supplied through `MEOW_LEARNING_PROJECT_ROOT`; it is stored locally, never printed, and never included in the browser projection.
+The built-in seed contains the 12-project agent-engineering code path plus product, marketing, GTM, and sales paths. All paths are independently selectable and use lane-specific practice, proof, and final real-world outcome actions. `npm run learning:seed` writes them to the private local store. A private Git project link may be supplied through `MEOW_LEARNING_PROJECT_ROOT`; it is stored locally, never printed, and never included in the browser projection.
 
 The detailed workshop sequence, free learning shelf, and local-LLM capstone are in `docs/learning-quest-syllabus.md`.
 

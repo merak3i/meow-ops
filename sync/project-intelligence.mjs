@@ -26,7 +26,11 @@ function localDateKey(date) {
 function periodFor(question, now, timeZone) {
   const q = question.toLowerCase();
   const nowKey = dateKey(now, timeZone);
-  if (q.includes('today')) return { label: 'today', includes: (key) => key === nowKey };
+  if (q.includes('today')) return {
+    label: 'today',
+    maxSeconds: 86_400,
+    includes: (key) => key === nowKey,
+  };
 
   const zonedNow = new Date(now.toLocaleString('en-US', { timeZone }));
   if (q.includes('week')) {
@@ -34,13 +38,21 @@ function periodFor(question, now, timeZone) {
     const daysSinceMonday = start.getDay() === 0 ? 6 : start.getDay() - 1;
     start.setDate(start.getDate() - daysSinceMonday);
     const startKey = localDateKey(start);
-    return { label: 'this week', includes: (key) => key >= startKey && key <= nowKey };
+    return {
+      label: 'this week',
+      maxSeconds: (daysSinceMonday + 1) * 86_400,
+      includes: (key) => key >= startKey && key <= nowKey,
+    };
   }
   if (q.includes('month')) {
     const prefix = nowKey.slice(0, 7);
-    return { label: 'this month', includes: (key) => key.startsWith(prefix) };
+    return {
+      label: 'this month',
+      maxSeconds: zonedNow.getDate() * 86_400,
+      includes: (key) => key.startsWith(prefix),
+    };
   }
-  return { label: 'all time', includes: () => true };
+  return { label: 'all time', maxSeconds: null, includes: () => true };
 }
 
 function formatDuration(seconds) {
@@ -229,14 +241,30 @@ function answerTopProjectTime(question, sessions, projects, now, timeZone) {
 
   const [project, metric] = winner;
   const sourceLabel = [...metric.sources].sort().join(', ') || 'local sessions';
+  const impossibleAsHumanTime = Number.isFinite(period.maxSeconds) && metric.seconds > period.maxSeconds;
+  if (impossibleAsHumanTime) {
+    const calendarWindow = formatDuration(period.maxSeconds);
+    return {
+      answer: `${project} has the largest recorded agent-session wall span ${period.label} across ${metric.sessions} session${metric.sessions === 1 ? '' : 's'}, but I will not present ${formatDuration(metric.seconds)} as human work time: long-lived or overlapping agent threads exceed this ${calendarWindow} calendar window. Treat the ranking as a workload signal until active-time tracking is available.`,
+      gate: 'known_unknown',
+      confidence: 1,
+      evidence: [{
+        kind: 'session_aggregate',
+        ref: project,
+        detail: `${metric.sessions} sessions, ${metric.seconds} recorded wall-span seconds, sources: ${sourceLabel}`,
+      }],
+      unknowns: [`Focused human work time for ${project} ${period.label}`],
+      next_question: 'Would you like project activity ranked by sessions, tokens, or commits instead?',
+    };
+  }
   return {
-    answer: `${project} received the most tracked time ${period.label}: ${formatDuration(metric.seconds)} across ${metric.sessions} session${metric.sessions === 1 ? '' : 's'}.`,
+    answer: `${project} has the largest recorded agent-session span ${period.label}: ${formatDuration(metric.seconds)} across ${metric.sessions} session${metric.sessions === 1 ? '' : 's'}. This is first-to-last session activity, not focused human work time.`,
     gate: 'known_known',
     confidence: 0.98,
     evidence: [{
       kind: 'session_aggregate',
       ref: project,
-      detail: `${metric.sessions} sessions, ${metric.seconds} seconds, sources: ${sourceLabel}`,
+      detail: `${metric.sessions} sessions, ${metric.seconds} recorded wall-span seconds, sources: ${sourceLabel}`,
     }],
     unknowns: [],
   };
@@ -306,9 +334,6 @@ export function answerProjectQuestion(question, snapshot, {
 } = {}) {
   const clean = String(question || '').trim();
   if (!clean) return null;
-  if (isCurrentProjectQuestion(clean)) {
-    return answerCurrentProject(rows(snapshot?.sessions), rows(snapshot?.projects));
-  }
   if (isTopProjectTimeQuestion(clean)) {
     return answerTopProjectTime(
       clean,
@@ -317,6 +342,9 @@ export function answerProjectQuestion(question, snapshot, {
       now,
       timeZone,
     );
+  }
+  if (isCurrentProjectQuestion(clean)) {
+    return answerCurrentProject(rows(snapshot?.sessions), rows(snapshot?.projects));
   }
   const unknownsAnswer = answerKnownUnknowns(clean, rows(snapshot?.projects));
   if (unknownsAnswer) return unknownsAnswer;

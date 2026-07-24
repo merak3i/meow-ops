@@ -61,7 +61,40 @@ test('answers the highest-time project from verified session evidence', () => {
   assert.match(result.answer, /BergLabs/);
   assert.match(result.answer, /2h/);
   assert.match(result.answer, /2 sessions/);
+  assert.match(result.answer, /not focused human work time/i);
   assert.equal(result.evidence[0].kind, 'session_aggregate');
+});
+
+test('built-in weekly project prompt ranks time instead of returning the latest project', () => {
+  const result = ask('Which project received the most time this week?', {
+    sessions: [
+      { session_id: 'older-long', project: 'BergLabs', duration_seconds: 7200, started_at: '2026-07-14T08:00:00.000Z' },
+      { session_id: 'latest-short', project: 'Meow Ops', duration_seconds: 300, started_at: '2026-07-15T11:00:00.000Z' },
+    ],
+    now: new Date('2026-07-15T12:00:00.000Z'),
+  });
+  assert.equal(result.gate, 'known_known');
+  assert.match(result.answer, /^BergLabs has the largest recorded agent-session span this week/);
+});
+
+test('does not present impossible overlapping session spans as human weekly time', () => {
+  const result = ask('Which project received the most time this week?', {
+    sessions: [
+      {
+        session_id: 'long-lived-thread',
+        project: 'TenderMoments',
+        duration_seconds: 3_180_710,
+        started_at: '2026-06-18T00:00:00.000Z',
+        ended_at: '2026-07-25T12:00:00.000Z',
+      },
+    ],
+    now: new Date('2026-07-25T12:00:00.000Z'),
+  });
+  assert.equal(result.gate, 'known_unknown');
+  assert.match(result.answer, /will not present 883h 32m as human work time/i);
+  assert.match(result.answer, /long-lived or overlapping agent threads/i);
+  assert.match(result.answer, /workload signal/i);
+  assert.ok(result.unknowns.some((item) => /Focused human work time/i.test(item)));
 });
 
 test('answers the current project from the most recent non-generic session', () => {
@@ -104,6 +137,166 @@ test('answers what a project learned and which agents know it', () => {
   const coverage = ask('which agents know Meow Ops?', { projectControls });
   assert.match(coverage.answer, /claude, codex/);
   assert.match(coverage.answer, /antigravity, cursor, hermes/);
+});
+
+test('answers recent project feature work from bounded local Git and agent evidence', () => {
+  const result = ask('what happened in LCWI project in the last 3 days according to GitHub PRs?', {
+    projectActivity: {
+      requested: true,
+      period: { label: 'the last 3 days', from: '2026-07-22T12:00:00.000Z', to: '2026-07-25T12:00:00.000Z' },
+      project: { project_id: 'lcwi-1', name: 'LCWI' },
+      git: {
+        available: true,
+        commits: [
+          {
+            sha: '4a87c4d094aaf1071d1daee0a84ce64e3ff78f38',
+            short_sha: '4a87c4d',
+            timestamp: '2026-07-23T12:51:05.000Z',
+            subject: 'Merge pull request #29 from merak3i/fix/audit-remediation',
+            body: 'Complete the 1CWI customer release path',
+            pr_number: 29,
+          },
+          {
+            sha: '9c25601a00000000000000000000000000000000',
+            short_sha: '9c25601',
+            timestamp: '2026-07-23T15:53:23.000Z',
+            subject: 'feat(admin): add audited site operations',
+            body: '',
+            pr_number: null,
+          },
+        ],
+      },
+      events: [{
+        event_id: 'evt_1', source: 'codex', timestamp: '2026-07-23T15:00:00.000Z',
+        event_type: 'session_summary', content: 'Validated the customer release path.',
+      }],
+      evidence_total: 101,
+    },
+  });
+
+  assert.equal(result.gate, 'known_known');
+  assert.match(result.answer, /LCWI/);
+  assert.match(result.answer, /1 merged GitHub PR/);
+  assert.match(result.answer, /PR #29/);
+  assert.match(result.answer, /Complete the 1CWI customer release path/);
+  assert.match(result.answer, /add audited site operations/);
+  assert.match(result.answer, /local Git history/i);
+  assert.match(result.answer, /101 matching local agent evidence events/i);
+  assert.match(result.answer, /bounded to 1/i);
+  assert.ok(result.unknowns.some((item) => /100 matching local evidence events/i.test(item)));
+  assert.ok(result.evidence.some((item) => item.ref === 'git:lcwi-1:4a87c4d'));
+});
+
+test('names an unregistered project instead of silently using the only catalog entry', () => {
+  const result = ask('what happened in LCWI project in the last 3 days?', {
+    projectActivity: {
+      requested: true,
+      period: { label: 'the last 3 days' },
+      project: null,
+      requested_project: 'LCWI',
+      catalog_projects: [{ project_id: 'meow-ops-1', name: 'Meow Ops' }],
+    },
+  });
+
+  assert.equal(result.gate, 'known_unknown');
+  assert.match(result.answer, /LCWI/);
+  assert.match(result.answer, /not registered/i);
+  assert.doesNotMatch(result.answer, /Meow Ops has/);
+  assert.match(result.next_question, /register LCWI/i);
+});
+
+test('asks for a project when a PR activity question names none', () => {
+  const result = ask('what features were worked on according to the GitHub PR?', {
+    projectActivity: {
+      requested: true,
+      period: { label: 'the last 7 days' },
+      project: null,
+      requested_project: null,
+      catalog_projects: [
+        { project_id: 'meow-ops-1', name: 'Meow Ops' },
+        { project_id: 'lcwi-1', name: 'One Click Website India' },
+      ],
+    },
+  });
+  assert.equal(result.gate, 'known_unknown');
+  assert.match(result.answer, /Name the registered project or repository/i);
+  assert.doesNotMatch(result.answer, /that project is not registered/i);
+});
+
+test('coaches the next Builder Journey action from the safe learning projection', () => {
+  const learningQuest = {
+    topics: [{
+      topic_id: 'cost-aware-router',
+      title: 'Cost-Aware Agent Router',
+      stage: 'practiced',
+      recall: { refresh_due: false },
+      progress: { next_actions: ['tests_passed', 'broken_case_repaired', 'feynman_passed'] },
+    }],
+    workshop: {
+      state: 'active',
+      focus_topic_id: 'cost-aware-router',
+      can_resume: true,
+      reminder: 'Continue one honest proof.',
+    },
+    analytics: { recall: { refresh_due: 0 } },
+  };
+  const result = ask('what should I learn next?', { learningQuest });
+  assert.equal(result.gate, 'known_known');
+  assert.match(result.answer, /Cost-Aware Agent Router/);
+  assert.match(result.answer, /tests pass/i);
+  assert.match(result.answer, /Builder's Journey/);
+  assert.equal(result.evidence[0].kind, 'learning_quest');
+});
+
+test('coaches non-code learning actions in plain action language', () => {
+  const result = ask('what should I learn next?', {
+    learningQuest: {
+      topics: [{
+        topic_id: 'marketing-proof-story',
+        title: 'Marketing Proof Story',
+        lane: 'marketing',
+        stage: 'discovered',
+        recall: { refresh_due: false },
+        progress: { next_actions: ['story_drafted'] },
+      }],
+      workshop: { state: 'active', focus_topic_id: 'marketing-proof-story' },
+      analytics: { recall: { refresh_due: 0 } },
+    },
+  });
+  assert.match(result.answer, /draft the evidence-led story next/i);
+  assert.doesNotMatch(result.answer, /story drafted next/i);
+});
+
+test('reports due recall from the learning projection without exposing private records', () => {
+  const result = ask('what recall is due?', {
+    learningQuest: {
+      topics: [
+        { title: 'Structured Output', recall: { refresh_due: true }, progress: { action_count: 1, next_actions: [] } },
+        { title: 'Agent Routing', recall: { refresh_due: false }, progress: { action_count: 1, next_actions: [] } },
+      ],
+      workshop: { state: 'none' },
+      analytics: { recall: { refresh_due: 1 } },
+    },
+  });
+  assert.equal(result.gate, 'known_known');
+  assert.match(result.answer, /1 recall check is due/);
+  assert.match(result.answer, /Structured Output/);
+});
+
+test('does not call untouched learning topics due for recall', () => {
+  const result = ask('what recall is due?', {
+    learningQuest: {
+      topics: [{
+        title: 'Untouched Topic',
+        recall: { refresh_due: true },
+        progress: { action_count: 0, next_actions: ['lesson_opened'] },
+      }],
+      workshop: { state: 'none' },
+      analytics: { recall: { refresh_due: 0 } },
+    },
+  });
+  assert.match(result.answer, /No recall check is due/i);
+  assert.doesNotMatch(result.answer, /Untouched Topic/);
 });
 
 test('project-time ranking ignores generic container folders', () => {

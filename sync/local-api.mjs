@@ -36,8 +36,10 @@ import {
   publishLearningCandidate, readProjectCatalog, rollbackProjectAdapters,
 } from './project-control.mjs';
 import { queryAgentEvidence } from './project-evidence.mjs';
+import { buildProjectActivity } from './project-activity.mjs';
 import {
-  appendLearningEvent, appendVerifiedLearningProof, buildLearningQuestSnapshot, deleteLearningTopic,
+  appendLearningEvent, appendOwnerConfirmedLearningOutcome, appendVerifiedLearningProof,
+  buildLearningQuestSnapshot, deleteLearningTopic,
   updateLearningWorkshop, upsertLearningTopic,
 } from './learning-quest.mjs';
 import {
@@ -492,6 +494,18 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/learning-quest/outcome-proof' && req.method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req, 12_000); }
+    catch (err) { ruleError(res, 400, 'json', err.message); return; }
+    if (!consumeNonce(body.nonce)) { ruleError(res, 403, 'nonce', 'invalid or already used nonce'); return; }
+    try {
+      appendOwnerConfirmedLearningOutcome(body);
+      sendJson(res, 200, { ok: true, ...buildLearningQuestSnapshot() });
+    } catch (err) { ruleError(res, 400, 'learning-quest', err instanceof Error ? err.message : String(err)); }
+    return;
+  }
+
   if (path === '/learning-quest/workshop' && req.method === 'POST') {
     let body;
     try { body = await readJsonBody(req, 8_000); }
@@ -836,12 +850,18 @@ const server = createServer(async (req, res) => {
         digest,
         sync: getSyncStatus({ repoRoot: ROOT }),
         sessionHistory: querySessionHistory({ limit: 1 }),
+        learningQuest: buildLearningQuestSnapshot(),
       };
-      rawData.projectControls = readProjectCatalog().map((project) => buildProjectControlSnapshot({
+      const projectCatalog = readProjectCatalog();
+      rawData.projectControls = projectCatalog.map((project) => buildProjectControlSnapshot({
         project_id: project.project_id,
         sessions: rawData.sessions,
         claims: rawData.claims,
       }));
+      rawData.projectActivity = buildProjectActivity(question, {
+        catalog: projectCatalog,
+        queryEvidence: queryAgentEvidence,
+      });
       const soul = resolveSoulProfile(
         storedSoul,
         question,

@@ -6,8 +6,9 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 import {
-  appendLearningEvent, appendVerifiedLearningProof, buildLearningQuestSnapshot, deleteLearningTopic, RECALL_DAYS,
-  readLearningTopics, updateLearningWorkshop, upsertLearningTopic,
+  appendLearningEvent, appendOwnerConfirmedLearningOutcome, appendVerifiedLearningProof,
+  buildLearningQuestSnapshot, deleteLearningTopic, RECALL_DAYS, readLearningTopics,
+  updateLearningWorkshop, upsertLearningTopic,
 } from '../learning-quest.mjs';
 import { AGENT_ENGINEERING_CURRICULUM, SIDE_QUESTS } from '../learning-quest-curriculum.mjs';
 
@@ -53,8 +54,11 @@ test('mastery is derived from evidence actions instead of a mutable checkbox', (
   assert.equal(buildLearningQuestSnapshot().topics[0].stage, 'practiced');
   record('tests_passed', 'passed'); record('broken_case_repaired', 'passed'); record('feynman_passed', 'passed');
   assert.equal(buildLearningQuestSnapshot().topics[0].stage, 'proven');
-  appendLearningEvent({ topic_id: topic.topic_id, action: 'pr_verified', result: 'passed', proof_fingerprint: 'sha256:opaque' });
-  assert.equal(buildLearningQuestSnapshot().topics[0].stage, 'shipped');
+  assert.throws(
+    () => appendLearningEvent({ topic_id: topic.topic_id, action: 'pr_verified', result: 'passed', proof_fingerprint: 'sha256:opaque' }),
+    /verifier-owned/,
+  );
+  assert.equal(buildLearningQuestSnapshot().topics[0].stage, 'proven');
 }));
 
 test('failed recall preserves mastery while reducing confidence and scheduling refresh', () => withQuest(() => {
@@ -66,8 +70,15 @@ test('failed recall preserves mastery while reducing confidence and scheduling r
       rubric: action === 'feynman_passed' ? { accuracy: 1, clarity: 1, causality: 1, transfer: 1 } : undefined,
     });
   }
-  appendLearningEvent({ topic_id: topic.topic_id, action: 'recall_passed', result: 'passed' });
-  appendLearningEvent({ topic_id: topic.topic_id, action: 'recall_failed', result: 'failed' });
+  const firstRecall = Date.parse('2026-07-20T10:00:00.000Z');
+  appendLearningEvent(
+    { topic_id: topic.topic_id, action: 'recall_passed', result: 'passed' },
+    { now: firstRecall },
+  );
+  appendLearningEvent(
+    { topic_id: topic.topic_id, action: 'recall_failed', result: 'failed' },
+    { now: firstRecall + 86_400_000 },
+  );
   const row = buildLearningQuestSnapshot().topics[0];
   assert.equal(row.stage, 'proven');
   assert.equal(row.recall.refresh_due, true);
@@ -85,9 +96,12 @@ test('projection rejects identifying concepts and shipping claims without proof'
   });
   for (const action of ['lesson_opened', 'concept_preview_completed', 'exercise_attempted', 'code_changed',
     'tests_passed', 'broken_case_repaired', 'feynman_passed']) record(action);
-  assert.throws(() => record('commit_verified'), /verified proof fingerprint/);
-  appendLearningEvent({ topic_id: topic.topic_id, action: 'commit_verified', result: 'passed', proof_fingerprint: 'sha256:opaque' });
-  assert.equal(buildLearningQuestSnapshot().topics[0].stage, 'shipped');
+  assert.throws(() => record('commit_verified'), /verifier-owned/);
+  assert.throws(
+    () => appendLearningEvent({ topic_id: topic.topic_id, action: 'commit_verified', result: 'passed', proof_fingerprint: 'sha256:opaque' }),
+    /verifier-owned/,
+  );
+  assert.equal(buildLearningQuestSnapshot().topics[0].stage, 'proven');
 }));
 
 test('local Git verifier derives opaque shipped proof without projecting commit data', () => withQuest((dir) => {
@@ -112,6 +126,10 @@ test('local Git verifier derives opaque shipped proof without projecting commit 
     rubric: { accuracy: 1, clarity: 1, causality: 1, transfer: 1 },
   });
   appendVerifiedLearningProof({ topic_id: topic.topic_id, action: 'commit_verified' });
+  assert.throws(
+    () => appendVerifiedLearningProof({ topic_id: topic.topic_id, action: 'commit_verified' }),
+    /already recorded/,
+  );
   const snapshot = buildLearningQuestSnapshot();
   assert.equal(snapshot.topics[0].stage, 'shipped');
   assert.doesNotMatch(JSON.stringify(snapshot), /source_project|[a-f0-9]{40}|work\.txt|proof_fingerprint/);
@@ -156,6 +174,46 @@ test('event boundary rejects arbitrary actions and unknown topics', () => withQu
   assert.throws(() => appendLearningEvent({ topic_id: 'missing', action: 'lesson_opened' }), /topic not found/);
 }));
 
+test('recall checks cannot be replayed before the server-derived due time', () => withQuest(() => {
+  upsertLearningTopic(topic);
+  appendLearningEvent({ topic_id: topic.topic_id, action: 'lesson_opened' }, {
+    now: Date.parse('2026-07-20T10:00:00.000Z'),
+  });
+  appendLearningEvent({ topic_id: topic.topic_id, action: 'recall_passed', result: 'passed' }, {
+    now: Date.parse('2026-07-20T10:00:01.000Z'),
+  });
+  assert.throws(
+    () => appendLearningEvent({ topic_id: topic.topic_id, action: 'recall_passed', result: 'passed' }, {
+      now: Date.parse('2026-07-20T10:00:02.000Z'),
+    }),
+    /not due yet/,
+  );
+  appendLearningEvent({ topic_id: topic.topic_id, action: 'recall_passed', result: 'passed' }, {
+    now: Date.parse('2026-07-21T10:00:02.000Z'),
+  });
+  assert.equal(buildLearningQuestSnapshot({ now: Date.parse('2026-07-21T10:00:02.000Z') }).analytics.recall.attempts, 2);
+}));
+
+test('failed recall waits for its one-day server-derived interval', () => withQuest(() => {
+  upsertLearningTopic(topic);
+  appendLearningEvent({ topic_id: topic.topic_id, action: 'lesson_opened' }, {
+    now: Date.parse('2026-07-20T10:00:00.000Z'),
+  });
+  appendLearningEvent({ topic_id: topic.topic_id, action: 'recall_failed', result: 'failed' }, {
+    now: Date.parse('2026-07-20T10:00:01.000Z'),
+  });
+  assert.throws(
+    () => appendLearningEvent({ topic_id: topic.topic_id, action: 'recall_passed', result: 'passed' }, {
+      now: Date.parse('2026-07-20T10:00:02.000Z'),
+    }),
+    /not due yet/,
+  );
+  appendLearningEvent({ topic_id: topic.topic_id, action: 'recall_passed', result: 'passed' }, {
+    now: Date.parse('2026-07-21T10:00:01.000Z'),
+  });
+  assert.equal(buildLearningQuestSnapshot({ now: Date.parse('2026-07-21T10:00:01.000Z') }).analytics.recall.attempts, 2);
+}));
+
 test('unfinished workshops expose gentle aggregate health without continuity records', () => withQuest((dir) => {
   upsertLearningTopic(topic);
   const started = Date.parse('2026-07-11T10:00:00.000Z');
@@ -183,6 +241,15 @@ test('workshops require a real learning action before completion', () => withQue
   assert.equal(buildLearningQuestSnapshot().workshop.state, 'none');
 }));
 
+test('active workshop topics cannot be deleted and workshops can be abandoned safely', () => withQuest(() => {
+  upsertLearningTopic(topic);
+  updateLearningWorkshop({ action: 'start', topic_ids: [topic.topic_id] });
+  assert.throws(() => deleteLearningTopic(topic.topic_id), /active workshop/);
+  updateLearningWorkshop({ action: 'abandon' });
+  assert.equal(buildLearningQuestSnapshot().workshop.state, 'none');
+  assert.deepEqual(deleteLearningTopic(topic.topic_id), { topic_id: topic.topic_id, deleted: true });
+}));
+
 test('rewards and guidance project decisions instead of raw learning rows', () => withQuest(() => {
   upsertLearningTopic(topic);
   appendLearningEvent({ topic_id: topic.topic_id, action: 'lesson_opened', assistance: 'none' });
@@ -202,4 +269,69 @@ test('built-in curriculum is generic, sequential, and projection-safe', () => wi
   assert.equal(snapshot.analytics.recall.refresh_due, 0);
   assert.deepEqual(AGENT_ENGINEERING_CURRICULUM[1].prerequisite_ids, ['structured-output-agent']);
   assert.doesNotMatch(JSON.stringify(snapshot), /patherle|berglabs|\/Users\/|https?:\/\//i);
+}));
+
+test('business lanes use independent mastery evidence instead of code-only actions', () => withQuest(() => {
+  const paths = [
+    ['product', ['product_slice_attempted', 'acceptance_criteria_written'], 'acceptance_checked'],
+    ['marketing', ['story_drafted', 'claim_evidence_checked'], 'audience_tested'],
+    ['gtm', ['experiment_designed', 'channel_tested'], 'signal_reviewed'],
+    ['sales', ['qualification_practiced', 'objection_repaired'], 'commitment_reviewed'],
+  ];
+  for (const [lane, practiced, proven] of paths) {
+    const id = `${lane}-topic`;
+    upsertLearningTopic({
+      ...topic, topic_id: id, title: `${lane} proof`, lane,
+    });
+    appendLearningEvent({ topic_id: id, action: 'lesson_opened' });
+    appendLearningEvent({ topic_id: id, action: 'concept_preview_completed' });
+    for (const action of practiced) appendLearningEvent({ topic_id: id, action });
+    assert.equal(buildLearningQuestSnapshot().topics.find((row) => row.topic_id === id).stage, 'practiced');
+    appendLearningEvent({ topic_id: id, action: proven, result: 'passed' });
+    appendLearningEvent({ topic_id: id, action: 'broken_case_repaired', result: 'passed' });
+    appendLearningEvent({
+      topic_id: id, action: 'feynman_passed', result: 'passed',
+      rubric: { accuracy: 1, clarity: 1, causality: 1, transfer: 1 },
+    });
+    assert.equal(buildLearningQuestSnapshot().topics.find((row) => row.topic_id === id).stage, 'proven');
+    const outcomeKinds = {
+      product: 'accepted_product_result',
+      marketing: 'published_marketing_asset',
+      gtm: 'reviewed_experiment_signal',
+      sales: 'reviewed_customer_commitment',
+    };
+    appendOwnerConfirmedLearningOutcome({
+      topic_id: id,
+      outcome_kind: outcomeKinds[lane],
+      note: `I checked the real ${lane} outcome in its work surface and observed the intended result.`,
+      confirmed: true,
+    });
+    assert.equal(buildLearningQuestSnapshot().topics.find((row) => row.topic_id === id).stage, 'shipped');
+  }
+}));
+
+test('non-code shipped proof is lane-bound, owner-confirmed, and deduplicated', () => withQuest(() => {
+  const row = { ...topic, topic_id: 'marketing-outcome', title: 'Marketing outcome', lane: 'marketing' };
+  upsertLearningTopic(row);
+  for (const action of [
+    'lesson_opened', 'concept_preview_completed', 'story_drafted', 'claim_evidence_checked',
+    'audience_tested', 'broken_case_repaired',
+  ]) appendLearningEvent({ topic_id: row.topic_id, action, result: 'passed' });
+  appendLearningEvent({
+    topic_id: row.topic_id, action: 'feynman_passed', result: 'passed',
+    rubric: { accuracy: 1, clarity: 1, causality: 1, transfer: 1 },
+  });
+  const input = {
+    topic_id: row.topic_id,
+    outcome_kind: 'published_marketing_asset',
+    note: 'I opened the published asset and checked every claim against its visible evidence.',
+    confirmed: true,
+  };
+  assert.throws(() => appendOwnerConfirmedLearningOutcome({ ...input, confirmed: false }), /owner confirmation/);
+  assert.throws(() => appendOwnerConfirmedLearningOutcome({
+    ...input, outcome_kind: 'reviewed_customer_commitment',
+  }), /does not match/);
+  appendOwnerConfirmedLearningOutcome(input);
+  assert.equal(buildLearningQuestSnapshot().topics.find((topicRow) => topicRow.topic_id === row.topic_id).stage, 'shipped');
+  assert.throws(() => appendOwnerConfirmedLearningOutcome(input), /already recorded/);
 }));

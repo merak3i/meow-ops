@@ -358,6 +358,15 @@ export default function CompanionChat({ pageLabel = 'Meow Ops' }: Props) {
                   </footer>
                   {message.id === latestAssistant && !busy && (
                     <div className="companion-chat__suggestions">
+                      {message.nextQuestion && (
+                        <button
+                          type="button"
+                          aria-label={`Answer Companion: ${message.nextQuestion}`}
+                          onClick={() => textareaRef.current?.focus()}
+                        >
+                          {message.nextQuestion}
+                        </button>
+                      )}
                       {STARTER_PROMPTS.map((prompt) => (
                         <button key={prompt} type="button" onClick={() => void send(prompt)}>{prompt}</button>
                       ))}

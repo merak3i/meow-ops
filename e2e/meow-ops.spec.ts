@@ -143,6 +143,99 @@ test("Builder's Journey prioritizes spontaneous work, independent paths, and qui
   await expect(page.getByLabel('Explain in your own words')).toBeVisible();
 });
 
+test("Builder's Journey opens a real lesson task before recording progress", async ({ page }) => {
+  let learningEventsCount = 0;
+  const topic = {
+    topic_id: 'structured-output', title: 'Structured output',
+    summary: 'A schema accepts valid responses and rejects malformed responses', lane: 'code',
+    difficulty: 1, tags: [], prerequisite_ids: [], stage: null,
+    recall: { confidence: 0, refresh_due: false, interval_days: 0, next_due_at: '2026-07-25T00:00:00.000Z' },
+    next_question: { question_id: 'structured-q', kind: 'transfer', question_text: 'Explain the transfer.' },
+    progress: { action_count: 0, attempts: 0, completed_actions: [], next_actions: ['lesson_opened', 'concept_preview_completed'] },
+  };
+  const snapshot = (active: boolean, progressed = false) => ({
+    ok: true, schema_version: 2,
+    topics: [{
+      ...topic,
+      ...(progressed ? {
+        progress: { action_count: 1, attempts: 1, completed_actions: ['lesson_opened'], next_actions: ['concept_preview_completed'] },
+      } : {}),
+    }],
+    summary: { total_topics: 1, by_stage: {}, by_lane: { code: 1 }, durable_capability: 0 },
+    analytics: { recall: { attempts: 0, pass_rate: 0, refresh_due: 0, reached_360_days: 0 }, independence: { completed_actions: progressed ? 1 : 0, unassisted_rate: 1, average_hints: 0 }, explanation: { passes: 0, rubric_average: 0 }, calibration_error: 0, effort: { average_attempts: 1, average_duration_seconds: 0 }, stage_funnel: {}, by_lane: {}, guidance: { bottleneck_stage: 'not started', independence_direction: 'steady', next_intervention: 'open_smallest_lesson' } },
+    rewards: { xp: progressed ? 25 : 0, level: 1, streak_days: progressed ? 1 : 0, dimensions: { understanding: 0, independence: progressed ? 1 : 0, shipping: 0, consistency: progressed ? 1 : 0 }, badges: [] },
+    workshop: { state: active ? 'active' : 'none', health: 100, age_days: 0, inactive_days: 0, pending_count: active && !progressed ? 1 : 0, completed_count: progressed ? 1 : 0, can_resume: active, can_complete: progressed, origin: 'spontaneous', focus_topic_id: 'structured-output', reminder: 'Continue one honest proof.' },
+  });
+  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, async (route) => {
+    const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
+    if (path === '/learning-quest/snapshot') return route.fulfill({ headers, json: snapshot(false) });
+    if (path === '/loop-eng/nonce') return route.fulfill({ headers, json: { nonce: `nonce-${Date.now()}` } });
+    if (path === '/learning-quest/workshop') return route.fulfill({ headers, json: snapshot(true) });
+    if (path === '/learning-quest/events') {
+      learningEventsCount += 1;
+      return route.fulfill({ headers, json: snapshot(true, true) });
+    }
+    return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
+  });
+
+  await nav(page, "Builder's Journey");
+  await page.getByRole('button', { name: /Start with Structured output/ }).click();
+  await page.getByRole('button', { name: 'Open the lesson' }).click();
+  const task = page.getByRole('region', { name: 'Learning proof task' });
+  await expect(task.getByText('Core idea.')).toBeVisible();
+  await expect(task.getByText(/Mechanism:/)).toBeVisible();
+  expect(learningEventsCount).toBe(0);
+  await task.getByRole('button', { name: 'I considered all four' }).click();
+  await expect(page.getByRole('button', { name: 'Finish the concept preview' })).toBeVisible();
+  expect(learningEventsCount).toBe(1);
+});
+
+test("Builder's Journey records a non-code real-world outcome through the owner proof path", async ({ page }) => {
+  let outcomeWrites = 0;
+  const topic = {
+    topic_id: 'marketing-proof', title: 'Marketing Proof Story',
+    summary: 'Explain a real capability with verified support', lane: 'marketing',
+    difficulty: 2, tags: [], prerequisite_ids: [], stage: 'proven',
+    recall: { confidence: 0, refresh_due: false, interval_days: 0, next_due_at: '2026-07-26T00:00:00.000Z' },
+    next_question: { question_id: 'marketing-q', kind: 'transfer', question_text: 'Explain the transfer.' },
+    progress: { action_count: 7, attempts: 7, completed_actions: [], next_actions: ['outcome_owner_confirmed'] },
+  };
+  const snapshot = (shipped = false) => ({
+    ok: true, schema_version: 2,
+    topics: [{ ...topic, stage: shipped ? 'shipped' : 'proven', progress: { ...topic.progress, next_actions: shipped ? [] : ['outcome_owner_confirmed'] } }],
+    summary: { total_topics: 1, by_stage: { proven: shipped ? 0 : 1, shipped: shipped ? 1 : 0 }, by_lane: { marketing: 1 }, durable_capability: shipped ? 0.25 : 0 },
+    analytics: { recall: { attempts: 0, pass_rate: 0, refresh_due: 0, reached_360_days: 0 }, independence: { completed_actions: 7, unassisted_rate: 1, average_hints: 0 }, explanation: { passes: 1, rubric_average: 1 }, calibration_error: 0, effort: { average_attempts: 1, average_duration_seconds: 0 }, stage_funnel: {}, by_lane: {}, guidance: { bottleneck_stage: shipped ? 'shipped' : 'proven', independence_direction: 'steady', next_intervention: shipped ? 'choose_new_topic' : 'ship_verified_proof' } },
+    rewards: { xp: shipped ? 200 : 175, level: 2, streak_days: 1, dimensions: { understanding: 1, independence: 7, shipping: shipped ? 1 : 0, consistency: 1 }, badges: shipped ? ['proof-shipper'] : [] },
+    workshop: { state: 'active', health: 100, age_days: 0, inactive_days: 0, pending_count: 0, completed_count: 1, can_resume: true, can_complete: true, origin: 'spontaneous', focus_topic_id: 'marketing-proof', reminder: 'Continue one honest proof.' },
+  });
+  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, async (route) => {
+    const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
+    if (path === '/learning-quest/snapshot') return route.fulfill({ headers, json: snapshot(false) });
+    if (path === '/loop-eng/nonce') return route.fulfill({ headers, json: { nonce: `nonce-${Date.now()}` } });
+    if (path === '/learning-quest/outcome-proof') {
+      outcomeWrites += 1;
+      return route.fulfill({ headers, json: snapshot(true) });
+    }
+    return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
+  });
+
+  await nav(page, "Builder's Journey");
+  await page.getByRole('button', { name: 'Confirm a real-world outcome' }).click();
+  const task = page.getByRole('region', { name: 'Learning proof task' });
+  await task.getByLabel('Private outcome evidence note').fill('I opened the published asset and checked every visible claim against supporting proof.');
+  await task.getByLabel('I personally checked this real-world outcome.').check();
+  await task.getByRole('button', { name: 'Record owner-confirmed outcome' }).click();
+  await expect.poll(() => outcomeWrites).toBe(1);
+  await expect(page.getByText('Owner-confirmed real-world outcome recorded locally.')).toBeVisible();
+  await expect(page.getByText('shipped', { exact: true })).toBeVisible();
+});
+
 test("Builder's Journey remains usable with a legacy helper snapshot", async ({ page }) => {
   await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, (route) => {
     const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
@@ -319,6 +412,7 @@ test('Companion feedback records only preference metadata from an answer', async
           confidence: isUnknown ? 0 : 1,
           evidence: isUnknown ? [] : [{ kind: 'session_metrics', ref: 'sessions.json', detail: 'Weekly project duration' }],
           unknowns: isUnknown ? ['Current project constraint'] : [],
+          next_question: isUnknown ? 'What is the current constraint for BergLabs?' : undefined,
           soul: { name: 'Companion', preset: 'clear-operator', revision: 4, uncertainty_policy: 'evidence-led', project_overlay: null },
         });
       }
@@ -358,6 +452,12 @@ test('Companion feedback records only preference metadata from an answer', async
   await chat.getByRole('button', { name: 'Send message' }).click();
   const unknown = chat.locator('.companion-chat__message--assistant').filter({ hasText: 'I need the current project constraint.' });
   await expect(unknown.locator('footer').getByText('Unknown', { exact: true })).toBeVisible();
+  const recovery = unknown.getByRole('button', { name: 'Answer Companion: What is the current constraint for BergLabs?' });
+  await expect(recovery).toBeVisible();
+  await recovery.click();
+  await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toBeFocused();
+  await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toHaveValue('');
+  await expect(chat.locator('.companion-chat__message--user').filter({ hasText: 'What is the current constraint for BergLabs?' })).toHaveCount(0);
 });
 
 test('Soul Studio applies a review-only preference suggestion only after owner action', async ({ page }) => {

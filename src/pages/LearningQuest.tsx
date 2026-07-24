@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 
 import {
-  fetchLearningQuestSnapshot, recordLearningQuestEvent, removeLearningQuestTopic,
+  confirmLearningQuestOutcome, fetchLearningQuestSnapshot, recordLearningQuestEvent, removeLearningQuestTopic,
   saveLearningQuestTopic, type LearningQuestLane, type LearningQuestSnapshot,
   type LearningQuestTopic, updateLearningQuestWorkshop, verifyLearningQuestProof,
 } from '../lib/loop-api';
@@ -34,6 +34,19 @@ const ACTION_LABELS: Record<string, string> = {
   exercise_attempted: 'Attempt the exercise', code_changed: 'Confirm the critical code changed',
   tests_passed: 'Confirm the tests pass', broken_case_repaired: 'Repair the broken case',
   feynman_passed: 'Complete the first-principles check', commit_verified: 'Verify the local Git commit',
+  product_slice_attempted: 'Draft the smallest product slice',
+  acceptance_criteria_written: 'Write a measurable acceptance condition',
+  acceptance_checked: 'Check the product outcome against acceptance',
+  story_drafted: 'Draft the proof-backed story',
+  claim_evidence_checked: 'Check every claim against evidence',
+  audience_tested: 'Test whether the intended audience understands it',
+  experiment_designed: 'Design the smallest GTM experiment',
+  channel_tested: 'Run the channel test',
+  signal_reviewed: 'Review the adoption signal',
+  qualification_practiced: 'Practice the qualification conversation',
+  objection_repaired: 'Repair the weakest objection response',
+  commitment_reviewed: 'Review the next commitment for honesty',
+  outcome_owner_confirmed: 'Confirm a real-world outcome',
 };
 const INTERVENTIONS: Record<string, string> = {
   refresh_due_recall: 'Refresh one fading concept before starting new work.',
@@ -63,6 +76,7 @@ export default function LearningQuest() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [assistance, setAssistance] = useState('scaffold');
+  const [proofAction, setProofAction] = useState('');
 
   async function load() {
     setBusy(true);
@@ -88,11 +102,12 @@ export default function LearningQuest() {
     if (next?.ok) { setData(next); setMessage(success); }
     else setMessage(learningQuestMutationMessage(next));
     setBusy(false);
+    return Boolean(next?.ok);
   }
 
   async function record(action: string, result = 'completed', rubric?: Record<string, number>) {
-    if (!selected) return;
-    await mutate(recordLearningQuestEvent({
+    if (!selected) return false;
+    return mutate(recordLearningQuestEvent({
       topic_id: selected.topic_id, action, result, assistance, rubric,
       confidence_before: selected.recall.confidence, confidence_after: result === 'failed' ? 0 : 1,
     }), 'Proof recorded. Your journey has been recalculated.');
@@ -103,6 +118,7 @@ export default function LearningQuest() {
     setSelectedLane(topic.lane);
     setAnswer('');
     setRubricOpen(false);
+    setProofAction('');
     setView(nextView);
   }
 
@@ -116,11 +132,13 @@ export default function LearningQuest() {
 
   async function saveTopic() {
     const topicId = form.topic_id || form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    await mutate(saveLearningQuestTopic({
+    const saved = await mutate(saveLearningQuestTopic({
       ...form, topic_id: topicId, tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
       approved_for_projection: true,
     }), 'Topic added to your private syllabus.');
-    setSelectedId(topicId); setSelectedLane(form.lane); setEditing(false);
+    if (saved) {
+      setSelectedId(topicId); setSelectedLane(form.lane); setEditing(false);
+    }
   }
 
   if (!data) {
@@ -169,6 +187,7 @@ export default function LearningQuest() {
             {!workshopActive && selected && <button className="quest-primary" disabled={busy} onClick={() => void mutate(updateLearningQuestWorkshop('start', [selected.topic_id]), 'Workshop started. One honest action is enough for today.')}><Play size={16} /> Start with {selected.title}</button>}
             {workshopActive && selected && <button className="quest-primary" onClick={() => document.getElementById('current-proof')?.scrollIntoView({ behavior: 'smooth' })}><ArrowRight size={16} /> Resume next proof</button>}
             {workshopActive && data.workshop.can_complete && <button disabled={busy} onClick={() => void mutate(updateLearningQuestWorkshop('complete'), 'Workshop closed. Your learning remains ready for recall.')}><Check size={16} /> Finish workshop</button>}
+            {workshopActive && <button disabled={busy} onClick={() => { if (window.confirm('Leave this workshop open history intact and return to no active workshop?')) void mutate(updateLearningQuestWorkshop('abandon'), 'Workshop left safely. Your learning history remains intact.'); }}>Leave workshop</button>}
           </div>
         </section>
 
@@ -181,14 +200,36 @@ export default function LearningQuest() {
 
               <section className="quest-next-proof">
                 <div><p className="quest-kicker">One next proof</p><h3>{needsFeynman && !nextAction ? 'Explain it without hiding behind jargon.' : nextAction ? ACTION_LABELS[nextAction] || nextAction : 'This concept is ready to be kept alive.'}</h3></div>
-                {nextAction && <button className="quest-primary" disabled={busy || !workshopActive} onClick={() => void (nextAction === 'commit_verified' ? mutate(verifyLearningQuestProof(selected.topic_id), 'Local Git proof verified.') : record(nextAction))}><Code2 size={16} /> {ACTION_LABELS[nextAction] || nextAction}</button>}
+                {nextAction && <button className="quest-primary" disabled={busy || !workshopActive} onClick={() => setProofAction(nextAction)}><Code2 size={16} /> {ACTION_LABELS[nextAction] || nextAction}</button>}
                 {!nextAction && !needsFeynman && <button onClick={() => { setView('recall'); setAnswer(''); }}><BrainCircuit size={16} /> Run a recall check</button>}
                 {!workshopActive && <small>Start the workshop to record progress.</small>}
               </section>
 
+              {proofAction && nextAction === proofAction && (
+                <ProofTaskCard
+                  topic={selected}
+                  action={proofAction}
+                  busy={busy}
+                  onCancel={() => setProofAction('')}
+                  onComplete={(outcome) => {
+                    void (async () => {
+                      const completed = proofAction === 'commit_verified'
+                        ? await mutate(verifyLearningQuestProof(selected.topic_id), 'Local Git proof verified.')
+                        : proofAction === 'outcome_owner_confirmed' && outcome
+                          ? await mutate(
+                              confirmLearningQuestOutcome(selected.topic_id, outcome.kind, outcome.note),
+                              'Owner-confirmed real-world outcome recorded locally.',
+                            )
+                          : await record(proofAction);
+                      if (completed) setProofAction('');
+                    })();
+                  }}
+                />
+              )}
+
               <details className="quest-assistance"><summary>AI assistance: {assistance.replace('_', ' ')}</summary><label>Choose the smallest help that keeps you thinking<select value={assistance} onChange={(event) => setAssistance(event.target.value)}><option value="none">None</option><option value="scaffold">Scaffold</option><option value="hint">Hint</option><option value="explanation">Explanation</option><option value="partial_solution">Partial solution</option><option value="full_solution">Full solution</option></select></label></details>
 
-              {needsFeynman && <FeynmanCheck topic={selected} answer={answer} setAnswer={setAnswer} rubricOpen={rubricOpen} setRubricOpen={setRubricOpen} busy={busy} onPass={() => void record('feynman_passed', 'passed', { accuracy: 1, clarity: 1, causality: 1, transfer: 1 })} onFail={() => void record('recall_failed', 'failed')} />}
+              {needsFeynman && <FeynmanCheck topic={selected} answer={answer} setAnswer={setAnswer} rubricOpen={rubricOpen} setRubricOpen={setRubricOpen} busy={busy} onPass={() => void record('feynman_passed', 'passed', { accuracy: 1, clarity: 1, causality: 1, transfer: 1 })} onFail={() => void record('feynman_attempted', 'failed')} />}
             </> : <div className="quest-empty"><Compass /><h2>Shape the first path</h2><p>Add one generic competency. Private project linkage remains in the local helper.</p></div>}
             {message && <p className="quest-message" role="status">{message}</p>}
           </section>
@@ -223,14 +264,71 @@ export default function LearningQuest() {
         <section className="quest-metrics">
           <div><span>Recall health</span><strong>{Math.round(data.analytics.recall.pass_rate * 100)}%</strong><small>{data.analytics.recall.refresh_due} due · {data.analytics.recall.reached_360_days} at 360 days</small></div>
           <div><span>AI independence</span><strong>{Math.round(data.analytics.independence.unassisted_rate * 100)}%</strong><small>{data.analytics.independence.completed_actions} completed actions</small></div>
-          <div><span>Explanation quality</span><strong>{Math.round(data.analytics.explanation.rubric_average * 100)}%</strong><small>{data.analytics.explanation.passes} explanations proven</small></div>
+          <div><span>Self-check coverage</span><strong>{Math.round(data.analytics.explanation.rubric_average * 100)}%</strong><small>{data.analytics.explanation.passes} owner-assessed explanations</small></div>
           <div><span>Calibration</span><strong>{Math.round((1 - data.analytics.calibration_error) * 100)}%</strong><small>Predicted confidence versus result</small></div>
         </section>
       </main>}
 
-      {editing && <div className="quest-modal" role="dialog" aria-modal="true" aria-label="Learning topic editor"><form onSubmit={(event) => { event.preventDefault(); void saveTopic(); }}><header><div><span>Private syllabus</span><h2>{form.topic_id ? 'Edit topic' : 'Create topic'}</h2></div><button type="button" onClick={() => setEditing(false)}>Close</button></header><label>Generic concept title<input required maxLength={120} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label>Concept-only summary<textarea required maxLength={500} value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} /></label><div className="quest-form-row"><label>Independent path<select value={form.lane} onChange={(event) => setForm({ ...form, lane: event.target.value as LearningQuestLane })}>{LANES.map((lane) => <option value={lane.id} key={lane.id}>{lane.label}</option>)}</select></label><label>Difficulty<select value={form.difficulty} onChange={(event) => setForm({ ...form, difficulty: Number(event.target.value) })}>{[1, 2, 3, 4, 5].map((level) => <option value={level} key={level}>Level {level}</option>)}</select></label></div><label>Generic tags<input value={form.tags} onChange={(event) => setForm({ ...form, tags: event.target.value })} placeholder="reliability, schemas" /></label><p className="quest-form-warning">Keep this conceptual. Do not enter project names, paths, customers, private architecture, excerpts, or artifact metadata.</p><button className="quest-save" disabled={busy} type="submit">Save topic</button>{form.topic_id && <button className="quest-delete" type="button" onClick={() => { if (window.confirm('Remove this topic? Its append-only learning history will remain.')) void mutate(removeLearningQuestTopic(form.topic_id), 'Topic removed; learning history preserved.'); setEditing(false); }}><Trash2 size={14} /> Remove topic</button>}</form></div>}
+      {editing && <div className="quest-modal" role="dialog" aria-modal="true" aria-label="Learning topic editor"><form onSubmit={(event) => { event.preventDefault(); void saveTopic(); }}><header><div><span>Private syllabus</span><h2>{form.topic_id ? 'Edit topic' : 'Create topic'}</h2></div><button type="button" onClick={() => setEditing(false)}>Close</button></header><label>Generic concept title<input required maxLength={120} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label>Concept-only summary<textarea required maxLength={500} value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} /></label><div className="quest-form-row"><label>Independent path<select value={form.lane} onChange={(event) => setForm({ ...form, lane: event.target.value as LearningQuestLane })}>{LANES.map((lane) => <option value={lane.id} key={lane.id}>{lane.label}</option>)}</select></label><label>Difficulty<select value={form.difficulty} onChange={(event) => setForm({ ...form, difficulty: Number(event.target.value) })}>{[1, 2, 3, 4, 5].map((level) => <option value={level} key={level}>Level {level}</option>)}</select></label></div><label>Generic tags<input value={form.tags} onChange={(event) => setForm({ ...form, tags: event.target.value })} placeholder="reliability, schemas" /></label><p className="quest-form-warning">Keep this conceptual. Do not enter project names, paths, customers, private architecture, excerpts, or artifact metadata.</p><button className="quest-save" disabled={busy} type="submit">Save topic</button>{form.topic_id && <button className="quest-delete" type="button" onClick={() => { if (window.confirm('Remove this topic? Its append-only learning history will remain.')) void (async () => { const removed = await mutate(removeLearningQuestTopic(form.topic_id), 'Topic removed; learning history preserved.'); if (removed) setEditing(false); })(); }}><Trash2 size={14} /> Remove topic</button>}</form></div>}
     </div>
   );
+}
+
+function ProofTaskCard({ topic, action, busy, onCancel, onComplete }: {
+  topic: LearningQuestTopic;
+  action: string;
+  busy: boolean;
+  onCancel: () => void;
+  onComplete: (outcome?: { kind: 'accepted_product_result' | 'published_marketing_asset' | 'reviewed_experiment_signal' | 'reviewed_customer_commitment'; note: string }) => void;
+}) {
+  const isLesson = action === 'lesson_opened';
+  const isOutcome = action === 'outcome_owner_confirmed';
+  const [outcomeNote, setOutcomeNote] = useState('');
+  const [outcomeConfirmed, setOutcomeConfirmed] = useState(false);
+  const outcomeKinds = {
+    product: 'accepted_product_result',
+    marketing: 'published_marketing_asset',
+    gtm: 'reviewed_experiment_signal',
+    sales: 'reviewed_customer_commitment',
+  } as const;
+  const outcomeKind = topic.lane === 'code' ? null : outcomeKinds[topic.lane];
+  return <section className="quest-oracle" aria-label="Learning proof task">
+    <div className="quest-oracle-label"><BookOpenCheck size={17} /><span>{topic.lane} path · honest evidence step</span></div>
+    <h3>{ACTION_LABELS[action] || action.replaceAll('_', ' ')}</h3>
+    {isLesson ? <>
+      <p><strong>Core idea.</strong> {topic.summary}</p>
+      <ol>
+        <li><strong>Mechanism:</strong> identify the parts and how information moves between them.</li>
+        <li><strong>Boundary:</strong> name what this pattern cannot safely prove or decide.</li>
+        <li><strong>Failure case:</strong> predict one realistic way it can break.</li>
+        <li><strong>Transfer:</strong> name another situation where the same principle would help.</li>
+      </ol>
+    </> : isOutcome ? <>
+      <p>This is an owner confirmation, not automated external verification. Confirm only after the outcome exists in the real work surface.</p>
+      <label>Private evidence note
+        <textarea
+          aria-label="Private outcome evidence note"
+          value={outcomeNote}
+          onChange={(event) => setOutcomeNote(event.target.value)}
+          placeholder="Describe what exists, where you checked it, and the observed result. This stays in the local learning ledger."
+        />
+      </label>
+      <label><input type="checkbox" checked={outcomeConfirmed} onChange={(event) => setOutcomeConfirmed(event.target.checked)} /> I personally checked this real-world outcome.</label>
+    </> : <>
+      <p>Do this step in the real work surface before recording it. Use the smallest useful scope and keep private project evidence outside this screen.</p>
+      <p><strong>Completion standard:</strong> you can point to the result, explain what changed, and name one failure or limitation without guessing.</p>
+    </>}
+    <div className="quest-rubric"><div>
+      <button
+        className="quest-primary"
+        disabled={busy || (isOutcome && (!outcomeKind || !outcomeConfirmed || outcomeNote.trim().length < 20))}
+        onClick={() => onComplete(isOutcome && outcomeKind ? { kind: outcomeKind, note: outcomeNote.trim() } : undefined)}
+      >
+        {isLesson ? 'I considered all four' : isOutcome ? 'Record owner-confirmed outcome' : 'Record honest completion'}
+      </button>
+      <button disabled={busy} onClick={onCancel}>Not yet</button>
+    </div></div>
+  </section>;
 }
 
 function FeynmanCheck({ topic, answer, setAnswer, rubricOpen, setRubricOpen, busy, recall = false, onPass, onFail }: {
@@ -244,10 +342,23 @@ function FeynmanCheck({ topic, answer, setAnswer, rubricOpen, setRubricOpen, bus
   onPass: () => void;
   onFail: () => void;
 }) {
+  const [checks, setChecks] = useState({
+    mechanism: false, boundary: false, failure: false, transfer: false,
+  });
+  const complete = Object.values(checks).every(Boolean);
   return <section className={`quest-oracle ${recall ? 'quest-oracle--recall' : ''}`}>
     <div className="quest-oracle-label"><BookOpenCheck size={17} /><span>{recall ? 'Recall prompt' : 'First-principles check'} · {topic.next_question.kind}</span></div>
     <h3>{topic.next_question.question_text}</h3>
     <textarea aria-label="Explain in your own words" value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="Explain it simply. Your answer stays in this browser tab and is never stored." />
-    {!rubricOpen ? <button className="quest-primary" disabled={busy || answer.trim().length < 40} onClick={() => setRubricOpen(true)}>Check my explanation</button> : <div className="quest-rubric"><p>Does it cover the mechanism, boundary, failure case, and transfer example without leaning on jargon?</p><div><button className="quest-primary" disabled={busy} onClick={onPass}>Yes, all four</button><button disabled={busy} onClick={onFail}>Not yet, bring it back sooner</button></div></div>}
+    {!rubricOpen ? <button className="quest-primary" disabled={busy || answer.trim().length < 40} onClick={() => setRubricOpen(true)}>Check my explanation</button> : <div className="quest-rubric">
+      <p>This is an owner self-check, not an automated truth score. Confirm each dimension honestly:</p>
+      {([
+        ['mechanism', 'I explained the mechanism'],
+        ['boundary', 'I named an important boundary'],
+        ['failure', 'I included a realistic failure case'],
+        ['transfer', 'I gave a transfer example'],
+      ] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={checks[key]} onChange={(event) => setChecks({ ...checks, [key]: event.target.checked })} /> {label}</label>)}
+      <div><button className="quest-primary" disabled={busy || !complete} onClick={onPass}>Record self-check</button><button disabled={busy} onClick={onFail}>Not yet, bring it back sooner</button></div>
+    </div>}
   </section>;
 }
