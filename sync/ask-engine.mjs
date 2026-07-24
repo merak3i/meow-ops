@@ -86,6 +86,183 @@ function learningEvidence(candidates) {
   return candidates.flatMap((candidate) => asArray(candidate.evidence)).slice(0, 10);
 }
 
+function activityTitle(commit) {
+  if (commit.pr_number && String(commit.body || '').trim()) {
+    return `PR #${commit.pr_number} — ${String(commit.body).trim().split('\n')[0]}`;
+  }
+  return String(commit.subject || 'Untitled change')
+    .replace(/^(?:feat|fix|docs|chore|refactor|test|perf|build|ci)(?:\([^)]*\))?!?:\s*/i, '');
+}
+
+function answerProjectActivity(activity) {
+  if (!activity?.requested) return null;
+  const requestedName = activity.requested_project;
+  if (!activity.project) {
+    if (!requestedName) {
+      return {
+        answer: 'Name the registered project or repository whose local activity you want me to inspect.',
+        gate: 'known_unknown',
+        confidence: 1,
+        evidence: [],
+        unknowns: ['Target project for the activity question'],
+        next_question: 'Which registered project should I inspect?',
+      };
+    }
+    return {
+      answer: `${requestedName} is not registered in local Project Control, so I will not substitute another project's evidence. Register it with its local repository and aliases, then ask again.`,
+      gate: 'known_unknown',
+      confidence: 1,
+      evidence: [],
+      unknowns: [`Local project identity and repository for ${requestedName}`],
+      next_question: `Will you register ${requestedName} in Project Control and link its local repository?`,
+    };
+  }
+
+  const commits = asArray(activity.git?.commits);
+  const events = asArray(activity.events);
+  if (commits.length === 0 && events.length === 0) {
+    const gitNote = activity.git?.available === false
+      ? ' Its registered root is not a readable Git repository.'
+      : '';
+    return {
+      answer: `I found no local evidence for ${activity.project.name} during ${activity.period?.label || 'the requested period'}.${gitNote}`,
+      gate: 'known_unknown',
+      confidence: 1,
+      evidence: [],
+      unknowns: [`Project activity for ${activity.project.name} during ${activity.period?.label || 'the requested period'}`],
+      next_question: 'Have the project sessions been synced and the local Git checkout updated?',
+    };
+  }
+
+  const pullRequests = commits.filter((commit) => commit.pr_number);
+  const featureCommits = commits.filter((commit) => !commit.pr_number);
+  const highlights = [
+    ...pullRequests,
+    ...featureCommits,
+  ].slice(0, 6);
+  const lines = highlights.map((commit) => `- ${activityTitle(commit)} (${String(commit.timestamp || '').slice(0, 10) || 'unknown date'})`);
+  const eventOnly = events
+    .filter((event) => !commits.some((commit) => commit.short_sha && JSON.stringify(event).includes(commit.short_sha)))
+    .slice(0, Math.max(0, 6 - lines.length))
+    .map((event) => `- ${event.content || event.event_type || 'Local agent activity'} (${String(event.timestamp || '').slice(0, 10) || 'unknown date'}, ${event.source || 'local'})`);
+  lines.push(...eventOnly);
+
+  const prLabel = `${pullRequests.length} merged GitHub PR${pullRequests.length === 1 ? '' : 's'}`;
+  const commitLabel = `${commits.length} commit${commits.length === 1 ? '' : 's'}`;
+  const evidenceTotal = Math.max(events.length, Number(activity.evidence_total) || 0);
+  const evidenceLabel = evidenceTotal > events.length
+    ? `${evidenceTotal} matching local agent evidence events (the detailed evidence scan was bounded to ${events.length})`
+    : `${events.length} local agent evidence event${events.length === 1 ? '' : 's'}`;
+  const sourceNote = commits.length > 0
+    ? 'This is derived from the registered checkout’s local Git history, not a live GitHub API response.'
+    : 'This is derived from the private local project evidence vault.';
+  const unknowns = [];
+  if (activity.git?.truncated) unknowns.push('Additional matching Git history beyond the bounded answer preview');
+  if (evidenceTotal > events.length) unknowns.push(`${evidenceTotal - events.length} matching local evidence events beyond the bounded detailed scan`);
+  return {
+    answer: `${activity.project.name} during ${activity.period?.label || 'the requested period'}: ${commitLabel}, including ${prLabel}, plus ${evidenceLabel}.\n${lines.join('\n')}\n${sourceNote}`,
+    gate: 'known_known',
+    confidence: 0.98,
+    evidence: [
+      ...commits.slice(0, 10).map((commit) => ({
+        kind: commit.pr_number ? 'git_pull_request' : 'git_commit',
+        ref: `git:${activity.project.project_id}:${commit.short_sha}`,
+        detail: `${String(commit.timestamp || '').slice(0, 10)}${commit.pr_number ? `, GitHub PR #${commit.pr_number}` : ''}`,
+      })),
+      ...events.slice(0, 10).map((event) => ({
+        kind: 'project_evidence',
+        ref: event.event_id,
+        detail: `${event.source || 'local'} ${event.event_type || 'event'} at ${event.timestamp || 'unknown time'}`,
+      })),
+    ],
+    unknowns,
+  };
+}
+
+function learningActionLabel(action) {
+  const labels = {
+    lesson_opened: 'open the lesson',
+    concept_preview_completed: 'finish the concept preview',
+    exercise_attempted: 'attempt the exercise',
+    code_changed: 'make the critical change',
+    tests_passed: 'confirm the tests pass',
+    broken_case_repaired: 'repair the broken case',
+    product_slice_attempted: 'try the smallest useful product slice',
+    acceptance_criteria_written: 'write acceptance criteria',
+    acceptance_checked: 'check the result against its acceptance criteria',
+    story_drafted: 'draft the evidence-led story',
+    claim_evidence_checked: 'check every claim against evidence',
+    audience_tested: 'test the story with its intended audience',
+    experiment_designed: 'design the smallest useful go-to-market experiment',
+    channel_tested: 'test the selected channel',
+    signal_reviewed: 'review the experiment signal',
+    qualification_practiced: 'practice the qualification conversation',
+    objection_repaired: 'repair the weakest objection response',
+    commitment_reviewed: 'review the next commitment for honesty and value',
+    outcome_owner_confirmed: 'confirm a real-world outcome you personally checked',
+    feynman_passed: 'complete the first-principles check',
+    commit_verified: 'verify the local Git commit',
+  };
+  return labels[action] || String(action || '').replaceAll('_', ' ');
+}
+
+function answerLearningQuest(question, learningQuest) {
+  const q = String(question || '').toLowerCase();
+  const isRecall = hasKeyword(q, ['recall is due', 'recall due', 'what recall', 'memory refresh']);
+  const isNext = hasKeyword(q, [
+    'what should i learn', 'learn next', 'learning next', 'resume workshop',
+    'resume learning', "builder's journey", 'builder journey',
+  ]);
+  if (!isRecall && !isNext) return null;
+  if (!learningQuest || !Array.isArray(learningQuest.topics)) {
+    return {
+      answer: "The safe Builder's Journey snapshot is unavailable. Refresh the local helper, then ask again.",
+      gate: 'known_unknown', confidence: 1, evidence: [],
+      unknowns: ['Current Builder’s Journey snapshot'],
+      next_question: 'Is the local learning helper current?',
+    };
+  }
+
+  if (isRecall) {
+    const due = learningQuest.topics.filter((topic) =>
+      Number(topic.progress?.action_count) > 0 && topic.recall?.refresh_due);
+    return {
+      answer: due.length > 0
+        ? `${due.length} recall check${due.length === 1 ? ' is' : 's are'} due: ${due.slice(0, 5).map((topic) => topic.title).join(', ')}. Open Builder's Journey → Recall to continue.`
+        : 'No recall check is due. Your current learning memory is up to date.',
+      gate: 'known_known', confidence: 1,
+      evidence: [{ kind: 'learning_quest', ref: 'recall-summary', detail: 'Safe aggregate recall projection' }],
+      unknowns: [],
+    };
+  }
+
+  const focusId = learningQuest.workshop?.focus_topic_id;
+  const focus = learningQuest.topics.find((topic) => topic.topic_id === focusId)
+    || learningQuest.topics.find((topic) => topic.progress?.next_actions?.length > 0)
+    || learningQuest.topics[0];
+  if (!focus) {
+    return {
+      answer: "Your Builder's Journey has no approved learning topic yet.",
+      gate: 'known_unknown', confidence: 1, evidence: [],
+      unknowns: ['An approved learning topic'],
+      next_question: 'Which capability would create the most value if you understood it from first principles?',
+    };
+  }
+  const action = focus.progress?.next_actions?.[0];
+  return {
+    answer: action
+      ? `Continue ${focus.title}: ${learningActionLabel(action)} next. Open Builder's Journey to record the proof explicitly.`
+      : `${focus.title} has no unfinished mastery action. Open Builder's Journey → Recall to keep it durable.`,
+    gate: 'known_known', confidence: 1,
+    evidence: [{
+      kind: 'learning_quest',
+      ref: focus.topic_id,
+      detail: `Safe aggregate stage: ${focus.stage || 'not started'}; workshop: ${learningQuest.workshop?.state || 'none'}`,
+    }],
+    unknowns: [],
+  };
+}
+
 function answerProjectControl(question, controls) {
   const q = question.toLowerCase();
   const isCoverage = hasKeyword(q, ['which agents', 'agents know', 'agent coverage', 'blind spot']);
@@ -145,7 +322,7 @@ function answerProjectControl(question, controls) {
 
 export function ask(question, {
   proposals, decisions, runs, digest, sync, sessionHistory, sessions, claims, now,
-  projectControls,
+  projectControls, projectActivity, learningQuest,
 } = {}) {
   const q = String(question || '').toLowerCase();
   const proposalRows = latestProposals(asArray(proposals));
@@ -153,6 +330,12 @@ export function ask(question, {
   const runRows = asArray(runs);
   const proposalMap = new Map(proposalRows.map((proposal) => [proposal.proposal_id, proposal]));
   const proposalTitle = (id) => proposalMap.get(id)?.title || id || 'Unknown proposal';
+
+  const learningQuestAnswer = answerLearningQuest(question, learningQuest);
+  if (learningQuestAnswer) return learningQuestAnswer;
+
+  const projectActivityAnswer = answerProjectActivity(projectActivity);
+  if (projectActivityAnswer) return projectActivityAnswer;
 
   const projectAnswer = answerProjectQuestion(
     question,

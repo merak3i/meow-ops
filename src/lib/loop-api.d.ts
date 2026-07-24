@@ -209,7 +209,12 @@ export function saveLearningQuestTopic(topic: Record<string, unknown>): Promise<
 export function removeLearningQuestTopic(topicId: string): Promise<LearningQuestSnapshot | null>;
 export function recordLearningQuestEvent(event: Record<string, unknown>): Promise<LearningQuestSnapshot | null>;
 export function verifyLearningQuestProof(topicId: string, action?: 'commit_verified'): Promise<LearningQuestSnapshot | null>;
-export function updateLearningQuestWorkshop(action: 'start' | 'complete', topicIds?: string[]): Promise<LearningQuestSnapshot | null>;
+export function confirmLearningQuestOutcome(
+  topicId: string,
+  outcomeKind: 'accepted_product_result' | 'published_marketing_asset' | 'reviewed_experiment_signal' | 'reviewed_customer_commitment',
+  note: string,
+): Promise<LearningQuestSnapshot | null>;
+export function updateLearningQuestWorkshop(action: 'start' | 'complete' | 'abandon', topicIds?: string[]): Promise<LearningQuestSnapshot | null>;
 export function fetchProjectControlSnapshot(projectId: string): Promise<ProjectControlSnapshot | null>;
 export function fetchProjectLearningState(projectId: string): Promise<ProjectLearningStateResponse | null>;
 export function fetchProjectEvidence(

@@ -296,6 +296,12 @@ export function verifyLearningQuestProof(topicId, action = 'commit_verified') {
   return mutateLearningQuest('/learning-quest/verify', { topic_id: topicId, action });
 }
 
+export function confirmLearningQuestOutcome(topicId, outcomeKind, note) {
+  return mutateLearningQuest('/learning-quest/outcome-proof', {
+    topic_id: topicId, outcome_kind: outcomeKind, note, confirmed: true,
+  });
+}
+
 export function updateLearningQuestWorkshop(action, topicIds = []) {
   return mutateLearningQuest('/learning-quest/workshop', { action, topic_ids: topicIds });
 }
