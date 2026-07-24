@@ -10,6 +10,7 @@ import {
   saveLearningQuestTopic, type LearningQuestLane, type LearningQuestSnapshot,
   type LearningQuestTopic, updateLearningQuestWorkshop, verifyLearningQuestProof,
 } from '../lib/loop-api';
+import { learningQuestHelperMessage, learningQuestMutationMessage } from '../lib/learning-quest-client';
 import './LearningQuest.css';
 
 const LANES: Array<{ id: LearningQuestLane; label: string; note: string }> = [
@@ -85,7 +86,7 @@ export default function LearningQuest() {
     setBusy(true); setMessage('');
     const next = await operation;
     if (next?.ok) { setData(next); setMessage(success); }
-    else setMessage('The local learning helper could not complete that action.');
+    else setMessage(learningQuestMutationMessage(next));
     setBusy(false);
   }
 
@@ -131,6 +132,7 @@ export default function LearningQuest() {
   const nextAction = activeActions[0];
   const needsFeynman = selected?.progress.next_actions.includes('feynman_passed') || false;
   const workshopActive = data.workshop.state === 'active';
+  const helperMessage = learningQuestHelperMessage(data);
 
   return (
     <div className="quest-page">
@@ -149,6 +151,7 @@ export default function LearningQuest() {
       </nav>
 
       <section className="quest-trust"><ShieldCheck size={16} /><span>Local semantic firewall</span><p>Only approved concepts and aggregate progress reach this screen.</p></section>
+      {helperMessage && <p className="quest-helper-warning" role="status">{helperMessage}</p>}
 
       {view === 'today' && <main className="quest-today">
         <section className={`quest-workshop ${workshopActive ? 'is-active' : ''}`}>

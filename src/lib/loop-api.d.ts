@@ -159,6 +159,8 @@ export interface LearningQuestTopic {
 }
 export interface LearningQuestSnapshot {
   ok: boolean;
+  status?: number;
+  error?: string;
   schema_version: number;
   topics: LearningQuestTopic[];
   summary: {
