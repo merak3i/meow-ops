@@ -37,7 +37,7 @@ async function postJson(url, body) {
     });
     const data = await response.json().catch(() => null);
     if (!response.ok) {
-      return { ok: false, error: data?.error || `HTTP ${response.status}` };
+      return { ok: false, status: response.status, error: data?.error || `HTTP ${response.status}` };
     }
     return data;
   } catch {

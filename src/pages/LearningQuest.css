@@ -118,6 +118,7 @@
 .quest-rewards strong, .quest-metrics strong { font-family: Georgia, 'Times New Roman', serif; font-size: 25px; font-weight: 400; }
 .quest-metrics { margin-top: 18px; }
 .quest-message { margin: 12px 0 0; padding: 9px 11px; border-radius: 7px; background: color-mix(in srgb, var(--quest-green) 9%, transparent); color: var(--quest-green) !important; font-size: 10px; }
+.quest-helper-warning { margin: 12px 0 0; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--quest-ember) 35%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--quest-ember) 9%, transparent); color: var(--quest-ink); font-size: 11px; }
 .quest-empty, .quest-state { min-height: 60vh; display: grid; place-content: center; justify-items: center; text-align: center; gap: 10px; color: var(--quest-muted); }
 .quest-empty h2, .quest-state h1 { color: var(--quest-ink); margin: 0; font-weight: 400; }
 .quest-modal { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 20px; background: rgb(0 0 0 / .64); backdrop-filter: blur(8px); }

@@ -170,7 +170,45 @@ test("Builder's Journey remains usable with a legacy helper snapshot", async ({ 
   await expect(page.getByRole('heading', { name: 'From vibe to first principles.' })).toBeVisible();
   await expect(page.getByRole('progressbar', { name: 'Workshop health' })).toHaveAttribute('aria-valuenow', '100');
   await expect(page.getByText('Shape the first path')).toBeVisible();
+  await expect(page.getByText(/local helper is out of date/i)).toBeVisible();
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
+});
+
+test("Builder's Journey explains how to repair a stale helper mutation", async ({ page }) => {
+  const topic = {
+    topic_id: 'cost-aware-router',
+    title: 'Cost-Aware Agent Router',
+    summary: 'Choose the cheapest safe route.',
+    lane: 'code',
+    difficulty: 3,
+    tags: [],
+    prerequisite_ids: [],
+    stage: null,
+    recall: { confidence: 0, refresh_due: true, interval_days: 0, next_due_at: '2026-07-24T00:00:00.000Z' },
+    next_question: { question_id: 'cost-aware-router-q', kind: 'predict', question_text: 'Predict the safe route.' },
+    progress: { action_count: 0, attempts: 0, completed_actions: [], next_actions: ['lesson_opened'] },
+  };
+  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, (route) => {
+    const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
+    if (path === '/loop-eng/nonce') return route.fulfill({ headers, json: { nonce: 'owner-nonce' } });
+    if (path === '/learning-quest/snapshot') return route.fulfill({ headers, json: {
+      ok: true,
+      schema_version: 2,
+      topics: [topic],
+      summary: { total_topics: 1, by_stage: {}, by_lane: { code: 1 }, durable_capability: 0 },
+      workshop: { state: 'none', health: 100, age_days: 0, inactive_days: 0, pending_count: 0, completed_count: 0, can_resume: false, can_complete: false, origin: 'spontaneous', focus_topic_id: topic.topic_id, reminder: 'Choose any lane.' },
+    } });
+    if (path === '/learning-quest/workshop') return route.fulfill({ status: 404, headers, json: { ok: false, error: 'Not found' } });
+    return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
+  });
+
+  await nav(page, "Builder's Journey");
+  await page.getByRole('button', { name: /Start with Cost-Aware Agent Router/ }).click();
+  await expect(page.getByRole('status')).toContainText('Your local helper is out of date');
+  await expect(page.getByRole('status')).toContainText('npm run agents:install');
 });
 
 test('Capacity & Usage: local-first usage cockpit renders', async ({ page }) => {

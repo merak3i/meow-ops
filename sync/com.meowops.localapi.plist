@@ -18,6 +18,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>YOUR_NODE_PATH</string>
+    <string>--watch</string>
     <string>YOUR_REPO_PATH/sync/local-api.mjs</string>
   </array>
 
