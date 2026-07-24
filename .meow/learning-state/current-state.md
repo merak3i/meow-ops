@@ -6,11 +6,11 @@ Establish the deep project-control module and make Meow Ops itself the first gov
 
 ## Delivery sequence
 
-1. Project catalog, constitution, learning ledger, and adapter previews.
-2. Five-source normalized evidence, including Hermes.
-3. Owner-governed learning decisions and adapter write-back.
-4. Eagle Eye and Surgical project views.
-5. Full verification, loop review, and staged rollout.
+1. Project catalog, constitution, learning ledger, and adapter previews: complete.
+2. Five-source normalized evidence, including Hermes: complete.
+3. Owner-governed learning decisions and adapter write-back: complete.
+4. Eagle Eye and Surgical project views: complete.
+5. Builder's Journey compatibility, full verification, loop review, and staged rollout: active.
 
 ## Open decisions
 
@@ -19,6 +19,6 @@ Establish the deep project-control module and make Meow Ops itself the first gov
 ## Known limitations
 
 - Cursor evidence is currently shallower than Codex and Claude evidence.
-- Hermes session ingestion is not yet implemented.
 - Antigravity does not expose every token, model, or cost field locally.
-- Native-agent context adapters are preview-only until the owner-governed apply path is complete.
+- Native-agent context writes remain owner-governed: preview, one-use approval, apply, backup, and rollback are required.
+- Older local helpers may return earlier learning snapshot schemas, so the dashboard must preserve backward-compatible defaults at its API boundary.
