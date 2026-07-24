@@ -176,9 +176,99 @@ export async function fetchProjectControlPortfolio() {
   return data && typeof data === 'object' ? data : { ok: false, projects: [] };
 }
 
+function normalizeLearningQuestSnapshot(data) {
+  const source = data && typeof data === 'object' ? data : {};
+  const topics = Array.isArray(source.topics) ? source.topics.map((topic) => ({
+    ...topic,
+    tags: Array.isArray(topic?.tags) ? topic.tags : [],
+    prerequisite_ids: Array.isArray(topic?.prerequisite_ids) ? topic.prerequisite_ids : [],
+    recall: {
+      confidence: 0,
+      refresh_due: false,
+      interval_days: 1,
+      next_due_at: '',
+      ...(topic?.recall || {}),
+    },
+    next_question: {
+      question_id: `${topic?.topic_id || 'topic'}-compat`,
+      kind: 'transfer',
+      question_text: `Explain ${topic?.title || 'this concept'} in your own words.`,
+      ...(topic?.next_question || {}),
+    },
+    progress: {
+      action_count: 0,
+      attempts: 0,
+      completed_actions: [],
+      next_actions: [],
+      ...(topic?.progress || {}),
+    },
+  })) : [];
+  const summary = {
+    total_topics: topics.length,
+    by_stage: {},
+    by_lane: {},
+    durable_capability: 0,
+    ...(source.summary || {}),
+  };
+  const analytics = {
+    recall: { attempts: 0, pass_rate: 0, refresh_due: 0, reached_360_days: 0, ...(source.analytics?.recall || {}) },
+    independence: { completed_actions: 0, unassisted_rate: 0, average_hints: 0, ...(source.analytics?.independence || {}) },
+    explanation: { passes: 0, rubric_average: 0, ...(source.analytics?.explanation || {}) },
+    calibration_error: 0,
+    effort: { average_attempts: 0, average_duration_seconds: 0, ...(source.analytics?.effort || {}) },
+    stage_funnel: source.analytics?.stage_funnel || {},
+    by_lane: source.analytics?.by_lane || {},
+    guidance: {
+      bottleneck_stage: 'not started',
+      independence_direction: 'steady',
+      next_intervention: 'choose_new_topic',
+      ...(source.analytics?.guidance || {}),
+    },
+  };
+  const rewards = {
+    xp: 0,
+    level: 1,
+    streak_days: 0,
+    ...(source.rewards || {}),
+    dimensions: {
+      understanding: 0,
+      independence: 0,
+      shipping: 0,
+      consistency: 0,
+      ...(source.rewards?.dimensions || {}),
+    },
+    badges: Array.isArray(source.rewards?.badges) ? source.rewards.badges : [],
+  };
+  const workshop = {
+    state: 'none',
+    health: 100,
+    age_days: 0,
+    inactive_days: 0,
+    pending_count: 0,
+    completed_count: 0,
+    can_resume: false,
+    can_complete: false,
+    origin: 'spontaneous',
+    focus_topic_id: topics[0]?.topic_id || null,
+    reminder: 'Choose any path when you are ready.',
+    ...(source.workshop || {}),
+  };
+
+  return {
+    ...source,
+    ok: source.ok === true,
+    schema_version: Number.isFinite(source.schema_version) ? source.schema_version : 1,
+    topics,
+    summary,
+    analytics,
+    rewards,
+    workshop,
+  };
+}
+
 export async function fetchLearningQuestSnapshot() {
   const data = await fetchLoopJson('/learning-quest/snapshot');
-  return data && typeof data === 'object' ? data : { ok: false, topics: [], summary: null };
+  return normalizeLearningQuestSnapshot(data);
 }
 
 async function mutateLearningQuest(path, payload) {
@@ -186,7 +276,8 @@ async function mutateLearningQuest(path, payload) {
   if (!base) return null;
   const nonce = await fetchLoopNonce();
   if (!nonce) return null;
-  return postJson(`${base}${path}`, { ...payload, nonce });
+  const data = await postJson(`${base}${path}`, { ...payload, nonce });
+  return data && typeof data === 'object' ? normalizeLearningQuestSnapshot(data) : null;
 }
 
 export function saveLearningQuestTopic(topic) {

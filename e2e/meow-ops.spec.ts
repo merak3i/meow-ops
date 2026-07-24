@@ -143,6 +143,36 @@ test("Builder's Journey prioritizes spontaneous work, independent paths, and qui
   await expect(page.getByLabel('Explain in your own words')).toBeVisible();
 });
 
+test("Builder's Journey remains usable with a legacy helper snapshot", async ({ page }) => {
+  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, (route) => {
+    const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
+    if (path === '/learning-quest/snapshot') return route.fulfill({
+      headers,
+      json: {
+        ok: true,
+        schema_version: 1,
+        topics: [],
+        summary: {
+          total_topics: 0,
+          by_stage: {},
+          by_lane: {},
+          durable_capability: 0,
+        },
+      },
+    });
+    return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
+  });
+
+  await nav(page, "Builder's Journey");
+  await expect(page.getByRole('heading', { name: 'From vibe to first principles.' })).toBeVisible();
+  await expect(page.getByRole('progressbar', { name: 'Workshop health' })).toHaveAttribute('aria-valuenow', '100');
+  await expect(page.getByText('Shape the first path')).toBeVisible();
+  await expect(page.locator('[data-vite-error]')).toHaveCount(0);
+});
+
 test('Capacity & Usage: local-first usage cockpit renders', async ({ page }) => {
   await nav(page, 'Capacity & Usage');
   await expect(page.getByRole('heading', { name: 'Capacity & Usage', exact: true })).toBeVisible();
