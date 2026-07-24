@@ -171,6 +171,49 @@ test('project routes expose an Eagle Eye snapshot and learning state', async () 
   assert.match(state.body.files['INDEX.md'], /Project learning/);
 });
 
+test('website project registration is local-only, nonce-bound, and validates the folder', async () => {
+  const root = join(temp, 'registered-from-dashboard');
+  mkdirSync(root);
+  const registrationNonce = await nonce();
+  const registered = await post('/projects', {
+    nonce: registrationNonce,
+    name: 'Dashboard Project',
+    aliases: ['dashboard', 'dashboard-project'],
+    root,
+  });
+  assert.equal(registered.status, 201);
+  assert.equal(registered.body.project.name, 'Dashboard Project');
+  assert.equal(registered.body.project.root, root);
+  assert.deepEqual(registered.body.project.aliases, ['dashboard', 'dashboard-project']);
+
+  const replay = await post('/projects', {
+    nonce: registrationNonce,
+    name: 'Replay Project',
+    root,
+  });
+  assert.equal(replay.status, 403);
+
+  const missing = await post('/projects', {
+    nonce: await nonce(),
+    name: 'Missing Folder',
+    root: join(temp, 'does-not-exist'),
+  });
+  assert.equal(missing.status, 400);
+  assert.match(missing.body.error, /existing absolute local directory/);
+
+  const hostedHeaders = {
+    Origin: 'https://meow-ops.vercel.app',
+    'x-meow-ops-local': '1',
+    'Content-Type': 'application/json',
+  };
+  const hosted = await fetch(`${BASE}/projects`, {
+    method: 'POST',
+    headers: hostedHeaders,
+    body: JSON.stringify({ nonce: await nonce(), name: 'Hosted', root }),
+  });
+  assert.equal(hosted.status, 403);
+});
+
 test('Companion answers a bounded LCWI feature question from local project evidence', async () => {
   const result = await post('/loop-eng/ask', {
     question: 'what happened in lcwi project in the last 3 days? what features were worked on according to the github pr on merak3i',
@@ -314,6 +357,38 @@ test('learning proposal and decision routes enforce one-use owner nonces', async
   );
   assert.equal(decided.status, 200);
   assert.equal(decided.body.learning.status, 'published');
+});
+
+test('an interrupted learning publication can be retried without losing owner approval', async () => {
+  const blockedRoot = join(temp, 'blocked-publication-project');
+  mkdirSync(blockedRoot);
+  writeFileSync(join(blockedRoot, '.meow'), 'temporarily blocked by a file', 'utf8');
+  const blockedProject = registerProject({ name: 'Blocked Publication', root: blockedRoot });
+  const proposed = await post(`/projects/${blockedProject.project_id}/learnings`, {
+    nonce: await nonce(),
+    kind: 'practice',
+    title: 'Retry interrupted publication',
+    proposed_content: 'Retry the same owner-approved publication after the local path is repaired.',
+    rationale: 'A transient write failure must not strand approved learning.',
+    evidence: [{ kind: 'test', ref: 'retry-publication' }],
+    impact: 'high',
+    confidence: 1,
+  });
+  assert.equal(proposed.status, 201);
+
+  const firstAttempt = await post(
+    `/projects/${blockedProject.project_id}/learnings/${proposed.body.learning.learning_id}/decision`,
+    { nonce: await nonce(), decision: 'approved', reason: 'Owner approved this practice.' },
+  );
+  assert.equal(firstAttempt.status, 400);
+
+  rmSync(join(blockedRoot, '.meow'));
+  const retry = await post(
+    `/projects/${blockedProject.project_id}/learnings/${proposed.body.learning.learning_id}/decision`,
+    { nonce: await nonce(), decision: 'approved', reason: 'Retry approved publication.' },
+  );
+  assert.equal(retry.status, 200);
+  assert.equal(retry.body.learning.status, 'published');
 });
 
 test('adapter preview is read-only and includes every target agent', async () => {

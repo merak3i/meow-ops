@@ -94,6 +94,7 @@ export default function LearningQuest() {
   );
   const dueTopics = useMemo(() => data?.topics.filter((topic) =>
     topic.progress.action_count > 0 && topic.recall.refresh_due) || [], [data]);
+  const recallTopic = dueTopics.find((topic) => topic.topic_id === selectedId) || dueTopics[0] || null;
   const pathTopics = useMemo(() => data?.topics.filter((topic) => topic.lane === selectedLane) || [], [data, selectedLane]);
 
   async function mutate(operation: Promise<LearningQuestSnapshot | null>, success: string) {
@@ -105,11 +106,16 @@ export default function LearningQuest() {
     return Boolean(next?.ok);
   }
 
-  async function record(action: string, result = 'completed', rubric?: Record<string, number>) {
-    if (!selected) return false;
+  async function record(
+    action: string,
+    result = 'completed',
+    rubric?: Record<string, number>,
+    target: LearningQuestTopic | null = selected,
+  ) {
+    if (!target) return false;
     return mutate(recordLearningQuestEvent({
-      topic_id: selected.topic_id, action, result, assistance, rubric,
-      confidence_before: selected.recall.confidence, confidence_after: result === 'failed' ? 0 : 1,
+      topic_id: target.topic_id, action, result, assistance, rubric,
+      confidence_before: target.recall.confidence, confidence_after: result === 'failed' ? 0 : 1,
     }), 'Proof recorded. Your journey has been recalculated.');
   }
 
@@ -229,13 +235,13 @@ export default function LearningQuest() {
 
               <details className="quest-assistance"><summary>AI assistance: {assistance.replace('_', ' ')}</summary><label>Choose the smallest help that keeps you thinking<select value={assistance} onChange={(event) => setAssistance(event.target.value)}><option value="none">None</option><option value="scaffold">Scaffold</option><option value="hint">Hint</option><option value="explanation">Explanation</option><option value="partial_solution">Partial solution</option><option value="full_solution">Full solution</option></select></label></details>
 
-              {needsFeynman && <FeynmanCheck topic={selected} answer={answer} setAnswer={setAnswer} rubricOpen={rubricOpen} setRubricOpen={setRubricOpen} busy={busy} onPass={() => void record('feynman_passed', 'passed', { accuracy: 1, clarity: 1, causality: 1, transfer: 1 })} onFail={() => void record('feynman_attempted', 'failed')} />}
+              {needsFeynman && <FeynmanCheck key={`proof:${selected.topic_id}`} topic={selected} answer={answer} setAnswer={setAnswer} rubricOpen={rubricOpen} setRubricOpen={setRubricOpen} busy={busy} onPass={() => record('feynman_passed', 'passed', { accuracy: 1, clarity: 1, causality: 1, transfer: 1 })} onFail={() => record('feynman_attempted', 'failed')} />}
             </> : <div className="quest-empty"><Compass /><h2>Shape the first path</h2><p>Add one generic competency. Private project linkage remains in the local helper.</p></div>}
             {message && <p className="quest-message" role="status">{message}</p>}
           </section>
 
           <aside className="quest-sidecar">
-            <section><Clock3 size={17} /><div><span>Quick return</span><strong>{dueTopics.length ? `${dueTopics.length} recall ${dueTopics.length === 1 ? 'check' : 'checks'} waiting` : 'Memory is current'}</strong><button onClick={() => setView('recall')}>{dueTopics.length ? 'Start a 2-minute recall' : 'Practice anyway'} <ArrowRight size={14} /></button></div></section>
+            <section><Clock3 size={17} /><div><span>Quick return</span><strong>{dueTopics.length ? `${dueTopics.length} recall ${dueTopics.length === 1 ? 'check' : 'checks'} waiting` : 'Memory is current'}</strong><button onClick={() => setView(dueTopics.length ? 'recall' : 'paths')}>{dueTopics.length ? 'Start a 2-minute recall' : 'Browse learning paths'} <ArrowRight size={14} /></button></div></section>
             <section><Gauge size={17} /><div><span>Evidence says</span><strong>{INTERVENTIONS[data.analytics.guidance.next_intervention]}</strong><small>Independence is {data.analytics.guidance.independence_direction}.</small></div></section>
             <section><Layers3 size={17} /><div><span>Freedom to choose</span><strong>Every path is open</strong><button onClick={() => setView('paths')}>Browse all five paths <ArrowRight size={14} /></button></div></section>
           </aside>
@@ -251,8 +257,8 @@ export default function LearningQuest() {
       {view === 'recall' && <main className="quest-recall-mode">
         <header><div><p className="quest-kicker">Two-minute return</p><h2>Pull the idea from memory.</h2><p>Mobile-friendly, private, and low pressure. A miss schedules a nearer return without erasing mastery.</p></div><span>{dueTopics.length} due</span></header>
         <div className="quest-recall-layout">
-          <aside>{(dueTopics.length ? dueTopics : data.topics).map((topic) => <button className={selected?.topic_id === topic.topic_id ? 'active' : ''} key={topic.topic_id} onClick={() => chooseTopic(topic, 'recall')}><BrainCircuit size={15} /><span><strong>{topic.title}</strong><small>{topic.recall.refresh_due ? 'Due now' : `${topic.recall.interval_days}-day interval`}</small></span></button>)}</aside>
-          {selected && <FeynmanCheck topic={selected} answer={answer} setAnswer={setAnswer} rubricOpen={rubricOpen} setRubricOpen={setRubricOpen} busy={busy} recall onPass={() => void record('recall_passed', 'passed', { accuracy: 1, clarity: 1, causality: 1, transfer: 1 })} onFail={() => void record('recall_failed', 'failed')} />}
+          <aside>{dueTopics.map((topic) => <button className={recallTopic?.topic_id === topic.topic_id ? 'active' : ''} key={topic.topic_id} onClick={() => chooseTopic(topic, 'recall')}><BrainCircuit size={15} /><span><strong>{topic.title}</strong><small>Due now</small></span></button>)}</aside>
+          {recallTopic ? <FeynmanCheck key={`recall:${recallTopic.topic_id}`} topic={recallTopic} answer={answer} setAnswer={setAnswer} rubricOpen={rubricOpen} setRubricOpen={setRubricOpen} busy={busy} recall onPass={() => record('recall_passed', 'passed', { accuracy: 1, clarity: 1, causality: 1, transfer: 1 }, recallTopic)} onFail={() => record('recall_failed', 'failed', undefined, recallTopic)} /> : <section className="quest-oracle quest-oracle--recall"><h3>No recall check is due.</h3><p>Your current learning memory is up to date. Return to Paths when you want to continue learning.</p></section>}
         </div>
         {message && <p className="quest-message" role="status">{message}</p>}
       </main>}
@@ -265,7 +271,7 @@ export default function LearningQuest() {
           <div><span>Recall health</span><strong>{Math.round(data.analytics.recall.pass_rate * 100)}%</strong><small>{data.analytics.recall.refresh_due} due · {data.analytics.recall.reached_360_days} at 360 days</small></div>
           <div><span>AI independence</span><strong>{Math.round(data.analytics.independence.unassisted_rate * 100)}%</strong><small>{data.analytics.independence.completed_actions} completed actions</small></div>
           <div><span>Self-check coverage</span><strong>{Math.round(data.analytics.explanation.rubric_average * 100)}%</strong><small>{data.analytics.explanation.passes} owner-assessed explanations</small></div>
-          <div><span>Calibration</span><strong>{Math.round((1 - data.analytics.calibration_error) * 100)}%</strong><small>Predicted confidence versus result</small></div>
+          <div><span>Confidence/result fit</span><strong>{Math.round((1 - data.analytics.calibration_error) * 100)}%</strong><small>Modelled recall confidence versus recorded result</small></div>
         </section>
       </main>}
 
@@ -339,13 +345,19 @@ function FeynmanCheck({ topic, answer, setAnswer, rubricOpen, setRubricOpen, bus
   setRubricOpen: (value: boolean) => void;
   busy: boolean;
   recall?: boolean;
-  onPass: () => void;
-  onFail: () => void;
+  onPass: () => Promise<boolean>;
+  onFail: () => Promise<boolean>;
 }) {
   const [checks, setChecks] = useState({
     mechanism: false, boundary: false, failure: false, transfer: false,
   });
   const complete = Object.values(checks).every(Boolean);
+  async function submit(handler: () => Promise<boolean>) {
+    if (!await handler()) return;
+    setChecks({ mechanism: false, boundary: false, failure: false, transfer: false });
+    setAnswer('');
+    setRubricOpen(false);
+  }
   return <section className={`quest-oracle ${recall ? 'quest-oracle--recall' : ''}`}>
     <div className="quest-oracle-label"><BookOpenCheck size={17} /><span>{recall ? 'Recall prompt' : 'First-principles check'} · {topic.next_question.kind}</span></div>
     <h3>{topic.next_question.question_text}</h3>
@@ -358,7 +370,7 @@ function FeynmanCheck({ topic, answer, setAnswer, rubricOpen, setRubricOpen, bus
         ['failure', 'I included a realistic failure case'],
         ['transfer', 'I gave a transfer example'],
       ] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={checks[key]} onChange={(event) => setChecks({ ...checks, [key]: event.target.checked })} /> {label}</label>)}
-      <div><button className="quest-primary" disabled={busy || !complete} onClick={onPass}>Record self-check</button><button disabled={busy} onClick={onFail}>Not yet, bring it back sooner</button></div>
+      <div><button className="quest-primary" disabled={busy || !complete} onClick={() => void submit(onPass)}>Record self-check</button><button disabled={busy} onClick={() => void submit(onFail)}>Not yet, bring it back sooner</button></div>
     </div>}
   </section>;
 }

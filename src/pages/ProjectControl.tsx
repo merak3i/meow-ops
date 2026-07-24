@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  BookOpen, CheckCircle2, ChevronRight, Eye, FileSearch, RefreshCw, ShieldCheck,
+  BookOpen, CheckCircle2, ChevronRight, Eye, FileSearch, Plus, RefreshCw, ShieldCheck,
   TriangleAlert,
 } from 'lucide-react';
 
 import {
   applyProjectContextAdapters,
+  decideProjectLearning,
   fetchProjectControlPortfolio,
   fetchProjectEvidence,
   fetchProjectLearningState,
   previewProjectContextAdapters,
+  registerProjectControlProject,
   rollbackProjectContextAdapters,
   type ProjectAdapterPreview,
   type ProjectControlSnapshot,
@@ -38,6 +40,71 @@ function evidenceTitle(row: Record<string, unknown>) {
   return display(row.content || row.session_title || row.first_user_message || row.session_id, 'Untitled session');
 }
 
+function ProjectRegistrationForm({
+  onRegistered,
+  onCancel,
+}: {
+  onRegistered: (projectId: string) => Promise<void>;
+  onCancel?: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [root, setRoot] = useState('');
+  const [aliases, setAliases] = useState('');
+  const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  return (
+    <form
+      className="project-registration"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        setMessage('');
+        if (!name.trim() || !root.trim()) {
+          setMessage('Project name and local folder are required.');
+          return;
+        }
+        setSubmitting(true);
+        const result = await registerProjectControlProject({
+          name: name.trim(),
+          root: root.trim(),
+          aliases: aliases.split(',').map((alias) => alias.trim()).filter(Boolean),
+        });
+        if (result?.ok && result.project) {
+          setMessage(`Registered ${result.project.name}.`);
+          await onRegistered(result.project.project_id);
+        } else {
+          setMessage(result?.error || 'Registration failed. Make sure the local helper is running and the folder exists.');
+        }
+        setSubmitting(false);
+      }}
+    >
+      <div className="project-registration-heading">
+        <div>
+          <h2>Register a local project</h2>
+          <p>The folder path is sent only to the helper running on this machine.</p>
+        </div>
+        {onCancel && <button type="button" onClick={onCancel}>Cancel</button>}
+      </div>
+      <label>
+        Project name
+        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Meow Ops" maxLength={120} />
+      </label>
+      <label>
+        Local project folder
+        <input value={root} onChange={(event) => setRoot(event.target.value)} placeholder="/Users/you/projects/meow-ops" />
+      </label>
+      <label>
+        Aliases <span>(optional, comma-separated)</span>
+        <input value={aliases} onChange={(event) => setAliases(event.target.value)} placeholder="meow-ops, meow operations" />
+      </label>
+      <button className="project-control-action" type="submit" disabled={submitting}>
+        <Plus size={15} /> {submitting ? 'Registering...' : 'Register project'}
+      </button>
+      {message && <p className={message.startsWith('Registered') ? 'project-control-success' : 'project-control-error'}>{message}</p>}
+    </form>
+  );
+}
+
 export default function ProjectControl() {
   const [projects, setProjects] = useState<ProjectControlSnapshot[]>([]);
   const [selectedId, setSelectedId] = useState('');
@@ -47,6 +114,10 @@ export default function ProjectControl() {
   const [adapterPreview, setAdapterPreview] = useState<ProjectAdapterPreview | null>(null);
   const [adapterSyncId, setAdapterSyncId] = useState('');
   const [adapterMessage, setAdapterMessage] = useState('');
+  const [showRegistration, setShowRegistration] = useState(false);
+  const [decisionReasons, setDecisionReasons] = useState<Record<string, string>>({});
+  const [decisionMessage, setDecisionMessage] = useState('');
+  const [decidingLearningId, setDecidingLearningId] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -55,14 +126,43 @@ export default function ProjectControl() {
     [projects, selectedId],
   );
 
-  async function loadPortfolio() {
+  async function loadPortfolio(preferredId = '') {
     setLoading(true);
     setError('');
     const result = await fetchProjectControlPortfolio();
     if (!result.ok) setError('The local Meow Ops helper is not available.');
     setProjects(result.projects || []);
-    if (!selectedId && result.projects?.[0]) setSelectedId(result.projects[0].project.project_id);
+    if (preferredId) setSelectedId(preferredId);
+    else if (!selectedId && result.projects?.[0]) setSelectedId(result.projects[0].project.project_id);
     setLoading(false);
+  }
+
+  async function handleLearningDecision(
+    learningId: string,
+    decision: 'approved' | 'deferred' | 'rejected',
+    retryPublication = false,
+  ) {
+    if (!selected) return;
+    const reason = retryPublication
+      ? 'Retry previously owner-approved publication.'
+      : (decisionReasons[learningId] || '').trim();
+    if (!retryPublication && !reason) {
+      setDecisionMessage('A reason is required before approving, deferring, or rejecting project learning.');
+      return;
+    }
+    setDecidingLearningId(learningId);
+    setDecisionMessage('');
+    const result = await decideProjectLearning(selected.project.project_id, learningId, decision, reason);
+    if (result?.ok && result.learning) {
+      const shownDecision = result.learning.status === 'published' ? 'approved and published' : result.learning.status;
+      setDecisionMessage(`Learning ${shownDecision}. The project snapshot has been refreshed.`);
+      setDecisionReasons((previous) => ({ ...previous, [learningId]: '' }));
+      await loadPortfolio(selected.project.project_id);
+      setLearningState(await fetchProjectLearningState(selected.project.project_id));
+    } else {
+      setDecisionMessage(result?.error || 'The learning decision could not be saved.');
+    }
+    setDecidingLearningId('');
   }
 
   useEffect(() => { void loadPortfolio(); }, []);
@@ -74,6 +174,8 @@ export default function ProjectControl() {
     setAdapterPreview(null);
     setAdapterSyncId('');
     setAdapterMessage('');
+    setDecisionReasons({});
+    setDecisionMessage('');
     void fetchProjectLearningState(selected.project.project_id).then(setLearningState);
   }, [selected?.project.project_id]);
 
@@ -92,6 +194,11 @@ export default function ProjectControl() {
         <BookOpen size={28} />
         <h1>No governed projects yet</h1>
         <p>Register a project to connect its constitution, learning state, evidence, and native-agent context.</p>
+        <ProjectRegistrationForm
+          onRegistered={async (projectId) => {
+            await loadPortfolio(projectId);
+          }}
+        />
         {error && <p className="project-control-error">{error}</p>}
       </div>
     );
@@ -108,10 +215,25 @@ export default function ProjectControl() {
           <h1>{selected.project.name}</h1>
           <p>See what the project knows, what the evidence proves, and what still needs your decision.</p>
         </div>
-        <button className="project-control-refresh" type="button" onClick={() => void loadPortfolio()}>
-          <RefreshCw size={15} /> Refresh evidence
-        </button>
+        <div className="project-control-header-actions">
+          <button className="project-control-refresh" type="button" onClick={() => setShowRegistration((value) => !value)}>
+            <Plus size={15} /> Add project
+          </button>
+          <button className="project-control-refresh" type="button" onClick={() => void loadPortfolio()}>
+            <RefreshCw size={15} /> Refresh evidence
+          </button>
+        </div>
       </header>
+
+      {showRegistration && (
+        <ProjectRegistrationForm
+          onCancel={() => setShowRegistration(false)}
+          onRegistered={async (projectId) => {
+            await loadPortfolio(projectId);
+            setShowRegistration(false);
+          }}
+        />
+      )}
 
       <div className="project-control-toolbar">
         <label>
@@ -253,10 +375,60 @@ export default function ProjectControl() {
               <p className="empty-copy">No learning proposals for this project.</p>
             ) : selected.learning.candidates.map((learning) => (
               <article className="learning-row" key={learning.learning_id}>
-                <div><span>{learning.kind} · {learning.impact} impact</span><h3>{learning.title}</h3><p>{learning.rationale}</p></div>
+                <div className="learning-summary">
+                  <span>{learning.kind} · {learning.impact} impact</span>
+                  <h3>{learning.title}</h3>
+                  <p>{learning.rationale}</p>
+                  {['proposed', 'deferred'].includes(learning.status) && (
+                    <div className="learning-decision">
+                      <label>
+                        Owner reason
+                        <textarea
+                          aria-label={`Reason for ${learning.title}`}
+                          value={decisionReasons[learning.learning_id] || ''}
+                          onChange={(event) => setDecisionReasons((previous) => ({
+                            ...previous,
+                            [learning.learning_id]: event.target.value,
+                          }))}
+                          placeholder="Why is this the right decision for the project?"
+                          maxLength={2_000}
+                        />
+                      </label>
+                      <div>
+                        {([
+                          ['approved', 'Approve'],
+                          ['deferred', 'Defer'],
+                          ['rejected', 'Reject'],
+                        ] as const).map(([decision, label]) => (
+                          <button
+                            key={decision}
+                            type="button"
+                            disabled={decidingLearningId === learning.learning_id}
+                            onClick={() => void handleLearningDecision(learning.learning_id, decision)}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {learning.status === 'approved' && (
+                    <div className="learning-decision">
+                      <p>Owner approval is saved, but publication did not finish.</p>
+                      <button
+                        type="button"
+                        disabled={decidingLearningId === learning.learning_id}
+                        onClick={() => void handleLearningDecision(learning.learning_id, 'approved', true)}
+                      >
+                        Retry publication
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <strong className={`learning-status ${learning.status}`}>{learning.status}</strong>
               </article>
             ))}
+            {decisionMessage && <p className="learning-decision-result" role="status">{decisionMessage}</p>}
           </section>
         </>
       ) : (

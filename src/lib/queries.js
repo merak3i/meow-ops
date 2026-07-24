@@ -298,9 +298,8 @@ export async function fetchSessions(dateRange = 30) {
   return filterByDateRange(DEMO_SESSIONS, 'ended_at', dateRange);
 }
 
-// Returns ALL sessions with no date filter — used for spend breakdown so that
-// "This Week" / "This Month" cards are never silently truncated by the
-// date-range filter selected in the UI.
+// Returns the bounded compatibility preview with no date filter. Complete
+// all-time totals and dimension rollups come from cost-summary.json.
 export async function fetchAllSessions() {
   const real = await loadRealSessions();
   if (real) return real;

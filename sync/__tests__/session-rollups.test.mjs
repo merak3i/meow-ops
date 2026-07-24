@@ -23,9 +23,15 @@ function session(id, endedAt, overrides = {}) {
 
 test('builds complete time and dimension rollups with tokens, time, and cost', () => {
   const rollups = buildSessionRollups([
-    session('a', '2025-12-31T20:00:00Z', { project: 'alpha', source: 'claude', model: 'opus' }),
-    session('b', '2026-01-01T10:00:00Z', { project: 'beta', total_tokens: 200, estimated_cost_usd: 2.5, duration_seconds: 120 }),
-    session('c', '2026-02-02T10:00:00Z', { project: 'alpha', total_tokens: 300, estimated_cost_usd: 3.5, duration_seconds: 180 }),
+    session('a', '2025-12-31T20:00:00Z', {
+      project: 'alpha', source: 'claude', model: 'opus', tools: { Read: 2, Edit: 1 },
+    }),
+    session('b', '2026-01-01T10:00:00Z', {
+      project: 'beta', total_tokens: 200, estimated_cost_usd: 2.5, duration_seconds: 120, tools: { Read: 3 },
+    }),
+    session('c', '2026-02-02T10:00:00Z', {
+      project: 'alpha', total_tokens: 300, estimated_cost_usd: 3.5, duration_seconds: 180, tools: { Bash: 4 },
+    }),
   ], { timeZone: 'UTC', generatedAt: '2026-07-16T00:00:00.000Z' });
 
   assert.equal(rollups.allTime.sessions, 3);
@@ -39,4 +45,9 @@ test('builds complete time and dimension rollups with tokens, time, and cost', (
   assert.equal(rollups.byProject.find((row) => row.key === 'alpha').sessions, 2);
   assert.equal(rollups.bySource.find((row) => row.key === 'codex').sessions, 2);
   assert.equal(rollups.byModel.find((row) => row.key === 'gpt-5').tokens, 500);
+  assert.deepEqual(rollups.byTool, [
+    { key: 'Read', call_count: 5 },
+    { key: 'Bash', call_count: 4 },
+    { key: 'Edit', call_count: 1 },
+  ]);
 });

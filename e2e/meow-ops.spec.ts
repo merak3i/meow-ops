@@ -107,6 +107,110 @@ test('Project Control: Eagle Eye and Surgical views use governed local evidence'
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
+test('Project Control: register a local project and govern proposed learning end to end', async ({ page }) => {
+  let registered = false;
+  let learningStatus: 'proposed' | 'deferred' | 'published' = 'proposed';
+  let nonceCounter = 0;
+  const candidate = () => ({
+    learning_id: 'learn-owner-review',
+    project_id: 'lifecycle-project-123',
+    kind: 'practice',
+    title: 'Require local proof before project claims',
+    rationale: 'Keeps project guidance grounded in inspectable evidence.',
+    impact: 'high',
+    confidence: 0.95,
+    status: learningStatus,
+    evidence: [{ kind: 'session', ref: 'session-1' }],
+  });
+  const snapshot = () => ({
+    project: {
+      project_id: 'lifecycle-project-123',
+      name: 'Lifecycle Project',
+      aliases: ['lifecycle', 'project-lifecycle'],
+      root: '/Users/test/projects/lifecycle',
+      learning_state_path: '/Users/test/projects/lifecycle/.meow/learning-state',
+      git_remote: null,
+    },
+    constitution: {
+      coverage: { confirmed: 0, total: 7, ratio: 0 },
+      fields: {},
+    },
+    agents: { observed: [], blind_spots: ['codex', 'claude', 'antigravity', 'cursor', 'hermes'] },
+    learning: {
+      counts: { [learningStatus]: 1 },
+      candidates: [candidate()],
+    },
+  });
+
+  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, async (route) => {
+    const headers = {
+      'access-control-allow-origin': '*',
+      'access-control-allow-headers': 'x-meow-ops-local, content-type',
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+    };
+    const request = route.request();
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const path = new URL(request.url()).pathname;
+    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
+    if (path === '/loop-eng/nonce') {
+      nonceCounter += 1;
+      return route.fulfill({ headers, json: { ok: true, nonce: `owner-nonce-${nonceCounter}` } });
+    }
+    if (path === '/projects' && request.method() === 'GET') {
+      return route.fulfill({ headers, json: { ok: true, projects: registered ? [snapshot()] : [] } });
+    }
+    if (path === '/projects' && request.method() === 'POST') {
+      const body = request.postDataJSON();
+      expect(body).toMatchObject({
+        nonce: expect.stringMatching(/^owner-nonce-/),
+        name: 'Lifecycle Project',
+        root: '/Users/test/projects/lifecycle',
+        aliases: ['lifecycle', 'project-lifecycle'],
+      });
+      registered = true;
+      return route.fulfill({ status: 201, headers, json: { ok: true, project: snapshot().project } });
+    }
+    if (path.endsWith('/learning-state')) {
+      return route.fulfill({ headers, json: { ok: true, project: snapshot().project, files: {} } });
+    }
+    if (path.endsWith('/decision') && request.method() === 'POST') {
+      const body = request.postDataJSON();
+      expect(body.nonce).toMatch(/^owner-nonce-/);
+      expect(body.reason).toMatch(/owner reviewed/i);
+      learningStatus = body.decision === 'approved' ? 'published' : body.decision;
+      return route.fulfill({ headers, json: { ok: true, learning: candidate() } });
+    }
+    return route.fulfill({ status: 404, headers, json: { ok: false, error: 'not found' } });
+  });
+
+  await nav(page, 'Project Control');
+  await expect(page.getByRole('heading', { name: 'No governed projects yet' })).toBeVisible();
+  await page.getByLabel('Project name').fill('Lifecycle Project');
+  await page.getByLabel('Local project folder').fill('/Users/test/projects/lifecycle');
+  await page.getByLabel(/Aliases/).fill('lifecycle, project-lifecycle');
+  await page.getByRole('button', { name: 'Register project' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Lifecycle Project', exact: true })).toBeVisible();
+  await expect(page.getByText('Require local proof before project claims')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Approve' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Defer' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reject' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Defer' }).click();
+  await expect(page.getByText(/A reason is required/)).toBeVisible();
+  const reason = page.getByLabel('Reason for Require local proof before project claims');
+  await reason.fill('Owner reviewed the evidence and wants one more verified example.');
+  await page.getByRole('button', { name: 'Defer' }).click();
+  await expect(page.getByText('Learning deferred. The project snapshot has been refreshed.')).toBeVisible();
+  await expect(page.getByText('deferred', { exact: true })).toBeVisible();
+
+  await reason.fill('Owner reviewed the additional evidence and accepts this project practice.');
+  await page.getByRole('button', { name: 'Approve' }).click();
+  await expect(page.getByText('Learning approved and published. The project snapshot has been refreshed.')).toBeVisible();
+  await expect(page.getByText('published', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0);
+});
+
 test("Builder's Journey prioritizes spontaneous work, independent paths, and quick recall", async ({ page }) => {
   const topic = (id: string, title: string, lane: string, refreshDue = false) => ({
     topic_id: id, title, summary: `${title} explained as a generic mechanism`, lane,
@@ -115,7 +219,7 @@ test("Builder's Journey prioritizes spontaneous work, independent paths, and qui
     next_question: { question_id: `${id}-q`, kind: 'analogy', question_text: `Explain ${title} with an everyday analogy.` },
     progress: { action_count: refreshDue ? 1 : 0, attempts: 0, completed_actions: refreshDue ? ['lesson_opened'] : [], next_actions: ['lesson_opened', 'concept_preview_completed'] },
   });
-  const topics = [topic('structured-output', 'Structured output', 'code', true), topic('proof-led-sales', 'Proof-led sales', 'sales')];
+  const topics = [topic('structured-output', 'Structured output', 'code', true), topic('proof-led-sales', 'Proof-led sales', 'sales', true)];
   await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, (route) => {
     const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
@@ -140,7 +244,27 @@ test("Builder's Journey prioritizes spontaneous work, independent paths, and qui
   await expect(page.getByText('Proof-led sales')).toBeVisible();
   await page.getByRole('button', { name: /Quick recall/, exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Pull the idea from memory.' })).toBeVisible();
-  await expect(page.getByLabel('Explain in your own words')).toBeVisible();
+  const explanation = page.getByLabel('Explain in your own words');
+  await explanation.fill('This explanation names the mechanism, a boundary, one failure case, and a transfer example.');
+  await page.getByRole('button', { name: 'Check my explanation' }).click();
+  for (const label of [
+    'I explained the mechanism',
+    'I named an important boundary',
+    'I included a realistic failure case',
+    'I gave a transfer example',
+  ]) await page.getByLabel(label).check();
+  await expect(page.getByRole('button', { name: 'Record self-check' })).toBeEnabled();
+  await page.locator('.quest-recall-layout aside').getByRole('button', { name: /Proof-led sales/ }).click();
+  await expect(page.getByRole('heading', { name: 'Explain Proof-led sales with an everyday analogy.' })).toBeVisible();
+  await explanation.fill('A different explanation also names a mechanism, boundary, failure case, and transfer example.');
+  await page.getByRole('button', { name: 'Check my explanation' }).click();
+  await expect(page.getByRole('button', { name: 'Record self-check' })).toBeDisabled();
+  for (const label of [
+    'I explained the mechanism',
+    'I named an important boundary',
+    'I included a realistic failure case',
+    'I gave a transfer example',
+  ]) await expect(page.getByLabel(label)).not.toBeChecked();
 });
 
 test("Builder's Journey opens a real lesson task before recording progress", async ({ page }) => {

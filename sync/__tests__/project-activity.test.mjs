@@ -46,6 +46,15 @@ test('recognizes bounded project feature and PR questions', () => {
   assert.equal(isProjectActivityQuestion('recent activity in lcwi project', [{
     name: 'One Click Website India', aliases: ['lcwi'],
   }]), true);
+  assert.equal(isProjectActivityQuestion('tell me what PR 29 changed in LCWI', [{
+    name: 'One Click Website India', aliases: ['lcwi'],
+  }]), true);
+  assert.equal(isProjectActivityQuestion('what happened in L.C.W.I.?', [{
+    name: 'One Click Website India', aliases: ['lcwi'],
+  }]), true);
+  assert.equal(isProjectActivityQuestion('what changed in gobbledygook in the last 3 days?', [{
+    name: 'Meow Ops', aliases: ['meow-ops'],
+  }]), true);
   assert.equal(isProjectActivityQuestion('what should I eat?'), false);
 });
 
@@ -95,3 +104,53 @@ test('keeps an explicit unknown project unresolved even with one catalog entry',
   assert.equal(activity.project, null);
   assert.equal(activity.requested_project, 'LCWI');
 });
+
+test('keeps an unknown natural project target scoped instead of falling through globally', () => {
+  const activity = buildProjectActivity('what changed in gobbledygook in the last 3 days?', {
+    now: new Date('2026-07-25T10:00:00.000Z'),
+    catalog: [{ project_id: 'meow-ops-1', name: 'Meow Ops', aliases: ['meow-ops'], root: '/missing' }],
+  });
+  assert.equal(activity.requested, true);
+  assert.equal(activity.project, null);
+  assert.equal(activity.requested_project, 'gobbledygook');
+  assert.equal(activity.period.label, 'the last 3 days');
+});
+
+test('normalizes punctuated and spaced aliases without changing the project identity', () => {
+  const catalog = [{
+    project_id: 'oneclick-1',
+    name: 'One Click Website India',
+    aliases: ['LCWI'],
+    root: '/missing',
+  }];
+  for (const question of ['what happened in L.C.W.I.?', 'what happened in l c w i?']) {
+    const activity = buildProjectActivity(question, { catalog });
+    assert.equal(activity.project?.project_id, 'oneclick-1');
+  }
+});
+
+test('does not silently collapse a multi-project activity question to the first match', () => {
+  const activity = buildProjectActivity('what changed in LCWI and Meow Ops?', {
+    catalog: [
+      { project_id: 'lcwi-1', name: 'One Click Website India', aliases: ['LCWI'], root: '/missing' },
+      { project_id: 'meow-1', name: 'Meow Ops', aliases: ['meow-ops'], root: '/missing' },
+    ],
+  });
+  assert.equal(activity.project, null);
+  assert.deepEqual(activity.matched_projects.map((project) => project.name).sort(), ['Meow Ops', 'One Click Website India']);
+});
+
+test('recognizes a numbered PR change question and narrows local Git evidence to that PR', () => withRepo((root) => {
+  const activity = buildProjectActivity('tell me what PR 29 changed in LCWI', {
+    now: new Date('2026-07-25T10:00:00.000Z'),
+    catalog: [{
+      project_id: 'oneclick-1',
+      name: 'One Click Website India',
+      aliases: ['LCWI'],
+      root,
+    }],
+  });
+  assert.equal(activity.requested_pr, 29);
+  assert.equal(activity.git.commits.length, 1);
+  assert.equal(activity.git.commits[0].pr_number, 29);
+}));

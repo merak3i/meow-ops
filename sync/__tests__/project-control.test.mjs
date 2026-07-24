@@ -180,3 +180,31 @@ test('approved learning publishes into the canonical state and updates its index
   assert.match(readFileSync(join(root, '.meow', 'learning-state', 'INDEX.md'), 'utf8'), /Inspect evidence before claims/);
   assert.equal(publishLearningCandidate(candidate.learning_id).publication.path, published.publication.path);
 }));
+
+test('failed publication preserves approval so publication can be retried', () => withProjectControl((dir) => {
+  const root = join(dir, 'project');
+  mkdirSync(root);
+  const project = registerProject({ name: 'Meow Ops', root });
+  const candidate = appendLearningCandidate({
+    project_id: project.project_id,
+    kind: 'practice',
+    title: 'Recover interrupted publication',
+    proposed_content: 'Allow the owner to retry after a filesystem publication failure.',
+    rationale: 'An approved candidate must not become permanently stuck.',
+    evidence: [{ kind: 'test', ref: 'publication-recovery' }],
+    impact: 'high',
+    confidence: 1,
+  });
+  decideLearningCandidate(candidate.learning_id, {
+    decision: 'approved', reason: 'Owner approved.', decided_by: 'owner',
+  });
+  writeFileSync(join(root, '.meow'), 'blocked by a file', 'utf8');
+
+  assert.throws(() => publishLearningCandidate(candidate.learning_id));
+  const failed = readLearningCandidates().find((item) => item.learning_id === candidate.learning_id);
+  assert.equal(failed.status, 'approved');
+  assert.equal(failed.decision?.decided_by, 'owner');
+
+  rmSync(join(root, '.meow'));
+  assert.equal(publishLearningCandidate(candidate.learning_id).status, 'published');
+}));

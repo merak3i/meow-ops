@@ -98,6 +98,18 @@ function answerProjectActivity(activity) {
   if (!activity?.requested) return null;
   const requestedName = activity.requested_project;
   if (!activity.project) {
+    const matchedProjects = asArray(activity.matched_projects);
+    if (matchedProjects.length > 1) {
+      const names = matchedProjects.map((project) => project.name).join(' and ');
+      return {
+        answer: `I found multiple governed projects in that question: ${names}. I will not merge their evidence silently. Ask for one project, or explicitly ask me to compare them.`,
+        gate: 'known_unknown',
+        confidence: 1,
+        evidence: [],
+        unknowns: ['Whether to inspect one project or compare multiple projects'],
+        next_question: `Should I inspect ${names}, or compare them side by side?`,
+      };
+    }
     if (!requestedName) {
       return {
         answer: 'Name the registered project or repository whose local activity you want me to inspect.',
@@ -120,6 +132,16 @@ function answerProjectActivity(activity) {
 
   const commits = asArray(activity.git?.commits);
   const events = asArray(activity.events);
+  if (activity.requested_pr && commits.length === 0) {
+    return {
+      answer: `I found no matching local Git evidence for PR #${activity.requested_pr} in ${activity.project.name} during ${activity.period?.label || 'the requested period'}. I will not substitute unrelated project activity.`,
+      gate: 'known_unknown',
+      confidence: 1,
+      evidence: [],
+      unknowns: [`Local Git evidence for ${activity.project.name} PR #${activity.requested_pr}`],
+      next_question: 'Is the registered checkout current, and was that PR merged during a different date range?',
+    };
+  }
   if (commits.length === 0 && events.length === 0) {
     const gitNote = activity.git?.available === false
       ? ' Its registered root is not a readable Git repository.'
@@ -381,6 +403,15 @@ export function ask(question, {
     if (flagged.length > 5) lines.push(`and ${flagged.length - 5} more`);
     return {
       answer: `Health: ${health.agents_total || 0} agents, ${health.flagged || 0} flagged${lines.length ? `\n${lines.join('\n')}` : '.'}`,
+    };
+  }
+  const asksAllTimeSessions = hasKeyword(q, ['session', 'sessions'])
+    && hasKeyword(q, ['all time', 'all-time', 'total sessions', 'how many sessions']);
+  if (asksAllTimeSessions && Number(sessionHistory?.archive?.total) > 0) {
+    const total = new Intl.NumberFormat('en-US').format(Number(sessionHistory.archive.total));
+    const previewCount = Number(sessionHistory?.preview?.returned) || Number(sessionHistory?.preview?.limit) || 0;
+    return {
+      answer: `The complete local archive contains ${total} sessions${previewCount > 0 && previewCount < Number(sessionHistory.archive.total) ? `; the browser preview is bounded to ${new Intl.NumberFormat('en-US').format(previewCount)} newest sessions` : ''}.`,
     };
   }
   if (hasKeyword(q, ['session', 'capture'])) {
