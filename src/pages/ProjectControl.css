@@ -2,6 +2,7 @@
 .project-control-header { display: flex; justify-content: space-between; gap: 28px; align-items: flex-start; margin-bottom: 26px; }
 .project-control-header h1 { margin: 4px 0 8px; font-size: clamp(30px, 4vw, 48px); font-weight: 500; letter-spacing: -0.04em; }
 .project-control-header p { margin: 0; color: var(--text-muted); max-width: 720px; line-height: 1.6; }
+.project-control-header-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .project-control-kicker { color: var(--accent) !important; text-transform: uppercase; letter-spacing: .14em; font-size: 11px; font-weight: 500; }
 .project-control-refresh, .project-control-action { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); border-radius: 9px; padding: 10px 13px; cursor: pointer; }
 .project-control-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--border); padding-bottom: 18px; margin-bottom: 24px; }
@@ -43,9 +44,20 @@
 .adapter-preview .adapter-message { color: var(--text-primary); }
 .learning-panel { margin-bottom: 14px; }
 .learning-row { display: flex; justify-content: space-between; gap: 20px; padding: 14px 0; border-top: 1px solid var(--border); }
+.learning-summary { flex: 1; min-width: 0; }
+.learning-decision { display: grid; gap: 9px; margin-top: 14px; max-width: 680px; }
+.learning-decision label, .project-registration label { display: grid; gap: 6px; color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; text-align: left; }
+.learning-decision textarea, .project-registration input { width: 100%; box-sizing: border-box; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); border-radius: 8px; padding: 10px 11px; font: inherit; text-transform: none; letter-spacing: normal; }
+.learning-decision textarea { min-height: 76px; resize: vertical; }
+.learning-decision > div { display: flex; gap: 7px; flex-wrap: wrap; }
+.learning-decision button, .project-registration-heading button { border: 1px solid var(--border); background: transparent; color: var(--text-primary); border-radius: 8px; padding: 8px 11px; cursor: pointer; }
+.learning-decision button:first-child { color: #75c88c; }
+.learning-decision button:last-child { color: #db6969; }
+.learning-decision button:disabled { opacity: .55; cursor: wait; }
+.learning-decision-result, .project-control-success { color: #75c88c; font-size: 12px; margin: 12px 0 0; }
 .learning-row h3, .evidence-row h3 { font-size: 14px; margin: 5px 0; font-weight: 500; }
 .learning-status { align-self: flex-start; border: 1px solid var(--border); border-radius: 999px; padding: 6px 9px; font-size: 11px; text-transform: capitalize; }
-.learning-status.approved { color: #75c88c; }
+.learning-status.approved, .learning-status.published { color: #75c88c; }
 .learning-status.proposed, .learning-status.deferred { color: #ddb35c; }
 .learning-status.rejected { color: #db6969; }
 .surgical-columns { grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr); }
@@ -58,10 +70,18 @@
 .project-control-empty p { max-width: 520px; line-height: 1.6; margin: 0; }
 .project-control-empty svg { margin: 0 auto; color: var(--accent); }
 .project-control-error { color: #db6969 !important; margin-top: 10px !important; }
+.project-registration { display: grid; gap: 13px; width: min(100%, 680px); padding: 20px; margin: 0 0 24px; border: 1px solid var(--border); background: var(--bg-card); border-radius: 12px; }
+.project-control-empty .project-registration { margin: 22px auto 0; width: min(680px, calc(100vw - 48px)); color: var(--text-primary); }
+.project-registration-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; text-align: left; }
+.project-registration-heading h2 { margin: 0 0 4px; font-size: 16px; font-weight: 500; }
+.project-registration-heading p { font-size: 12px; color: var(--text-muted); }
+.project-registration label span { text-transform: none; letter-spacing: normal; }
+.project-registration .project-control-action { width: max-content; margin-top: 2px; justify-content: flex-start; }
 .empty-copy { color: var(--text-muted); font-size: 12px; }
 @media (max-width: 900px) {
   .project-control-page { padding: 24px 18px 50px; }
   .project-control-header, .project-control-toolbar { align-items: stretch; flex-direction: column; }
+  .project-control-header-actions { justify-content: flex-start; }
   .project-control-metrics, .project-control-columns { grid-template-columns: 1fr; }
   .project-control-tabs { align-self: flex-start; }
 }

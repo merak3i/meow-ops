@@ -46,6 +46,19 @@ test('answers cost totals across runs', () => {
   assert.equal(ask('money spent', { runs }).answer, '$1.50 real / $3.25 notional across 2 runs.');
 });
 
+test('answers all-time session totals from the complete archive, not the latest digest', () => {
+  const result = ask('how many sessions all time?', {
+    digest: { capture: { sessions: 14 } },
+    sessionHistory: {
+      archive: { total: 2_005 },
+      preview: { returned: 1_000, limit: 1_000 },
+    },
+  });
+  assert.match(result.answer, /2,005 sessions/i);
+  assert.match(result.answer, /complete local archive/i);
+  assert.doesNotMatch(result.answer, /captured 14/i);
+});
+
 test('answers the highest-time project from verified session evidence', () => {
   const sessions = [
     { project: 'BergLabs', duration_seconds: 5400, started_at: '2026-07-14T08:00:00.000Z', source: 'codex' },
@@ -63,6 +76,26 @@ test('answers the highest-time project from verified session evidence', () => {
   assert.match(result.answer, /2 sessions/);
   assert.match(result.answer, /not focused human work time/i);
   assert.equal(result.evidence[0].kind, 'session_aggregate');
+});
+
+test('understands natural weekly project-time ranking variants before spend routing', () => {
+  const options = {
+    sessions: [
+      { session_id: 'berg', project: 'BergLabs', duration_seconds: 7200, started_at: '2026-07-14T08:00:00.000Z' },
+      { session_id: 'meow', project: 'Meow Ops', duration_seconds: 300, started_at: '2026-07-15T11:00:00.000Z' },
+    ],
+    runs,
+    now: new Date('2026-07-15T12:00:00.000Z'),
+  };
+  for (const question of [
+    'where did I spend most time this week?',
+    'what project got most of my time this week?',
+  ]) {
+    const result = ask(question, options);
+    assert.equal(result.gate, 'known_known');
+    assert.match(result.answer, /BergLabs/);
+    assert.doesNotMatch(result.answer, /\$1\.50/);
+  }
 });
 
 test('built-in weekly project prompt ranks time instead of returning the latest project', () => {
@@ -221,6 +254,41 @@ test('asks for a project when a PR activity question names none', () => {
   assert.equal(result.gate, 'known_unknown');
   assert.match(result.answer, /Name the registered project or repository/i);
   assert.doesNotMatch(result.answer, /that project is not registered/i);
+});
+
+test('asks before combining multiple governed projects in one activity answer', () => {
+  const result = ask('what changed in LCWI and Meow Ops?', {
+    projectActivity: {
+      requested: true,
+      period: { label: 'the last 7 days' },
+      project: null,
+      requested_project: null,
+      matched_projects: [
+        { project_id: 'lcwi-1', name: 'One Click Website India' },
+        { project_id: 'meow-1', name: 'Meow Ops' },
+      ],
+    },
+  });
+  assert.equal(result.gate, 'known_unknown');
+  assert.match(result.answer, /multiple governed projects/i);
+  assert.match(result.answer, /One Click Website India and Meow Ops/);
+  assert.match(result.answer, /will not merge their evidence silently/i);
+});
+
+test('does not substitute unrelated activity when a requested PR is absent', () => {
+  const result = ask('what did PR 404 change in LCWI?', {
+    projectActivity: {
+      requested: true,
+      requested_pr: 404,
+      period: { label: 'the last 7 days' },
+      project: { project_id: 'lcwi-1', name: 'One Click Website India' },
+      git: { available: true, commits: [] },
+      events: [{ event_id: 'unrelated', content: 'Other work happened.' }],
+    },
+  });
+  assert.equal(result.gate, 'known_unknown');
+  assert.match(result.answer, /no matching local Git evidence for PR #404/i);
+  assert.doesNotMatch(result.answer, /Other work happened/);
 });
 
 test('coaches the next Builder Journey action from the safe learning projection', () => {

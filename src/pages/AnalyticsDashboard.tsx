@@ -18,6 +18,8 @@ ModuleRegistry.registerModules([ClientSideRowModelModule]);
 interface AnalyticsDashboardProps {
   sessions:     Session[];
   dailySummary: DailySummaryRow[];
+  archiveTotal?: number;
+  previewCount?: number;
 }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
@@ -187,7 +189,12 @@ function BurnRatePanel({ dailySummary }: { dailySummary: DailySummaryRow[] }) {
 
 type TabId = 'velocity' | 'efficiency';
 
-export default function AnalyticsDashboard({ sessions, dailySummary }: AnalyticsDashboardProps) {
+export default function AnalyticsDashboard({
+  sessions,
+  dailySummary,
+  archiveTotal,
+  previewCount = sessions.length,
+}: AnalyticsDashboardProps) {
   const [tab, setTab] = useState<TabId>('velocity');
 
   const velocityMetrics = useMemo(() => computeVelocityMetrics(sessions), [sessions]);
@@ -216,7 +223,14 @@ export default function AnalyticsDashboard({ sessions, dailySummary }: Analytics
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <h2 style={{ fontSize: 22 }}>Analytics</h2>
+        <div>
+          <h2 style={{ fontSize: 22 }}>Analytics</h2>
+          {archiveTotal && archiveTotal > previewCount && (
+            <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 12 }}>
+              Trends use the complete {archiveTotal.toLocaleString()}-session archive; detailed velocity and efficiency use the newest {previewCount.toLocaleString()} sessions.
+            </p>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {TABS.map(({ id, label }) => (
             <button

@@ -82,6 +82,7 @@ export function buildSessionRollups(sessions, options = {}) {
   const byProject = new Map();
   const byModel = new Map();
   const bySource = new Map();
+  const byTool = new Map();
 
   for (const session of sessions) {
     add(allTime, session);
@@ -94,6 +95,11 @@ export function buildSessionRollups(sessions, options = {}) {
     addToMap(byProject, session.project || 'unknown', session);
     addToMap(byModel, session.model || 'unknown', session);
     addToMap(bySource, session.source || 'claude', session);
+    for (const [tool, rawCount] of Object.entries(session.tools || {})) {
+      const count = Number(rawCount);
+      if (!tool || !Number.isFinite(count) || count <= 0) continue;
+      byTool.set(tool, (byTool.get(tool) || 0) + count);
+    }
   }
 
   return {
@@ -107,5 +113,8 @@ export function buildSessionRollups(sessions, options = {}) {
     byProject: rows(byProject).sort((a, b) => b.sessions - a.sessions || a.key.localeCompare(b.key)),
     byModel: rows(byModel).sort((a, b) => b.sessions - a.sessions || a.key.localeCompare(b.key)),
     bySource: rows(bySource).sort((a, b) => b.sessions - a.sessions || a.key.localeCompare(b.key)),
+    byTool: [...byTool.entries()]
+      .map(([key, call_count]) => ({ key, call_count }))
+      .sort((a, b) => b.call_count - a.call_count || a.key.localeCompare(b.key)),
   };
 }

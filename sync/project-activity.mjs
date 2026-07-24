@@ -12,15 +12,17 @@ const activityTerms = [
 
 export function isProjectActivityQuestion(question, catalog = []) {
   const value = String(question || '').toLowerCase();
-  const hasActivity = activityTerms.some((term) => value.includes(term));
+  const hasActivity = activityTerms.some((term) => value.includes(term))
+    || /\bpr\s*#?\s*\d+\b.*\bchanged\b|\bchanged\b.*\bpr\s*#?\s*\d+\b/i.test(value);
   const hasKnownProject = catalog.some((project) => names(project).some(
-    (name) => value.includes(name.toLowerCase()),
+    (name) => matchesName(value, name),
   ));
   const hasProjectContext = value.includes('project')
     || value.includes('github')
     || value.includes('pull request')
     || /\bpr(?:s)?\b/.test(value)
-    || hasKnownProject;
+    || hasKnownProject
+    || Boolean(requestedProjectName(question));
   return hasActivity && hasProjectContext;
 }
 
@@ -65,32 +67,53 @@ function names(project) {
     .filter(Boolean);
 }
 
+function compact(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function matchesName(question, name) {
+  const q = String(question || '').toLowerCase();
+  const literal = String(name || '').toLowerCase();
+  if (q.includes(literal)) return true;
+  const normalizedName = compact(name);
+  return normalizedName.length >= 4 && compact(q).includes(normalizedName);
+}
+
 function requestedProjectName(question) {
   const q = String(question || '');
   const patterns = [
     /\b(?:in|on|for)\s+(?:the\s+)?([a-z0-9][a-z0-9._-]*(?:\s+[a-z0-9][a-z0-9._-]*){0,4}?)\s+project\b/i,
     /\bproject\s+(?:named\s+)?["']?([a-z0-9][a-z0-9._-]*(?:\s+[a-z0-9][a-z0-9._-]*){0,4}?)["']?(?=\s+(?:in|over|during|for|from)\b|[?.!,]|$)/i,
+    /\b(?:in|on|for)\s+(?:the\s+)?([a-z0-9][a-z0-9 ._-]{0,80}?)(?=\s+(?:in|over|during|for|from)\s+(?:the\s+)?(?:last|past|this)\b|[?.!,]|$)/i,
   ];
   for (const pattern of patterns) {
     const match = q.match(pattern);
-    if (match) return match[1].trim();
+    if (match) {
+      const candidate = match[1].trim();
+      if (!/^(?:last|past|this)\s+\d*\s*(?:day|week|month)/i.test(candidate)) return candidate;
+    }
   }
   return null;
 }
 
 function resolveProject(question, catalog) {
-  const q = String(question || '').toLowerCase();
   const matches = [...catalog]
     .flatMap((project) => names(project).map((name) => ({ project, name })))
+    .filter((candidate) => matchesName(question, candidate.name))
     .sort((a, b) => b.name.length - a.name.length);
-  const match = matches.find((candidate) => q.includes(candidate.name.toLowerCase()));
-  if (match) return { project: match.project, requested_project: match.name };
-  const requested = requestedProjectName(question);
-  if (requested) return { project: null, requested_project: requested };
-  if (catalog.length === 1) {
-    return { project: catalog[0], requested_project: catalog[0].name };
+  const distinctProjects = [...new Map(matches.map((match) => [match.project.project_id, match.project])).values()];
+  if (distinctProjects.length > 1) {
+    return { project: null, requested_project: null, matched_projects: distinctProjects };
   }
-  return { project: null, requested_project: null };
+  if (matches[0]) {
+    return { project: matches[0].project, requested_project: matches[0].name, matched_projects: distinctProjects };
+  }
+  const requested = requestedProjectName(question);
+  if (requested) return { project: null, requested_project: requested, matched_projects: [] };
+  if (catalog.length === 1) {
+    return { project: catalog[0], requested_project: catalog[0].name, matched_projects: [catalog[0]] };
+  }
+  return { project: null, requested_project: null, matched_projects: [] };
 }
 
 function parseGitLog(output) {
@@ -155,6 +178,7 @@ export function buildProjectActivity(question, options = {}) {
     period,
     project: resolved.project,
     requested_project: resolved.requested_project,
+    matched_projects: resolved.matched_projects,
     catalog_projects: catalog.map((project) => ({
       project_id: project.project_id,
       name: project.name,
@@ -173,9 +197,16 @@ export function buildProjectActivity(question, options = {}) {
       limit: MAX_EVIDENCE_EVENTS,
     })
     : { items: [] };
+  const requestedPr = String(question || '').match(/\bpr\s*#?\s*(\d+)\b/i);
+  const git = readLocalGitActivity(resolved.project, period, options);
+  const requestedPrNumber = requestedPr ? Number.parseInt(requestedPr[1], 10) : null;
+  if (requestedPrNumber) {
+    git.commits = git.commits.filter((commit) => commit.pr_number === requestedPrNumber);
+  }
   return {
     ...base,
-    git: readLocalGitActivity(resolved.project, period, options),
+    requested_pr: requestedPrNumber,
+    git,
     events: Array.isArray(evidenceResult?.items) ? evidenceResult.items : [],
     evidence_total: Number(evidenceResult?.total) || 0,
   };

@@ -176,6 +176,15 @@ export async function fetchProjectControlPortfolio() {
   return data && typeof data === 'object' ? data : { ok: false, projects: [] };
 }
 
+export async function registerProjectControlProject({ name, aliases = [], root }) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+  const result = await postJson(`${base}/projects`, { nonce, name, aliases, root });
+  return result && typeof result === 'object' ? result : null;
+}
+
 function normalizeLearningQuestSnapshot(data) {
   const source = data && typeof data === 'object' ? data : {};
   const topics = Array.isArray(source.topics) ? source.topics.map((topic) => ({
@@ -321,6 +330,18 @@ export async function fetchProjectEvidence(projectId, { limit = 100, source = ''
   if (source) query.set('source', source);
   const data = await fetchLoopJson(`/projects/${encodeURIComponent(projectId)}/evidence?${query}`);
   return data && typeof data === 'object' ? data : null;
+}
+
+export async function decideProjectLearning(projectId, learningId, decision, reason) {
+  const base = await resolveLoopApiBase(true);
+  if (!base) return null;
+  const nonce = await fetchLoopNonce();
+  if (!nonce) return null;
+  const result = await postJson(
+    `${base}/projects/${encodeURIComponent(projectId)}/learnings/${encodeURIComponent(learningId)}/decision`,
+    { nonce, decision, reason },
+  );
+  return result && typeof result === 'object' ? result : null;
 }
 
 export async function previewProjectContextAdapters(projectId) {

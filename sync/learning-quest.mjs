@@ -124,14 +124,20 @@ export function upsertLearningTopic(input = {}) {
   const topic_id = safeId(input.topic_id || `topic-${Date.now().toString(36)}`, 'topic_id');
   const rows = readLearningTopics();
   const existing = rows.find((row) => row.topic_id === topic_id);
+  const lane = LEARNING_LANES.includes(input.lane) ? input.lane : 'code';
+  if (existing && existing.lane !== lane
+    && readLearningEvents().some((event) => event.topic_id === topic_id)) {
+    throw new Error('[learning-quest] topic lane cannot change after learning evidence exists');
+  }
   const source_project_root = input.source_project_root
     ? resolve(clean(input.source_project_root, 'source_project_root', 500))
     : existing?.source_project_root || null;
+  const sourceChanged = Boolean(existing && existing.source_project_root !== source_project_root);
   const topic = {
     topic_id,
     title,
     summary,
-    lane: LEARNING_LANES.includes(input.lane) ? input.lane : 'code',
+    lane,
     difficulty: Math.max(1, Math.min(5, Number(input.difficulty) || 1)),
     tags,
     prerequisite_ids: [...new Set((Array.isArray(input.prerequisite_ids) ? input.prerequisite_ids : [])
@@ -140,7 +146,9 @@ export function upsertLearningTopic(input = {}) {
     // Private linkage is stored locally and intentionally omitted from every projection.
     source_project_id: input.source_project_id ? clean(input.source_project_id, 'source_project_id', 160) : null,
     source_project_root,
-    source_revision_baseline: existing?.source_revision_baseline || gitHead(source_project_root),
+    source_revision_baseline: sourceChanged
+      ? gitHead(source_project_root)
+      : existing?.source_revision_baseline || gitHead(source_project_root),
   };
   const next = rows.filter((row) => row.topic_id !== topic.topic_id);
   next.push(topic);
@@ -302,6 +310,12 @@ export function appendLearningEvent(input = {}, options = {}) {
   const result = ['passed', 'partial', 'failed', 'completed'].includes(input.result) ? input.result : 'completed';
   const existing = readLearningEvents().filter((row) => row.topic_id === topic_id);
   const requiredStage = actionStage(action, topic.lane);
+  const globalAction = action === 'recall_passed'
+    || action === 'recall_failed'
+    || action === 'feynman_attempted';
+  if (!requiredStage && !globalAction) {
+    throw new Error(`[learning-quest] ${action} is not valid for the ${topic.lane} lane`);
+  }
   const requiredIndex = requiredStage ? MASTERY_STAGES.indexOf(requiredStage) : -1;
   const currentStage = masteryFor(existing, topic.lane);
   const currentIndex = currentStage ? MASTERY_STAGES.indexOf(currentStage) : -1;
@@ -311,6 +325,10 @@ export function appendLearningEvent(input = {}, options = {}) {
   }
   const occurredAtMs = Number.isFinite(Number(options.now)) ? Number(options.now) : Date.now();
   if ((action === 'recall_passed' || action === 'recall_failed')) {
+    if (!existing.some((event) => ['passed', 'completed'].includes(event.result)
+      && actionStage(event.action, topic.lane))) {
+      throw new Error('[learning-quest] start learning before recall');
+    }
     const previousChecks = existing.filter(
       (event) => event.action === 'recall_passed' || event.action === 'recall_failed',
     );
@@ -324,7 +342,7 @@ export function appendLearningEvent(input = {}, options = {}) {
   }
   const event = {
     event_id: `lqe_${Date.now().toString(36)}_${randomBytes(5).toString('hex')}`,
-    topic_id, action, result,
+    topic_id, action, result, lane: topic.lane,
     occurred_at: new Date(occurredAtMs).toISOString(),
     duration_seconds: Math.max(0, Math.min(86_400, Number(input.duration_seconds) || 0)),
     attempts: Math.max(1, Math.min(100, Number(input.attempts) || 1)),
@@ -346,7 +364,8 @@ export function appendLearningEvent(input = {}, options = {}) {
 }
 
 function masteryFor(events, lane = 'code') {
-  const passed = new Set(events.filter((event) => ['passed', 'completed'].includes(event.result)).map((event) => event.action));
+  const passed = new Set(events.filter((event) =>
+    eventFitsLane(event, lane) && ['passed', 'completed'].includes(event.result)).map((event) => event.action));
   let stage = null;
   for (const name of MASTERY_STAGES) {
     const met = stageRules(lane)[name].every((rule) => rule.split('|').some((action) => passed.has(action)));
@@ -354,6 +373,18 @@ function masteryFor(events, lane = 'code') {
     stage = name;
   }
   return stage;
+}
+
+function eventFitsLane(event, lane) {
+  if (event?.lane && event.lane !== lane) return false;
+  if (event?.action === 'recall_passed'
+    || event?.action === 'recall_failed'
+    || event?.action === 'feynman_attempted') return true;
+  if (!actionStage(event?.action, lane)) return false;
+  if (event.action === 'outcome_owner_confirmed') {
+    return event.variation === OUTCOME_KIND_BY_LANE[lane];
+  }
+  return true;
 }
 
 function recallFor(events, now) {
@@ -455,7 +486,7 @@ function buildAnalytics(topics, allEvents, now) {
   };
 }
 
-function buildRewards(topics, allEvents) {
+function buildRewards(topics, allEvents, now) {
   const projectedIds = new Set(topics.map((topic) => topic.topic_id));
   const completed = allEvents.filter((event) => projectedIds.has(event.topic_id)
     && ['passed', 'completed'].includes(event.result));
@@ -465,11 +496,16 @@ function buildRewards(topics, allEvents) {
   const activeDays = [...new Set(completed.map((event) => event.occurred_at.slice(0, 10)))].sort().reverse();
   let streak = 0;
   if (activeDays.length) {
-    let cursor = new Date(`${activeDays[0]}T00:00:00.000Z`).getTime();
-    for (const day of activeDays) {
-      if (new Date(`${day}T00:00:00.000Z`).getTime() !== cursor) break;
-      streak += 1;
-      cursor -= 86_400_000;
+    const latestDay = new Date(`${activeDays[0]}T00:00:00.000Z`).getTime();
+    const currentDay = new Date(now).setUTCHours(0, 0, 0, 0);
+    const dayGap = Math.floor((currentDay - latestDay) / 86_400_000);
+    if (dayGap <= 1) {
+      let cursor = latestDay;
+      for (const day of activeDays) {
+        if (new Date(`${day}T00:00:00.000Z`).getTime() !== cursor) break;
+        streak += 1;
+        cursor -= 86_400_000;
+      }
     }
   }
   const dimensions = {
@@ -541,8 +577,14 @@ function assertProjectionSafe(value, trail = 'root') {
 
 export function buildLearningQuestSnapshot({ now = Date.now() } = {}) {
   const allEvents = readLearningEvents();
-  const topics = readLearningTopics().filter((topic) => topic.approved_for_projection).map((topic) => {
-    const events = allEvents.filter((event) => event.topic_id === topic.topic_id);
+  const projectedTopics = readLearningTopics().filter((topic) => topic.approved_for_projection);
+  const projectedById = new Map(projectedTopics.map((topic) => [topic.topic_id, topic]));
+  const validEvents = allEvents.filter((event) => {
+    const topic = projectedById.get(event.topic_id);
+    return topic && eventFitsLane(event, topic.lane);
+  });
+  const topics = projectedTopics.map((topic) => {
+    const events = validEvents.filter((event) => event.topic_id === topic.topic_id);
     const snapshot = {
       topic_id: topic.topic_id, title: topic.title, summary: topic.summary, lane: topic.lane,
       difficulty: topic.difficulty, tags: topic.tags, prerequisite_ids: topic.prerequisite_ids,
@@ -565,9 +607,9 @@ export function buildLearningQuestSnapshot({ now = Date.now() } = {}) {
       by_lane: Object.fromEntries(LEARNING_LANES.map((lane) => [lane, topics.filter((topic) => topic.lane === lane).length])),
       durable_capability: topics.length ? topics.reduce((sum, topic) => sum + topic.recall.confidence, 0) / topics.length : 0,
     },
-    analytics: buildAnalytics(topics, allEvents, now),
-    rewards: buildRewards(topics, allEvents),
-    workshop: buildWorkshopProjection(topics, allEvents, now),
+    analytics: buildAnalytics(topics, validEvents, now),
+    rewards: buildRewards(topics, validEvents, now),
+    workshop: buildWorkshopProjection(topics, validEvents, now),
   };
   assertProjectionSafe(snapshot);
   return snapshot;

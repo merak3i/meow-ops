@@ -66,11 +66,15 @@ function formatDuration(seconds) {
 
 function isTopProjectTimeQuestion(question) {
   const q = question.toLowerCase();
-  return q.includes('project') && (
+  const hasProjectScope = q.includes('project')
+    || q.includes('where did i')
+    || q.includes('my time');
+  return hasProjectScope && (
     q.includes('most time')
     || q.includes('time on')
     || q.includes('spent the most')
     || q.includes('spent most')
+    || q.includes('most of my time')
   );
 }
 

@@ -116,6 +116,16 @@ export interface ProjectControlPortfolio {
   ok: boolean;
   projects: ProjectControlSnapshot[];
 }
+export interface ProjectRegistrationResult {
+  ok: boolean;
+  project?: ProjectControlCatalogEntry;
+  error?: string;
+}
+export interface ProjectLearningDecisionResult {
+  ok: boolean;
+  learning?: ProjectControlLearning;
+  error?: string;
+}
 export interface ProjectLearningStateResponse {
   ok: boolean;
   project: ProjectControlCatalogEntry;
@@ -216,11 +226,22 @@ export function confirmLearningQuestOutcome(
 ): Promise<LearningQuestSnapshot | null>;
 export function updateLearningQuestWorkshop(action: 'start' | 'complete' | 'abandon', topicIds?: string[]): Promise<LearningQuestSnapshot | null>;
 export function fetchProjectControlSnapshot(projectId: string): Promise<ProjectControlSnapshot | null>;
+export function registerProjectControlProject(input: {
+  name: string;
+  aliases?: string[];
+  root: string;
+}): Promise<ProjectRegistrationResult | null>;
 export function fetchProjectLearningState(projectId: string): Promise<ProjectLearningStateResponse | null>;
 export function fetchProjectEvidence(
   projectId: string,
   options?: { limit?: number; source?: string },
 ): Promise<ProjectEvidenceResponse | null>;
+export function decideProjectLearning(
+  projectId: string,
+  learningId: string,
+  decision: 'approved' | 'deferred' | 'rejected',
+  reason: string,
+): Promise<ProjectLearningDecisionResult | null>;
 export function previewProjectContextAdapters(projectId: string): Promise<ProjectAdapterPreview | null>;
 export interface ProjectAdapterMutationResult {
   ok: boolean;

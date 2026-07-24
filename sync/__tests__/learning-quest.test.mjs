@@ -174,6 +174,112 @@ test('event boundary rejects arbitrary actions and unknown topics', () => withQu
   assert.throws(() => appendLearningEvent({ topic_id: 'missing', action: 'lesson_opened' }), /topic not found/);
 }));
 
+test('untouched topics cannot earn recall confidence or XP', () => withQuest(() => {
+  upsertLearningTopic(topic);
+  assert.throws(
+    () => appendLearningEvent({ topic_id: topic.topic_id, action: 'recall_passed', result: 'passed' }),
+    /start learning before recall/i,
+  );
+  const snapshot = buildLearningQuestSnapshot();
+  assert.equal(snapshot.topics[0].recall.confidence, 0);
+  assert.equal(snapshot.rewards.xp, 0);
+}));
+
+test('actions are lane-bound and code proof cannot complete a product workshop', () => withQuest((dir) => {
+  const repo = join(dir, 'source');
+  execFileSync('git', ['init', '-q', repo]);
+  execFileSync('git', ['-C', repo, 'config', 'user.email', 'learning@example.invalid']);
+  execFileSync('git', ['-C', repo, 'config', 'user.name', 'Learning Test']);
+  writeFileSync(join(repo, 'work.txt'), 'baseline\n');
+  execFileSync('git', ['-C', repo, 'add', 'work.txt']);
+  execFileSync('git', ['-C', repo, 'commit', '-qm', 'baseline']);
+  const product = { ...topic, topic_id: 'product-proof', title: 'Product proof', lane: 'product', source_project_root: repo };
+  upsertLearningTopic(product);
+  updateLearningWorkshop({ action: 'start', topic_ids: [product.topic_id] });
+  writeFileSync(join(repo, 'work.txt'), 'baseline\nchanged\n');
+  execFileSync('git', ['-C', repo, 'add', 'work.txt']);
+  execFileSync('git', ['-C', repo, 'commit', '-qm', 'change']);
+  assert.throws(
+    () => appendVerifiedLearningProof({ topic_id: product.topic_id, action: 'commit_verified' }),
+    /not valid for the product lane/i,
+  );
+  assert.throws(
+    () => appendLearningEvent({ topic_id: product.topic_id, action: 'code_changed' }),
+    /not valid for the product lane/i,
+  );
+  assert.equal(buildLearningQuestSnapshot().workshop.can_complete, false);
+  assert.equal(buildLearningQuestSnapshot().rewards.xp, 0);
+}));
+
+test('topic lane cannot change after learning evidence exists', () => withQuest(() => {
+  upsertLearningTopic(topic);
+  appendLearningEvent({ topic_id: topic.topic_id, action: 'lesson_opened' });
+  assert.throws(
+    () => upsertLearningTopic({ ...topic, lane: 'marketing' }),
+    /lane cannot change after learning evidence/i,
+  );
+  assert.equal(readLearningTopics()[0].lane, 'code');
+}));
+
+test('legacy lane drift cannot reinterpret an owner outcome as another lane shipment', () => withQuest((dir) => {
+  const product = { ...topic, topic_id: 'legacy-lane-drift', title: 'Legacy lane drift', lane: 'product' };
+  upsertLearningTopic(product);
+  for (const action of [
+    'lesson_opened', 'concept_preview_completed', 'product_slice_attempted',
+    'acceptance_criteria_written', 'acceptance_checked', 'broken_case_repaired',
+  ]) appendLearningEvent({ topic_id: product.topic_id, action, result: 'passed' });
+  appendLearningEvent({
+    topic_id: product.topic_id,
+    action: 'feynman_passed',
+    result: 'passed',
+    rubric: { accuracy: 1, clarity: 1, causality: 1, transfer: 1 },
+  });
+  appendOwnerConfirmedLearningOutcome({
+    topic_id: product.topic_id,
+    outcome_kind: 'accepted_product_result',
+    note: 'I checked the accepted product result in its real work surface and confirmed the outcome.',
+    confirmed: true,
+  });
+  const path = join(dir, 'topics.json');
+  const rows = JSON.parse(readFileSync(path, 'utf8'));
+  rows[0].lane = 'marketing';
+  writeFileSync(path, `${JSON.stringify(rows, null, 2)}\n`);
+  const snapshot = buildLearningQuestSnapshot();
+  assert.notEqual(snapshot.topics[0].stage, 'shipped');
+  assert.equal(snapshot.rewards.dimensions.shipping, 0);
+}));
+
+test('changing the linked repository resets the private Git baseline', () => withQuest((dir) => {
+  const makeRepo = (name) => {
+    const root = join(dir, name);
+    execFileSync('git', ['init', '-q', root]);
+    execFileSync('git', ['-C', root, 'config', 'user.email', 'learning@example.invalid']);
+    execFileSync('git', ['-C', root, 'config', 'user.name', 'Learning Test']);
+    writeFileSync(join(root, 'work.txt'), `${name}\n`);
+    execFileSync('git', ['-C', root, 'add', 'work.txt']);
+    execFileSync('git', ['-C', root, 'commit', '-qm', `${name} baseline`]);
+    return root;
+  };
+  const first = makeRepo('first');
+  const replacement = makeRepo('replacement');
+  upsertLearningTopic({ ...topic, source_project_root: first });
+  upsertLearningTopic({ ...topic, source_project_root: replacement });
+  assert.throws(
+    () => appendVerifiedLearningProof({ topic_id: topic.topic_id, action: 'commit_verified' }),
+    /no new commit since this topic started/i,
+  );
+}));
+
+test('streak is current and does not stay active years after the last learning day', () => withQuest(() => {
+  upsertLearningTopic(topic);
+  appendLearningEvent({ topic_id: topic.topic_id, action: 'lesson_opened' }, {
+    now: Date.parse('2024-01-01T10:00:00.000Z'),
+  });
+  const snapshot = buildLearningQuestSnapshot({ now: Date.parse('2026-07-25T10:00:00.000Z') });
+  assert.equal(snapshot.rewards.streak_days, 0);
+  assert.equal(snapshot.rewards.dimensions.consistency, 1);
+}));
+
 test('recall checks cannot be replayed before the server-derived due time', () => withQuest(() => {
   upsertLearningTopic(topic);
   appendLearningEvent({ topic_id: topic.topic_id, action: 'lesson_opened' }, {

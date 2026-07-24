@@ -17,7 +17,7 @@
 import { createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
 import { statSync, existsSync, readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { isAbsolute, join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 
@@ -33,7 +33,7 @@ import { appendProjectClaim, confirmProjectClaim, readProjectClaims } from './pr
 import {
   appendLearningCandidate, applyProjectAdapters, buildProjectControlSnapshot,
   decideLearningCandidate, previewProjectAdapters, readLearningCandidates,
-  publishLearningCandidate, readProjectCatalog, rollbackProjectAdapters,
+  publishLearningCandidate, readProjectCatalog, registerProject, rollbackProjectAdapters,
 } from './project-control.mjs';
 import { queryAgentEvidence } from './project-evidence.mjs';
 import { buildProjectActivity } from './project-activity.mjs';
@@ -424,7 +424,34 @@ const server = createServer(async (req, res) => {
   }
 
   // Project Control Plane. The private catalog maps stable project IDs to
-  // roots; responses never discover or accept an arbitrary filesystem path.
+  // roots. New roots are accepted only through the nonce-bound local dashboard
+  // route and must already exist as absolute local directories.
+  if (path === '/projects' && req.method === 'POST') {
+    let body;
+    try { body = await readJsonBody(req, 16_000); }
+    catch (err) { ruleError(res, 400, 'json', err.message); return; }
+    if (!consumeNonce(body.nonce)) {
+      ruleError(res, 403, 'nonce', 'invalid or already used nonce');
+      return;
+    }
+    try {
+      const root = String(body.root || '').trim();
+      if (!root || !isAbsolute(root) || !existsSync(root) || !statSync(root).isDirectory()) {
+        ruleError(res, 400, 'project-control', 'root must be an existing absolute local directory');
+        return;
+      }
+      const project = registerProject({
+        name: body.name,
+        aliases: body.aliases,
+        root,
+      });
+      sendJson(res, 201, { ok: true, project });
+    } catch (err) {
+      ruleError(res, 400, 'project-control', err instanceof Error ? err.message : String(err));
+    }
+    return;
+  }
+
   if (path === '/projects' && req.method === 'GET') {
     const sessions = readJsonArray(SESSIONS_FILE);
     const claims = readProjectClaims();
@@ -631,12 +658,13 @@ const server = createServer(async (req, res) => {
         ruleError(res, 404, 'project-control', 'learning not found for project');
         return;
       }
-      const decided = decideLearningCandidate(learningId, {
-        decision: body.decision, reason: body.reason, decided_by: 'owner',
-      });
-      const learning = decided.status === 'approved'
-        ? publishLearningCandidate(learningId)
-        : decided;
+      const retryingApprovedPublication = candidate.status === 'approved' && body.decision === 'approved';
+      const decided = retryingApprovedPublication
+        ? candidate
+        : decideLearningCandidate(learningId, {
+          decision: body.decision, reason: body.reason, decided_by: 'owner',
+        });
+      const learning = decided.status === 'approved' ? publishLearningCandidate(learningId) : decided;
       sendJson(res, 200, { ok: true, learning });
     } catch (err) {
       ruleError(res, 400, 'project-control', err instanceof Error ? err.message : String(err));

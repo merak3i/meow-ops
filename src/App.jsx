@@ -103,8 +103,8 @@ export default function App() {
 
   // Two session arrays:
   //   sessions    — date-filtered, used for display (table, charts, per-page views)
-  //   allSessions — no date filter, used for spend breakdown so week/month cards
-  //                 are never truncated by the date-range selector
+  //   allSessions — newest bounded compatibility preview with no date filter;
+  //                 complete all-time metrics come from costSummary rollups
   const [sessions,    setSessions]    = useState([]);
   const [allSessions, setAllSessions] = useState([]);
   const [dailyData,   setDailyData]   = useState([]);
@@ -185,7 +185,9 @@ export default function App() {
         lastActive: row.last_activity_at,
       }))
     : getProjectBreakdown(sessions);
-  const toolData    = getToolBreakdownFromSessions(sessions);
+  const toolData    = dateRange === 'all' && costSummary?.byTool
+    ? costSummary.byTool.map((row) => ({ tool_name: row.key, call_count: row.call_count }))
+    : getToolBreakdownFromSessions(sessions);
   const modelData   = costSummary?.byModel
     ? costSummary.byModel.map((row) => ({ model: row.key, sessions: row.sessions, tokens: row.tokens, cost: row.cost }))
     : getModelBreakdown(sessions);
@@ -313,6 +315,8 @@ export default function App() {
             <AnalyticsDashboard
               sessions={allSessions}
               dailySummary={costSummary?.daily_summary ?? []}
+              archiveTotal={costSummary?.archive?.total}
+              previewCount={allSessions.length}
             />
           </Suspense>
         );
