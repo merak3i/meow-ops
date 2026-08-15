@@ -463,6 +463,7 @@ It currently:
 - Reads Google Antigravity transcripts from `~/.gemini/antigravity/` (time/tools/project only; usage not exposed by Antigravity)
 - Reads Cursor agent transcripts from `CURSOR_PROJECTS_DIR` or `~/.cursor/projects` (time/tools/project; usage not on disk)
 - Optionally enriches Cursor usage from the official Enterprise Admin API when `CURSOR_ADMIN_API_KEY` is set
+- Optionally imports sanitized Local Usage Receipt v1 JSONL from `MEOW_LOCAL_USAGE_IMPORTS`
 - Optionally reads Aider project histories from `AIDER_PROJECTS`
 - Deduplicates and classifies sessions, refines project names from `cwd`, calculates model cost, and sorts by latest activity
 - Writes `public/data/sessions.json`
@@ -476,6 +477,9 @@ Useful commands:
 
 ```bash
 node sync/export-local.mjs
+MEOW_LOCAL_USAGE_IMPORTS=/absolute/path/receipts node sync/export-local.mjs
+node sync/local-usage-hermes.mjs --out ~/meow-receipts/hermes.jsonl
+node sync/local-usage-writer.mjs --out ~/meow-receipts/writer.jsonl --event invoke-1 --provider ollama --model local-a
 node sync/fetch-claude-limits.mjs
 ```
 
@@ -648,14 +652,16 @@ Link sessions to git commits and measure what shipped:
 
 Hermes Agent sessions are imported from `~/.hermes/state.db` without modifying the database. When the installed Hermes version provides `session_model_usage`, Meow Ops also exports its exact per-model and provider breakdown. This includes local models invoked through Hermes (for example, an Ollama provider) and routed cloud models (for example, OpenRouter) without guessing from the currently selected model.
 
-Ollama and LM Studio model inventories are not treated as session usage. They show what is installed or running, not which agent session used it. Direct calls outside Hermes need an invocation receipt or a durable official history source before they can be assigned to Meow Ops sessions. Unknown tokens and cost remain unavailable; local cost is never estimated from electricity usage.
+Ollama and LM Studio model inventories are not treated as session usage. They show what is installed or running, not which agent session used it. Direct calls outside Hermes need a Local Usage Receipt v1 file or a durable official history source before they can be assigned to Meow Ops sessions. Unknown tokens and cost remain unavailable; local cost is never estimated from electricity usage.
+
+See [docs/local-usage-receipt.md](docs/local-usage-receipt.md) for the receipt schema, the Hermes read-only adapter, the explicit receipt writer, and the manual import directory. Coverage is not universal.
 
 ### Gemini CLI + OpenRouter parsers _(planned)_
 
 Parsers for additional AI tools:
 - `sync/parse-gemini.mjs` — Gemini CLI session logs
 - `sync/parse-openrouter.mjs` — unified cost across all OpenRouter models
-- Direct Ollama/LM Studio receipts — local model calls, once an agent exposes durable session-linked records
+- Broader harness receipt writers, once those harnesses expose durable invocation records. Local Usage Receipt v1 is the import contract; Ollama and LM Studio inventories still do not count as usage.
 
 ### Scrying Sanctum enhancements _(planned)_
 
@@ -758,6 +764,9 @@ meow-ops/
 │   ├── parse-codex.mjs          OpenAI Codex Desktop parser
 │   ├── parse-cursor.mjs         Cursor agent-transcript parser (parent + subagent)
 │   ├── cursor-admin-usage.mjs   Optional official Admin API usage enricher
+│   ├── local-usage-receipt.mjs  Local Usage Receipt v1 import and aggregates
+│   ├── local-usage-hermes.mjs   Read-only Hermes session_model_usage adapter
+│   ├── local-usage-writer.mjs   Explicit receipt writer for other harnesses
 │   ├── parse-aider.mjs          Aider chat history parser
 │   ├── parse-antigravity.mjs    Google Antigravity transcript parser (time/tools; usage not exposed)
 │   ├── session-utils.mjs        Shared snippet/project/default-session helpers

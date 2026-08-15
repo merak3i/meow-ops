@@ -18,9 +18,11 @@ export interface Session {
   output_tokens:            number;
   cache_creation_tokens:    number;
   cache_read_tokens:        number;
+  reasoning_tokens?:        number;
   total_tokens:             number;
   estimated_cost_usd:       number;
   usage_available?:         boolean;
+  cost_available?:          boolean;
   pricing_source?:          string;
   composer_id?:             string | null;
   conversation_id?:         string | null;
@@ -206,5 +208,44 @@ export interface CostSummary {
       estimated_cost_usd: number;
       actual_cost_usd: number;
     }>;
+  };
+  localUsage?: {
+    schema?: string;
+    schema_version?: number;
+    status: string;
+    enabled: boolean;
+    limitation?: string;
+    supported_harnesses?: string[];
+    unsupported?: string[];
+    import_roots?: number;
+    files_scanned?: number;
+    accepted?: number;
+    duplicates?: number;
+    rejected?: number;
+    matched_sessions?: number;
+    matched_receipts?: number;
+    unmatched_receipts?: number;
+    totals?: {
+      receipts?: number;
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_read_tokens?: number;
+      cache_write_tokens?: number;
+      reasoning_tokens?: number;
+      total_tokens?: number;
+      cost_usd?: number | null;
+      cost_available?: boolean;
+    };
+    by_machine?: Array<Record<string, string | number | boolean | null>>;
+    by_harness?: Array<Record<string, string | number | boolean | null>>;
+    by_provider?: Array<Record<string, string | number | boolean | null>>;
+    by_model?: Array<Record<string, string | number | boolean | null>>;
+    unmatched?: {
+      totals?: Record<string, number | boolean | null>;
+      by_machine?: Array<Record<string, string | number | boolean | null>>;
+      by_harness?: Array<Record<string, string | number | boolean | null>>;
+      by_provider?: Array<Record<string, string | number | boolean | null>>;
+      by_model?: Array<Record<string, string | number | boolean | null>>;
+    };
   };
 }

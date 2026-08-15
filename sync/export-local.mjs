@@ -12,6 +12,7 @@ import { enrichCursorSessions, emptyCursorUsageReport } from './cursor-admin-usa
 import { scanAiderProjects }  from './parse-aider.mjs';
 import { scanAntigravitySessions, DEFAULT_ANTIGRAVITY_DIR } from './parse-antigravity.mjs';
 import { scanHermesMessageEvidence, scanHermesModelUsage, scanHermesSessions, DEFAULT_HERMES_DB } from './parse-hermes.mjs';
+import { enrichSessionsWithLocalUsage, emptyLocalUsageReport } from './local-usage-receipt.mjs';
 import { readSessionHistory, updateSessionHistory } from './session-history.mjs';
 import { buildSessionRollups } from './session-rollups.mjs';
 import { archiveMessageEvidence, archiveSessionEvidence } from './project-evidence.mjs';
@@ -56,6 +57,7 @@ function readJsonlLines(path) {
 // CURSOR_PROJECTS_DIR — Cursor agent-transcripts root, e.g. ~/.cursor/projects
 // CURSOR_ADMIN_API_KEY — opt-in Enterprise Admin API usage enrichment
 // AIDER_PROJECTS — colon-separated list of project dirs containing .aider.chat.history.md
+// MEOW_LOCAL_USAGE_IMPORTS — colon-separated receipt JSONL directories (manual copy)
 const CURSOR_PROJECTS_DIR = process.env.CURSOR_PROJECTS_DIR || DEFAULT_CURSOR_PROJECTS_DIR;
 const AIDER_PROJECT_DIRS = process.env.AIDER_PROJECTS
   ? process.env.AIDER_PROJECTS.split(':').filter(Boolean)
@@ -268,6 +270,22 @@ const allUnique = [...byId.values()];
 const dupCount = allSessions.length - allUnique.length;
 console.log(`Total unique session entries: ${allUnique.length}${dupCount > 0 ? ` (deduped ${dupCount})` : ''}`);
 
+// Manual Local Usage Receipt v1 import. Receipts are sanitized JSONL copied
+// onto this computer. Installed-model inventories are not usage. Official
+// Hermes and Cursor session usage is left untouched.
+let localUsageReport = emptyLocalUsageReport();
+{
+  const enriched = enrichSessionsWithLocalUsage(allUnique, {
+    importSpec: process.env.MEOW_LOCAL_USAGE_IMPORTS,
+  });
+  localUsageReport = enriched.report;
+  if (localUsageReport.status === 'skipped') {
+    console.log('Local usage receipts skipped (set MEOW_LOCAL_USAGE_IMPORTS to enable)');
+  } else {
+    console.log(`Local usage receipts: accepted ${localUsageReport.accepted}, duplicates ${localUsageReport.duplicates}, rejected ${localUsageReport.rejected}; matched ${localUsageReport.matched_receipts}, unmatched ${localUsageReport.unmatched_receipts}`);
+  }
+}
+
 // Preserve private project evidence before content-bearing labels are removed
 // from the public dashboard artifact. Only registered projects and supported
 // agent sources enter the private vault.
@@ -456,6 +474,7 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
     bySourceAllTime: Object.fromEntries(rollups.bySource.map((row) => [row.key, row])),
     cursorUsage: cursorUsageReport,
     hermesModelUsage: hermesModelUsageReport,
+    localUsage: localUsageReport,
     archive: {
       total: archive.total,
       appendOnly: true,

@@ -30,6 +30,10 @@ public/data/*
 # Local session-history files (Pomodoro, etc.) live in the browser, not the repo
 *.history.json
 
+# Local Usage Receipt v1 identity and manual import drops. Never commit.
+.meow-ops-machine-id
+local-usage-imports/
+
 # Editor / OS
 .vscode/*
 !.vscode/extensions.json

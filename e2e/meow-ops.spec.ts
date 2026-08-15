@@ -741,6 +741,61 @@ test('Overview: unmatched Cursor Admin usage is visible but not assigned to sess
   await expect(page.getByText('3 events', { exact: true })).toBeVisible();
 });
 
+test('Overview: local usage receipts show machine, harness, provider, and model without identity', async ({ page }) => {
+  const bucket = { cost: 0, tokens: 0, sessions: 0, duration_seconds: 0 };
+  await page.route(/\/data\/cost-summary\.json(?:\?|$)/, (route) => route.fulfill({
+    json: {
+      exportedAt: '2026-08-16T00:00:00.000Z',
+      today: bucket,
+      thisWeek: bucket,
+      lastWeek: bucket,
+      thisMonth: bucket,
+      lastMonth: bucket,
+      thisYear: bucket,
+      lastYear: bucket,
+      allTime: bucket,
+      bySource: {},
+      bySourceAllTime: {},
+      daily_summary: [],
+      localUsage: {
+        status: 'ok',
+        enabled: true,
+        accepted: 2,
+        matched_sessions: 1,
+        matched_receipts: 1,
+        unmatched_receipts: 1,
+        totals: {
+          receipts: 2,
+          total_tokens: 150,
+          cost_usd: null,
+          cost_available: false,
+        },
+        by_machine: [{ key: 'machine-11111111', total_tokens: 100, cost_available: false }],
+        by_harness: [{ key: 'hermes', total_tokens: 100, cost_available: false }],
+        by_provider: [{ key: 'ollama', total_tokens: 100, cost_available: false }],
+        by_model: [{ key: 'local-a', total_tokens: 100, cost_usd: null, cost_available: false }],
+        unmatched: {
+          totals: { receipts: 1, total_tokens: 50, cost_usd: null, cost_available: false },
+          by_model: [{ key: 'orphan-model', total_tokens: 50 }],
+        },
+      },
+    },
+  }));
+  await page.reload();
+  await waitForApp(page);
+
+  await expect(page.getByText('Local Usage Receipts')).toBeVisible();
+  await expect(page.getByText('machine-11111111')).toBeVisible();
+  await expect(page.getByText('hermes', { exact: true })).toBeVisible();
+  await expect(page.getByText('ollama', { exact: true })).toBeVisible();
+  await expect(page.getByText('local-a', { exact: true })).toBeVisible();
+  await expect(page.getByText('unavailable').first()).toBeVisible();
+  await expect(page.getByText('/Users/')).toHaveCount(0);
+  await expect(page.getByText('alice')).toHaveCount(0);
+  await expect(page.getByText('macbook-pro.local')).toHaveCount(0);
+  await expect(page.getByText('11111111-1111-4111-8111-111111111111')).toHaveCount(0);
+});
+
 test('Overview: Hermes reports every model used in multi-model sessions', async ({ page }) => {
   const bucket = { cost: 0, tokens: 0, sessions: 0, duration_seconds: 0 };
   await page.route(/\/data\/cost-summary\.json(?:\?|$)/, (route) => route.fulfill({

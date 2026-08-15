@@ -31,6 +31,8 @@
     "health": "node sync/automation-health.mjs",
     "eval": "node sync/loop-eval.mjs",
     "sync:superadmin": "node sync/superadmin-usage.mjs",
+    "receipts:hermes": "node sync/local-usage-hermes.mjs",
+    "receipts:write": "node sync/local-usage-writer.mjs",
     "project:register": "node sync/project-control-cli.mjs register --name 'Meow Ops' --alias meow-ops",
     "project:status": "node sync/project-control-cli.mjs status",
     "project:adapters:preview": "node sync/project-control-cli.mjs adapters-preview",

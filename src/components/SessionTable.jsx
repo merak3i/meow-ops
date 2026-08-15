@@ -111,7 +111,7 @@ export default function SessionTable({ sessions }) {
                   {s.usage_available === false ? 'N/A' : formatTokens(s.total_tokens)}
                 </td>
                 <td style={{ ...cellStyle, fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--green)' }}>
-                  {s.usage_available === false ? 'N/A' : formatCost(s.estimated_cost_usd)}
+                  {s.usage_available === false || s.cost_available === false ? 'N/A' : formatCost(s.estimated_cost_usd)}
                 </td>
                 {/* Timestamp: IST (primary) + UTC + relative time */}
                 <td style={{ ...cellStyle, fontSize: 12 }}>

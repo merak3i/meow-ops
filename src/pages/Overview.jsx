@@ -118,6 +118,104 @@ function CursorAggregateUsagePanel({ usage }) {
   );
 }
 
+function formatReportedCost(cost, available) {
+  if (available !== true) return 'unavailable';
+  return formatCost(safeMetric(cost));
+}
+
+function LocalUsageReceiptPanel({ usage }) {
+  if (!usage || usage.status === 'skipped') return null;
+
+  const totals = usage.totals || {};
+  const machines = Array.isArray(usage.by_machine) ? usage.by_machine : [];
+  const harnesses = Array.isArray(usage.by_harness) ? usage.by_harness : [];
+  const providers = Array.isArray(usage.by_provider) ? usage.by_provider : [];
+  const models = Array.isArray(usage.by_model) ? usage.by_model : [];
+  const unmatchedModels = Array.isArray(usage.unmatched?.by_model) ? usage.unmatched.by_model : [];
+
+  return (
+    <div style={{
+      marginBottom: 24,
+      padding: '14px 16px',
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border)',
+      borderRadius: 10,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 10 }}>
+        <div>
+          <Eyebrow>Local Usage Receipts</Eyebrow>
+          <div style={{ marginTop: 5, fontSize: 11, color: 'var(--text-muted)' }}>
+            Sanitized receipts imported from other computers. Installed model lists are not usage. Unmatched receipts stay as aggregates.
+          </div>
+        </div>
+        <span style={{ fontSize: 11, color: usage.status === 'ok' || usage.status === 'partial' ? 'var(--green)' : 'var(--text-muted)' }}>
+          {usage.status || 'unknown'} · {safeMetric(usage.accepted)} accepted
+        </span>
+      </div>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))',
+        gap: 10,
+        marginBottom: 12,
+      }}>
+        <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Machines</span><div>{machines.length}</div></div>
+        <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Matched</span><div>{safeMetric(usage.matched_sessions)} sessions · {safeMetric(usage.matched_receipts)} receipts</div></div>
+        <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Unmatched</span><div>{safeMetric(usage.unmatched_receipts)} receipts</div></div>
+        <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Tokens</span><div>{formatTokens(safeMetric(totals.total_tokens))}</div></div>
+        <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Source-reported cost</span><div style={{ color: 'var(--green)' }}>{formatReportedCost(totals.cost_usd, totals.cost_available)}</div></div>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: models.length > 0 || unmatchedModels.length > 0 ? 10 : 0 }}>
+        {machines.map((row) => (
+          <div key={`machine-${row.key}`} style={{ padding: '7px 10px', background: 'var(--bg-hover)', borderRadius: 8, fontSize: 11 }}>
+            <span style={{ color: 'var(--cyan)' }}>{String(row.key)}</span>
+            <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+              machine · {formatTokens(safeMetric(row.total_tokens))}
+            </span>
+          </div>
+        ))}
+        {harnesses.map((row) => (
+          <div key={`harness-${row.key}`} style={{ padding: '7px 10px', background: 'var(--bg-hover)', borderRadius: 8, fontSize: 11 }}>
+            <span style={{ color: 'var(--amber)' }}>{String(row.key)}</span>
+            <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+              harness · {formatTokens(safeMetric(row.total_tokens))}
+            </span>
+          </div>
+        ))}
+        {providers.map((row) => (
+          <div key={`provider-${row.key}`} style={{ padding: '7px 10px', background: 'var(--bg-hover)', borderRadius: 8, fontSize: 11 }}>
+            <span style={{ color: 'oklch(0.70 0.17 150)' }}>{String(row.key)}</span>
+            <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+              provider · {formatTokens(safeMetric(row.total_tokens))}
+            </span>
+          </div>
+        ))}
+        {models.map((row) => (
+          <div key={`model-${row.key}`} style={{ padding: '7px 10px', background: 'var(--bg-hover)', borderRadius: 8, fontSize: 11 }}>
+            <span style={{ color: 'var(--text-primary)' }}>{String(row.key)}</span>
+            <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+              model · {formatTokens(safeMetric(row.total_tokens))} · {formatReportedCost(row.cost_usd, row.cost_available)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {unmatchedModels.length > 0 ? (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          Unmatched models stay unassigned:
+          {' '}
+          {unmatchedModels.map((row) => String(row.key)).join(', ')}
+        </div>
+      ) : (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          No identity fields are shown. Unknown cost stays unavailable.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HermesModelUsagePanel({ usage }) {
   if (!usage || usage.status === 'not-found') return null;
   const totals = usage.totals || {};
@@ -863,6 +961,10 @@ export default function Overview({
 
       {(source === 'both' || source === 'hermes') && (
         <HermesModelUsagePanel usage={costSummary?.hermesModelUsage} />
+      )}
+
+      {source === 'both' && (
+        <LocalUsageReceiptPanel usage={costSummary?.localUsage} />
       )}
 
       {/* ── Token quota per source ── */}

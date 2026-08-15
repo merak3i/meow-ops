@@ -275,26 +275,26 @@ export function scanHermesSessions(dbPath = process.env.HERMES_STATE_DB || DEFAU
   }
 }
 
-export function scanHermesModelUsage(dbPath = process.env.HERMES_STATE_DB || DEFAULT_HERMES_DB) {
-  if (!dbPath || !existsSync(dbPath)) return { status: 'not-found', sessions: 0, models: 0, totals: {}, by_model: [] };
+export function readHermesModelUsageRows(dbPath = process.env.HERMES_STATE_DB || DEFAULT_HERMES_DB) {
+  if (!dbPath || !existsSync(dbPath)) return { status: 'not-found', rows: [] };
   try {
     const rows = queryJson(dbPath, `
       SELECT session_id, model, billing_provider, billing_mode, api_call_count,
              input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-             estimated_cost_usd, actual_cost_usd
+             estimated_cost_usd, actual_cost_usd, last_seen
       FROM session_model_usage
       ORDER BY last_seen DESC
     `);
-    return parseHermesModelUsageRows(rows);
+    return { status: 'ok', rows };
   } catch {
-    return {
-      status: 'unavailable',
-      sessions: 0,
-      models: 0,
-      totals: {},
-      by_model: [],
-    };
+    return { status: 'unavailable', rows: [] };
   }
+}
+
+export function scanHermesModelUsage(dbPath = process.env.HERMES_STATE_DB || DEFAULT_HERMES_DB) {
+  const { status, rows } = readHermesModelUsageRows(dbPath);
+  if (status !== 'ok') return { status, sessions: 0, models: 0, totals: {}, by_model: [] };
+  return parseHermesModelUsageRows(rows);
 }
 
 export function scanHermesMessageEvidence(dbPath = process.env.HERMES_STATE_DB || DEFAULT_HERMES_DB) {

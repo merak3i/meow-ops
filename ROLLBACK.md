@@ -194,6 +194,19 @@ Then add a row to the Version Tag Reference table above.
 
 ---
 
+## Local Usage Receipt v1 Rollback
+
+Use this when imported receipts or the Overview panel need to come out without touching Hermes or Cursor tracking.
+
+1. Unset `MEOW_LOCAL_USAGE_IMPORTS` in `.env` and re-run `node sync/export-local.mjs`.
+2. Delete `~/.meow-ops/local-usage-store.jsonl` if previously accepted receipts should leave the aggregate view.
+3. Leave `~/.meow-ops/machine-id` in place unless you intend to rotate the pseudonymous computer identity.
+4. Revert the feature commit if the Overview panel itself must be removed.
+
+Receipt JSONL files are operator-owned copies. Rolling back the app does not delete those files.
+
+---
+
 ## Data Rollback Notes
 
 meow-ops uses file-based session data. The source of truth is:
