@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseHermesMessageEvidenceRows, parseHermesRows } from '../parse-hermes.mjs';
+import { parseHermesMessageEvidenceRows, parseHermesModelUsageRows, parseHermesRows } from '../parse-hermes.mjs';
 
 test('Hermes rows become canonical sessions with real usage and tools', () => {
   const [session] = parseHermesRows([
@@ -39,6 +39,24 @@ test('Hermes parser preserves unavailable usage instead of inventing it', () => 
   assert.equal(session.model, null);
   assert.equal(session.total_tokens, 0);
   assert.equal(session.project, 'hermes');
+});
+
+test('Hermes model usage keeps every model used in a session', () => {
+  const usage = parseHermesModelUsageRows([
+    { session_id: 'hermes-1', model: 'local-a', billing_provider: 'ollama', api_call_count: 2, input_tokens: 100, output_tokens: 20, estimated_cost_usd: 0 },
+    { session_id: 'hermes-1', model: 'cloud-b', billing_provider: 'openrouter', billing_mode: 'chat_completions', api_call_count: 1, input_tokens: 50, output_tokens: 10, estimated_cost_usd: 0.02 },
+    { session_id: 'hermes-2', model: 'local-a', billing_provider: 'ollama', api_call_count: 3, input_tokens: 200, output_tokens: 40, estimated_cost_usd: 0 },
+  ]);
+
+  assert.equal(usage.models, 2);
+  assert.equal(usage.sessions, 2);
+  assert.equal(usage.totals.api_calls, 6);
+  assert.equal(usage.totals.total_tokens, 420);
+  assert.equal(usage.totals.estimated_cost_usd, 0.02);
+  assert.deepEqual(usage.by_model.map((row) => [row.model, row.provider, row.sessions]), [
+    ['local-a', 'ollama', 2],
+    ['cloud-b', 'openrouter', 1],
+  ]);
 });
 
 test('Hermes messages become private evidence events without internal reasoning fields', () => {
