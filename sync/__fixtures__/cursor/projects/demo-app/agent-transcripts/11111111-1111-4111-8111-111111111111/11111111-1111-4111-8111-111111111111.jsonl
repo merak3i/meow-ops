@@ -1,0 +1,2 @@
+{"role":"user","message":{"content":[{"type":"text","text":"Refactor the login form validation."}]},"createdAt":"2026-08-01T10:00:00.000Z"}
+{"role":"assistant","message":{"model":"gpt-4o","content":[{"type":"text","text":"I will inspect the form first."},{"type":"tool_use","name":"Read","input":{"path":"src/login.ts"}},{"type":"tool_use","name":"Task","input":{"description":"Check tests","model":"fast","prompt":"Review the login tests."}}]},"createdAt":"2026-08-01T10:01:00.000Z"}

@@ -1,0 +1,84 @@
+{
+  "totalUsageEventsCount": 4,
+  "pagination": {
+    "numPages": 1,
+    "currentPage": 1,
+    "pageSize": 25,
+    "hasNextPage": false,
+    "hasPreviousPage": false
+  },
+  "usageEvents": [
+    {
+      "timestamp": "1754042460000",
+      "userEmail": "developer@example.com",
+      "conversationId": "11111111-1111-4111-8111-111111111111",
+      "model": "claude-4.5-sonnet",
+      "kind": "Usage-based",
+      "maxMode": false,
+      "isTokenBasedCall": true,
+      "isChargeable": true,
+      "isHeadless": false,
+      "tokenUsage": {
+        "inputTokens": 126,
+        "outputTokens": 450,
+        "cacheWriteTokens": 80,
+        "cacheReadTokens": 20,
+        "totalCents": 12.5
+      },
+      "chargedCents": 13.4
+    },
+    {
+      "timestamp": "1754042520000",
+      "userEmail": "developer@example.com",
+      "conversationId": "11111111-1111-4111-8111-111111111111",
+      "model": "claude-4.5-sonnet",
+      "kind": "Usage-based",
+      "maxMode": false,
+      "isTokenBasedCall": true,
+      "isChargeable": true,
+      "isHeadless": false,
+      "tokenUsage": {
+        "inputTokens": 200,
+        "outputTokens": 50,
+        "cacheWriteTokens": 0,
+        "cacheReadTokens": 10,
+        "totalCents": 4.0
+      },
+      "chargedCents": 4.6
+    },
+    {
+      "timestamp": "1754042580000",
+      "userEmail": "developer@example.com",
+      "conversationId": "33333333-3333-4333-8333-333333333333",
+      "model": "composer-2",
+      "kind": "Included in Business",
+      "maxMode": false,
+      "isTokenBasedCall": true,
+      "isChargeable": false,
+      "isHeadless": false,
+      "tokenUsage": {
+        "inputTokens": 80,
+        "outputTokens": 20,
+        "cacheWriteTokens": 0,
+        "cacheReadTokens": 0,
+        "totalCents": 1.1
+      },
+      "chargedCents": 0
+    },
+    {
+      "timestamp": "1754042640000",
+      "userEmail": "developer@example.com",
+      "model": "gpt-5",
+      "kind": "Usage-based",
+      "maxMode": false,
+      "isTokenBasedCall": false,
+      "isChargeable": true,
+      "isHeadless": false,
+      "chargedCents": 8
+    }
+  ],
+  "period": {
+    "startDate": 1751328000000,
+    "endDate": 1754042640000
+  }
+}

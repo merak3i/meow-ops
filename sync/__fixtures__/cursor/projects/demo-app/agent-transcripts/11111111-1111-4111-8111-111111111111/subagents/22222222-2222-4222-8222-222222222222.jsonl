@@ -1,0 +1,2 @@
+{"role":"user","message":{"content":[{"type":"text","text":"Review the login tests."}]},"createdAt":"2026-08-01T10:01:10.000Z"}
+{"role":"assistant","message":{"content":[{"type":"tool_use","name":"Grep","input":{"pattern":"login"}}]},"createdAt":"2026-08-01T10:01:20.000Z"}
