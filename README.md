@@ -648,7 +648,7 @@ Link sessions to git commits and measure what shipped:
 
 Hermes Agent sessions are imported from `~/.hermes/state.db` without modifying the database. When the installed Hermes version provides `session_model_usage`, Meow Ops also exports its exact per-model and provider breakdown. This includes local models invoked through Hermes (for example, an Ollama provider) and routed cloud models (for example, OpenRouter) without guessing from the currently selected model.
 
-Ollama and LM Studio model inventories are not treated as session usage. They show what is installed or running, not which agent session used it. Direct calls outside Hermes need an invocation receipt or a durable official history source before they can be assigned to Meow Ops sessions. Unknown tokens and cost remain unavailable; local cost is never estimated from electricity usage.
+Ollama and LM Studio model inventories are not treated as session usage. They show what is installed or running, not which agent session used it. Direct calls outside Hermes need an invocation receipt or a durable official history source before they can be assigned to Meow Ops sessions. Unknown tokens and cost remain unavailable; local cost is never estimated from electricity usage. The Local Usage Receipt v1 contract and evidence matrix live in `docs/adr/0001-local-usage-receipt-v1.md`.
 
 ### Gemini CLI + OpenRouter parsers _(planned)_
 

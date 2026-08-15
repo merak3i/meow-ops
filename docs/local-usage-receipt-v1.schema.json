@@ -1,0 +1,226 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://meow-ops.local/schemas/local-usage-receipt-v1.json",
+  "title": "Meow Ops Local Usage Receipt v1",
+  "description": "Sanitized invocation evidence for local and routed model calls. Forbidden: prompts, responses, transcripts, usernames, hostnames, absolute paths, API keys, credentials, and any inferred token, model, session, or cost values.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "machine_id",
+    "exported_at",
+    "events"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "local-usage-receipt.v1"
+    },
+    "kind": {
+      "const": "meow-ops.local-usage-receipt"
+    },
+    "machine_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Random persistent UUID created once per machine. Must not be derived from hardware, hostname, username, or filesystem path."
+    },
+    "exported_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/event"
+      }
+    }
+  },
+  "definitions": {
+    "availabilityState": {
+      "type": "string",
+      "enum": ["exact", "source", "partial", "count", "names", "unavailable"]
+    },
+    "quantity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available"],
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "number",
+          "minimum": 0
+        },
+        "provenance": {
+          "type": "string",
+          "enum": ["source"]
+        }
+      },
+      "if": {
+        "properties": {
+          "available": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": ["available", "value", "provenance"]
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_event_id",
+        "dedupe_key",
+        "harness",
+        "model",
+        "availability",
+        "provenance"
+      ],
+      "properties": {
+        "source_event_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Durable identifier from the source, or a hex digest of official primary-key fields. Must not contain usernames, hostnames, absolute paths, or credentials."
+        },
+        "dedupe_key": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 hex of schema_version, machine_id, harness, and source_event_id joined by newline."
+        },
+        "harness": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The agent or UI that invoked the model, such as hermes, continue, aider, or opencode."
+        },
+        "runtime": {
+          "type": ["string", "null"],
+          "description": "Inference backend when the source exposes it, such as ollama, lmstudio, or llamacpp. Null when unavailable."
+        },
+        "provider": {
+          "type": ["string", "null"],
+          "description": "Exact provider or billing provider string when the source exposes it. Null when unavailable."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact model identifier recorded for this invocation. Selected, loaded, or installed names are not valid."
+        },
+        "session_id": {
+          "type": ["string", "null"],
+          "description": "Exact session or conversation identifier when the source exposes one. Null when unavailable. Never synthesized."
+        },
+        "started_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "ended_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "input": {
+              "$ref": "#/definitions/quantity"
+            },
+            "output": {
+              "$ref": "#/definitions/quantity"
+            },
+            "cache_read": {
+              "$ref": "#/definitions/quantity"
+            },
+            "cache_write": {
+              "$ref": "#/definitions/quantity"
+            },
+            "reasoning": {
+              "$ref": "#/definitions/quantity"
+            },
+            "total": {
+              "$ref": "#/definitions/quantity"
+            }
+          }
+        },
+        "cost_usd": {
+          "$ref": "#/definitions/quantity"
+        },
+        "tool_calls": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["available"],
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "names": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "availability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["model", "runtime", "provider", "session", "tokens", "cost", "tool_calls"],
+          "properties": {
+            "model": {
+              "type": "string",
+              "enum": ["exact"]
+            },
+            "runtime": {
+              "$ref": "#/definitions/availabilityState"
+            },
+            "provider": {
+              "$ref": "#/definitions/availabilityState"
+            },
+            "session": {
+              "$ref": "#/definitions/availabilityState"
+            },
+            "tokens": {
+              "$ref": "#/definitions/availabilityState"
+            },
+            "cost": {
+              "$ref": "#/definitions/availabilityState"
+            },
+            "tool_calls": {
+              "$ref": "#/definitions/availabilityState"
+            }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source_kind", "source_label", "recorded_as"],
+          "properties": {
+            "source_kind": {
+              "type": "string",
+              "enum": ["sqlite", "jsonl", "json", "markdown", "api-response", "receipt"]
+            },
+            "source_label": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Stable source table or file class, such as hermes.session_model_usage. No absolute paths."
+            },
+            "schema_pin": {
+              "type": ["string", "null"],
+              "description": "Pinned upstream schema or product version. Import must fail closed when the pin is unknown."
+            },
+            "recorded_as": {
+              "const": "invocation"
+            }
+          }
+        }
+      }
+    }
+  }
+}
