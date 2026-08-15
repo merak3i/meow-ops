@@ -46,6 +46,78 @@ function sourceDisplay(src) {
   return `${meta.sigil} ${meta.label}`;
 }
 
+function safeMetric(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : 0;
+}
+
+function CursorAggregateUsagePanel({ usage }) {
+  if (!usage) return null;
+
+  const totals = usage.unmatched?.totals || {};
+  const models = Array.isArray(usage.unmatched?.by_model) ? usage.unmatched.by_model : [];
+  const unmatchedEvents = safeMetric(usage.unmatched_events ?? totals.events);
+  const matchedSessions = safeMetric(usage.matched_sessions);
+  const matchedEvents = safeMetric(usage.matched_events);
+  const enabled = usage.enabled === true;
+
+  return (
+    <div style={{
+      marginBottom: 24,
+      padding: '14px 16px',
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border)',
+      borderRadius: 10,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 10 }}>
+        <div>
+          <Eyebrow>Cursor Admin Usage</Eyebrow>
+          <div style={{ marginTop: 5, fontSize: 11, color: 'var(--text-muted)' }}>
+            Unmatched usage is reported by model but is not assigned to a local session.
+          </div>
+        </div>
+        <span style={{ fontSize: 11, color: enabled ? 'var(--green)' : 'var(--text-muted)' }}>
+          {enabled ? 'Admin API enabled' : 'Admin API off'} · {usage.status || 'unknown'}
+        </span>
+      </div>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))',
+        gap: 10,
+        marginBottom: models.length > 0 ? 12 : 0,
+      }}>
+        <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Matched</span><div>{matchedSessions} sessions · {matchedEvents} events</div></div>
+        <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Unmatched</span><div>{unmatchedEvents} events</div></div>
+        <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Unmatched tokens</span><div>{formatTokens(safeMetric(totals.total_tokens))}</div></div>
+        <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Unmatched cost</span><div style={{ color: 'var(--green)' }}>{formatCost(safeMetric(totals.estimated_cost_usd))}</div></div>
+      </div>
+
+      {models.length > 0 ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {models.map((row) => (
+            <div key={String(row.key || 'unknown')} style={{
+              padding: '7px 10px',
+              background: 'var(--bg-hover)',
+              borderRadius: 8,
+              fontSize: 11,
+            }}>
+              <span style={{ color: 'var(--cyan)' }}>{String(row.key || 'unknown')}</span>
+              <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+                {formatTokens(safeMetric(row.total_tokens))} · {formatCost(safeMetric(row.estimated_cost_usd))}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {enabled ? 'No unmatched model usage was returned.' : 'Local Cursor sessions remain available without an Admin API key.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SourceToggle({ value, onChange }) {
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -731,6 +803,10 @@ export default function Overview({
           allSessions={allSessions}
           bySourceAllTime={costSummary?.bySourceAllTime}
         />
+      )}
+
+      {(source === 'both' || source === 'cursor') && (
+        <CursorAggregateUsagePanel usage={costSummary?.cursorUsage} />
       )}
 
       {/* ── Token quota per source ── */}
