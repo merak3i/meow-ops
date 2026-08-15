@@ -699,6 +699,48 @@ test('Overview: Source Breakdown section renders with Codex data', async ({ page
   }
 });
 
+test('Overview: unmatched Cursor Admin usage is visible but not assigned to sessions', async ({ page }) => {
+  const bucket = { cost: 0, tokens: 0, sessions: 0, duration_seconds: 0 };
+  await page.route(/\/data\/cost-summary\.json(?:\?|$)/, (route) => route.fulfill({
+    json: {
+      exportedAt: '2026-08-16T00:00:00.000Z',
+      today: bucket,
+      thisWeek: bucket,
+      lastWeek: bucket,
+      thisMonth: bucket,
+      lastMonth: bucket,
+      thisYear: bucket,
+      lastYear: bucket,
+      allTime: bucket,
+      bySource: {},
+      bySourceAllTime: {},
+      daily_summary: [],
+      cursorUsage: {
+        enabled: true,
+        status: 'ok',
+        matched_sessions: 1,
+        matched_events: 2,
+        unmatched_events: 3,
+        unmatched: {
+          totals: { events: 3, total_tokens: 1200, estimated_cost_usd: 0.42 },
+          by_model: [
+            { key: 'gpt-5', events: 2, total_tokens: 900, estimated_cost_usd: 0.30 },
+            { key: 'composer-2', events: 1, total_tokens: 300, estimated_cost_usd: 0.12 },
+          ],
+        },
+      },
+    },
+  }));
+  await page.reload();
+  await waitForApp(page);
+
+  await expect(page.getByText('Cursor Admin Usage')).toBeVisible();
+  await expect(page.getByText('Unmatched usage is reported by model but is not assigned to a local session.')).toBeVisible();
+  await expect(page.getByText('gpt-5', { exact: true })).toBeVisible();
+  await expect(page.getByText('composer-2', { exact: true })).toBeVisible();
+  await expect(page.getByText('3 events', { exact: true })).toBeVisible();
+});
+
 test('Overview: date filter changes the period label', async ({ page }) => {
   await page.getByRole('button', { name: '7d', exact: true }).click();
   // Stat card label will become "Sessions — 7 days" — first match suffices
