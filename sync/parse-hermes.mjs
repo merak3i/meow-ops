@@ -135,6 +135,79 @@ export function parseHermesRows(sessionRows = [], toolRows = [], messageRows = [
   });
 }
 
+export function parseHermesModelUsageRows(rows = []) {
+  const byKey = new Map();
+  const sessions = new Set();
+
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const model = String(row.model || '').trim();
+    if (!model) continue;
+    const provider = String(row.billing_provider || '').trim() || 'unknown';
+    const billingMode = String(row.billing_mode || '').trim() || null;
+    const key = `${provider}:${model}:${billingMode || ''}`;
+    const current = byKey.get(key) || {
+      key,
+      model,
+      provider,
+      billing_mode: billingMode,
+      sessions: new Set(),
+      api_calls: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      total_tokens: 0,
+      estimated_cost_usd: 0,
+      actual_cost_usd: 0,
+    };
+    if (row.session_id) {
+      current.sessions.add(String(row.session_id));
+      sessions.add(String(row.session_id));
+    }
+    current.api_calls += count(row.api_call_count);
+    current.input_tokens += count(row.input_tokens);
+    current.output_tokens += count(row.output_tokens);
+    current.cache_read_tokens += count(row.cache_read_tokens);
+    current.cache_write_tokens += count(row.cache_write_tokens);
+    current.total_tokens = current.input_tokens + current.output_tokens
+      + current.cache_read_tokens + current.cache_write_tokens;
+    current.estimated_cost_usd += Number(row.estimated_cost_usd) || 0;
+    current.actual_cost_usd += Number(row.actual_cost_usd) || 0;
+    byKey.set(key, current);
+  }
+
+  const byModel = [...byKey.values()].map((row) => ({
+    ...row,
+    sessions: row.sessions.size,
+  })).sort((a, b) => b.total_tokens - a.total_tokens || a.key.localeCompare(b.key));
+
+  return {
+    status: 'ok',
+    sessions: sessions.size,
+    models: new Set(byModel.map((row) => row.model)).size,
+    totals: byModel.reduce((totals, row) => ({
+      api_calls: totals.api_calls + row.api_calls,
+      input_tokens: totals.input_tokens + row.input_tokens,
+      output_tokens: totals.output_tokens + row.output_tokens,
+      cache_read_tokens: totals.cache_read_tokens + row.cache_read_tokens,
+      cache_write_tokens: totals.cache_write_tokens + row.cache_write_tokens,
+      total_tokens: totals.total_tokens + row.total_tokens,
+      estimated_cost_usd: totals.estimated_cost_usd + row.estimated_cost_usd,
+      actual_cost_usd: totals.actual_cost_usd + row.actual_cost_usd,
+    }), {
+      api_calls: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_write_tokens: 0,
+      total_tokens: 0,
+      estimated_cost_usd: 0,
+      actual_cost_usd: 0,
+    }),
+    by_model: byModel,
+  };
+}
+
 export function parseHermesMessageEvidenceRows(rows = [], dbPath = DEFAULT_HERMES_DB) {
   return (Array.isArray(rows) ? rows : []).map((row) => {
     const root = row.git_repo_root || row.cwd || null;
@@ -199,6 +272,28 @@ export function scanHermesSessions(dbPath = process.env.HERMES_STATE_DB || DEFAU
   } catch (error) {
     console.warn(`  Hermes sessions unavailable: ${error instanceof Error ? error.message : String(error)}`);
     return [];
+  }
+}
+
+export function scanHermesModelUsage(dbPath = process.env.HERMES_STATE_DB || DEFAULT_HERMES_DB) {
+  if (!dbPath || !existsSync(dbPath)) return { status: 'not-found', sessions: 0, models: 0, totals: {}, by_model: [] };
+  try {
+    const rows = queryJson(dbPath, `
+      SELECT session_id, model, billing_provider, billing_mode, api_call_count,
+             input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+             estimated_cost_usd, actual_cost_usd
+      FROM session_model_usage
+      ORDER BY last_seen DESC
+    `);
+    return parseHermesModelUsageRows(rows);
+  } catch {
+    return {
+      status: 'unavailable',
+      sessions: 0,
+      models: 0,
+      totals: {},
+      by_model: [],
+    };
   }
 }
 

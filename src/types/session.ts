@@ -190,4 +190,21 @@ export interface CostSummary {
     };
     error?: string | null;
   };
+  hermesModelUsage?: {
+    status: string;
+    sessions: number;
+    models: number;
+    totals?: Record<string, number>;
+    by_model?: Array<{
+      key: string;
+      model: string;
+      provider: string;
+      billing_mode?: string | null;
+      sessions: number;
+      api_calls: number;
+      total_tokens: number;
+      estimated_cost_usd: number;
+      actual_cost_usd: number;
+    }>;
+  };
 }

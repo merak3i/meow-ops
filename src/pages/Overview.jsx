@@ -118,6 +118,58 @@ function CursorAggregateUsagePanel({ usage }) {
   );
 }
 
+function HermesModelUsagePanel({ usage }) {
+  if (!usage || usage.status === 'not-found') return null;
+  const totals = usage.totals || {};
+  const models = Array.isArray(usage.by_model) ? usage.by_model : [];
+
+  return (
+    <div style={{
+      marginBottom: 24,
+      padding: '14px 16px',
+      background: 'var(--bg-card)',
+      border: '1px solid var(--border)',
+      borderRadius: 10,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, marginBottom: 10 }}>
+        <div>
+          <Eyebrow>Hermes Model Usage</Eyebrow>
+          <div style={{ marginTop: 5, fontSize: 11, color: 'var(--text-muted)' }}>
+            Exact per-model usage reported by Hermes. One session can use more than one model.
+          </div>
+        </div>
+        <span style={{ fontSize: 11, color: usage.status === 'ok' ? 'var(--green)' : 'var(--text-muted)' }}>
+          {usage.status === 'ok' ? `${safeMetric(usage.models)} models · ${safeMetric(usage.sessions)} sessions` : 'Usage table unavailable'}
+        </span>
+      </div>
+
+      {models.length > 0 ? (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 10, marginBottom: 12 }}>
+            <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>API calls</span><div>{safeMetric(totals.api_calls).toLocaleString()}</div></div>
+            <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Tokens</span><div>{formatTokens(safeMetric(totals.total_tokens))}</div></div>
+            <div><span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Estimated cost</span><div style={{ color: 'var(--green)' }}>{formatCost(safeMetric(totals.estimated_cost_usd))}</div></div>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {models.map((row) => (
+              <div key={row.key} style={{ padding: '7px 10px', background: 'var(--bg-hover)', borderRadius: 8, fontSize: 11 }}>
+                <span style={{ color: 'var(--amber)' }}>{row.model}</span>
+                <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>
+                  {row.provider} · {safeMetric(row.sessions)} sessions · {formatTokens(safeMetric(row.total_tokens))} · {formatCost(safeMetric(row.estimated_cost_usd))}
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          Hermes sessions remain visible, but this Hermes version did not expose per-model usage rows.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SourceToggle({ value, onChange }) {
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -807,6 +859,10 @@ export default function Overview({
 
       {(source === 'both' || source === 'cursor') && (
         <CursorAggregateUsagePanel usage={costSummary?.cursorUsage} />
+      )}
+
+      {(source === 'both' || source === 'hermes') && (
+        <HermesModelUsagePanel usage={costSummary?.hermesModelUsage} />
       )}
 
       {/* ── Token quota per source ── */}

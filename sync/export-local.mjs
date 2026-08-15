@@ -11,7 +11,7 @@ import { scanCursorSessions, DEFAULT_CURSOR_PROJECTS_DIR } from './parse-cursor.
 import { enrichCursorSessions, emptyCursorUsageReport } from './cursor-admin-usage.mjs';
 import { scanAiderProjects }  from './parse-aider.mjs';
 import { scanAntigravitySessions, DEFAULT_ANTIGRAVITY_DIR } from './parse-antigravity.mjs';
-import { scanHermesMessageEvidence, scanHermesSessions, DEFAULT_HERMES_DB } from './parse-hermes.mjs';
+import { scanHermesMessageEvidence, scanHermesModelUsage, scanHermesSessions, DEFAULT_HERMES_DB } from './parse-hermes.mjs';
 import { readSessionHistory, updateSessionHistory } from './session-history.mjs';
 import { buildSessionRollups } from './session-rollups.mjs';
 import { archiveMessageEvidence, archiveSessionEvidence } from './project-evidence.mjs';
@@ -242,8 +242,10 @@ if (ANTIGRAVITY_DIR && existsSync(ANTIGRAVITY_DIR)) {
 
 // Merge Hermes Agent sessions from its canonical local SQLite state. The
 // parser opens the database read-only and preserves Hermes' own usage values.
+let hermesModelUsageReport = { status: 'not-found', sessions: 0, models: 0, totals: {}, by_model: [] };
 if (HERMES_STATE_DB && existsSync(HERMES_STATE_DB)) {
   const hermesSessions = scanHermesSessions(HERMES_STATE_DB);
+  hermesModelUsageReport = scanHermesModelUsage(HERMES_STATE_DB);
   if (hermesSessions.length > 0) {
     console.log(`Found ${hermesSessions.length} Hermes session(s)`);
     allSessions.push(...hermesSessions);
@@ -453,6 +455,7 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
     byTool: rollups.byTool,
     bySourceAllTime: Object.fromEntries(rollups.bySource.map((row) => [row.key, row])),
     cursorUsage: cursorUsageReport,
+    hermesModelUsage: hermesModelUsageReport,
     archive: {
       total: archive.total,
       appendOnly: true,

@@ -741,6 +741,44 @@ test('Overview: unmatched Cursor Admin usage is visible but not assigned to sess
   await expect(page.getByText('3 events', { exact: true })).toBeVisible();
 });
 
+test('Overview: Hermes reports every model used in multi-model sessions', async ({ page }) => {
+  const bucket = { cost: 0, tokens: 0, sessions: 0, duration_seconds: 0 };
+  await page.route(/\/data\/cost-summary\.json(?:\?|$)/, (route) => route.fulfill({
+    json: {
+      exportedAt: '2026-08-16T00:00:00.000Z',
+      today: bucket,
+      thisWeek: bucket,
+      lastWeek: bucket,
+      thisMonth: bucket,
+      lastMonth: bucket,
+      thisYear: bucket,
+      lastYear: bucket,
+      allTime: bucket,
+      bySource: {},
+      bySourceAllTime: {},
+      daily_summary: [],
+      hermesModelUsage: {
+        status: 'ok',
+        sessions: 2,
+        models: 2,
+        totals: { api_calls: 6, total_tokens: 420, estimated_cost_usd: 0.02 },
+        by_model: [
+          { key: 'ollama:local-a:', model: 'local-a', provider: 'ollama', sessions: 2, total_tokens: 360, estimated_cost_usd: 0 },
+          { key: 'openrouter:cloud-b:chat_completions', model: 'cloud-b', provider: 'openrouter', sessions: 1, total_tokens: 60, estimated_cost_usd: 0.02 },
+        ],
+      },
+    },
+  }));
+  await page.reload();
+  await waitForApp(page);
+
+  await expect(page.getByText('Hermes Model Usage')).toBeVisible();
+  await expect(page.getByText('Exact per-model usage reported by Hermes. One session can use more than one model.')).toBeVisible();
+  await expect(page.getByText('local-a', { exact: true })).toBeVisible();
+  await expect(page.getByText('cloud-b', { exact: true })).toBeVisible();
+  await expect(page.getByText('2 models · 2 sessions', { exact: true })).toBeVisible();
+});
+
 test('Overview: date filter changes the period label', async ({ page }) => {
   await page.getByRole('button', { name: '7d', exact: true }).click();
   // Stat card label will become "Sessions — 7 days" — first match suffices
