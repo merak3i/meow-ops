@@ -684,6 +684,8 @@ test('Overview: source filter toggles exist when Codex data present', async ({ p
   if (hasCodex) {
     await page.getByRole('button', { name: '◆ Claude' }).click();
     await expect(page.locator('text=filtered: ◆ Claude only')).toBeVisible();
+    await page.getByRole('button', { name: '▣ Cursor' }).click();
+    await expect(page.locator('text=filtered: ▣ Cursor only')).toBeVisible();
     // Reset
     await page.getByRole('button', { name: 'All' }).first().click();
   }

@@ -4,6 +4,14 @@ import ModelBadge from './ModelBadge';
 import { getCatMeta } from '../lib/cat-classifier';
 import { formatTokens, formatDuration, formatDateTime, formatDateTimeUTC, relativeTime, formatCost } from '../lib/format';
 
+const SOURCE_BADGES = {
+  codex: ['⬡', 'Codex'],
+  cursor: ['▣', 'Cursor'],
+  aider: ['◇', 'Aider'],
+  antigravity: ['✦', 'Antigravity'],
+  hermes: ['H', 'Hermes'],
+};
+
 export default function SessionTable({ sessions }) {
   // Default sort: ended_at desc — shows most recently active sessions first.
   // Long-running sessions that started weeks ago but are still active today
@@ -89,9 +97,9 @@ export default function SessionTable({ sessions }) {
                 </td>
                 <td style={{ ...cellStyle, color: 'var(--text-primary)', fontWeight: 500 }}>
                   {s.project}
-                  {s.source === 'codex' && (
+                  {SOURCE_BADGES[s.source] && (
                     <span style={{ marginLeft: 6, fontSize: 10, color: 'oklch(0.65 0.18 260)', opacity: 0.8 }}>
-                      ⬡ Codex
+                      {SOURCE_BADGES[s.source][0]} {SOURCE_BADGES[s.source][1]}
                     </span>
                   )}
                 </td>
@@ -100,10 +108,10 @@ export default function SessionTable({ sessions }) {
                   {formatDuration(s.duration_seconds)}
                 </td>
                 <td style={{ ...cellStyle, fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>
-                  {formatTokens(s.total_tokens)}
+                  {s.usage_available === false ? 'N/A' : formatTokens(s.total_tokens)}
                 </td>
                 <td style={{ ...cellStyle, fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--green)' }}>
-                  {formatCost(s.estimated_cost_usd)}
+                  {s.usage_available === false ? 'N/A' : formatCost(s.estimated_cost_usd)}
                 </td>
                 {/* Timestamp: IST (primary) + UTC + relative time */}
                 <td style={{ ...cellStyle, fontSize: 12 }}>

@@ -17,9 +17,13 @@ import {
 
 // ─── Source filter toggle ─────────────────────────────────────────────────────
 const SOURCE_OPTIONS = [
-  { value: 'both',   label: 'All' },
-  { value: 'claude', label: '◆ Claude' },
-  { value: 'codex',  label: '⬡ Codex' },
+  { value: 'both',        label: 'All' },
+  { value: 'claude',      label: '◆ Claude' },
+  { value: 'codex',       label: '⬡ Codex' },
+  { value: 'cursor',      label: '▣ Cursor' },
+  { value: 'aider',       label: '◇ Aider' },
+  { value: 'antigravity', label: '✦ Antigravity' },
+  { value: 'hermes',      label: 'H Hermes' },
 ];
 
 const SOURCE_META = {
@@ -28,6 +32,7 @@ const SOURCE_META = {
   cursor:      { label: 'Cursor',      sigil: '▣', color: 'var(--cyan)' },
   aider:       { label: 'Aider',       sigil: '◇', color: 'var(--amber)' },
   antigravity: { label: 'Antigravity', sigil: '✦', color: 'oklch(0.70 0.17 150)' },
+  hermes:      { label: 'Hermes',      sigil: 'H', color: 'oklch(0.72 0.16 70)' },
 };
 
 function sourceMeta(src) {
@@ -753,7 +758,7 @@ export default function Overview({
           )}
           {source !== 'both' && (
             <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-              filtered: {source === 'claude' ? '◆ Claude only' : '⬡ Codex only'}
+              filtered: {sourceDisplay(source)} only
             </span>
           )}
         </div>
@@ -825,8 +830,8 @@ export default function Overview({
             </span>
             {Object.entries(spend.bySource).map(([src, d]) => (
               <div key={src} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <span style={{ fontSize: 12, color: src === 'codex' ? 'oklch(0.65 0.18 260)' : 'var(--accent)' }}>
-                  {src === 'codex' ? '⬡ Codex' : '◆ Claude'}
+                <span style={{ fontSize: 12, color: sourceMeta(src).color }}>
+                  {sourceDisplay(src)}
                 </span>
                 <span style={{ fontSize: 14, fontWeight: 300, color: 'var(--green)' }}>{formatCost(d.cost)}</span>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{d.sessions} sessions</span>
