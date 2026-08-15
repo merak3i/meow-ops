@@ -5,7 +5,10 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'public', 'menubar']),
+  // Playwright deletes and recreates test-results/ and playwright-report/
+  // during e2e. ESLint's default **/*.{js,mjs} match would otherwise list
+  // those generated files and throw ENOENT if they vanish mid-lint.
+  globalIgnores(['dist', 'public', 'menubar', 'test-results', 'playwright-report']),
 
   // Browser app code (React)
   {
