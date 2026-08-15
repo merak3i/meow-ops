@@ -90,6 +90,8 @@ Optional exact fields, only when the source exposes them: `runtime`, `provider`,
 
 `harness` must match `^[a-z0-9][a-z0-9._-]{0,63}$`. `source_event_id` and `source_label` reject control characters, absolute Unix paths, Windows drive/UNC paths, URLs, and emails. When the official key includes a URL or path, export a hex digest of the official fields. Hermes example: digest of `session_id`, `model`, `billing_provider`, `billing_mode`, and `task`. Do not export `billing_base_url`.
 
+`model` may be a provider/model id (`ollama/llama3.2`) or a tagged id (`llama3.2:latest`). Reject file URIs (`file:/Users/...`, `file:///...`), URLs, UNC paths, Windows drive paths, absolute home or system paths, and any string containing `/../` or `\..\`.
+
 `dedupe_key` is the lowercase 64-character SHA-256 hex of the UTF-8 bytes of:
 
 ```
@@ -98,7 +100,9 @@ JSON.stringify([schema_version, machine_id, harness, source_event_id])
 
 Exact array order. No whitespace formatting. No Unicode normalization. Newline-joined hashes are invalid because a newline inside `harness` or `source_event_id` would collide.
 
-Import is append-only. A duplicate `dedupe_key` is skipped.
+The schema can validate only the 64-character lowercase hex shape. Every importer MUST recompute `dedupe_key` from that `JSON.stringify` array using UTF-8 bytes and lowercase SHA-256 hex, then reject a syntactically valid but incorrect hash. Do not trust the file's `dedupe_key`.
+
+Import is append-only. A duplicate recomputed `dedupe_key` is skipped.
 
 Token fields use `tokenQuantity` (non-negative integer). `cost_usd` uses `moneyQuantity` (non-negative finite number). When `available` is true, `value` and `provenance: "source"` are required. When `available` is false, `value` and `provenance` must be absent. Importers must never convert missing data into zero.
 
@@ -108,9 +112,38 @@ Receipt `tokens.total` is copied only when the source stored a total. Do not wri
 
 ### Availability and provenance
 
-`availability.model` must be `exact`. `provenance.recorded_as` is always `invocation`. Selected or inventory provenance is rejected.
+`availability.model` must be `exact`. `provenance.recorded_as` is always `invocation`. Selected, installed, loaded, or inventory provenance is rejected.
+
+The receipt envelope transports evidence. `provenance.source_kind` names the original durable invocation source, not the envelope. Allowed classes: `sqlite`, `jsonl`, `json`, `markdown`, `api-response`. `receipt` is not a source class. A generic writer may emit a receipt only when it is integrated with a real invocation response or store. Human-entered model, token, or cost assertions are not source evidence.
 
 `schema_pin` identifies the upstream product or schema version (example: `hermes-schema-23`), not the word sqlite. `provenance.source_kind=sqlite` requires a non-empty `schema_pin`. Unknown pins are valid in the file schema and must be rejected by the future importer.
+
+Availability declarations must agree with the event fields. The schema rejects contradictions.
+
+Tokens:
+
+- `availability.tokens=unavailable`: `tokens` may be absent, or every supplied category must have `available=false` and no `value` or `provenance`.
+- `availability.tokens=source`: `tokens` must exist. At least one category must be `available=true` with an integer `value` and `provenance=source`.
+- `availability.tokens=partial`: `tokens` must exist. At least one category must be `available=true`. Unavailable categories must contain no `value` or `provenance`.
+
+Cost:
+
+- `availability.cost=unavailable`: `cost_usd` may be absent or must be `{ available: false }` with no value.
+- `availability.cost=source`: `cost_usd` must be `available=true` with `value` and `provenance=source`.
+- Unavailable cost carrying a value is rejected. Source cost with no value is rejected. Explicit source-reported zero remains valid.
+
+Runtime, provider, and session:
+
+- `unavailable` requires the corresponding value to be absent or null.
+- `exact` or `source` requires a non-null valid value.
+- A value may not appear while the field is declared unavailable.
+
+Tool calls:
+
+- `availability.tool_calls=unavailable`: `tool_calls` absent or `available=false`.
+- `availability.tool_calls=count`: `available=true` and `count`.
+- `availability.tool_calls=names`: `available=true` and `names`.
+- Contradictory combinations are rejected.
 
 ### Forbidden fields
 
@@ -184,6 +217,9 @@ Manual gates before any adapter lands:
 5. SQLite adapters require `schema_pin` (upstream version, not "sqlite") and refuse unknown pins.
 6. No electricity cost. No inventory API. No credential transfer.
 7. Display-only token sums stay labelled calculated and are never written back as source totals.
+8. Import recomputes `dedupe_key` and rejects a 64-character hex that does not match.
+9. Availability declarations must agree with tokens, cost, runtime, provider, session, and tool-call fields.
+10. `provenance.source_kind` is the original evidence class. The receipt envelope is transport. `source_kind=receipt` is rejected. Human-entered assertions are not source evidence.
 
 ## Unknowns and Not verified
 

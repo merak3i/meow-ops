@@ -16,6 +16,19 @@ function dedupeKey(schemaVersion, machineId, harness, sourceEventId) {
     .digest('hex');
 }
 
+function importerAcceptsDedupe(envelope) {
+  if (!envelope || !Array.isArray(envelope.events)) return false;
+  return envelope.events.every((evt) => (
+    typeof evt.dedupe_key === 'string'
+    && evt.dedupe_key === dedupeKey(
+      envelope.schema_version,
+      envelope.machine_id,
+      evt.harness,
+      evt.source_event_id,
+    )
+  ));
+}
+
 function deref(root, ref) {
   const path = ref.replace(/^#\//, '').split('/');
   return path.reduce((node, key) => node[key], root);
@@ -84,6 +97,14 @@ function valid(data) {
 const V = 'local-usage-receipt.v1';
 const M1 = '550e8400-e29b-41d4-a716-446655440000';
 const M2 = '6ba7b810-9dad-41d4-a716-446655440000';
+
+const sourceQuantities = {
+  tokens: {
+    input: { available: true, value: 1, provenance: 'source' },
+  },
+  cost_usd: { available: true, value: 0, provenance: 'source' },
+  tool_calls: { available: true, count: 0 },
+};
 
 function event(machineId, harness, sourceEventId, extra = {}) {
   return {
@@ -154,9 +175,47 @@ const unavailable = receipt(M1, [event(M1, 'hermes', 'sess2-local-a-none', {
   },
 })]);
 
+const omittedUnavailable = receipt(M1, [event(M1, 'hermes', 'sess3-local-a-omit', {
+  session_id: 'sess3',
+  availability: {
+    model: 'exact', runtime: 'unavailable', provider: 'unavailable', session: 'exact',
+    tokens: 'unavailable', cost: 'unavailable', tool_calls: 'unavailable',
+  },
+})]);
+
+const partialTokens = receipt(M1, [event(M1, 'hermes', 'sess1-local-a-partial', {
+  runtime: 'ollama', provider: 'ollama', session_id: 'sess1',
+  tokens: {
+    input: { available: true, value: 8, provenance: 'source' },
+    output: { available: false },
+  },
+  cost_usd: { available: false },
+  tool_calls: { available: false },
+  availability: {
+    model: 'exact', runtime: 'exact', provider: 'exact', session: 'exact',
+    tokens: 'partial', cost: 'unavailable', tool_calls: 'unavailable',
+  },
+})]);
+
+const namesOnly = receipt(M1, [event(M1, 'hermes', 'sess1-local-a-names', {
+  runtime: 'ollama', provider: 'ollama', session_id: 'sess1',
+  ...sourceQuantities,
+  tool_calls: { available: true, names: ['Bash'] },
+  availability: {
+    model: 'exact', runtime: 'exact', provider: 'exact', session: 'exact',
+    tokens: 'source', cost: 'source', tool_calls: 'names',
+  },
+})]);
+
 const multiModel = receipt(M1, [
-  event(M1, 'hermes', 'sess1-local-a', { session_id: 'sess1', model: 'local-a', runtime: 'ollama', provider: 'ollama' }),
-  event(M1, 'hermes', 'sess1-cloud-b', { session_id: 'sess1', model: 'cloud-b', runtime: 'openrouter', provider: 'openrouter' }),
+  event(M1, 'hermes', 'sess1-local-a', {
+    session_id: 'sess1', model: 'local-a', runtime: 'ollama', provider: 'ollama',
+    ...sourceQuantities,
+  }),
+  event(M1, 'hermes', 'sess1-cloud-b', {
+    session_id: 'sess1', model: 'cloud-b', runtime: 'openrouter', provider: 'openrouter',
+    ...sourceQuantities,
+  }),
 ]);
 
 test('schema encodes fail-closed quantity, pin, and identifier rules', () => {
@@ -166,6 +225,14 @@ test('schema encodes fail-closed quantity, pin, and identifier rules', () => {
   assert.equal(schema.definitions.moneyQuantity.properties.value.type, 'number');
   assert.equal(schema.definitions.safeId.pattern, '^[a-z0-9][a-z0-9._-]{0,63}$');
   assert.deepEqual(schema.definitions.event.properties.provenance.then.required, ['schema_pin']);
+  assert.deepEqual(schema.definitions.event.properties.provenance.properties.source_kind.enum, [
+    'sqlite', 'jsonl', 'json', 'markdown', 'api-response',
+  ]);
+  assert.equal(schema.definitions.event.properties.provenance.properties.source_kind.enum.includes('receipt'), false);
+  assert.deepEqual(schema.definitions.tokenAvailability.enum, ['source', 'partial', 'unavailable']);
+  assert.deepEqual(schema.definitions.costAvailability.enum, ['source', 'unavailable']);
+  assert.deepEqual(schema.definitions.toolCallAvailability.enum, ['count', 'names', 'unavailable']);
+  assert.ok(schema.definitions.event.allOf.length >= 13);
 });
 
 test('pass: Hermes exact model with tokens and source cost', () => {
@@ -182,6 +249,32 @@ test('pass: exact model with unavailable tokens and cost', () => {
   assert.equal('value' in unavailable.events[0].cost_usd, false);
 });
 
+test('pass: unavailable declarations may omit tokens, cost, and tool_calls', () => {
+  assert.equal(valid(omittedUnavailable), true);
+  assert.equal('tokens' in omittedUnavailable.events[0], false);
+  assert.equal('cost_usd' in omittedUnavailable.events[0], false);
+  assert.equal('tool_calls' in omittedUnavailable.events[0], false);
+});
+
+test('pass: partial tokens with one available category', () => {
+  assert.equal(valid(partialTokens), true);
+  assert.equal(partialTokens.events[0].tokens.input.available, true);
+  assert.equal(partialTokens.events[0].tokens.output.available, false);
+});
+
+test('pass: tool_calls names without count', () => {
+  assert.equal(valid(namesOnly), true);
+  assert.equal('count' in namesOnly.events[0].tool_calls, false);
+});
+
+test('pass: provider/model id', () => {
+  assert.equal(valid(mutate(hermesExact, (row) => { row.events[0].model = 'ollama/llama3.2'; })), true);
+});
+
+test('pass: model:tag id', () => {
+  assert.equal(valid(mutate(hermesExact, (row) => { row.events[0].model = 'llama3.2:latest'; })), true);
+});
+
 test('pass: multi-model events sharing one session', () => {
   assert.equal(valid(multiModel), true);
   assert.equal(multiModel.events[0].session_id, multiModel.events[1].session_id);
@@ -189,8 +282,8 @@ test('pass: multi-model events sharing one session', () => {
 });
 
 test('pass: same model from two random machine ids', () => {
-  const a = receipt(M1, [event(M1, 'hermes', 'shared-evt', { model: 'local-a' })]);
-  const b = receipt(M2, [event(M2, 'hermes', 'shared-evt', { model: 'local-a' })]);
+  const a = receipt(M1, [event(M1, 'hermes', 'shared-evt', { model: 'local-a', runtime: 'ollama', provider: 'ollama', session_id: 'sess1', ...sourceQuantities })]);
+  const b = receipt(M2, [event(M2, 'hermes', 'shared-evt', { model: 'local-a', runtime: 'ollama', provider: 'ollama', session_id: 'sess1', ...sourceQuantities })]);
   assert.equal(valid(a), true);
   assert.equal(valid(b), true);
   assert.notEqual(a.events[0].dedupe_key, b.events[0].dedupe_key);
@@ -208,6 +301,18 @@ test('dedupe key is JSON.stringify array SHA-256, not newline-joined', () => {
     createHash('sha256').update(left, 'utf8').digest('hex'),
     createHash('sha256').update(right, 'utf8').digest('hex'),
   );
+});
+
+test('importer helper accepts recomputed dedupe_key and rejects a plausible wrong hash', () => {
+  assert.equal(valid(hermesExact), true);
+  assert.equal(importerAcceptsDedupe(hermesExact), true);
+  const spoofed = mutate(hermesExact, (row) => {
+    row.events[0].dedupe_key = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  });
+  assert.match(spoofed.events[0].dedupe_key, /^[a-f0-9]{64}$/);
+  assert.notEqual(spoofed.events[0].dedupe_key, hermesExact.events[0].dedupe_key);
+  assert.equal(valid(spoofed), true);
+  assert.equal(importerAcceptsDedupe(spoofed), false);
 });
 
 function mutate(base, edit) {
@@ -237,6 +342,59 @@ const fail = [
   ['tool_calls unavailable with names', (row) => { row.events[0].tool_calls = { available: false, names: ['Bash'] }; }],
   ['tool_calls unavailable with count', (row) => { row.events[0].tool_calls = { available: false, count: 1 }; }],
   ['future schema version', (row) => { row.schema_version = 'local-usage-receipt.v2'; }],
+  ['source_kind receipt', (row) => { row.events[0].provenance.source_kind = 'receipt'; }],
+  ['tokens unavailable with available category', (row) => { row.events[0].availability.tokens = 'unavailable'; }],
+  ['tokens source with tokens omitted', (row) => { delete row.events[0].tokens; }],
+  ['tokens source with all categories unavailable', (row) => {
+    row.events[0].tokens = { input: { available: false }, output: { available: false } };
+  }],
+  ['tokens partial with tokens omitted', (row) => {
+    delete row.events[0].tokens;
+    row.events[0].availability.tokens = 'partial';
+  }],
+  ['tokens partial with all categories unavailable', (row) => {
+    row.events[0].availability.tokens = 'partial';
+    row.events[0].tokens = { input: { available: false }, output: { available: false } };
+  }],
+  ['cost unavailable carrying a value', (row) => { row.events[0].availability.cost = 'unavailable'; }],
+  ['cost source with cost omitted', (row) => { delete row.events[0].cost_usd; }],
+  ['cost source with no value', (row) => { row.events[0].cost_usd = { available: true, provenance: 'source' }; }],
+  ['cost source marked unavailable', (row) => { row.events[0].cost_usd = { available: false }; }],
+  ['runtime unavailable with value', (row) => { row.events[0].availability.runtime = 'unavailable'; }],
+  ['runtime exact with value omitted', (row) => { delete row.events[0].runtime; }],
+  ['runtime exact with null', (row) => { row.events[0].runtime = null; }],
+  ['provider unavailable with value', (row) => { row.events[0].availability.provider = 'unavailable'; }],
+  ['provider source with value omitted', (row) => {
+    delete row.events[0].provider;
+    row.events[0].availability.provider = 'source';
+  }],
+  ['session unavailable with value', (row) => { row.events[0].availability.session = 'unavailable'; }],
+  ['session exact with value omitted', (row) => { delete row.events[0].session_id; }],
+  ['session exact with null', (row) => { row.events[0].session_id = null; }],
+  ['tool_calls unavailable with available true', (row) => { row.events[0].availability.tool_calls = 'unavailable'; }],
+  ['tool_calls count with tool_calls omitted', (row) => { delete row.events[0].tool_calls; }],
+  ['tool_calls count with available false', (row) => { row.events[0].tool_calls = { available: false }; }],
+  ['tool_calls count without count', (row) => { row.events[0].tool_calls = { available: true, names: ['Bash'] }; }],
+  ['tool_calls names with tool_calls omitted', (row) => {
+    delete row.events[0].tool_calls;
+    row.events[0].availability.tool_calls = 'names';
+  }],
+  ['tool_calls names with available false', (row) => {
+    row.events[0].availability.tool_calls = 'names';
+    row.events[0].tool_calls = { available: false };
+  }],
+  ['tool_calls names without names', (row) => {
+    row.events[0].availability.tool_calls = 'names';
+    row.events[0].tool_calls = { available: true, count: 2 };
+  }],
+  ['model file URI with one slash', (row) => { row.events[0].model = 'file:/Users/me/weights.gguf'; }],
+  ['model file URI with three slashes', (row) => { row.events[0].model = 'file:///Users/me/weights.gguf'; }],
+  ['model embedded parent path', (row) => { row.events[0].model = 'local/../secret'; }],
+  ['model absolute home path', (row) => { row.events[0].model = 'x/Users/me/weights'; }],
+  ['model https URL', (row) => { row.events[0].model = 'https://example.invalid/model'; }],
+  ['model http URL', (row) => { row.events[0].model = 'http://127.0.0.1/model'; }],
+  ['model windows drive path', (row) => { row.events[0].model = 'C:/models/local-a'; }],
+  ['model UNC path', (row) => { row.events[0].model = '\\\\server\\share\\model'; }],
 ];
 
 for (const [name, edit] of fail) {

@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://meow-ops.local/schemas/local-usage-receipt-v1.json",
   "title": "Meow Ops Local Usage Receipt v1",
-  "description": "Sanitized invocation evidence. 0 is valid only when the source recorded 0. Missing data is available=false with no value. Do not infer tokens, model, session, or cost. Do not write a derived total. Importers must never coerce missing to 0.",
+  "description": "Sanitized invocation evidence. 0 is valid only when the source recorded 0. Missing data is available=false with no value. Do not infer tokens, model, session, or cost. Do not write a derived total. Importers must never coerce missing to 0. Importers must recompute dedupe_key and reject a plausible wrong hash. provenance.source_kind is the original durable source, never the receipt envelope.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "kind", "machine_id", "exported_at", "events"],
@@ -38,10 +38,57 @@
       "maxLength": 128,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
     },
-    "availabilityState": {
+    "identityAvailability": {
       "type": "string",
       "maxLength": 16,
-      "enum": ["exact", "source", "partial", "count", "names", "unavailable"]
+      "enum": ["exact", "source", "unavailable"]
+    },
+    "tokenAvailability": {
+      "type": "string",
+      "maxLength": 16,
+      "enum": ["source", "partial", "unavailable"]
+    },
+    "costAvailability": {
+      "type": "string",
+      "maxLength": 16,
+      "enum": ["source", "unavailable"]
+    },
+    "toolCallAvailability": {
+      "type": "string",
+      "maxLength": 16,
+      "enum": ["count", "names", "unavailable"]
+    },
+    "availableTrue": {
+      "type": "object",
+      "required": ["available"],
+      "properties": { "available": { "const": true } }
+    },
+    "availableFalse": {
+      "type": "object",
+      "required": ["available"],
+      "properties": { "available": { "const": false } }
+    },
+    "allTokenCategoriesUnavailable": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input": { "$ref": "#/definitions/availableFalse" },
+        "output": { "$ref": "#/definitions/availableFalse" },
+        "cache_read": { "$ref": "#/definitions/availableFalse" },
+        "cache_write": { "$ref": "#/definitions/availableFalse" },
+        "reasoning": { "$ref": "#/definitions/availableFalse" },
+        "total": { "$ref": "#/definitions/availableFalse" }
+      }
+    },
+    "atLeastOneAvailableToken": {
+      "anyOf": [
+        { "required": ["input"], "properties": { "input": { "$ref": "#/definitions/availableTrue" } } },
+        { "required": ["output"], "properties": { "output": { "$ref": "#/definitions/availableTrue" } } },
+        { "required": ["cache_read"], "properties": { "cache_read": { "$ref": "#/definitions/availableTrue" } } },
+        { "required": ["cache_write"], "properties": { "cache_write": { "$ref": "#/definitions/availableTrue" } } },
+        { "required": ["reasoning"], "properties": { "reasoning": { "$ref": "#/definitions/availableTrue" } } },
+        { "required": ["total"], "properties": { "total": { "$ref": "#/definitions/availableTrue" } } }
+      ]
     },
     "tokenQuantity": {
       "type": "object",
@@ -101,7 +148,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 256,
-          "pattern": "^(?!\\/|[A-Za-z]:[\\\\/]|\\\\\\\\|https?:\\/\\/)[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
+          "pattern": "^(?!.*(?:[Ff][Ii][Ll][Ee]:|[a-zA-Z][a-zA-Z0-9+.-]*:\\/\\/|\\/\\.\\.\\/|\\\\\\.\\.\\\\|[A-Za-z]:[\\\\/]|\\/(?:Users|home|etc|tmp|var|opt|usr|private|root)\\/))[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
         },
         "session_id": {
           "oneOf": [{ "$ref": "#/definitions/opaqueId" }, { "type": "null" }]
@@ -174,12 +221,12 @@
           "required": ["model", "runtime", "provider", "session", "tokens", "cost", "tool_calls"],
           "properties": {
             "model": { "const": "exact", "maxLength": 8 },
-            "runtime": { "$ref": "#/definitions/availabilityState" },
-            "provider": { "$ref": "#/definitions/availabilityState" },
-            "session": { "$ref": "#/definitions/availabilityState" },
-            "tokens": { "$ref": "#/definitions/availabilityState" },
-            "cost": { "$ref": "#/definitions/availabilityState" },
-            "tool_calls": { "$ref": "#/definitions/availabilityState" }
+            "runtime": { "$ref": "#/definitions/identityAvailability" },
+            "provider": { "$ref": "#/definitions/identityAvailability" },
+            "session": { "$ref": "#/definitions/identityAvailability" },
+            "tokens": { "$ref": "#/definitions/tokenAvailability" },
+            "cost": { "$ref": "#/definitions/costAvailability" },
+            "tool_calls": { "$ref": "#/definitions/toolCallAvailability" }
           }
         },
         "provenance": {
@@ -190,7 +237,7 @@
             "source_kind": {
               "type": "string",
               "maxLength": 16,
-              "enum": ["sqlite", "jsonl", "json", "markdown", "api-response", "receipt"]
+              "enum": ["sqlite", "jsonl", "json", "markdown", "api-response"]
             },
             "source_label": { "$ref": "#/definitions/safeId" },
             "schema_pin": { "$ref": "#/definitions/safeId" },
@@ -199,7 +246,247 @@
           "if": { "properties": { "source_kind": { "const": "sqlite" } }, "required": ["source_kind"] },
           "then": { "required": ["schema_pin"] }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["tokens"],
+                "properties": { "tokens": { "const": "unavailable" } }
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              { "not": { "required": ["tokens"] } },
+              { "properties": { "tokens": { "$ref": "#/definitions/allTokenCategoriesUnavailable" } } }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["tokens"],
+                "properties": { "tokens": { "enum": ["source", "partial"] } }
+              }
+            }
+          },
+          "then": {
+            "required": ["tokens"],
+            "properties": { "tokens": { "$ref": "#/definitions/atLeastOneAvailableToken" } }
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["cost"],
+                "properties": { "cost": { "const": "unavailable" } }
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              { "not": { "required": ["cost_usd"] } },
+              { "properties": { "cost_usd": { "$ref": "#/definitions/availableFalse" } } }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["cost"],
+                "properties": { "cost": { "const": "source" } }
+              }
+            }
+          },
+          "then": {
+            "required": ["cost_usd"],
+            "properties": {
+              "cost_usd": {
+                "required": ["available", "value", "provenance"],
+                "properties": {
+                  "available": { "const": true },
+                  "provenance": { "const": "source" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["runtime"],
+                "properties": { "runtime": { "const": "unavailable" } }
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              { "not": { "required": ["runtime"] } },
+              { "properties": { "runtime": { "type": "null" } } }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["runtime"],
+                "properties": { "runtime": { "enum": ["exact", "source"] } }
+              }
+            }
+          },
+          "then": {
+            "required": ["runtime"],
+            "properties": { "runtime": { "$ref": "#/definitions/safeId" } }
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["provider"],
+                "properties": { "provider": { "const": "unavailable" } }
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              { "not": { "required": ["provider"] } },
+              { "properties": { "provider": { "type": "null" } } }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["provider"],
+                "properties": { "provider": { "enum": ["exact", "source"] } }
+              }
+            }
+          },
+          "then": {
+            "required": ["provider"],
+            "properties": { "provider": { "$ref": "#/definitions/safeId" } }
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["session"],
+                "properties": { "session": { "const": "unavailable" } }
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              { "not": { "required": ["session_id"] } },
+              { "properties": { "session_id": { "type": "null" } } }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["session"],
+                "properties": { "session": { "enum": ["exact", "source"] } }
+              }
+            }
+          },
+          "then": {
+            "required": ["session_id"],
+            "properties": { "session_id": { "$ref": "#/definitions/opaqueId" } }
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["tool_calls"],
+                "properties": { "tool_calls": { "const": "unavailable" } }
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              { "not": { "required": ["tool_calls"] } },
+              { "properties": { "tool_calls": { "$ref": "#/definitions/availableFalse" } } }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["tool_calls"],
+                "properties": { "tool_calls": { "const": "count" } }
+              }
+            }
+          },
+          "then": {
+            "required": ["tool_calls"],
+            "properties": {
+              "tool_calls": {
+                "required": ["available", "count"],
+                "properties": { "available": { "const": true } }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["availability"],
+            "properties": {
+              "availability": {
+                "type": "object",
+                "required": ["tool_calls"],
+                "properties": { "tool_calls": { "const": "names" } }
+              }
+            }
+          },
+          "then": {
+            "required": ["tool_calls"],
+            "properties": {
+              "tool_calls": {
+                "required": ["available", "names"],
+                "properties": { "available": { "const": true } }
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }
