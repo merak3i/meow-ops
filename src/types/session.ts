@@ -69,7 +69,7 @@ export interface VelocityMetrics {
   success:              boolean; // !is_ghost && message_count >= 5
   started_at:           string;
   project:              string;
-  model:                string;
+  model:                string | null;
 }
 
 /** Session efficiency index — correlates output to time, anomaly-flagged */
