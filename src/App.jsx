@@ -4,30 +4,8 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import DateFilter from './components/DateFilter';
 import CompanionChat from './components/companion-chat/CompanionChat';
-import Overview from './pages/Overview';
-import Sessions from './pages/Sessions';
-import ByProject from './pages/ByProject';
-import ByDay from './pages/ByDay';
-import ByAction from './pages/ByAction';
-import CostTracker from './pages/CostTracker';
-import Pomodoro from './pages/Pomodoro';
 import { pageById } from './components/nav-config';
 import { usePageRoute } from './lib/usePageRoute';
-
-// Heavy pages — code-split to keep the main bundle lean
-const AnalyticsDashboard = lazy(() => import('./pages/AnalyticsDashboard'));
-const CompanionPageV2    = lazy(() => import('./companion-v2/CompanionPageV2'));
-const AgentVisualizer    = lazy(() => import('./pages/AgentVisualizer'));
-// Scrying Sanctum visualizer (uses local session data)
-const ScryingSanctum     = lazy(() => import('./pages/ScryingSanctum'));
-// Loop-Ops control room
-const LoopOps            = lazy(() => import('./pages/LoopOps'));
-// Owner approval deck for Loop Engineering proposals
-const LoopReview         = lazy(() => import('./pages/LoopReview'));
-const ProjectControl     = lazy(() => import('./pages/ProjectControl'));
-const LearningQuest      = lazy(() => import('./pages/LearningQuest'));
-// Local-only subscription, capacity, and GitHub Actions usage cockpit
-const CapacityUsage      = lazy(() => import('./pages/CapacityUsage'));
 import {
   fetchSessions,
   fetchAllSessions,
@@ -45,6 +23,45 @@ import {
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
+// Route-level loaders. Each surface is a separate chunk so Overview/recharts
+// stay off the Sanctum/Loom/Companion paths, and vice versa. Paths are
+// static string literals so Vite can still split them at build time.
+const ROUTE_LOADERS = {
+  overview:         () => import('./pages/Overview'),
+  sessions:         () => import('./pages/Sessions'),
+  'by-project':     () => import('./pages/ByProject'),
+  'by-day':         () => import('./pages/ByDay'),
+  'by-action':      () => import('./pages/ByAction'),
+  cost:             () => import('./pages/CostTracker'),
+  pomodoro:         () => import('./pages/Pomodoro'),
+  analytics:        () => import('./pages/AnalyticsDashboard'),
+  companion:        () => import('./companion-v2/CompanionPageV2'),
+  'agent-ops':      () => import('./pages/AgentVisualizer'),
+  sanctum:          () => import('./pages/ScryingSanctum'),
+  'loop-ops':       () => import('./pages/LoopOps'),
+  'loop-review':    () => import('./pages/LoopReview'),
+  'project-control': () => import('./pages/ProjectControl'),
+  'learning-quest': () => import('./pages/LearningQuest'),
+  'capacity-usage': () => import('./pages/CapacityUsage'),
+};
+
+const Overview           = lazy(ROUTE_LOADERS.overview);
+const Sessions           = lazy(ROUTE_LOADERS.sessions);
+const ByProject          = lazy(ROUTE_LOADERS['by-project']);
+const ByDay              = lazy(ROUTE_LOADERS['by-day']);
+const ByAction           = lazy(ROUTE_LOADERS['by-action']);
+const CostTracker        = lazy(ROUTE_LOADERS.cost);
+const Pomodoro           = lazy(ROUTE_LOADERS.pomodoro);
+const AnalyticsDashboard = lazy(ROUTE_LOADERS.analytics);
+const CompanionPageV2    = lazy(ROUTE_LOADERS.companion);
+const AgentVisualizer    = lazy(ROUTE_LOADERS['agent-ops']);
+const ScryingSanctum     = lazy(ROUTE_LOADERS.sanctum);
+const LoopOps            = lazy(ROUTE_LOADERS['loop-ops']);
+const LoopReview         = lazy(ROUTE_LOADERS['loop-review']);
+const ProjectControl     = lazy(ROUTE_LOADERS['project-control']);
+const LearningQuest      = lazy(ROUTE_LOADERS['learning-quest']);
+const CapacityUsage      = lazy(ROUTE_LOADERS['capacity-usage']);
+
 // ─── Page loader ─────────────────────────────────────────────────────────────
 function PageLoader() {
   return (
@@ -52,6 +69,10 @@ function PageLoader() {
       Loading…
     </div>
   );
+}
+
+function withPageSuspense(node) {
+  return <Suspense fallback={<PageLoader />}>{node}</Suspense>;
 }
 
 // ─── No-data splash ───────────────────────────────────────────────────────────
@@ -162,6 +183,12 @@ export default function App() {
     return () => { cancelled = true; };
   }, [dateRange, reloadKey]);
 
+  // Start the active route chunk while session data loads so the existing
+  // Loading… state covers both, instead of flashing a second loader.
+  useEffect(() => {
+    ROUTE_LOADERS[page]?.();
+  }, [page]);
+
   // Auto-refresh every 5 minutes
   useEffect(() => {
     const id = setInterval(() => {
@@ -236,47 +263,17 @@ export default function App() {
   const renderPage = () => {
     // Loop-Ops reads its own spec data and ships its own instructional empty
     // states, so it must not be blocked by the session-data splash.
-    if (page === 'loop-ops') {
-      return (
-        <Suspense fallback={<PageLoader />}>
-          <LoopOps />
-        </Suspense>
-      );
-    }
-    if (page === 'loop-review') {
-      return (
-        <Suspense fallback={<PageLoader />}>
-          <LoopReview />
-        </Suspense>
-      );
-    }
-    if (page === 'capacity-usage') {
-      return (
-        <Suspense fallback={<PageLoader />}>
-          <CapacityUsage />
-        </Suspense>
-      );
-    }
-    if (page === 'project-control') {
-      return (
-        <Suspense fallback={<PageLoader />}>
-          <ProjectControl />
-        </Suspense>
-      );
-    }
-    if (page === 'learning-quest') {
-      return (
-        <Suspense fallback={<PageLoader />}>
-          <LearningQuest />
-        </Suspense>
-      );
-    }
+    if (page === 'loop-ops') return withPageSuspense(<LoopOps />);
+    if (page === 'loop-review') return withPageSuspense(<LoopReview />);
+    if (page === 'capacity-usage') return withPageSuspense(<CapacityUsage />);
+    if (page === 'project-control') return withPageSuspense(<ProjectControl />);
+    if (page === 'learning-quest') return withPageSuspense(<LearningQuest />);
 
     if (noData) return <NoDataScreen />;
 
     switch (page) {
       case 'overview':
-        return (
+        return withPageSuspense(
           <Overview
             stats={stats}
             sessions={sessions}
@@ -288,58 +285,44 @@ export default function App() {
             sourceStats={sourceStats}
             tokenBudget={tokenBudget}
             onBudgetChange={saveBudget}
-          />
+          />,
         );
       case 'sessions':
-        return <Sessions sessions={sessions} />;
+        return withPageSuspense(<Sessions sessions={sessions} />);
       case 'by-project':
-        return <ByProject projectData={projectData} />;
+        return withPageSuspense(<ByProject projectData={projectData} />);
       case 'by-day':
-        return <ByDay dailyData={dailyData} dateRange={dateRange} />;
+        return withPageSuspense(<ByDay dailyData={dailyData} dateRange={dateRange} />);
       case 'by-action':
-        return <ByAction toolData={toolData} />;
+        return withPageSuspense(<ByAction toolData={toolData} />);
       case 'cost':
-        return (
+        return withPageSuspense(
           <CostTracker
             dailyData={dailyData}
             modelData={modelData}
             stats={stats}
             costSummary={costSummary}
-          />
+          />,
         );
       case 'pomodoro':
-        return <Pomodoro />;
+        return withPageSuspense(<Pomodoro />);
       case 'analytics':
-        return (
-          <Suspense fallback={<PageLoader />}>
-            <AnalyticsDashboard
-              sessions={allSessions}
-              dailySummary={costSummary?.daily_summary ?? []}
-              archiveTotal={costSummary?.archive?.total}
-              previewCount={allSessions.length}
-            />
-          </Suspense>
+        return withPageSuspense(
+          <AnalyticsDashboard
+            sessions={allSessions}
+            dailySummary={costSummary?.daily_summary ?? []}
+            archiveTotal={costSummary?.archive?.total}
+            previewCount={allSessions.length}
+          />,
         );
       case 'companion':
-        return (
-          <Suspense fallback={<PageLoader />}>
-            <CompanionPageV2 sessions={allSessions} />
-          </Suspense>
-        );
+        return withPageSuspense(<CompanionPageV2 sessions={allSessions} />);
       case 'agent-ops':
-        return (
-          <Suspense fallback={<PageLoader />}>
-            <AgentVisualizer sessions={allSessions} />
-          </Suspense>
-        );
+        return withPageSuspense(<AgentVisualizer sessions={allSessions} />);
       case 'sanctum':
-        return (
-          <Suspense fallback={<PageLoader />}>
-            <ScryingSanctum sessions={allSessions} onReload={reloadData} />
-          </Suspense>
-        );
+        return withPageSuspense(<ScryingSanctum sessions={allSessions} onReload={reloadData} />);
       default:
-        return (
+        return withPageSuspense(
           <Overview
             stats={stats}
             sessions={sessions}
@@ -351,7 +334,7 @@ export default function App() {
             sourceStats={sourceStats}
             tokenBudget={tokenBudget}
             onBudgetChange={saveBudget}
-          />
+          />,
         );
     }
   };
@@ -381,12 +364,7 @@ export default function App() {
         )}
 
         {loading && !['loop-ops', 'loop-review', 'capacity-usage', 'project-control', 'learning-quest'].includes(page) ? (
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            height: 400, color: 'var(--text-muted)', fontSize: 14,
-          }}>
-            Loading…
-          </div>
+          <PageLoader />
         ) : (
           <ErrorBoundary key={page}>
             {renderPage()}

@@ -235,4 +235,25 @@ export default defineConfig({
     dedupe: ['three', 'react', 'react-dom'],
   },
   plugins: [react(), tailwindcss(), meowSyncPlugin()],
+  build: {
+    // Split only stable vendor groups identified by a local generateBundle
+    // module-size pass. includeDependenciesRecursively is off so react /
+    // react-dom stay in the app graph (pulling them into a vendor group
+    // would create circular chunk init). Route surfaces are split in App.jsx.
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          includeDependenciesRecursively: false,
+          groups: [
+            { name: 'vendor-three', test: /[\\/]node_modules[\\/]three[\\/]/, priority: 40 },
+            { name: 'vendor-r3f', test: /[\\/]node_modules[\\/](?:@react-three|three-stdlib)[\\/]/, priority: 30 },
+            { name: 'vendor-ag-grid', test: /[\\/]node_modules[\\/]ag-grid-/, priority: 30 },
+            { name: 'vendor-recharts', test: /[\\/]node_modules[\\/](?:recharts|d3-[^/]+|internmap|decimal\.js-light)[\\/]/, priority: 30 },
+            { name: 'vendor-xyflow', test: /[\\/]node_modules[\\/]@xyflow[\\/]/, priority: 30 },
+            { name: 'vendor-motion', test: /[\\/]node_modules[\\/](?:framer-motion|motion-dom|motion-utils)[\\/]/, priority: 30 },
+          ],
+        },
+      },
+    },
+  },
 });
