@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Local Usage Receipt v1 ADR**: docs-only evidence matrix and JSON schema for moving sanitized local-model invocation records between computers. No adapters yet. See `docs/adr/0001-local-usage-receipt-v1.md`.
+- **Local Usage Receipt v1 ADR**: docs/schema evidence matrix, fail-closed JSON schema, and schema contract tests. No adapters. See `docs/adr/0001-local-usage-receipt-v1.md`.
 - **Cursor aggregate usage panel**: Overview shows Admin API usage that could not be exactly matched to a local session, grouped by model and explicitly labelled as unassigned.
 - **Cursor Admin API usage enricher** (`sync/cursor-admin-usage.mjs`): opt-in team-admin connector for `POST /teams/filtered-usage-events`. Local agent transcripts still parse without a key. The published schema does not promise a session identifier; when the API explicitly returns a known conversation/cloud-agent id variant, events join only on exact equality with a local id. Unmatched model totals stay aggregate. The credential is never logged or written.
 - **Loop-Ops Supabase connector** (`sync/loop-ops-supabase.mjs`) — opt-in, plug-in-later: pulls live per-surface truth states from a Supabase table into the truth CSV the Loom importer already consumes (`--truth`), keyed by `surface_key`. Excel stays the structure; Supabase supplies the live state. No-op until `LOOP_OPS_SUPABASE_URL/_KEY/_TABLE` are set; all private config in env, never committed. Plus `sync/loop-ops-supabase-watch.mjs` for real-time sync via Supabase Realtime, and a near-real-time cron path. README documents all three cadences.

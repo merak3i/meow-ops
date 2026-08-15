@@ -12,7 +12,7 @@ Meow Ops may record a model only when a durable source shows that the model was 
 
 Cross-machine merge uses a Local Usage Receipt v1 file that the owner copies by hand. Default transport is manual export and import. There is no LAN discovery, hosted database, automatic upload, or credential transfer.
 
-Tokens, model, session, and cost are copied only when the source exposes them. Missing fields stay unavailable. Local cost is never estimated from electricity. Totals are never summed from parts.
+Tokens, model, session, and cost are copied only when the source exposes them. Missing data is `available: false` with no value. Explicit `0` is valid only when the source recorded zero. Cost `$0` and cost unavailable are different states. Local cost is never estimated from electricity. Receipt `total` is source-only and is never a derived sum.
 
 ## Why a receipt
 
@@ -88,28 +88,33 @@ Required: `source_event_id`, `dedupe_key`, `harness`, `model`, `availability`, `
 
 Optional exact fields, only when the source exposes them: `runtime`, `provider`, `session_id`, `started_at`, `ended_at`, token categories, `cost_usd`, tool-call count or names.
 
-`dedupe_key` is the SHA-256 hex of:
+`harness` must match `^[a-z0-9][a-z0-9._-]{0,63}$`. `source_event_id` and `source_label` reject control characters, absolute Unix paths, Windows drive/UNC paths, URLs, and emails. When the official key includes a URL or path, export a hex digest of the official fields. Hermes example: digest of `session_id`, `model`, `billing_provider`, `billing_mode`, and `task`. Do not export `billing_base_url`.
+
+`dedupe_key` is the lowercase 64-character SHA-256 hex of the UTF-8 bytes of:
 
 ```
-local-usage-receipt.v1
-<machine_id>
-<harness>
-<source_event_id>
+JSON.stringify([schema_version, machine_id, harness, source_event_id])
 ```
 
-Import is append-only. A duplicate `dedupe_key` is skipped. Re-exporting the same Hermes usage row from the same machine must produce the same key.
+Exact array order. No whitespace formatting. No Unicode normalization. Newline-joined hashes are invalid because a newline inside `harness` or `source_event_id` would collide.
 
-`source_event_id` is the official primary key when it is already opaque (Open WebUI message id, OpenCode session id plus usage grain). When the official key includes a URL or path, export a hex digest of the official fields instead of the raw URL. Hermes example: digest of `session_id`, `model`, `billing_provider`, `billing_mode`, and `task`. Do not export `billing_base_url`.
+Import is append-only. A duplicate `dedupe_key` is skipped.
+
+Token fields use `tokenQuantity` (non-negative integer). `cost_usd` uses `moneyQuantity` (non-negative finite number). When `available` is true, `value` and `provenance: "source"` are required. When `available` is false, `value` and `provenance` must be absent. Importers must never convert missing data into zero.
+
+`tool_calls.available=false` forbids `count` and `names`. `available=true` requires at least `count` or `names`. Names are unique sanitized identifiers, not transcript text.
+
+Receipt `tokens.total` is copied only when the source stored a total. Do not write a derived total into the receipt. After import, Meow Ops may show a display-only sum of available categories, labelled calculated. That display value must never be rewritten as source evidence.
 
 ### Availability and provenance
 
-Every event carries explicit availability. `model` must be `exact` or the event is rejected. Token categories that the source did not store are omitted or marked `available: false`. `total` is copied only when the source stored a total. It is never summed.
+`availability.model` must be `exact`. `provenance.recorded_as` is always `invocation`. Selected or inventory provenance is rejected.
 
-`provenance.recorded_as` is always `invocation`. `schema_pin` is required for SQLite adapters (example: `hermes-schema-23`). Unknown pins fail closed.
+`schema_pin` identifies the upstream product or schema version (example: `hermes-schema-23`), not the word sqlite. `provenance.source_kind=sqlite` requires a non-empty `schema_pin`. Unknown pins are valid in the file schema and must be rejected by the future importer.
 
 ### Forbidden fields
 
-The schema sets `additionalProperties: false`. Importers must also reject any of: `prompt`, `response`, `content`, `messages`, `history`, `transcript`, `cwd`, `path`, `hostname`, `username`, `user_id`, `api_key`, `authorization`, `system_prompt`, `session_title`, `first_user_message`, `display_name`.
+`additionalProperties` is false on every object. The schema rejects control characters and path/URL-shaped ids. Importers must also reject secret-shaped strings and any of: `prompt`, `response`, `content`, `messages`, `history`, `transcript`, `cwd`, `path`, `hostname`, `username`, `email`, `user_id`, `api_key`, `authorization`, `system_prompt`, `session_title`, `first_user_message`, `display_name`.
 
 ### Transport
 
@@ -153,7 +158,7 @@ Each later PR stays under 400 changed lines and 8 files. No adapter ships in thi
 
 | PR | Scope | Files (budget) |
 | --- | --- | --- |
-| 0 (this) | ADR, JSON schema, README pointer | docs only |
+| 0 (this) | ADR, JSON schema, schema contract tests | docs/schema only. Line-budget exception: keep ADR, schema, and fixtures in one review so the contract cannot drift. Later adapter PRs stay under 400 lines and 8 files. |
 | 1 | Validate envelope and events. Create or read `~/.meow-ops/machine-id`. Compute `dedupe_key`. Reject forbidden keys and inferred totals. | `sync/local-usage-receipt.mjs`, unit test |
 | 2 | Owner-triggered export/import CLI. Write under `~/.meow-ops/receipts/`. Append-only import into private history. No network. | `sync/export-local-receipts.mjs`, `sync/import-local-receipts.mjs`, tests, npm script |
 | 3 | Hermes emitter: read `session_model_usage` read-only, emit receipts, include `reasoning_tokens` when present, omit messages and paths. | small extension of `sync/parse-hermes.mjs` plus tests |
@@ -174,10 +179,11 @@ Manual gates before any adapter lands:
 
 1. Owner copies files. Meow Ops does not discover or push.
 2. Import rejects events without exact `model` and `source_event_id`.
-3. Import rejects token or cost values whose provenance is not `source`.
-4. Forbidden content fields fail the whole file.
-5. SQLite adapters pin `schema_pin` and refuse unknown versions.
+3. Import rejects token or cost values whose provenance is not `source`, and never coerces missing to 0.
+4. Forbidden content, path, URL, and credential fields fail the whole file.
+5. SQLite adapters require `schema_pin` (upstream version, not "sqlite") and refuse unknown pins.
 6. No electricity cost. No inventory API. No credential transfer.
+7. Display-only token sums stay labelled calculated and are never written back as source totals.
 
 ## Unknowns and Not verified
 

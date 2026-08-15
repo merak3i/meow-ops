@@ -2,170 +2,170 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://meow-ops.local/schemas/local-usage-receipt-v1.json",
   "title": "Meow Ops Local Usage Receipt v1",
-  "description": "Sanitized invocation evidence for local and routed model calls. Forbidden: prompts, responses, transcripts, usernames, hostnames, absolute paths, API keys, credentials, and any inferred token, model, session, or cost values.",
+  "description": "Sanitized invocation evidence. 0 is valid only when the source recorded 0. Missing data is available=false with no value. Do not infer tokens, model, session, or cost. Do not write a derived total. Importers must never coerce missing to 0.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "kind",
-    "machine_id",
-    "exported_at",
-    "events"
-  ],
+  "required": ["schema_version", "kind", "machine_id", "exported_at", "events"],
   "properties": {
-    "schema_version": {
-      "const": "local-usage-receipt.v1"
-    },
-    "kind": {
-      "const": "meow-ops.local-usage-receipt"
-    },
+    "schema_version": { "const": "local-usage-receipt.v1", "maxLength": 32 },
+    "kind": { "const": "meow-ops.local-usage-receipt", "maxLength": 40 },
     "machine_id": {
       "type": "string",
-      "format": "uuid",
-      "description": "Random persistent UUID created once per machine. Must not be derived from hardware, hostname, username, or filesystem path."
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
     "exported_at": {
       "type": "string",
-      "format": "date-time"
+      "maxLength": 30,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{3})?Z$"
     },
     "events": {
       "type": "array",
-      "items": {
-        "$ref": "#/definitions/event"
-      }
+      "maxItems": 10000,
+      "items": { "$ref": "#/definitions/event" }
     }
   },
   "definitions": {
+    "safeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+    },
+    "opaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
     "availabilityState": {
       "type": "string",
+      "maxLength": 16,
       "enum": ["exact", "source", "partial", "count", "names", "unavailable"]
     },
-    "quantity": {
+    "tokenQuantity": {
       "type": "object",
       "additionalProperties": false,
       "required": ["available"],
       "properties": {
-        "available": {
-          "type": "boolean"
-        },
-        "value": {
-          "type": "number",
-          "minimum": 0
-        },
-        "provenance": {
-          "type": "string",
-          "enum": ["source"]
-        }
+        "available": { "type": "boolean" },
+        "value": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "provenance": { "const": "source", "maxLength": 8 }
       },
-      "if": {
-        "properties": {
-          "available": {
-            "const": true
-          }
-        }
+      "if": { "properties": { "available": { "const": true } }, "required": ["available"] },
+      "then": { "required": ["available", "value", "provenance"] },
+      "else": {
+        "allOf": [
+          { "not": { "required": ["value"] } },
+          { "not": { "required": ["provenance"] } }
+        ]
+      }
+    },
+    "moneyQuantity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "value": { "type": "number", "minimum": 0, "maximum": 1000000000 },
+        "provenance": { "const": "source", "maxLength": 8 }
       },
-      "then": {
-        "required": ["available", "value", "provenance"]
+      "if": { "properties": { "available": { "const": true } }, "required": ["available"] },
+      "then": { "required": ["available", "value", "provenance"] },
+      "else": {
+        "allOf": [
+          { "not": { "required": ["value"] } },
+          { "not": { "required": ["provenance"] } }
+        ]
       }
     },
     "event": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "source_event_id",
-        "dedupe_key",
-        "harness",
-        "model",
-        "availability",
-        "provenance"
-      ],
+      "required": ["source_event_id", "dedupe_key", "harness", "model", "availability", "provenance"],
       "properties": {
-        "source_event_id": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Durable identifier from the source, or a hex digest of official primary-key fields. Must not contain usernames, hostnames, absolute paths, or credentials."
-        },
+        "source_event_id": { "$ref": "#/definitions/opaqueId" },
         "dedupe_key": {
           "type": "string",
-          "pattern": "^[a-f0-9]{64}$",
-          "description": "SHA-256 hex of schema_version, machine_id, harness, and source_event_id joined by newline."
+          "maxLength": 64,
+          "pattern": "^[a-f0-9]{64}$"
         },
-        "harness": {
-          "type": "string",
-          "minLength": 1,
-          "description": "The agent or UI that invoked the model, such as hermes, continue, aider, or opencode."
-        },
+        "harness": { "$ref": "#/definitions/safeId" },
         "runtime": {
-          "type": ["string", "null"],
-          "description": "Inference backend when the source exposes it, such as ollama, lmstudio, or llamacpp. Null when unavailable."
+          "oneOf": [{ "$ref": "#/definitions/safeId" }, { "type": "null" }]
         },
         "provider": {
-          "type": ["string", "null"],
-          "description": "Exact provider or billing provider string when the source exposes it. Null when unavailable."
+          "oneOf": [{ "$ref": "#/definitions/safeId" }, { "type": "null" }]
         },
         "model": {
           "type": "string",
           "minLength": 1,
-          "description": "Exact model identifier recorded for this invocation. Selected, loaded, or installed names are not valid."
+          "maxLength": 256,
+          "pattern": "^(?!\\/|[A-Za-z]:[\\\\/]|\\\\\\\\|https?:\\/\\/)[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"
         },
         "session_id": {
-          "type": ["string", "null"],
-          "description": "Exact session or conversation identifier when the source exposes one. Null when unavailable. Never synthesized."
+          "oneOf": [{ "$ref": "#/definitions/opaqueId" }, { "type": "null" }]
         },
         "started_at": {
-          "type": ["string", "null"],
-          "format": "date-time"
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 30,
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{3})?Z$"
+            },
+            { "type": "null" }
+          ]
         },
         "ended_at": {
-          "type": ["string", "null"],
-          "format": "date-time"
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 30,
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{3})?Z$"
+            },
+            { "type": "null" }
+          ]
         },
         "tokens": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "input": {
-              "$ref": "#/definitions/quantity"
-            },
-            "output": {
-              "$ref": "#/definitions/quantity"
-            },
-            "cache_read": {
-              "$ref": "#/definitions/quantity"
-            },
-            "cache_write": {
-              "$ref": "#/definitions/quantity"
-            },
-            "reasoning": {
-              "$ref": "#/definitions/quantity"
-            },
-            "total": {
-              "$ref": "#/definitions/quantity"
-            }
+            "input": { "$ref": "#/definitions/tokenQuantity" },
+            "output": { "$ref": "#/definitions/tokenQuantity" },
+            "cache_read": { "$ref": "#/definitions/tokenQuantity" },
+            "cache_write": { "$ref": "#/definitions/tokenQuantity" },
+            "reasoning": { "$ref": "#/definitions/tokenQuantity" },
+            "total": { "$ref": "#/definitions/tokenQuantity" }
           }
         },
-        "cost_usd": {
-          "$ref": "#/definitions/quantity"
-        },
+        "cost_usd": { "$ref": "#/definitions/moneyQuantity" },
         "tool_calls": {
           "type": "object",
           "additionalProperties": false,
           "required": ["available"],
           "properties": {
-            "available": {
-              "type": "boolean"
-            },
-            "count": {
-              "type": "integer",
-              "minimum": 0
-            },
+            "available": { "type": "boolean" },
+            "count": { "type": "integer", "minimum": 0, "maximum": 1000000 },
             "names": {
               "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "uniqueItems": true,
               "items": {
                 "type": "string",
-                "minLength": 1
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$"
               }
             }
+          },
+          "if": { "properties": { "available": { "const": true } }, "required": ["available"] },
+          "then": { "anyOf": [{ "required": ["count"] }, { "required": ["names"] }] },
+          "else": {
+            "allOf": [
+              { "not": { "required": ["count"] } },
+              { "not": { "required": ["names"] } }
+            ]
           }
         },
         "availability": {
@@ -173,28 +173,13 @@
           "additionalProperties": false,
           "required": ["model", "runtime", "provider", "session", "tokens", "cost", "tool_calls"],
           "properties": {
-            "model": {
-              "type": "string",
-              "enum": ["exact"]
-            },
-            "runtime": {
-              "$ref": "#/definitions/availabilityState"
-            },
-            "provider": {
-              "$ref": "#/definitions/availabilityState"
-            },
-            "session": {
-              "$ref": "#/definitions/availabilityState"
-            },
-            "tokens": {
-              "$ref": "#/definitions/availabilityState"
-            },
-            "cost": {
-              "$ref": "#/definitions/availabilityState"
-            },
-            "tool_calls": {
-              "$ref": "#/definitions/availabilityState"
-            }
+            "model": { "const": "exact", "maxLength": 8 },
+            "runtime": { "$ref": "#/definitions/availabilityState" },
+            "provider": { "$ref": "#/definitions/availabilityState" },
+            "session": { "$ref": "#/definitions/availabilityState" },
+            "tokens": { "$ref": "#/definitions/availabilityState" },
+            "cost": { "$ref": "#/definitions/availabilityState" },
+            "tool_calls": { "$ref": "#/definitions/availabilityState" }
           }
         },
         "provenance": {
@@ -204,21 +189,15 @@
           "properties": {
             "source_kind": {
               "type": "string",
+              "maxLength": 16,
               "enum": ["sqlite", "jsonl", "json", "markdown", "api-response", "receipt"]
             },
-            "source_label": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Stable source table or file class, such as hermes.session_model_usage. No absolute paths."
-            },
-            "schema_pin": {
-              "type": ["string", "null"],
-              "description": "Pinned upstream schema or product version. Import must fail closed when the pin is unknown."
-            },
-            "recorded_as": {
-              "const": "invocation"
-            }
-          }
+            "source_label": { "$ref": "#/definitions/safeId" },
+            "schema_pin": { "$ref": "#/definitions/safeId" },
+            "recorded_as": { "const": "invocation", "maxLength": 16 }
+          },
+          "if": { "properties": { "source_kind": { "const": "sqlite" } }, "required": ["source_kind"] },
+          "then": { "required": ["schema_pin"] }
         }
       }
     }
