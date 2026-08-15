@@ -1,7 +1,15 @@
 export default function ModelBadge({ model }) {
-  const isOpus = model?.includes('opus');
-  const label = isOpus ? 'Opus' : 'Sonnet';
-  const color = isOpus ? 'var(--purple)' : 'var(--accent)';
+  const normalized = String(model || '').toLowerCase();
+  const label = model || 'Not exposed';
+  const color = normalized.includes('claude') || normalized.includes('opus') || normalized.includes('sonnet')
+    ? 'var(--purple)'
+    : normalized.includes('gpt') || normalized.includes('codex')
+      ? 'oklch(0.72 0.14 160)'
+      : normalized.includes('grok')
+        ? 'var(--cyan)'
+        : normalized.includes('gemini')
+          ? 'oklch(0.70 0.17 260)'
+          : 'var(--text-muted)';
 
   return (
     <span
@@ -18,7 +26,9 @@ export default function ModelBadge({ model }) {
       }}
     >
       <span style={{ width: 6, height: 6, borderRadius: '50%', background: color }} />
-      {label}
+      <span title={label} style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {label}
+      </span>
     </span>
   );
 }

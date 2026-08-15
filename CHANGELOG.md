@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - App-shell React error boundary so one page throwing no longer blank-screens the app.
 
 ### Fixed
+- Session and overview UI now preserve every tracked agent source, show the real model id (or `Not exposed`), and render unavailable token/cost usage as `N/A` instead of mislabeling it as Sonnet or zero.
 - **Billing accuracy:** Codex no longer double-counts cached tokens (OpenAI `input_tokens` already includes cached); Cursor can no longer produce negative `output_tokens`; Aider guards `NaN` token parses and stops fabricating a 300s duration; the cost calculator clamps negative/`NaN` tokens and flags unknown models instead of silently pricing them as Sonnet; the over-broad `flash` match no longer mis-prices `gemini-1.5-flash`.
 - **Security:** the dev server and `sync/local-api.mjs` now reject cross-origin and non-localhost-Host requests (CSRF / DNS-rebinding); a browser POST can no longer trigger `git push` (the `--push` side effect is removed from the HTTP path); secret-detection regexes now catch Supabase JWT service-role keys.
 - `export-local.mjs` does real de-duplication (was a no-op alias) and fixes a subagent `session_id` collision; reads large JSONL via a chunked reader (no 512MB single-string cap); day/week/month boundaries use the system timezone (overridable via `MEOW_TZ`) instead of hardcoded IST.
