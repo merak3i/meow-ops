@@ -232,7 +232,7 @@ test('unmatched receipts stay as aggregates and are not assigned', () => {
 
 test('duplicate imports are idempotent', () => {
   const dir = tmpDir('dup');
-  const store = join(dir, 'store.jsonl');
+  const store = join(tmpDir('dup-store'), 'store.jsonl');
   writeJsonl(dir, 'one.jsonl', [JSON.stringify(receipt())]);
   const first = importFrom(dir, store);
   const second = importFrom(dir, store);
@@ -372,7 +372,8 @@ test('public report shows machine/harness/provider/model without identity', () =
   assert.equal(blob.includes(MACHINE_A), false);
   assert.equal(blob.includes('/Users/'), false);
   assert.equal(blob.includes('/home/'), false);
-  assert.equal(blob.includes(hostname()), false);
+  assert.equal(blob.includes('macbook-pro.local'), false);
+  assert.equal(blob.includes('alice'), false);
   assert.equal(pub.by_machine[0].key, machineDisplayLabel(MACHINE_A));
   assert.equal(pub.by_harness[0].key, 'hermes');
   assert.equal(pub.by_provider[0].key, 'ollama');

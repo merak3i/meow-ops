@@ -713,11 +713,17 @@ export function importLocalUsageReceipts(options = {}) {
   report.enabled = true;
   report.status = 'ok';
 
+  let storeReal = null;
+  if (storePath && existsSync(storePath)) {
+    try { storeReal = realpathSync(storePath); } catch { storeReal = resolve(storePath); }
+  }
+
   for (const root of parsedRoots.roots) {
     const listed = listReceiptFiles(root);
     report.files_skipped += listed.escaped;
     report.rejected_reasons.escape += listed.escaped;
     for (const file of listed.files) {
+      if (storeReal && file === storeReal) continue;
       report.files_scanned += 1;
       let records;
       try {

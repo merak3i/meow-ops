@@ -273,17 +273,14 @@ console.log(`Total unique session entries: ${allUnique.length}${dupCount > 0 ? `
 // Manual Local Usage Receipt v1 import. Receipts are sanitized JSONL copied
 // onto this computer. Installed-model inventories are not usage. Official
 // Hermes and Cursor session usage is left untouched.
-let localUsageReport = emptyLocalUsageReport();
-{
-  const enriched = enrichSessionsWithLocalUsage(allUnique, {
-    importSpec: process.env.MEOW_LOCAL_USAGE_IMPORTS,
-  });
-  localUsageReport = enriched.report;
-  if (localUsageReport.status === 'skipped') {
-    console.log('Local usage receipts skipped (set MEOW_LOCAL_USAGE_IMPORTS to enable)');
-  } else {
-    console.log(`Local usage receipts: accepted ${localUsageReport.accepted}, duplicates ${localUsageReport.duplicates}, rejected ${localUsageReport.rejected}; matched ${localUsageReport.matched_receipts}, unmatched ${localUsageReport.unmatched_receipts}`);
-  }
+const localUsage = enrichSessionsWithLocalUsage(allUnique, {
+  importSpec: process.env.MEOW_LOCAL_USAGE_IMPORTS,
+});
+const localUsageReport = localUsage.report || emptyLocalUsageReport();
+if (localUsageReport.status === 'skipped') {
+  console.log('Local usage receipts skipped (set MEOW_LOCAL_USAGE_IMPORTS to enable)');
+} else {
+  console.log(`Local usage receipts: accepted ${localUsageReport.accepted}, duplicates ${localUsageReport.duplicates}, rejected ${localUsageReport.rejected}; matched ${localUsageReport.matched_receipts}, unmatched ${localUsageReport.unmatched_receipts}`);
 }
 
 // Preserve private project evidence before content-bearing labels are removed
