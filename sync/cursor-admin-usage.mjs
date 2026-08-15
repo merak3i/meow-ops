@@ -3,7 +3,7 @@
 // Official source (Cursor docs, retrieved 2026-08-15):
 //   POST https://api.cursor.com/teams/filtered-usage-events
 //   https://cursor.com/docs/account/teams/admin-api#get-usage-events-data
-//   Availability: Enterprise teams (https://cursor.com/docs/api)
+//   Availability: team administrators with an Admin API key.
 //
 // What this connector will and will not do:
 //   * Opt-in only via CURSOR_ADMIN_API_KEY. No credential => local parser only.
@@ -14,12 +14,12 @@
 //     live traffic off unless they intend to use their own Enterprise key.
 //   * Join an event to a local session only when an official event identifier
 //     exactly equals a locally observed identifier:
-//       event.conversationId === session.composer_id | session.conversation_id
-//       event.cloudAgentId   === session.composer_id | session.cloud_agent_id
-//   * Cursor's published schema names the session join key `conversationId`.
-//     Local transcripts are keyed by `composerId`. Official docs do not state
-//     that those strings are the same identifier. Exact equality is therefore
-//     the only join. No time-window, model-name, or Task-argument matching.
+//       an explicitly returned conversation/cloud-agent id
+//         === session.composer_id | session.conversation_id | session.cloud_agent_id
+//   * Cursor's published Admin API schema currently does not document a
+//     conversation or cloud-agent identifier. The connector accepts known
+//     camelCase/snake_case response variants when present, but exact equality
+//     is the only join. No time-window, model-name, or Task-argument matching.
 //   * Events that lack a join key, or whose key does not equal a local id,
 //     stay in unmatched aggregate Cursor usage. They are never assigned to a
 //     session.
@@ -32,13 +32,14 @@
 
 const DEFAULT_BASE_URL = 'https://api.cursor.com';
 export const CURSOR_ADMIN_USAGE_PATH = '/teams/filtered-usage-events';
-export const CURSOR_ADMIN_USAGE_AVAILABILITY = 'enterprise-teams';
+export const CURSOR_ADMIN_USAGE_AVAILABILITY = 'team-admin-api';
 
 const KEY_SHAPE = /\bcrsr_[A-Za-z0-9]+|Basic\s+[A-Za-z0-9+/=]+/gi;
 
 export const CURSOR_USAGE_LIMITATION = [
-  'POST /teams/filtered-usage-events is the official usage-events API and is documented as Enterprise-teams only.',
-  'Official events expose conversationId and optional cloudAgentId, not composerId.',
+  'POST /teams/filtered-usage-events is the official usage-events API and requires a team Admin API key.',
+  'The published response schema does not currently document a conversation or cloud-agent identifier.',
+  'Known identifier field variants are accepted only when the API explicitly returns them.',
   'Local transcripts are keyed by composerId. Events are assigned to a session only on exact identifier equality.',
   'Unmatched events are kept as aggregate Cursor usage and are never attributed to a session.',
 ].join(' ');
@@ -71,7 +72,7 @@ export function emptyCursorUsageReport(overrides = {}) {
     status: 'skipped',
     endpoint: `POST ${DEFAULT_BASE_URL}${CURSOR_ADMIN_USAGE_PATH}`,
     availability: CURSOR_ADMIN_USAGE_AVAILABILITY,
-    join_key: 'conversationId|cloudAgentId exact-match to local composer_id|conversation_id|cloud_agent_id',
+    join_key: 'explicit conversation/cloud-agent id exact-match to local composer_id|conversation_id|cloud_agent_id',
     limitation: CURSOR_USAGE_LIMITATION,
     matched_sessions: 0,
     matched_events: 0,
@@ -145,7 +146,15 @@ export function localCursorJoinIds(session) {
 
 export function eventCursorJoinIds(event) {
   if (!event || typeof event !== 'object') return [];
-  const ids = [event.conversationId, event.cloudAgentId];
+  const ids = [
+    event.conversationId,
+    event.conversation_id,
+    // Cursor staff used this misspelling when announcing the field. Keep it
+    // explicit so a real response remains exact-match rather than heuristic.
+    event.coversation_id,
+    event.cloudAgentId,
+    event.cloud_agent_id,
+  ];
   return [...new Set(ids.filter((id) => typeof id === 'string' && id.trim()).map((id) => id.trim()))];
 }
 

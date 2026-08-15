@@ -164,6 +164,19 @@ test('unmappable records stay in aggregate Cursor usage', () => {
   assert.equal(sessions.find((session) => session.composer_id === '22222222-2222-4222-8222-222222222222').usage_available, false);
 });
 
+test('known explicit identifier variants still require exact equality', () => {
+  for (const field of ['conversationId', 'conversation_id', 'coversation_id', 'cloudAgentId', 'cloud_agent_id']) {
+    const sessions = localSessions();
+    applyCursorUsageEvents(sessions, [{
+      [field]: PARENT_ID,
+      model: 'claude-4.5-sonnet',
+      tokenUsage: { inputTokens: 1, outputTokens: 1, cacheWriteTokens: 0, cacheReadTokens: 0, totalCents: 1 },
+    }]);
+    const parent = sessions.find((session) => session.composer_id === PARENT_ID);
+    assert.equal(parent.usage_available, true, `expected exact ${field} match`);
+  }
+});
+
 test('ambiguous exact matches are not assigned to either session', () => {
   const clone = localSessions();
   const parent = clone.find((session) => session.composer_id === PARENT_ID);
