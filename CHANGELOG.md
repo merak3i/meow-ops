@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Cursor Admin API usage enricher** (`sync/cursor-admin-usage.mjs`): opt-in Enterprise-teams connector for `POST /teams/filtered-usage-events`. Local agent transcripts still parse without a key. Events join a session only on exact `conversationId`/`cloudAgentId` equality with a local composer id; unmatched model totals stay aggregate. The credential is never logged or written.
 - **Loop-Ops Supabase connector** (`sync/loop-ops-supabase.mjs`) — opt-in, plug-in-later: pulls live per-surface truth states from a Supabase table into the truth CSV the Loom importer already consumes (`--truth`), keyed by `surface_key`. Excel stays the structure; Supabase supplies the live state. No-op until `LOOP_OPS_SUPABASE_URL/_KEY/_TABLE` are set; all private config in env, never committed. Plus `sync/loop-ops-supabase-watch.mjs` for real-time sync via Supabase Realtime, and a near-real-time cron path. README documents all three cadences.
 - **Google Antigravity parser** (`sync/parse-antigravity.mjs`) — tracks Antigravity agent sessions (time, tools, project, snippet) from `~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`. Token/model/cost are not exposed by Antigravity locally (encrypted store, opaque model enum, server-side usage), so those sessions carry `usage_available: false` and are never assigned fabricated tokens or cost.
 - `sync/session-utils.mjs` — shared snippet/project/default-session helpers, removing copy-paste drift across the five parsers.
@@ -17,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `.github/workflows/ci.yml` — CI runs sync tests + build (blocking) and lint + typecheck (visible, non-blocking while pre-existing debt is cleared).
 - `typecheck` npm script (`tsc --noEmit`).
 - `db/migrations/0004_rls_tenant_isolation.sql` — strict per-tenant SELECT on the legacy tables (removes the `tenant_id IS NULL` world-read).
-- Env: `MEOW_TZ`, `MEOW_NO_SNIPPETS`, `ANTIGRAVITY_DIR`, `MEOW_DASHBOARD_ORIGIN`.
+- Env: `MEOW_TZ`, `MEOW_NO_SNIPPETS`, `ANTIGRAVITY_DIR`, `MEOW_DASHBOARD_ORIGIN`, `CURSOR_PROJECTS_DIR`, `CURSOR_ADMIN_API_KEY`.
 - App-shell React error boundary so one page throwing no longer blank-screens the app.
 
 ### Fixed
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Per-source breakdowns no longer fold Cursor/Aider/Antigravity sessions into "Claude".
 
 ### Changed
+- `parse-cursor.mjs` reads local parent and subagent agent-transcripts from `~/.cursor/projects` instead of inferring models from IDE logs.
 - Pricing table adds `gemini-3-pro`, `gemini-3-flash`, and `gemini-2.5-flash`.
 
 ### Removed

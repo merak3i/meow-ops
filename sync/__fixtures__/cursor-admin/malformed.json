@@ -1,0 +1,6 @@
+{
+  "error": "not a usage events payload",
+  "data": {
+    "events": []
+  }
+}

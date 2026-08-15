@@ -7,7 +7,8 @@ import { writeFileSync, readdirSync, statSync, existsSync, mkdirSync, openSync, 
 import { join } from 'path';
 import { parseSessionLines }  from './parse-session.mjs';
 import { scanCodexSessions }  from './parse-codex.mjs';
-import { scanCursorSessions } from './parse-cursor.mjs';
+import { scanCursorSessions, DEFAULT_CURSOR_PROJECTS_DIR } from './parse-cursor.mjs';
+import { enrichCursorSessions, emptyCursorUsageReport } from './cursor-admin-usage.mjs';
 import { scanAiderProjects }  from './parse-aider.mjs';
 import { scanAntigravitySessions, DEFAULT_ANTIGRAVITY_DIR } from './parse-antigravity.mjs';
 import { scanHermesMessageEvidence, scanHermesSessions, DEFAULT_HERMES_DB } from './parse-hermes.mjs';
@@ -15,6 +16,9 @@ import { readSessionHistory, updateSessionHistory } from './session-history.mjs'
 import { buildSessionRollups } from './session-rollups.mjs';
 import { archiveMessageEvidence, archiveSessionEvidence } from './project-evidence.mjs';
 import { readProjectCatalog } from './project-control.mjs';
+import { loadEnv } from './load-env.mjs';
+
+loadEnv(join(import.meta.dirname, '..'));
 
 const CLAUDE_DIR = join(process.env.HOME, '.claude', 'projects');
 const CODEX_DIR  = join(process.env.HOME, '.codex', 'sessions');
@@ -49,9 +53,10 @@ function readJsonlLines(path) {
 }
 
 // Optional extra sources — configure via env vars
-// CURSOR_LOGS_DIR  — path to Cursor logs dir, e.g. ~/.cursor/logs
-// AIDER_PROJECTS   — colon-separated list of project dirs containing .aider.chat.history.md
-const CURSOR_LOGS_DIR  = process.env.CURSOR_LOGS_DIR  || join(process.env.HOME, '.cursor', 'logs');
+// CURSOR_PROJECTS_DIR — Cursor agent-transcripts root, e.g. ~/.cursor/projects
+// CURSOR_ADMIN_API_KEY — opt-in Enterprise Admin API usage enrichment
+// AIDER_PROJECTS — colon-separated list of project dirs containing .aider.chat.history.md
+const CURSOR_PROJECTS_DIR = process.env.CURSOR_PROJECTS_DIR || DEFAULT_CURSOR_PROJECTS_DIR;
 const AIDER_PROJECT_DIRS = process.env.AIDER_PROJECTS
   ? process.env.AIDER_PROJECTS.split(':').filter(Boolean)
   : [];
@@ -185,17 +190,30 @@ if (existsSync(CODEX_DIR)) {
   console.log('No Codex sessions directory found — skipping');
 }
 
-// Merge Cursor sessions (opt-in: CURSOR_LOGS_DIR must exist)
-if (existsSync(CURSOR_LOGS_DIR)) {
-  const cursorSessions = scanCursorSessions(CURSOR_LOGS_DIR);
+// Merge Cursor sessions from local agent transcripts. Model/token/cost stay
+// unavailable unless the operator opts into the official Admin API enricher.
+let cursorUsageReport = emptyCursorUsageReport({ status: 'skipped' });
+if (CURSOR_PROJECTS_DIR && existsSync(CURSOR_PROJECTS_DIR)) {
+  const cursorSessions = scanCursorSessions(CURSOR_PROJECTS_DIR);
   if (cursorSessions.length > 0) {
-    console.log(`Found ${cursorSessions.length} Cursor session(s)`);
-    allSessions.push(...cursorSessions);
+    console.log(`Found ${cursorSessions.length} Cursor session(s) (local transcripts; usage not exposed on disk)`);
   } else {
-    console.log('Cursor logs dir found but no sessions parsed — skipping');
+    console.log('Cursor projects dir found but no agent transcripts parsed — skipping');
   }
+  const enriched = await enrichCursorSessions(cursorSessions, {
+    apiKey: process.env.CURSOR_ADMIN_API_KEY,
+  });
+  cursorUsageReport = enriched.report;
+  if (enriched.report.status === 'missing-credential') {
+    console.log('Cursor Admin API enrichment skipped (set CURSOR_ADMIN_API_KEY to enable)');
+  } else if (enriched.report.status === 'ok') {
+    console.log(`Cursor Admin API: matched ${enriched.report.matched_sessions} session(s), unmatched ${enriched.report.unmatched_events} event(s) kept as aggregate usage`);
+  } else {
+    console.log(`Cursor Admin API enrichment skipped (${enriched.report.status})`);
+  }
+  allSessions.push(...enriched.sessions);
 } else {
-  console.log('No Cursor logs directory found — skipping (set CURSOR_LOGS_DIR to enable)');
+  console.log('No Cursor projects directory found — skipping (set CURSOR_PROJECTS_DIR to enable)');
 }
 
 // Merge Aider sessions (opt-in: AIDER_PROJECTS env var must be set)
@@ -434,6 +452,7 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
     byModel: rollups.byModel,
     byTool: rollups.byTool,
     bySourceAllTime: Object.fromEntries(rollups.bySource.map((row) => [row.key, row])),
+    cursorUsage: cursorUsageReport,
     archive: {
       total: archive.total,
       appendOnly: true,

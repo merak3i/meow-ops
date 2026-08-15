@@ -5,7 +5,7 @@
 export interface Session {
   session_id:               string;
   project:                  string;
-  model:                    string;
+  model:                    string | null;
   entrypoint:               string | null;
   git_branch:               string | null;
   started_at:               string;    // ISO-8601
@@ -20,6 +20,12 @@ export interface Session {
   cache_read_tokens:        number;
   total_tokens:             number;
   estimated_cost_usd:       number;
+  usage_available?:         boolean;
+  pricing_source?:          string;
+  composer_id?:             string | null;
+  conversation_id?:         string | null;
+  cloud_agent_id?:          string | null;
+  usage_source?:            string | null;
   cat_type:                 CatType;
   is_ghost:                 boolean;
   is_subagent?:             boolean;
@@ -168,4 +174,20 @@ export interface CostSummary {
   allTime?:      TimeBucket;
   bySource?:     Record<string, TimeBucket>;
   daily_summary: DailySummaryRow[];
+  cursorUsage?: {
+    enabled: boolean;
+    status: string;
+    endpoint?: string;
+    availability?: string;
+    join_key?: string;
+    limitation?: string;
+    matched_sessions?: number;
+    matched_events?: number;
+    unmatched_events?: number;
+    unmatched?: {
+      totals?: Record<string, number>;
+      by_model?: Array<Record<string, string | number>>;
+    };
+    error?: string | null;
+  };
 }

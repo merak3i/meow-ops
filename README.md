@@ -60,7 +60,7 @@ That's it. Your real session data loads on first page hit.
 2. The dashboard loads your parsed local sessions immediately
 3. Codex Desktop sessions are read from `~/.codex/sessions/` automatically when present
 4. To add Aider sessions: `AIDER_PROJECTS=/path/to/your/project node sync/export-local.mjs`
-5. To add Cursor sessions: `CURSOR_LOGS_DIR=~/.cursor/logs node sync/export-local.mjs`
+5. Cursor agent transcripts are read from `~/.cursor/projects` when present. Optional Enterprise usage enrichment: set `CURSOR_ADMIN_API_KEY` (never commit it)
 6. Re-run the sync command any time after new AI sessions to refresh
 
 Every parsed session is preserved in an uncapped, append-only local archive. The
@@ -106,6 +106,8 @@ Meow Operations fixes all four. For free. For everyone.
 Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, **Cursor**, and **Google Antigravity** in one unified view. Cost tables for 30+ models.
 
 > **Google Antigravity note:** Antigravity stores session **time, tools, and project** locally (parsed from `~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`), but it does **not** expose **token counts, the model used, or cost** on disk — the conversation store is encrypted and usage lives server-side. Antigravity sessions are therefore tracked for time/tools/project and shown with `usage_available: false`; tokens and cost are never fabricated or estimated for them.
+
+> **Cursor note:** Local agent transcripts under `~/.cursor/projects/*/agent-transcripts/` expose messages, tools, and parent/subagent hierarchy. They do not expose authoritative model, token, or cost values. meow-ops never infers a historical model from the currently selected Cursor model, and never treats a nested Task argument such as `model="fast"` as the parent model. Optional official enrichment uses the documented Enterprise Admin API `POST /teams/filtered-usage-events` when `CURSOR_ADMIN_API_KEY` is set. Events join a local session only when `conversationId` or `cloudAgentId` exactly equals a local composer id. Official docs do not state that `conversationId` is `composerId`. Unmatched events stay in `cost-summary.json` as aggregate Cursor usage and are never assigned to a session. The credential is never logged, exported, or written to disk. Without a key, the local parser still works.
 
 | Page | What you see |
 |---|---|
@@ -457,7 +459,8 @@ It currently:
 - Reads Claude Code JSONL files from `~/.claude/projects/`
 - Reads Codex Desktop rollouts from `~/.codex/sessions/`
 - Reads Google Antigravity transcripts from `~/.gemini/antigravity/` (time/tools/project only; usage not exposed by Antigravity)
-- Optionally reads Cursor logs from `CURSOR_LOGS_DIR`
+- Reads Cursor agent transcripts from `CURSOR_PROJECTS_DIR` or `~/.cursor/projects` (time/tools/project; usage not on disk)
+- Optionally enriches Cursor usage from the official Enterprise Admin API when `CURSOR_ADMIN_API_KEY` is set
 - Optionally reads Aider project histories from `AIDER_PROJECTS`
 - Deduplicates and classifies sessions, refines project names from `cwd`, calculates model cost, and sorts by latest activity
 - Writes `public/data/sessions.json`
@@ -745,7 +748,8 @@ meow-ops/
 ├── sync/
 │   ├── parse-session.mjs        JSONL parser with agent hierarchy extraction
 │   ├── parse-codex.mjs          OpenAI Codex Desktop parser
-│   ├── parse-cursor.mjs         Cursor IDE log parser
+│   ├── parse-cursor.mjs         Cursor agent-transcript parser (parent + subagent)
+│   ├── cursor-admin-usage.mjs   Optional official Admin API usage enricher
 │   ├── parse-aider.mjs          Aider chat history parser
 │   ├── parse-antigravity.mjs    Google Antigravity transcript parser (time/tools; usage not exposed)
 │   ├── session-utils.mjs        Shared snippet/project/default-session helpers
