@@ -34,6 +34,42 @@
   --sidebar-w: 220px;
 }
 
+/* ─── Scale tokens ───────────────────────────────────────────────────────────
+   Type, spacing and radius were ad-hoc before this: 26 distinct font sizes and
+   47 size/weight pairs across the app, including half-point values (10.5,
+   11.5, 12.5). These seven steps cover every real use. Anything that does not
+   fit a step is a design bug, not a missing step. */
+:root {
+  --fs-label:  10px;   /* uppercase eyebrows, axis ticks */
+  --fs-meta:   11px;   /* captions, sub-values, chart legends */
+  --fs-ui:     12px;   /* dense controls, table cells */
+  --fs-body:   13px;   /* default UI text, nav, buttons */
+  --fs-title:  15px;   /* card and section titles */
+  --fs-page:   20px;   /* page titles */
+  --fs-metric: 28px;   /* KPI numbers */
+
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  --r-sm:   6px;
+  --r-md:   8px;
+  --r-lg:  12px;
+  --r-full: 999px;
+
+  --shadow-card:
+    0 0 0 0.5px oklch(1 0 0 / 5%) inset,
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 4px 8px rgba(0, 0, 0, 0.06);
+  --shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.36);
+
+  --page-max: 1180px;
+}
+
 /* Semantic role aliases — separate from raw hue tokens so future themes can
    re-paint each role without renaming every consumer. They resolve to the
    raw hue tokens above today; once a role needs to diverge (e.g. success
@@ -183,16 +219,461 @@ code, .font-mono {
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow:
-    0px 0px 0px 0.5px oklch(1 0 0 / 5%) inset,
-    0px 1px 2px rgba(78, 50, 23, 0.04),
-    0px 4px 8px rgba(0, 0, 0, 0.06);
-  transition: border-color 0.3s var(--ease);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.2s var(--ease);
 }
 
 .card:hover {
   border-color: var(--border-hover);
+}
+
+/* ─── Primitives ─────────────────────────────────────────────────────────────
+   Real CSS classes rather than inline style objects, so :hover and
+   :focus-visible are handled by the cascade. The previous pattern attached
+   onMouseEnter/onMouseLeave handlers to ~35 files to fake hover, which also
+   meant keyboard users never saw a focus ring. */
+
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.mo-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-card);
+  transition: border-color 0.2s var(--ease);
+}
+.mo-card--flat { box-shadow: none; }
+.mo-card--inset { background: var(--bg-page); box-shadow: none; }
+.mo-card--pad { padding: var(--sp-4); }
+.mo-card--interactive { cursor: pointer; }
+.mo-card--interactive:hover { border-color: var(--border-hover); }
+
+.mo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: 7px var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease), color 0.15s var(--ease);
+}
+.mo-btn:hover:not(:disabled) { background: var(--bg-hover); border-color: var(--border-hover); color: var(--text-primary); }
+.mo-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.mo-btn--sm { padding: 4px var(--sp-2); font-size: var(--fs-ui); }
+.mo-btn--lg { padding: 10px var(--sp-4); }
+.mo-btn--block { width: 100%; }
+.mo-btn--primary { background: var(--accent); border-color: var(--accent); color: oklch(0.99 0 0); }
+.mo-btn--primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: oklch(0.99 0 0); }
+.mo-btn--ghost { background: transparent; border-color: transparent; }
+.mo-btn--ghost:hover:not(:disabled) { background: var(--bg-hover); border-color: transparent; }
+.mo-btn--danger { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 40%, transparent); }
+.mo-btn--danger:hover:not(:disabled) { background: color-mix(in oklch, var(--danger) 12%, transparent); color: var(--danger); }
+.mo-btn--icon { padding: 6px; }
+
+.mo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-full);
+  border: 1px solid transparent;
+  font-size: var(--fs-meta);
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.mo-badge--neutral  { background: var(--bg-hover); color: var(--text-secondary); }
+.mo-badge--accent   { background: color-mix(in oklch, var(--accent) 16%, transparent);  color: var(--accent);  border-color: color-mix(in oklch, var(--accent) 32%, transparent); }
+.mo-badge--positive { background: color-mix(in oklch, var(--green) 14%, transparent);   color: var(--green);   border-color: color-mix(in oklch, var(--green) 30%, transparent); }
+.mo-badge--warning  { background: color-mix(in oklch, var(--amber) 14%, transparent);   color: var(--amber);   border-color: color-mix(in oklch, var(--amber) 30%, transparent); }
+.mo-badge--danger   { background: color-mix(in oklch, var(--red) 14%, transparent);     color: var(--red);     border-color: color-mix(in oklch, var(--red) 30%, transparent); }
+.mo-badge--info     { background: color-mix(in oklch, var(--cyan) 14%, transparent);    color: var(--cyan);    border-color: color-mix(in oklch, var(--cyan) 30%, transparent); }
+
+.mo-eyebrow {
+  font-size: var(--fs-label);
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Scope chip — Product Law 2: every number states its range, its source, and
+   whether it came from the complete archive or the bounded preview. */
+.mo-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.mo-scope__dot { opacity: 0.4; }
+.mo-scope--warn { color: var(--amber); }
+
+/* Help affordance for terms that need one. A term needing a permanent tooltip
+   is a naming smell; this exists for the metrics where the short name really
+   is the industry term (TPM, p95) and renaming would be worse. */
+.mo-help {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-input);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-family: inherit;
+  line-height: 1;
+  cursor: help;
+  padding: 0;
+  flex-shrink: 0;
+}
+.mo-help:hover { color: var(--text-primary); border-color: var(--border-hover); }
+
+.mo-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.mo-tabs::-webkit-scrollbar { display: none; }
+.mo-tab {
+  position: relative;
+  padding: var(--sp-2) var(--sp-3);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s var(--ease);
+}
+.mo-tab:hover { color: var(--text-secondary); }
+.mo-tab[aria-selected='true'] { color: var(--text-primary); }
+.mo-tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  left: var(--sp-2);
+  right: var(--sp-2);
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+}
+.mo-tab__count {
+  margin-left: 6px;
+  font-size: var(--fs-meta);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mo-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  padding: 1px 4px;
+  border: 1px solid var(--border-input);
+  border-radius: 4px;
+  background: var(--bg-page);
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.mo-num { font-variant-numeric: tabular-nums; }
+
+/* Focus chip — lives in the page header on every screen. Not a page. */
+.mo-focus { position: relative; }
+.mo-focus__chip {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+.mo-focus__chip[data-running='true'] { border-color: color-mix(in oklch, var(--accent) 45%, var(--border)); }
+.mo-focus__toggle,
+.mo-focus__time {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.mo-focus__toggle { width: 26px; color: var(--text-primary); }
+.mo-focus__time {
+  padding: 4px 10px 4px 2px;
+  font-size: var(--fs-ui);
+  color: var(--text-primary);
+}
+.mo-focus__chip[data-running='true'] .mo-focus__time { color: var(--accent); }
+.mo-focus__pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 80;
+  width: 220px;
+  padding: var(--sp-3);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+  display: grid;
+  gap: var(--sp-3);
+}
+.mo-focus__pophead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.mo-focus__bar {
+  height: 3px;
+  border-radius: var(--r-full);
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+.mo-focus__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.mo-focus__actions { display: flex; gap: var(--sp-2); }
+.mo-focus__presets { display: flex; gap: var(--sp-1); }
+.mo-focus__preset {
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--fs-meta);
+  cursor: pointer;
+}
+.mo-focus__preset.is-on,
+.mo-focus__preset:hover { color: var(--text-primary); border-color: var(--border-hover); }
+
+/* ─── Command palette ────────────────────────────────────────────────────── */
+
+.mo-palette__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh var(--sp-4) var(--sp-4);
+  background: oklch(0 0 0 / 45%);
+  backdrop-filter: blur(3px);
+}
+
+.mo-palette {
+  width: min(560px, 100%);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+}
+
+.mo-palette__input {
+  width: 100%;
+  padding: var(--sp-4);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-title);
+  outline: none;
+}
+.mo-palette__input::placeholder { color: var(--text-muted); }
+
+.mo-palette__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-2);
+}
+
+.mo-palette__group {
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+}
+
+.mo-palette__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: none;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-body);
+  text-align: left;
+  cursor: pointer;
+}
+.mo-palette__item[data-active='true'] { background: var(--bg-hover); color: var(--text-primary); }
+.mo-palette__item:focus-visible { outline: none; background: var(--bg-hover); }
+.mo-palette__hint { margin-left: auto; display: flex; gap: var(--sp-1); align-items: center; }
+
+.mo-palette__empty {
+  padding: var(--sp-6) var(--sp-4);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-body);
+}
+
+.mo-palette__footer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--fs-meta);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mo-palette { animation: mo-pop 0.14s var(--ease) both; }
+}
+@keyframes mo-pop {
+  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ─── App shell ──────────────────────────────────────────────────────────── */
+
+.mo-shell { display: flex; min-height: 100vh; }
+
+.mo-main {
+  margin-left: var(--sidebar-w);
+  flex: 1;
+  min-width: 0;
+  width: calc(100vw - var(--sidebar-w));
+}
+.mo-main--standard { padding: var(--sp-6); max-width: calc(var(--page-max) + var(--sidebar-w)); }
+.mo-main--bleed { padding: 0; display: flex; flex-direction: column; height: 100vh; }
+
+/* Full-bleed surfaces keep a padded header rail so the 3D scene and the loop
+   canvas still have visible tabs and a title. Previously the Sanctum swallowed
+   the whole viewport and the only way out was the sidebar. */
+.mo-bleedhead {
+  flex-shrink: 0;
+  padding: var(--sp-4) var(--sp-5) 0;
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--border);
+  z-index: 2;
+}
+.mo-bleedhead .mo-pageheader { margin-bottom: var(--sp-3); }
+.mo-bleedbody { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+
+.mo-pageheader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-4);
+}
+.mo-pageheader__title { font-size: var(--fs-page); font-weight: 300; margin: 0; }
+.mo-pageheader__desc { margin-top: 3px; font-size: var(--fs-ui); color: var(--text-muted); max-width: 62ch; }
+.mo-pageheader__actions { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+
+.mo-section { margin-bottom: var(--sp-5); }
+.mo-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+
+.mo-grid { display: grid; gap: var(--sp-3); }
+.mo-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.mo-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mo-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 1100px) { .mo-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 860px) {
+  .mo-grid--3, .mo-grid--2 { grid-template-columns: minmax(0, 1fr); }
+  .mo-main--standard { padding: var(--sp-4); }
+}
+
+/* Helper-offline banner. Product Law 4: state it once, at the top, with the
+   exact command — rather than five surfaces each discovering it separately. */
+.mo-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  border: 1px solid color-mix(in oklch, var(--amber) 30%, transparent);
+  background: color-mix(in oklch, var(--amber) 8%, transparent);
+  border-radius: var(--r-md);
+  font-size: var(--fs-ui);
+  color: var(--text-secondary);
+}
+.mo-notice code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-page);
+  color: var(--amber);
+  font-size: var(--fs-meta);
+}
+
+.mo-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-7) var(--sp-5);
+  text-align: center;
+}
+.mo-empty__title { font-size: var(--fs-title); font-weight: 400; color: var(--text-primary); }
+.mo-empty__body { font-size: var(--fs-body); color: var(--text-muted); max-width: 46ch; line-height: 1.65; }
+.mo-empty__cmd {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-card);
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: var(--fs-ui);
+  user-select: all;
 }
 
 @media (max-width: 720px) {

@@ -1,7 +1,7 @@
 {
   "name": "Meow Operations",
   "short_name": "MeowOps",
-  "description": "AI usage dashboard with cat colony gamification — Meow Creative Haus",
+  "description": "Local inbox for AI coding work. What happened, what it cost, what you should decide next.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#1c1c1c",

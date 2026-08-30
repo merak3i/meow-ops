@@ -38,6 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Dead D3 `src/scrying-sanctum/` tree (~900 LOC, unreferenced) and its duplicate `ScryingSanctum` component.
 
+## [1.2.0] - 2026-08-31
+
+### Changed
+- Inbox cut: primary navigation is Today, Review, Ledger, Sanctum, Learn. The focus timer is a chip on every screen, not a page.
+- Learn mines concepts from real sessions. Each card has a name, a short industry technical summary, a layman "what you did" line, a source, and an I get this mark. No school, no XP, no YouTube finder.
+- Today, Review, and Ledger absorb the old page list. Sanctum stays as the 3D room.
+
+### Removed
+- Companion (chat, v2 page, stores, and the product surface).
+- Dead page clones: By Project, By Day, By Action, Analytics Dashboard, Pomodoro, Live Sessions.
+
 ## [1.1.0] - 2026-04-09
 
 ### Fixed

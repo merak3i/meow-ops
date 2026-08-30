@@ -1,7 +1,7 @@
 {
   "name": "meow-ops",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,6 @@
     "test:learning": "node --test sync/__tests__/learning-quest.test.mjs",
     "learning:seed": "node sync/learning-quest-cli.mjs seed-agent-engineering",
     "learning:summary": "node sync/learning-quest-cli.mjs summary",
-    "test:companion": "node --test src/companion-v2/__tests__/*.test.mjs",
     "test:sanctum": "node --test src/pages/sanctum/__tests__/*.test.mjs",
     "test:e2e": "playwright test",
     "loop:capture": "node sync/loop-capture.mjs",

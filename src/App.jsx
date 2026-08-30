@@ -3,9 +3,14 @@ import { PasswordGate } from './components/PasswordGate';
 import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import DateFilter from './components/DateFilter';
-import CompanionChat from './components/companion-chat/CompanionChat';
-import { pageById } from './components/nav-config';
-import { usePageRoute } from './lib/usePageRoute';
+import { CommandPalette } from './components/CommandPalette';
+import { FocusChip } from './components/FocusChip';
+import { EmptyState, Notice, PageHeader, Tabs } from './components/ui';
+import { resolveChrome, surfaceById } from './components/nav-config';
+import { useRoute } from './lib/useRoute';
+import { useShortcuts } from './lib/useShortcuts';
+import { useSync } from './lib/useSync';
+import { useTheme } from './lib/useTheme';
 import {
   fetchSessions,
   fetchAllSessions,
@@ -14,8 +19,6 @@ import {
   filterDailySummaryByRange,
   fillMissingDays,
   computeOverviewStats,
-  getProjectBreakdown,
-  getToolBreakdownFromSessions,
   getModelBreakdown,
   invalidateRealSessions,
   hasNoData,
@@ -23,92 +26,74 @@ import {
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
-// Route-level loaders. Each surface is a separate chunk so Overview/recharts
-// stay off the Sanctum/Loom/Companion paths, and vice versa. Paths are
-// static string literals so Vite can still split them at build time.
+// One chunk per reachable location, keyed by the same `surface/tab` path the
+// router produces. Adding a tab is one entry here plus one in nav-config.
 const ROUTE_LOADERS = {
-  overview:         () => import('./pages/Overview'),
-  sessions:         () => import('./pages/Sessions'),
-  'by-project':     () => import('./pages/ByProject'),
-  'by-day':         () => import('./pages/ByDay'),
-  'by-action':      () => import('./pages/ByAction'),
-  cost:             () => import('./pages/CostTracker'),
-  pomodoro:         () => import('./pages/Pomodoro'),
-  analytics:        () => import('./pages/AnalyticsDashboard'),
-  companion:        () => import('./companion-v2/CompanionPageV2'),
-  'agent-ops':      () => import('./pages/AgentVisualizer'),
+  'today/summary':  () => import('./pages/Overview'),
+  'today/sessions': () => import('./pages/Sessions'),
+  'today/runs':     () => import('./pages/AgentVisualizer'),
+  'review/inbox':   () => import('./pages/LoopReview'),
+  'review/projects':() => import('./pages/ProjectControl'),
+  'review/map':     () => import('./pages/LoopOps'),
+  ledger:           () => import('./pages/CostTracker'),
   sanctum:          () => import('./pages/ScryingSanctum'),
-  'loop-ops':       () => import('./pages/LoopOps'),
-  'loop-review':    () => import('./pages/LoopReview'),
-  'project-control': () => import('./pages/ProjectControl'),
-  'learning-quest': () => import('./pages/LearningQuest'),
-  'capacity-usage': () => import('./pages/CapacityUsage'),
+  learn:            () => import('./pages/LearningQuest'),
+  capacity:         () => import('./pages/CapacityUsage'),
 };
 
-const Overview           = lazy(ROUTE_LOADERS.overview);
-const Sessions           = lazy(ROUTE_LOADERS.sessions);
-const ByProject          = lazy(ROUTE_LOADERS['by-project']);
-const ByDay              = lazy(ROUTE_LOADERS['by-day']);
-const ByAction           = lazy(ROUTE_LOADERS['by-action']);
-const CostTracker        = lazy(ROUTE_LOADERS.cost);
-const Pomodoro           = lazy(ROUTE_LOADERS.pomodoro);
-const AnalyticsDashboard = lazy(ROUTE_LOADERS.analytics);
-const CompanionPageV2    = lazy(ROUTE_LOADERS.companion);
-const AgentVisualizer    = lazy(ROUTE_LOADERS['agent-ops']);
-const ScryingSanctum     = lazy(ROUTE_LOADERS.sanctum);
-const LoopOps            = lazy(ROUTE_LOADERS['loop-ops']);
-const LoopReview         = lazy(ROUTE_LOADERS['loop-review']);
-const ProjectControl     = lazy(ROUTE_LOADERS['project-control']);
-const LearningQuest      = lazy(ROUTE_LOADERS['learning-quest']);
-const CapacityUsage      = lazy(ROUTE_LOADERS['capacity-usage']);
+const Overview        = lazy(ROUTE_LOADERS['today/summary']);
+const Sessions        = lazy(ROUTE_LOADERS['today/sessions']);
+const AgentVisualizer = lazy(ROUTE_LOADERS['today/runs']);
+const LoopReview      = lazy(ROUTE_LOADERS['review/inbox']);
+const ProjectControl  = lazy(ROUTE_LOADERS['review/projects']);
+const LoopOps         = lazy(ROUTE_LOADERS['review/map']);
+const CostTracker     = lazy(ROUTE_LOADERS.ledger);
+const ScryingSanctum  = lazy(ROUTE_LOADERS.sanctum);
+const LearningQuest   = lazy(ROUTE_LOADERS.learn);
+const CapacityUsage   = lazy(ROUTE_LOADERS.capacity);
 
-// ─── Page loader ─────────────────────────────────────────────────────────────
+// Locations that read their own data and ship their own instructional empty
+// states, so the session-data splash must not cover them.
+const SELF_LOADING = new Set([
+  'review/inbox',
+  'review/map',
+  'review/projects',
+  'learn',
+  'capacity',
+]);
+
 function PageLoader() {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 400, color: 'var(--text-muted)', fontSize: 14 }}>
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      height: 320, color: 'var(--text-muted)', fontSize: 'var(--fs-body)',
+    }}>
       Loading…
     </div>
   );
 }
 
-function withPageSuspense(node) {
+function withSuspense(node) {
   return <Suspense fallback={<PageLoader />}>{node}</Suspense>;
 }
 
-// ─── No-data splash ───────────────────────────────────────────────────────────
 function NoDataScreen() {
   return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center',
-      justifyContent: 'center', height: '80vh', gap: 20, textAlign: 'center',
-      padding: '0 48px',
-    }}>
-      <span style={{ fontSize: 48 }}>🐱</span>
-      <h2 style={{ fontSize: 22, fontWeight: 300, color: 'var(--text-primary)', margin: 0 }}>
-        No session data yet
-      </h2>
-      <p style={{ fontSize: 14, color: 'var(--text-muted)', maxWidth: 480, lineHeight: 1.7, margin: 0 }}>
-        Run the sync script to parse your Claude Code sessions:
-      </p>
-      <pre style={{
-        background: 'var(--bg-card)', border: '1px solid var(--border)',
-        borderRadius: 8, padding: '12px 20px', fontSize: 13,
-        color: 'var(--accent)', fontFamily: 'JetBrains Mono, monospace',
-      }}>
-        node sync/export-local.mjs
-      </pre>
-      <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>
-        Then hit the sync button in the sidebar, or refresh this page.
-      </p>
-    </div>
+    <EmptyState
+      title="No sessions parsed yet"
+      body="Meow Ops reads session files your AI coding tools already wrote to this machine. Run the parser once, then hit Sync in the sidebar."
+      command="node sync/export-local.mjs"
+    />
   );
 }
 
 export default function App() {
-  const [page, setPage] = usePageRoute();
-  // Persist date range across reloads so reopening the dashboard keeps
-  // your last context. Falls back to 30d if nothing stored or stored
-  // value is unrecognised.
+  const { route, navigate, setTab } = useRoute();
+  const path = route.tab ? `${route.surface}/${route.tab}` : route.surface;
+
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const { theme, toggle: toggleTheme } = useTheme();
+
   const [dateRange, setDateRange] = useState(() => {
     try {
       const raw = localStorage.getItem('meow-ops-date-range');
@@ -134,7 +119,6 @@ export default function App() {
   const [noData,      setNoData]      = useState(false);
   const [reloadKey,   setReloadKey]   = useState(0);
 
-  // Token budgets — weekly and monthly limits per source (persisted in localStorage)
   const [tokenBudget, setTokenBudget] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('meow-ops-token-budget')) ||
@@ -147,13 +131,18 @@ export default function App() {
     localStorage.setItem('meow-ops-token-budget', JSON.stringify(next));
   }, []);
 
-  // Main data load
+  const reloadData = useCallback(() => {
+    invalidateRealSessions();
+    setReloadKey((k) => k + 1);
+  }, []);
+
+  const sync = useSync(reloadData);
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
       setLoading(true);
 
-      // Fetch everything in parallel
       const [sess, all, summary] = await Promise.all([
         fetchSessions(dateRange),
         fetchAllSessions(),
@@ -162,7 +151,6 @@ export default function App() {
 
       if (cancelled) return;
 
-      // Check for genuine "no data" state (sessions.json missing or empty)
       const empty = await hasNoData();
       setNoData(empty && sess.length === 0);
 
@@ -170,8 +158,8 @@ export default function App() {
       setAllSessions(all);
       if (summary) setCostSummary(summary);
 
-      // Use cost-summary.daily_summary when available — it covers ALL sessions
-      // (no 1000-session cap). Fall back to computing from the in-memory array.
+      // cost-summary.daily_summary covers ALL sessions (no preview cap); fall
+      // back to computing from the in-memory array only when it is missing.
       const raw = summary?.daily_summary?.length
         ? filterDailySummaryByRange(summary.daily_summary, dateRange)
         : await fetchDailyStats(dateRange, summary);
@@ -183,13 +171,10 @@ export default function App() {
     return () => { cancelled = true; };
   }, [dateRange, reloadKey]);
 
-  // Start the active route chunk while session data loads so the existing
-  // Loading… state covers both, instead of flashing a second loader.
-  useEffect(() => {
-    ROUTE_LOADERS[page]?.();
-  }, [page]);
+  // Start the active chunk while session data loads so one Loading… covers
+  // both, instead of flashing a second loader.
+  useEffect(() => { ROUTE_LOADERS[path]?.(); }, [path]);
 
-  // Auto-refresh every 5 minutes
   useEffect(() => {
     const id = setInterval(() => {
       invalidateRealSessions();
@@ -198,50 +183,36 @@ export default function App() {
     return () => clearInterval(id);
   }, []);
 
-  const reloadData = useCallback(() => {
-    invalidateRealSessions();
-    setReloadKey((k) => k + 1);
-  }, []);
+  const openPalette  = useCallback(() => setPaletteOpen(true), []);
+  const closePalette = useCallback(() => setPaletteOpen(false), []);
+  const goToSurface  = useCallback((surface) => navigate(surface), [navigate]);
 
-  const projectData = dateRange === 'all' && costSummary?.byProject
-    ? costSummary.byProject.map((row) => ({
-        project: row.key,
-        sessions: row.sessions,
-        tokens: row.tokens,
-        cost: row.cost,
-        lastActive: row.last_activity_at,
-      }))
-    : getProjectBreakdown(sessions);
-  const toolData    = dateRange === 'all' && costSummary?.byTool
-    ? costSummary.byTool.map((row) => ({ tool_name: row.key, call_count: row.call_count }))
-    : getToolBreakdownFromSessions(sessions);
-  const modelData   = costSummary?.byModel
+  useShortcuts({ onOpenPalette: openPalette, onNavigate: goToSurface, paletteOpen });
+
+  const modelData = costSummary?.byModel
     ? costSummary.byModel.map((row) => ({ model: row.key, sessions: row.sessions, tokens: row.tokens, cost: row.cost }))
     : getModelBreakdown(sessions);
-  // Stats are recomputed inside Overview against the source-filtered list, so
-  // the App-level value is only consumed by CostTracker. Compute lazily there
-  // would be cleaner; keeping the call here for now to preserve behaviour.
-  const stats       = computeOverviewStats(sessions, dateRange);
+  const stats = computeOverviewStats(sessions, dateRange);
 
-  // Source breakdown for sidebar + overview — computed from ALL sessions (no date filter)
-  // Also computes this-week and this-month token usage for budget tracking
+  // Per-source rollup for the budget panel. Computed from ALL sessions so the
+  // week/month figures do not move when the date filter changes.
   const sourceStats = useMemo(() => {
     const now = new Date();
-    const day = now.getDay(); // 0=Sun
+    const day = now.getDay();
     const weekStart = new Date(now);
     weekStart.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
     weekStart.setHours(0, 0, 0, 0);
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const acc = {
-      claude: { sessions: 0, cost: 0, tokens: 0, weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0 },
-      codex:  { sessions: 0, cost: 0, tokens: 0, weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0 },
-    };
-    allSessions.forEach(s => {
-      // Preserve the real source (codex/cursor/aider/antigravity), don't fold
-      // everything non-codex into claude. Lazily init unseen sources.
+    const blank = () => ({
+      sessions: 0, cost: 0, tokens: 0,
+      weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0,
+    });
+    const acc = { claude: blank(), codex: blank() };
+
+    allSessions.forEach((s) => {
       const src = s.source || 'claude';
-      if (!acc[src]) acc[src] = { sessions: 0, cost: 0, tokens: 0, weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0 };
+      if (!acc[src]) acc[src] = blank();
       const tok = s.total_tokens || 0;
       acc[src].sessions++;
       acc[src].cost   += s.estimated_cost_usd || 0;
@@ -252,7 +223,7 @@ export default function App() {
       if (d >= monthStart) { acc[src].monthTokens += tok; acc[src].monthSessions++; }
     });
     for (const [src, complete] of Object.entries(costSummary?.bySourceAllTime || {})) {
-      if (!acc[src]) acc[src] = { weekTokens: 0, monthTokens: 0, weekSessions: 0, monthSessions: 0 };
+      if (!acc[src]) acc[src] = blank();
       acc[src].sessions = complete.sessions || 0;
       acc[src].cost = complete.cost || 0;
       acc[src].tokens = complete.tokens || 0;
@@ -260,119 +231,133 @@ export default function App() {
     return acc;
   }, [allSessions, costSummary]);
 
-  const renderPage = () => {
-    // Loop-Ops reads its own spec data and ships its own instructional empty
-    // states, so it must not be blocked by the session-data splash.
-    if (page === 'loop-ops') return withPageSuspense(<LoopOps />);
-    if (page === 'loop-review') return withPageSuspense(<LoopReview />);
-    if (page === 'capacity-usage') return withPageSuspense(<CapacityUsage />);
-    if (page === 'project-control') return withPageSuspense(<ProjectControl />);
-    if (page === 'learning-quest') return withPageSuspense(<LearningQuest />);
+  const chrome  = resolveChrome(route.surface, route.tab);
+  const surface = surfaceById(route.surface);
 
-    if (noData) return <NoDataScreen />;
+  function renderLocation() {
+    if (!SELF_LOADING.has(path) && noData) return <NoDataScreen />;
 
-    switch (page) {
-      case 'overview':
-        return withPageSuspense(
+    switch (path) {
+      case 'today/summary':
+        return withSuspense(
           <Overview
             stats={stats}
             sessions={sessions}
             allSessions={allSessions}
             dailyData={dailyData}
-            toolData={toolData}
             costSummary={costSummary}
             dateRange={dateRange}
             sourceStats={sourceStats}
             tokenBudget={tokenBudget}
             onBudgetChange={saveBudget}
+            onNavigate={navigate}
           />,
         );
-      case 'sessions':
-        return withPageSuspense(<Sessions sessions={sessions} />);
-      case 'by-project':
-        return withPageSuspense(<ByProject projectData={projectData} />);
-      case 'by-day':
-        return withPageSuspense(<ByDay dailyData={dailyData} dateRange={dateRange} />);
-      case 'by-action':
-        return withPageSuspense(<ByAction toolData={toolData} />);
-      case 'cost':
-        return withPageSuspense(
+      case 'today/sessions':
+        return withSuspense(<Sessions sessions={sessions} />);
+      case 'today/runs':
+        return withSuspense(<AgentVisualizer sessions={allSessions} />);
+      case 'review/inbox':
+        return withSuspense(<LoopReview />);
+      case 'review/map':
+        return withSuspense(<LoopOps />);
+      case 'review/projects':
+        return withSuspense(<ProjectControl />);
+      case 'ledger':
+        return withSuspense(
           <CostTracker
             dailyData={dailyData}
             modelData={modelData}
             stats={stats}
             costSummary={costSummary}
-          />,
-        );
-      case 'pomodoro':
-        return withPageSuspense(<Pomodoro />);
-      case 'analytics':
-        return withPageSuspense(
-          <AnalyticsDashboard
-            sessions={allSessions}
-            dailySummary={costSummary?.daily_summary ?? []}
-            archiveTotal={costSummary?.archive?.total}
-            previewCount={allSessions.length}
-          />,
-        );
-      case 'companion':
-        return withPageSuspense(<CompanionPageV2 sessions={allSessions} />);
-      case 'agent-ops':
-        return withPageSuspense(<AgentVisualizer sessions={allSessions} />);
-      case 'sanctum':
-        return withPageSuspense(<ScryingSanctum sessions={allSessions} onReload={reloadData} />);
-      default:
-        return withPageSuspense(
-          <Overview
-            stats={stats}
-            sessions={sessions}
             allSessions={allSessions}
-            dailyData={dailyData}
-            toolData={toolData}
-            costSummary={costSummary}
             dateRange={dateRange}
-            sourceStats={sourceStats}
-            tokenBudget={tokenBudget}
-            onBudgetChange={saveBudget}
           />,
         );
+      case 'sanctum':
+        return withSuspense(<ScryingSanctum sessions={allSessions} onReload={reloadData} />);
+      case 'learn':
+        return withSuspense(<LearningQuest sessions={sessions} />);
+      case 'capacity':
+        return withSuspense(<CapacityUsage />);
+      default:
+        return <NoDataScreen />;
     }
-  };
+  }
 
-  // Per-page chrome flags come from NAV_SECTIONS via pageById, so adding a
-  // page is one entry in nav-config rather than two edits to negation lists.
-  const pageDesc      = pageById(page);
-  const showDateFilter = pageDesc?.usesDateFilter ?? false;
-  const fullBleed      = pageDesc?.fullBleed      ?? false;
+  const showLoader = loading && !SELF_LOADING.has(path);
+
+  const header = (
+    <>
+      <PageHeader
+        title={surface?.label ?? 'Meow Ops'}
+        description={chrome.description}
+        actions={(
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
+            <FocusChip />
+            {chrome.usesDateFilter ? <DateFilter value={dateRange} onChange={setDateRange} /> : null}
+          </div>
+        )}
+      />
+      {surface?.tabs && (
+        <Tabs
+          items={surface.tabs}
+          value={route.tab ?? surface.tabs[0].id}
+          onChange={setTab}
+          ariaLabel={`${surface.label} views`}
+        />
+      )}
+      {chrome.needsHelper && !sync.helperOnline && (
+        <Notice command="node sync/local-api.mjs">
+          This view reads from the local helper, which is not running. Start it in a terminal at the
+          repo root and this page fills in.
+        </Notice>
+      )}
+    </>
+  );
+
+  const body = (
+    <ErrorBoundary key={path}>
+      {showLoader ? <PageLoader /> : renderLocation()}
+    </ErrorBoundary>
+  );
 
   return (
     <PasswordGate>
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <Sidebar activePage={page} onNavigate={setPage} onReload={reloadData} />
+      <div className="mo-shell">
+        <Sidebar
+          activeSurface={route.surface}
+          onNavigate={goToSurface}
+          onOpenPalette={openPalette}
+          sync={sync}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+        />
 
-      <main style={{
-        marginLeft: 'var(--sidebar-w)', flex: 1, minWidth: 0,
-        width: 'calc(100vw - var(--sidebar-w))',
-        ...(fullBleed
-          ? { padding: 0, maxWidth: 'none', display: 'flex', flexDirection: 'column', height: '100vh' }
-          : { padding: 32, maxWidth: 1280 }),
-      }}>
-        {showDateFilter && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
-            <DateFilter value={dateRange} onChange={setDateRange} />
-          </div>
-        )}
+        <main className={chrome.fullBleed ? 'mo-main mo-main--bleed' : 'mo-main mo-main--standard'}>
+          {chrome.fullBleed ? (
+            <>
+              <div className="mo-bleedhead">{header}</div>
+              <div className="mo-bleedbody">{body}</div>
+            </>
+          ) : (
+            <>
+              {header}
+              {body}
+            </>
+          )}
+        </main>
 
-        {loading && !['loop-ops', 'loop-review', 'capacity-usage', 'project-control', 'learning-quest'].includes(page) ? (
-          <PageLoader />
-        ) : (
-          <ErrorBoundary key={page}>
-            {renderPage()}
-          </ErrorBoundary>
-        )}
-      </main>
-      <CompanionChat pageLabel={pageDesc?.label || 'Meow Ops'} />
-    </div>
+        <CommandPalette
+          open={paletteOpen}
+          onClose={closePalette}
+          onNavigate={navigate}
+          onSync={() => { void sync.run(); }}
+          onSetDateRange={setDateRange}
+          onToggleTheme={toggleTheme}
+          theme={theme}
+        />
+      </div>
     </PasswordGate>
   );
 }

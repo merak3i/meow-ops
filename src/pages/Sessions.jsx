@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import SessionTable from '../components/SessionTable';
+import { Button, Scope } from '../components/ui';
 import { fetchSessionPage } from '../lib/queries';
 
 const EMPTY_FACETS = { projects: [], sources: [], models: [] };
@@ -63,14 +64,12 @@ export default function Sessions({ sessions: previewSessions = [] }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
-          <h2 style={{ fontSize: 22, marginBottom: 4 }}>{usingArchive ? 'Session archive' : 'Recent session preview'}</h2>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            {usingArchive ? 'Complete local history · details load in pages' : 'Local archive unavailable · showing compatibility preview'}
-          </span>
-        </div>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{countLabel}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-3)', marginBottom: 'var(--sp-3)' }}>
+        <Scope
+          range={usingArchive ? 'Every session ever parsed' : 'Newest sessions only'}
+          completeness={usingArchive ? 'archive' : 'preview'}
+        />
+        <span style={{ fontSize: 'var(--fs-ui)', color: 'var(--text-muted)' }}>{countLabel}</span>
       </div>
 
       <div className="card" style={{ padding: 14, marginBottom: 16 }}>
@@ -99,13 +98,12 @@ export default function Sessions({ sessions: previewSessions = [] }) {
             setCursorStack([]);
           }} />
           {hasFilters && (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               onClick={() => { setLoading(true); setFilters({ from: '', to: '', project: '', source: '', model: '' }); setCursor(null); setCursorStack([]); }}
-              style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
             >
               Clear filters
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -121,9 +119,8 @@ export default function Sessions({ sessions: previewSessions = [] }) {
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             {items.length > 0 ? `${firstRow.toLocaleString()}–${lastRow.toLocaleString()} of ${result.total.toLocaleString()}` : 'No matching sessions'}
           </span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              type="button"
+          <div style={{ display: 'flex', gap: 'var(--sp-2)' }}>
+            <Button
               disabled={cursorStack.length === 0 || loading}
               onClick={() => {
                 setLoading(true);
@@ -132,22 +129,20 @@ export default function Sessions({ sessions: previewSessions = [] }) {
                 setCursorStack(previous);
                 setCursor(target);
               }}
-              style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', opacity: cursorStack.length === 0 ? 0.4 : 1 }}
             >
               Previous
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="primary"
               disabled={!result.nextCursor || loading}
               onClick={() => {
                 setLoading(true);
                 setCursorStack((current) => [...current, cursor]);
                 setCursor(result.nextCursor);
               }}
-              style={{ padding: '7px 12px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--accent)', color: '#000', cursor: 'pointer', opacity: !result.nextCursor ? 0.4 : 1 }}
             >
               Next
-            </button>
+            </Button>
           </div>
         </div>
       )}

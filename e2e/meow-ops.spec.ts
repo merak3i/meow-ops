@@ -2,7 +2,7 @@
  * Meow Operations — end-to-end test suite
  *
  * Runs against the Vite preview build (dist/).
- * Covers all 14 routed pages + key interactions.
+ * Covers the five surfaces (Today, Review, Ledger, Sanctum, Learn) plus key interactions.
  */
 import { expect, test } from '@playwright/test';
 
@@ -20,15 +20,16 @@ async function waitForApp(page: import('@playwright/test').Page) {
   }, { timeout: 20_000 });
 }
 
-/** Click a sidebar nav button by label. Some nav buttons carry a tag pill
- *  child (e.g., "Scrying SanctumSANCTUM"), so match a regex prefix instead
- *  of exact text — the regex anchors at the start so it never collides
- *  with unrelated buttons that happen to contain the label as a substring. */
+/** Click a sidebar nav button by label. */
 async function nav(page: import('@playwright/test').Page, label: string) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   await page.getByRole('button', { name: new RegExp(`^${escaped}`) }).first().click();
-  // Brief settle — lazy chunks may need a moment
   await page.waitForTimeout(600);
+}
+
+async function openTab(page: import('@playwright/test').Page, label: string) {
+  await page.getByRole('tab', { name: label, exact: true }).click();
+  await page.waitForTimeout(400);
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
@@ -45,26 +46,18 @@ test('page title is Meow Operations', async ({ page }) => {
 });
 
 test('sidebar renders all nav buttons', async ({ page }) => {
-  // Sidebar items as of the active App.jsx route table. The nav helper
-  // matches a regex prefix to handle pill-tagged labels like "Scrying
-  // SanctumSANCTUM". Live Sessions used to be in the sidebar; the page
-  // is kept on disk for future use but no longer routed. Test #229
-  // covers what's left of that flow.
-  const expectedNav = [
-    'Overview', 'Sessions', 'By Project', 'By Day', 'By Action',
-    'Cost Tracker', 'Analytics', 'Agent Ops', 'Scrying Sanctum',
-    'The Loom', 'Review Deck', 'Project Control', 'Capacity & Usage', 'Companion', 'Focus Timer',
-    "Builder's Journey",
-  ];
+  const expectedNav = ['Today', 'Review', 'Ledger', 'Sanctum', 'Learn'];
   for (const label of expectedNav) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     await expect(
       page.getByRole('button', { name: new RegExp(`^${escaped}`) }).first(),
     ).toBeVisible();
   }
+  await expect(page.getByRole('button', { name: 'Start focus timer' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Companion/ })).toHaveCount(0);
 });
 
-test('Project Control: Eagle Eye and Surgical views use governed local evidence', async ({ page }) => {
+test('Projects: Summary and Detail views use governed local evidence', async ({ page }) => {
   const project = {
     project: {
       project_id: 'meow-ops-4efe35ade3', name: 'Meow Ops', aliases: ['meow-ops'],
@@ -96,12 +89,13 @@ test('Project Control: Eagle Eye and Surgical views use governed local evidence'
     return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
   });
 
-  await nav(page, 'Project Control');
+  await nav(page, 'Review');
+  await openTab(page, 'Projects');
   await expect(page.getByRole('heading', { name: 'Meow Ops', exact: true })).toBeVisible();
   await expect(page.getByText('100%')).toBeVisible();
   await expect(page.getByText('2/5')).toBeVisible();
   await expect(page.getByText('Owner-approved constitution')).toBeVisible();
-  await page.getByRole('button', { name: 'Surgical View' }).click();
+  await page.getByRole('button', { name: 'Detail' }).click();
   await expect(page.getByText('Owner approved the constitution.')).toBeVisible();
   await expect(page.getByText('INDEX.md')).toBeVisible();
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
@@ -183,7 +177,8 @@ test('Project Control: register a local project and govern proposed learning end
     return route.fulfill({ status: 404, headers, json: { ok: false, error: 'not found' } });
   });
 
-  await nav(page, 'Project Control');
+  await nav(page, 'Review');
+  await openTab(page, 'Projects');
   await expect(page.getByRole('heading', { name: 'No governed projects yet' })).toBeVisible();
   await page.getByLabel('Project name').fill('Lifecycle Project');
   await page.getByLabel('Local project folder').fill('/Users/test/projects/lifecycle');
@@ -211,230 +206,51 @@ test('Project Control: register a local project and govern proposed learning end
   await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0);
 });
 
-test("Builder's Journey prioritizes spontaneous work, independent paths, and quick recall", async ({ page }) => {
-  const topic = (id: string, title: string, lane: string, refreshDue = false) => ({
-    topic_id: id, title, summary: `${title} explained as a generic mechanism`, lane,
-    difficulty: 2, tags: [], prerequisite_ids: [], stage: null,
-    recall: { confidence: 0, refresh_due: refreshDue, interval_days: 1, next_due_at: '2026-07-20T00:00:00.000Z' },
-    next_question: { question_id: `${id}-q`, kind: 'analogy', question_text: `Explain ${title} with an everyday analogy.` },
-    progress: { action_count: refreshDue ? 1 : 0, attempts: 0, completed_actions: refreshDue ? ['lesson_opened'] : [], next_actions: ['lesson_opened', 'concept_preview_completed'] },
-  });
-  const topics = [topic('structured-output', 'Structured output', 'code', true), topic('proof-led-sales', 'Proof-led sales', 'sales', true)];
-  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, (route) => {
-    const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
-    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    const path = new URL(route.request().url()).pathname;
-    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
-    if (path === '/learning-quest/snapshot') return route.fulfill({ headers, json: {
-      ok: true, schema_version: 2, topics,
-      summary: { total_topics: 2, by_stage: { discovered: 0, practiced: 0, proven: 0, shipped: 0 }, by_lane: { code: 1, product: 0, marketing: 0, gtm: 0, sales: 1 }, durable_capability: 0 },
-      analytics: { recall: { attempts: 0, pass_rate: 0, refresh_due: 1, reached_360_days: 0 }, independence: { completed_actions: 0, unassisted_rate: 0, average_hints: 0 }, explanation: { passes: 0, rubric_average: 0 }, calibration_error: 0, effort: { average_attempts: 0, average_duration_seconds: 0 }, stage_funnel: {}, by_lane: {}, guidance: { bottleneck_stage: 'not started', independence_direction: 'steady', next_intervention: 'refresh_due_recall' } },
-      rewards: { xp: 0, level: 1, streak_days: 0, dimensions: { understanding: 0, independence: 0, shipping: 0, consistency: 0 }, badges: [] },
-      workshop: { state: 'none', health: 100, age_days: 0, inactive_days: 0, pending_count: 0, completed_count: 0, can_resume: false, can_complete: false, origin: 'spontaneous', focus_topic_id: 'structured-output', reminder: 'Choose any lane.' },
-    } });
-    return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
-  });
-
-  await nav(page, "Builder's Journey");
-  await expect(page.getByRole('heading', { name: 'From vibe to first principles.' })).toBeVisible();
-  await expect(page.getByRole('progressbar', { name: 'Workshop health' })).toHaveAttribute('aria-valuenow', '100');
-  await expect(page.getByRole('button', { name: /Start with Structured output/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Paths', exact: true }).click();
-  await page.getByRole('tab', { name: /Sales/ }).click();
-  await expect(page.getByText('Proof-led sales')).toBeVisible();
-  await page.getByRole('button', { name: /Quick recall/, exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Pull the idea from memory.' })).toBeVisible();
-  const explanation = page.getByLabel('Explain in your own words');
-  await explanation.fill('This explanation names the mechanism, a boundary, one failure case, and a transfer example.');
-  await page.getByRole('button', { name: 'Check my explanation' }).click();
-  for (const label of [
-    'I explained the mechanism',
-    'I named an important boundary',
-    'I included a realistic failure case',
-    'I gave a transfer example',
-  ]) await page.getByLabel(label).check();
-  await expect(page.getByRole('button', { name: 'Record self-check' })).toBeEnabled();
-  await page.locator('.quest-recall-layout aside').getByRole('button', { name: /Proof-led sales/ }).click();
-  await expect(page.getByRole('heading', { name: 'Explain Proof-led sales with an everyday analogy.' })).toBeVisible();
-  await explanation.fill('A different explanation also names a mechanism, boundary, failure case, and transfer example.');
-  await page.getByRole('button', { name: 'Check my explanation' }).click();
-  await expect(page.getByRole('button', { name: 'Record self-check' })).toBeDisabled();
-  for (const label of [
-    'I explained the mechanism',
-    'I named an important boundary',
-    'I included a realistic failure case',
-    'I gave a transfer example',
-  ]) await expect(page.getByLabel(label)).not.toBeChecked();
-});
-
-test("Builder's Journey opens a real lesson task before recording progress", async ({ page }) => {
-  let learningEventsCount = 0;
-  const topic = {
-    topic_id: 'structured-output', title: 'Structured output',
-    summary: 'A schema accepts valid responses and rejects malformed responses', lane: 'code',
-    difficulty: 1, tags: [], prerequisite_ids: [], stage: null,
-    recall: { confidence: 0, refresh_due: false, interval_days: 0, next_due_at: '2026-07-25T00:00:00.000Z' },
-    next_question: { question_id: 'structured-q', kind: 'transfer', question_text: 'Explain the transfer.' },
-    progress: { action_count: 0, attempts: 0, completed_actions: [], next_actions: ['lesson_opened', 'concept_preview_completed'] },
-  };
-  const snapshot = (active: boolean, progressed = false) => ({
-    ok: true, schema_version: 2,
-    topics: [{
-      ...topic,
-      ...(progressed ? {
-        progress: { action_count: 1, attempts: 1, completed_actions: ['lesson_opened'], next_actions: ['concept_preview_completed'] },
-      } : {}),
-    }],
-    summary: { total_topics: 1, by_stage: {}, by_lane: { code: 1 }, durable_capability: 0 },
-    analytics: { recall: { attempts: 0, pass_rate: 0, refresh_due: 0, reached_360_days: 0 }, independence: { completed_actions: progressed ? 1 : 0, unassisted_rate: 1, average_hints: 0 }, explanation: { passes: 0, rubric_average: 0 }, calibration_error: 0, effort: { average_attempts: 1, average_duration_seconds: 0 }, stage_funnel: {}, by_lane: {}, guidance: { bottleneck_stage: 'not started', independence_direction: 'steady', next_intervention: 'open_smallest_lesson' } },
-    rewards: { xp: progressed ? 25 : 0, level: 1, streak_days: progressed ? 1 : 0, dimensions: { understanding: 0, independence: progressed ? 1 : 0, shipping: 0, consistency: progressed ? 1 : 0 }, badges: [] },
-    workshop: { state: active ? 'active' : 'none', health: 100, age_days: 0, inactive_days: 0, pending_count: active && !progressed ? 1 : 0, completed_count: progressed ? 1 : 0, can_resume: active, can_complete: progressed, origin: 'spontaneous', focus_topic_id: 'structured-output', reminder: 'Continue one honest proof.' },
-  });
-  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, async (route) => {
-    const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
-    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    const path = new URL(route.request().url()).pathname;
-    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
-    if (path === '/learning-quest/snapshot') return route.fulfill({ headers, json: snapshot(false) });
-    if (path === '/loop-eng/nonce') return route.fulfill({ headers, json: { nonce: `nonce-${Date.now()}` } });
-    if (path === '/learning-quest/workshop') return route.fulfill({ headers, json: snapshot(true) });
-    if (path === '/learning-quest/events') {
-      learningEventsCount += 1;
-      return route.fulfill({ headers, json: snapshot(true, true) });
-    }
-    return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
-  });
-
-  await nav(page, "Builder's Journey");
-  await page.getByRole('button', { name: /Start with Structured output/ }).click();
-  await page.getByRole('button', { name: 'Open the lesson' }).click();
-  const task = page.getByRole('region', { name: 'Learning proof task' });
-  await expect(task.getByText('Core idea.')).toBeVisible();
-  await expect(task.getByText(/Mechanism:/)).toBeVisible();
-  expect(learningEventsCount).toBe(0);
-  await task.getByRole('button', { name: 'I considered all four' }).click();
-  await expect(page.getByRole('button', { name: 'Finish the concept preview' })).toBeVisible();
-  expect(learningEventsCount).toBe(1);
-});
-
-test("Builder's Journey records a non-code real-world outcome through the owner proof path", async ({ page }) => {
-  let outcomeWrites = 0;
-  const topic = {
-    topic_id: 'marketing-proof', title: 'Marketing Proof Story',
-    summary: 'Explain a real capability with verified support', lane: 'marketing',
-    difficulty: 2, tags: [], prerequisite_ids: [], stage: 'proven',
-    recall: { confidence: 0, refresh_due: false, interval_days: 0, next_due_at: '2026-07-26T00:00:00.000Z' },
-    next_question: { question_id: 'marketing-q', kind: 'transfer', question_text: 'Explain the transfer.' },
-    progress: { action_count: 7, attempts: 7, completed_actions: [], next_actions: ['outcome_owner_confirmed'] },
-  };
-  const snapshot = (shipped = false) => ({
-    ok: true, schema_version: 2,
-    topics: [{ ...topic, stage: shipped ? 'shipped' : 'proven', progress: { ...topic.progress, next_actions: shipped ? [] : ['outcome_owner_confirmed'] } }],
-    summary: { total_topics: 1, by_stage: { proven: shipped ? 0 : 1, shipped: shipped ? 1 : 0 }, by_lane: { marketing: 1 }, durable_capability: shipped ? 0.25 : 0 },
-    analytics: { recall: { attempts: 0, pass_rate: 0, refresh_due: 0, reached_360_days: 0 }, independence: { completed_actions: 7, unassisted_rate: 1, average_hints: 0 }, explanation: { passes: 1, rubric_average: 1 }, calibration_error: 0, effort: { average_attempts: 1, average_duration_seconds: 0 }, stage_funnel: {}, by_lane: {}, guidance: { bottleneck_stage: shipped ? 'shipped' : 'proven', independence_direction: 'steady', next_intervention: shipped ? 'choose_new_topic' : 'ship_verified_proof' } },
-    rewards: { xp: shipped ? 200 : 175, level: 2, streak_days: 1, dimensions: { understanding: 1, independence: 7, shipping: shipped ? 1 : 0, consistency: 1 }, badges: shipped ? ['proof-shipper'] : [] },
-    workshop: { state: 'active', health: 100, age_days: 0, inactive_days: 0, pending_count: 0, completed_count: 1, can_resume: true, can_complete: true, origin: 'spontaneous', focus_topic_id: 'marketing-proof', reminder: 'Continue one honest proof.' },
-  });
-  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, async (route) => {
-    const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
-    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    const path = new URL(route.request().url()).pathname;
-    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
-    if (path === '/learning-quest/snapshot') return route.fulfill({ headers, json: snapshot(false) });
-    if (path === '/loop-eng/nonce') return route.fulfill({ headers, json: { nonce: `nonce-${Date.now()}` } });
-    if (path === '/learning-quest/outcome-proof') {
-      outcomeWrites += 1;
-      return route.fulfill({ headers, json: snapshot(true) });
-    }
-    return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
-  });
-
-  await nav(page, "Builder's Journey");
-  await page.getByRole('button', { name: 'Confirm a real-world outcome' }).click();
-  const task = page.getByRole('region', { name: 'Learning proof task' });
-  await task.getByLabel('Private outcome evidence note').fill('I opened the published asset and checked every visible claim against supporting proof.');
-  await task.getByLabel('I personally checked this real-world outcome.').check();
-  await task.getByRole('button', { name: 'Record owner-confirmed outcome' }).click();
-  await expect.poll(() => outcomeWrites).toBe(1);
-  await expect(page.getByText('Owner-confirmed real-world outcome recorded locally.')).toBeVisible();
-  await expect(page.getByText('shipped', { exact: true })).toBeVisible();
-});
-
-test("Builder's Journey remains usable with a legacy helper snapshot", async ({ page }) => {
-  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, (route) => {
-    const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
-    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    const path = new URL(route.request().url()).pathname;
-    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
-    if (path === '/learning-quest/snapshot') return route.fulfill({
-      headers,
-      json: {
-        ok: true,
-        schema_version: 1,
-        topics: [],
-        summary: {
-          total_topics: 0,
-          by_stage: {},
-          by_lane: {},
-          durable_capability: 0,
-        },
+test('Learn mines concepts from session tool mix', async ({ page }) => {
+  await page.route(/\/data\/sessions\.json(?:\?|$)/, (route) => route.fulfill({
+    json: [
+      {
+        session_id: 's-trace', project: 'meow-ops', model: 'claude-sonnet',
+        started_at: '2026-08-30T10:00:00.000Z', ended_at: '2026-08-30T10:20:00.000Z',
+        duration_seconds: 1200, message_count: 12, user_message_count: 4, assistant_message_count: 8,
+        input_tokens: 1000, output_tokens: 400, cache_creation_tokens: 0, cache_read_tokens: 0,
+        total_tokens: 1400, estimated_cost_usd: 0.02, cat_type: 'detective', is_ghost: false,
+        source: 'claude', tools: { Read: 12, Grep: 8, Glob: 3, Edit: 1 },
+        session_title: 'Chase the null in export-local', first_user_message: 'why is parse failing',
       },
-    });
-    return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
-  });
-
-  await nav(page, "Builder's Journey");
-  await expect(page.getByRole('heading', { name: 'From vibe to first principles.' })).toBeVisible();
-  await expect(page.getByRole('progressbar', { name: 'Workshop health' })).toHaveAttribute('aria-valuenow', '100');
-  await expect(page.getByText('Shape the first path')).toBeVisible();
-  await expect(page.getByText(/local helper is out of date/i)).toBeVisible();
-  await expect(page.locator('[data-vite-error]')).toHaveCount(0);
+      {
+        session_id: 's-retry', project: 'meow-ops', model: 'claude-sonnet',
+        started_at: '2026-08-30T11:00:00.000Z', ended_at: '2026-08-30T11:40:00.000Z',
+        duration_seconds: 2400, message_count: 20, user_message_count: 8, assistant_message_count: 12,
+        input_tokens: 2000, output_tokens: 800, cache_creation_tokens: 0, cache_read_tokens: 0,
+        total_tokens: 2800, estimated_cost_usd: 0.04, cat_type: 'builder', is_ghost: false,
+        source: 'claude', tools: { Edit: 14, Write: 6, Read: 4 },
+        session_title: 'rewrite the fetch helper again', first_user_message: 'same timeout retry',
+      },
+    ],
+  }));
+  await page.reload();
+  await waitForApp(page);
+  await nav(page, 'Learn');
+  await expect(page.getByRole('list', { name: 'Inferred concepts' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Stack tracing' })).toBeVisible();
+  await expect(page.getByText(/That is stack tracing/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Idempotent retries' })).toBeVisible();
+  await expect(page.getByText(/You kept rewriting the same helper/)).toBeVisible();
+  await expect(page.getByText(/meow-ops, \d+ sessions?/)).toBeVisible();
+  await expect(page.getByText(/YouTube/i)).toHaveCount(0);
+  await page.getByRole('button', { name: 'I get this' }).first().click();
+  await expect(page.getByRole('button', { name: 'I get this' }).first()).toBeVisible();
+  await expect(page.getByText(/Builder's Journey|Workshop health|From vibe to first principles/)).toHaveCount(0);
 });
 
-test("Builder's Journey explains how to repair a stale helper mutation", async ({ page }) => {
-  const topic = {
-    topic_id: 'cost-aware-router',
-    title: 'Cost-Aware Agent Router',
-    summary: 'Choose the cheapest safe route.',
-    lane: 'code',
-    difficulty: 3,
-    tags: [],
-    prerequisite_ids: [],
-    stage: null,
-    recall: { confidence: 0, refresh_due: true, interval_days: 0, next_due_at: '2026-07-24T00:00:00.000Z' },
-    next_question: { question_id: 'cost-aware-router-q', kind: 'predict', question_text: 'Predict the safe route.' },
-    progress: { action_count: 0, attempts: 0, completed_actions: [], next_actions: ['lesson_opened'] },
-  };
-  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, (route) => {
-    const headers = { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'x-meow-ops-local, content-type', 'access-control-allow-methods': 'GET, POST, OPTIONS' };
-    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    const path = new URL(route.request().url()).pathname;
-    if (path === '/loop-eng/summary') return route.fulfill({ headers, json: { ok: true } });
-    if (path === '/loop-eng/nonce') return route.fulfill({ headers, json: { nonce: 'owner-nonce' } });
-    if (path === '/learning-quest/snapshot') return route.fulfill({ headers, json: {
-      ok: true,
-      schema_version: 2,
-      topics: [topic],
-      summary: { total_topics: 1, by_stage: {}, by_lane: { code: 1 }, durable_capability: 0 },
-      workshop: { state: 'none', health: 100, age_days: 0, inactive_days: 0, pending_count: 0, completed_count: 0, can_resume: false, can_complete: false, origin: 'spontaneous', focus_topic_id: topic.topic_id, reminder: 'Choose any lane.' },
-    } });
-    if (path === '/learning-quest/workshop') return route.fulfill({ status: 404, headers, json: { ok: false, error: 'Not found' } });
-    return route.fulfill({ status: 404, headers, json: { error: 'not found' } });
-  });
-
-  await nav(page, "Builder's Journey");
-  await page.getByRole('button', { name: /Start with Cost-Aware Agent Router/ }).click();
-  await expect(page.getByRole('status')).toContainText('Your local helper is out of date');
-  await expect(page.getByRole('status')).toContainText('npm run agents:install');
-});
-
-test('Capacity & Usage: local-first usage cockpit renders', async ({ page }) => {
-  await nav(page, 'Capacity & Usage');
-  await expect(page.getByRole('heading', { name: 'Capacity & Usage', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Refresh local data' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'GitHub Actions', exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'SuperAdmin Wiring', exact: true })).toBeVisible();
-  await expect(page.locator('[data-vite-error]')).toHaveCount(0);
+test('Learn empty state asks for a parse when no sessions exist', async ({ page }) => {
+  await page.route(/\/data\/sessions\.json(?:\?|$)/, (route) => route.fulfill({ json: [] }));
+  await page.reload();
+  await waitForApp(page);
+  await nav(page, 'Learn');
+  await expect(page.getByText('No sessions to mine yet')).toBeVisible();
+  await expect(page.getByText('node sync/export-local.mjs')).toBeVisible();
 });
 
 test('sidebar shows Source Usage panel when multiple sources exist', async ({ page }) => {
@@ -446,237 +262,21 @@ test('sidebar shows Source Usage panel when multiple sources exist', async ({ pa
   expect(count).toBeGreaterThanOrEqual(0);
 });
 
-test('Companion chat opens as a persistent guided operations surface', async ({ page }) => {
-  await page.getByRole('button', { name: 'Open Companion chat' }).click();
-  const chat = page.getByRole('dialog', { name: 'Companion AI chat' });
-  await expect(chat).toBeVisible();
-  await expect(chat.getByText('Local-first copilot')).toBeVisible();
-  await expect(chat.getByRole('button', { name: 'What changed today?' })).toBeVisible();
-  await expect(chat.getByRole('button', { name: 'Is sync healthy?' })).toBeVisible();
-  await expect(chat.getByRole('button', { name: 'What should I fix next?' })).toBeVisible();
-  await expect(chat.getByRole('button', { name: 'Prepare a repair prompt' })).toBeVisible();
-  await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toBeFocused();
-});
-
-test('Companion Soul Studio previews personality without weakening evidence gates', async ({ page }) => {
-  await page.getByRole('button', { name: 'Open Companion chat' }).click();
-  const chat = page.getByRole('dialog', { name: 'Companion AI chat' });
-  await chat.getByRole('button', { name: 'Open Soul Studio' }).click();
-
-  await expect(chat.getByRole('heading', { name: 'Soul Studio' })).toBeVisible();
-  await expect(chat.getByRole('button', { name: 'Clear Operator' })).toBeVisible();
-  await expect(chat.getByRole('button', { name: 'Warm Strategist' })).toBeVisible();
-  await expect(chat.getByRole('button', { name: 'Critical Partner' })).toBeVisible();
-  await expect(chat.getByRole('button', { name: 'Curious Explorer' })).toBeVisible();
-  await expect(chat.getByText('Evidence gates cannot be overridden')).toBeVisible();
-  await expect(chat.getByRole('textbox', { name: 'Owner meta-prompt' })).toHaveAttribute('maxlength', '100000');
-  await expect(chat.getByRole('heading', { name: 'Response style' })).toBeVisible();
-  await expect(chat.getByRole('combobox', { name: 'Answer length' })).toHaveValue('balanced');
-  await expect(chat.getByRole('combobox', { name: 'Challenge style' })).toHaveValue('balanced');
-  await expect(chat.getByRole('combobox', { name: 'Exploration style' })).toHaveValue('balanced');
-  await expect(chat.getByRole('heading', { name: 'Suggested refinements' })).toBeVisible();
-  await expect(chat.getByText(/Raw questions and responses are never written/)).toBeVisible();
-  await expect(chat.getByRole('heading', { name: 'Project souls' })).toBeVisible();
-
-  await chat.getByRole('textbox', { name: 'Companion name' }).fill('Maven');
-  await chat.getByRole('button', { name: 'Critical Partner' }).click();
-  await chat.getByRole('combobox', { name: 'Project for new soul overlay' }).fill('Patherle');
-  await chat.getByRole('button', { name: 'Add layer' }).click();
-  await expect(chat.getByRole('combobox', { name: 'Patherle working style' })).toHaveValue('inherit');
-  await expect(chat.getByRole('textbox', { name: 'Patherle soul instructions' })).toHaveAttribute('maxlength', '12000');
-  await chat.getByText('Project response style').click();
-  await expect(chat.getByRole('combobox', { name: 'Patherle answer length' })).toHaveValue('inherit');
-  await expect(chat.getByText('Maven', { exact: true })).toBeVisible();
-  await expect(chat.getByText(/Pressure-test assumptions/)).toBeVisible();
-
-  await chat.getByRole('button', { name: 'Back to chat' }).click();
-  await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toBeVisible();
-});
-
-test('Companion feedback records only preference metadata from an answer', async ({ page }) => {
-  const profile = {
-    schema_version: 3,
-    profile_id: 'primary',
-    revision: 4,
-    updated_at: '2026-07-15T00:00:00.000Z',
-    name: 'Companion',
-    preset: 'clear-operator',
-    custom_instructions: '',
-    response_preferences: { verbosity: 'balanced', challenge: 'balanced', exploration: 'balanced' },
-    uncertainty_policy: 'evidence-led',
-    memory: { session_metrics: true, project_facts: true, inferred_claims: true },
-    model_synthesis: true,
-    project_overlays: [],
-  };
-
-  await page.addInitScript((mockProfile) => {
-    const testWindow = window as typeof window & { __companionFeedbackBody?: Record<string, unknown> };
-    const nativeFetch = window.fetch.bind(window);
-    let nonceIndex = 0;
-    localStorage.removeItem('meow-ops-companion-thread-v1');
-    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = input instanceof Request ? input.url : String(input);
-      if (!/^http:\/\/(127\.0\.0\.1|localhost):7337\//.test(url)) return nativeFetch(input, init);
-      const path = new URL(url).pathname;
-      const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
-        status,
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (path === '/loop-eng/summary') return respond({});
-      if (path === '/sync/status') return respond({ state: 'idle' });
-      if (path === '/companion/soul') return respond({ ok: true, profile: mockProfile });
-      if (path === '/loop-eng/ask') {
-        const request = JSON.parse(String(init?.body || '{}'));
-        const isUnknown = String(request.question || '').includes('unknown');
-        return respond({
-          ok: true,
-          answer: isUnknown ? 'I need the current project constraint.' : 'BergLabs received the most time this week.',
-          source: isUnknown ? 'keyword' : 'llm',
-          gate: isUnknown ? 'known_unknown' : 'known_known',
-          confidence: isUnknown ? 0 : 1,
-          evidence: isUnknown ? [] : [{ kind: 'session_metrics', ref: 'sessions.json', detail: 'Weekly project duration' }],
-          unknowns: isUnknown ? ['Current project constraint'] : [],
-          next_question: isUnknown ? 'What is the current constraint for BergLabs?' : undefined,
-          soul: { name: 'Companion', preset: 'clear-operator', revision: 4, uncertainty_policy: 'evidence-led', project_overlay: null },
-        });
-      }
-      if (path === '/loop-eng/nonce') return respond({ nonce: `nonce-${++nonceIndex}` });
-      if (path === '/companion/feedback') {
-        testWindow.__companionFeedbackBody = JSON.parse(String(init?.body || '{}'));
-        return respond({ ok: true }, 201);
-      }
-      return respond({ ok: false }, 404);
-    };
-  }, profile);
-
-  await page.reload();
-  await waitForApp(page);
-  await page.getByRole('button', { name: 'Open Companion chat' }).click();
-  const chat = page.getByRole('dialog', { name: 'Companion AI chat' });
-  await chat.getByRole('textbox', { name: 'Message Companion' }).fill('Which project received the most time this week?');
-  await chat.getByRole('button', { name: 'Send message' }).click();
-  const answer = chat.locator('.companion-chat__message--assistant').filter({ hasText: 'BergLabs received the most time this week.' });
-  await expect(answer).toBeVisible();
-  await expect(answer.getByText('Model-assisted')).toBeVisible();
-  await expect(answer.getByText('DeepSeek copilot')).toHaveCount(0);
-  await answer.getByText('Tune this response').click();
-  await answer.getByRole('button', { name: 'Too long' }).click();
-  await expect(answer.getByText(/Saved as metadata only/)).toBeVisible();
-
-  const feedbackBody = await page.evaluate(() => (
-    window as typeof window & { __companionFeedbackBody?: Record<string, unknown> }
-  ).__companionFeedbackBody || null);
-  expect(feedbackBody).toMatchObject({ signal: 'too_verbose', gate: 'known_known', soul_revision: 4 });
-  expect(feedbackBody).toHaveProperty('response_ref');
-  expect(feedbackBody).not.toHaveProperty('question');
-  expect(feedbackBody).not.toHaveProperty('answer');
-  expect(feedbackBody).not.toHaveProperty('response_text');
-
-  await chat.getByRole('textbox', { name: 'Message Companion' }).fill('What is unknown?');
-  await chat.getByRole('button', { name: 'Send message' }).click();
-  const unknown = chat.locator('.companion-chat__message--assistant').filter({ hasText: 'I need the current project constraint.' });
-  await expect(unknown.locator('footer').getByText('Unknown', { exact: true })).toBeVisible();
-  const recovery = unknown.getByRole('button', { name: 'Answer Companion: What is the current constraint for BergLabs?' });
-  await expect(recovery).toBeVisible();
-  await recovery.click();
-  await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toBeFocused();
-  await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toHaveValue('');
-  await expect(chat.locator('.companion-chat__message--user').filter({ hasText: 'What is the current constraint for BergLabs?' })).toHaveCount(0);
-});
-
-test('Soul Studio applies a review-only preference suggestion only after owner action', async ({ page }) => {
-  const profile = {
-    schema_version: 3,
-    profile_id: 'primary',
-    revision: 4,
-    updated_at: '2026-07-15T00:00:00.000Z',
-    name: 'Companion',
-    preset: 'clear-operator',
-    custom_instructions: '',
-    response_preferences: { verbosity: 'balanced', challenge: 'balanced', exploration: 'balanced' },
-    uncertainty_policy: 'evidence-led',
-    memory: { session_metrics: true, project_facts: true, inferred_claims: true },
-    model_synthesis: true,
-    project_overlays: [],
-  };
-  const proposal = {
-    proposal_id: 'pref_test', status: 'review_only', signal: 'too_verbose', signal_label: 'Too long',
-    title: 'Make answers more concise', reason: '3 matching feedback signals in the last 30 days.',
-    impact: 'Use shorter, more decisive answers.', evidence_count: 3, scope_label: 'All projects',
-    target: { scope: 'global', field: 'verbosity', value: 'concise' }, current_value: 'balanced',
-  };
-
-  await page.addInitScript(({ mockProfile, mockProposal }) => {
-    const nativeFetch = window.fetch.bind(window);
-    localStorage.removeItem('meow-ops-companion-thread-v1');
-    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = input instanceof Request ? input.url : String(input);
-      if (!/^http:\/\/(127\.0\.0\.1|localhost):7337\//.test(url)) return nativeFetch(input, init);
-      const path = new URL(url).pathname;
-      const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
-        status, headers: { 'Content-Type': 'application/json' },
-      });
-      if (path === '/loop-eng/summary') return respond({});
-      if (path === '/sync/status') return respond({ state: 'idle' });
-      if (path === '/companion/soul') return respond({ ok: true, profile: mockProfile });
-      if (path === '/project-intelligence/snapshot') return respond({ ok: true, projects: [], claim_count: 0, session_count: 0 });
-      if (path === '/companion/preferences') return respond({
-        ok: true, feedback_count: 3, proposals: [mockProposal], signals: [],
-        policy: { threshold: 3, window_days: 30, auto_apply: false },
-      });
-      if (path === '/loop-eng/nonce') return respond({ nonce: 'nonce-apply' });
-      if (path === '/companion/preferences/decision') return respond({
-        ok: true,
-        profile: { ...mockProfile, revision: 5, response_preferences: { ...mockProfile.response_preferences, verbosity: 'concise' } },
-        preferences: { feedback_count: 3, proposals: [], signals: [], policy: { threshold: 3, window_days: 30, auto_apply: false } },
-      });
-      return respond({ ok: false }, 404);
-    };
-  }, { mockProfile: profile, mockProposal: proposal });
-
-  await page.reload();
-  await waitForApp(page);
-  await page.getByRole('button', { name: 'Open Companion chat' }).click();
-  const chat = page.getByRole('dialog', { name: 'Companion AI chat' });
-  await chat.getByRole('button', { name: 'Open Soul Studio' }).click();
-  await expect(chat.getByText('Make answers more concise')).toBeVisible();
-  await expect(chat.getByRole('combobox', { name: 'Answer length' })).toHaveValue('balanced');
-  await chat.getByRole('button', { name: 'Apply to soul' }).click();
-  await expect(chat.getByRole('combobox', { name: 'Answer length' })).toHaveValue('concise');
-  await expect(chat.getByText('Make answers more concise')).toHaveCount(0);
-});
-
-test('Companion chat becomes a clean full-height mobile panel', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'Open Companion chat' }).click();
-  const chat = page.getByRole('dialog', { name: 'Companion AI chat' });
-  await expect(chat).toHaveCSS('height', '844px');
-  await expect(page.getByRole('button', { name: 'Close Companion chat' })).toBeHidden();
-  await expect(chat.getByRole('button', { name: 'Close chat' })).toBeVisible();
-  await expect(chat.getByRole('textbox', { name: 'Message Companion' })).toBeVisible();
-});
-
 // ── 2. Overview ───────────────────────────────────────────────────────────────
 
 test('Overview: stat cards render', async ({ page }) => {
-  // Stat card labels are "Sessions — 30 days" etc. — use partial match with .first()
-  await expect(page.locator('text=/Sessions —/').first()).toBeVisible();
-  await expect(page.locator('text=/Tokens —/').first()).toBeVisible();
-  await expect(page.locator('text=/Cost —/').first()).toBeVisible();
-  await expect(page.locator('text=/Projects —/').first()).toBeVisible();
+  await expect(page.getByText('Sessions', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Tokens', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Cost', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Time', { exact: true }).first()).toBeVisible();
 });
 
-test('Overview: Cost Breakdown section renders', async ({ page }) => {
-  await expect(page.locator('text=COST BREAKDOWN').or(page.locator('text=Cost Breakdown')).first()).toBeVisible();
-  // SpendCard labels — use .first() to resolve strict mode
-  await expect(page.locator('text=Today').first()).toBeVisible();
-  await expect(page.locator('text=This Week').first()).toBeVisible();
+test('Overview: daily tokens chart renders', async ({ page }) => {
+  await expect(page.getByText(/Tokens per day/i).first()).toBeVisible();
 });
 
-test('Overview: Time Spent section renders', async ({ page }) => {
-  await expect(page.locator('text=/Time Spent/i').first()).toBeVisible();
-  await expect(page.locator('text=All apps').first()).toBeVisible();
-  await expect(page.locator('text=By app').first()).toBeVisible();
+test('Overview: top projects render', async ({ page }) => {
+  await expect(page.getByText('Top projects').or(page.getByText('No sessions parsed yet')).first()).toBeVisible();
 });
 
 test('Overview: source filter toggles exist when Codex data present', async ({ page }) => {
@@ -734,11 +334,10 @@ test('Overview: unmatched Cursor Admin usage is visible but not assigned to sess
   await page.reload();
   await waitForApp(page);
 
-  await expect(page.getByText('Cursor Admin Usage')).toBeVisible();
-  await expect(page.getByText('Unmatched usage is reported by model but is not assigned to a local session.')).toBeVisible();
+  await nav(page, 'Ledger');
+  await expect(page.getByText(/not matched to a session/i)).toBeVisible();
   await expect(page.getByText('gpt-5', { exact: true })).toBeVisible();
   await expect(page.getByText('composer-2', { exact: true })).toBeVisible();
-  await expect(page.getByText('3 events', { exact: true })).toBeVisible();
 });
 
 test('Overview: Hermes reports every model used in multi-model sessions', async ({ page }) => {
@@ -771,25 +370,22 @@ test('Overview: Hermes reports every model used in multi-model sessions', async 
   }));
   await page.reload();
   await waitForApp(page);
-
-  await expect(page.getByText('Hermes Model Usage')).toBeVisible();
-  await expect(page.getByText('Exact per-model usage reported by Hermes. One session can use more than one model.')).toBeVisible();
+  await nav(page, 'Ledger');
   await expect(page.getByText('local-a', { exact: true })).toBeVisible();
   await expect(page.getByText('cloud-b', { exact: true })).toBeVisible();
-  await expect(page.getByText('2 models · 2 sessions', { exact: true })).toBeVisible();
 });
 
-test('Overview: date filter changes the period label', async ({ page }) => {
+test('Overview: date filter is on the page', async ({ page }) => {
   await page.getByRole('button', { name: '7d', exact: true }).click();
-  // Stat card label will become "Sessions — 7 days" — first match suffices
-  await expect(page.locator('text=/Sessions — 7 days/').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: '7d', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '30d', exact: true }).click();
 });
 
 // ── 3. Sessions ───────────────────────────────────────────────────────────────
 
 test('Sessions: table renders with rows', async ({ page }) => {
-  await nav(page, 'Sessions');
+  await nav(page, 'Today');
+  await openTab(page, 'Sessions');
   // Either a table or a "no sessions" message
   const hasTable  = await page.locator('table, [role="grid"]').count() > 0;
   const hasMsg    = await page.locator('text=/no sessions|no data|empty/i').count() > 0;
@@ -799,14 +395,14 @@ test('Sessions: table renders with rows', async ({ page }) => {
 // ── 4. By Project ─────────────────────────────────────────────────────────────
 
 test('By Project: renders without error', async ({ page }) => {
-  await nav(page, 'By Project');
-  await expect(page.getByRole('heading', { name: /by project/i }).first()).toBeVisible();
+  await nav(page, 'Today');
+  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
 });
 
 // ── 5. By Day ─────────────────────────────────────────────────────────────────
 
 test('By Day: area chart renders', async ({ page }) => {
-  await nav(page, 'By Day');
+  await nav(page, 'Ledger');
   // Recharts renders an svg
   await expect(page.locator('svg').first()).toBeVisible();
 });
@@ -814,21 +410,21 @@ test('By Day: area chart renders', async ({ page }) => {
 // ── 6. By Action ──────────────────────────────────────────────────────────────
 
 test('By Action: tool breakdown renders', async ({ page }) => {
-  await nav(page, 'By Action');
-  await expect(page.getByRole('heading', { name: 'By Action', exact: true })).toBeVisible();
+  await nav(page, 'Today');
+  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible();
 });
 
 // ── 7. Cost Tracker ───────────────────────────────────────────────────────────
 
 test('Cost Tracker: renders without crash', async ({ page }) => {
-  await nav(page, 'Cost Tracker');
-  await expect(page.getByRole('heading', { name: 'Cost Tracker', exact: true })).toBeVisible();
+  await nav(page, 'Ledger');
+  await expect(page.getByRole('heading', { name: 'Ledger' })).toBeVisible();
 });
 
 // ── 8. Analytics ──────────────────────────────────────────────────────────────
 
 test('Analytics: lazy chunk loads without error', async ({ page }) => {
-  await nav(page, 'Analytics');
+  await nav(page, 'Ledger');
   // Lazy chunk — allow extra time
   await page.waitForFunction(
     () => document.getElementById('root')!.innerHTML.length > 2000,
@@ -841,7 +437,8 @@ test('Analytics: lazy chunk loads without error', async ({ page }) => {
 // ── 9. Agent Ops ──────────────────────────────────────────────────────────────
 
 test('Agent Ops: Gantt timeline renders', async ({ page }) => {
-  await nav(page, 'Agent Ops');
+  await nav(page, 'Today');
+  await openTab(page, 'Runs');
   await page.waitForFunction(
     () => document.getElementById('root')!.innerHTML.length > 2000,
     { timeout: 20_000 },
@@ -849,34 +446,34 @@ test('Agent Ops: Gantt timeline renders', async ({ page }) => {
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
-// ── 10. Scrying Sanctum ───────────────────────────────────────────────────────
+// ── 10. Sanctum ───────────────────────────────────────────────────────
 
-test('Scrying Sanctum: page loads', async ({ page }) => {
-  await nav(page, 'Scrying Sanctum');
+test('Sanctum: page loads', async ({ page }) => {
+  await nav(page, 'Sanctum');
   // Loading state shows "Scrying…" immediately; wait for it then wait for full render
   await page.waitForFunction(
     () => {
       const root = document.getElementById('root')!;
       // Accept loading state or fully rendered (with SVG canvas)
-      return root.innerHTML.includes('Scrying') || root.innerHTML.length > 2000;
+      return root.innerHTML.includes('Sanctum') || root.innerHTML.length > 2000;
     },
     { timeout: 10_000 },
   );
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
-test('Scrying Sanctum: header bar visible', async ({ page }) => {
-  await nav(page, 'Scrying Sanctum');
+test('Sanctum: header bar visible', async ({ page }) => {
+  await nav(page, 'Sanctum');
   // Wait for the component to at least start rendering
   await page.waitForFunction(
-    () => document.getElementById('root')!.innerHTML.includes('Scrying'),
+    () => document.getElementById('root')!.innerHTML.includes('Sanctum'),
     { timeout: 10_000 },
   );
-  await expect(page.locator('text=Scrying Sanctum').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('text=Sanctum').first()).toBeVisible({ timeout: 15_000 });
 });
 
-test('Scrying Sanctum: run-group dropdown labels render', async ({ page }) => {
-  await nav(page, 'Scrying Sanctum');
+test('Sanctum: run-group dropdown labels render', async ({ page }) => {
+  await nav(page, 'Sanctum');
   // Run-group dropdown lives in the page header. After Phase A.2 each
   // option label includes a day prefix ("today" / "yesterday" / weekday)
   // plus the project name. The dropdown is a native <select>, so its
@@ -889,15 +486,15 @@ test('Scrying Sanctum: run-group dropdown labels render', async ({ page }) => {
   expect(hasRunGroupShape).toBe(true);
 });
 
-test('Scrying Sanctum: SVG canvas renders', async ({ page }) => {
-  await nav(page, 'Scrying Sanctum');
+test('Sanctum: SVG canvas renders', async ({ page }) => {
+  await nav(page, 'Sanctum');
   // Wait for demo data to load (auth check times out after 2s)
   await page.waitForTimeout(3000);
   const svgs = await page.locator('svg').count();
   expect(svgs).toBeGreaterThan(0);
 });
 
-test('Scrying Sanctum: scene renders without throwing into the error boundary', async ({ page }) => {
+test('Sanctum: scene renders without throwing into the error boundary', async ({ page }) => {
   // Regression for the prod incident on 2026-04-28 where the Sanctum's
   // SceneErrorBoundary tripped and black-screened the canvas. handleSceneError
   // logs the real exception via console.error('[ScryingSanctum] Scene error
@@ -909,7 +506,7 @@ test('Scrying Sanctum: scene renders without throwing into the error boundary', 
       sceneErrors.push(msg.text());
     }
   });
-  await nav(page, 'Scrying Sanctum');
+  await nav(page, 'Sanctum');
   await page.waitForTimeout(4500);
   // If the boundary tripped, the chip ("⚠ N scene error[s] — reload if
   // stuck") will be in the DOM; surface the captured error message so
@@ -926,8 +523,8 @@ test('Scrying Sanctum: scene renders without throwing into the error boundary', 
   expect(chipCount).toBe(0);
 });
 
-test('Scrying Sanctum: per-session roster visible', async ({ page }) => {
-  await nav(page, 'Scrying Sanctum');
+test('Sanctum: per-session roster visible', async ({ page }) => {
+  await nav(page, 'Sanctum');
   // Phase B replaced the static class legend ("Healthy Ley Line"-era) with
   // a per-session roster list. Each roster row is a button containing a
   // Arcane Order class label (Forgepaw / Gloamwhisker / Hexcaller / etc.). At least one
@@ -997,8 +594,9 @@ async function mockLoopEng(
   });
 }
 
-test('The Loom: safety badge renders with or without spec data', async ({ page }) => {
-  await nav(page, 'The Loom');
+test('Review Map: safety badge renders with or without spec data', async ({ page }) => {
+  await nav(page, 'Review');
+  await openTab(page, 'Map');
   // The safety invariant badge is part of the page contract from Phase 1 on,
   // in both the empty state and the loaded source strip.
   await expect(page.locator('text=/production writes disabled/i').first()).toBeVisible();
@@ -1008,7 +606,8 @@ test('The Loom: safety badge renders with or without spec data', async ({ page }
 test('Loop Ops: canvas renders imported entities when waves expanded', async ({ page }) => {
   test.skip(!(await loopSpecPresent(page)), 'local-only Loop-Ops fixture absent — run the importer');
   const spec = await (await page.request.get('/data/loop-ops/spec.json')).json();
-  await nav(page, 'The Loom');
+  await nav(page, 'Review');
+  await openTab(page, 'Map');
   await expect(page.locator(`text=${spec.meta.entityCount} entities · ${spec.meta.assistantCount} surfaces`)).toBeVisible();
   await expect(page.locator('[data-testid="loop-canvas"]')).toBeVisible();
   await page.getByRole('button', { name: 'Expand all waves' }).click();
@@ -1019,7 +618,8 @@ test('Loop Ops: canvas renders imported entities when waves expanded', async ({ 
 
 test('Loop Ops: inspector drawer answers the four questions', async ({ page }) => {
   test.skip(!(await loopSpecPresent(page)), 'local-only Loop-Ops fixture absent — run the importer');
-  await nav(page, 'The Loom');
+  await nav(page, 'Review');
+  await openTab(page, 'Map');
   const spec = await (await page.request.get('/data/loop-ops/spec.json')).json();
   const firstWorker = spec.entities.find((e: { kind: string }) => e.kind === 'assistant');
   test.skip(!firstWorker, 'spec has no worker entity');
@@ -1048,7 +648,8 @@ test('Loop Ops: run timeline renders a recorded run with joined session cost', a
   const runs = await runsRes.json();
   test.skip(!Array.isArray(runs) || runs.length === 0, 'runs.json empty');
 
-  await nav(page, 'The Loom');
+  await nav(page, 'Review');
+  await openTab(page, 'Map');
   const timeline = page.locator('[data-testid="loop-run-timeline"]');
   await expect(timeline).toBeVisible();
   const card = timeline.locator('[data-testid="loop-run"]').first();
@@ -1111,7 +712,8 @@ test('Loop Ops: ledger-backed run timeline shows real cost and operator details'
     },
   }] });
 
-  await nav(page, 'The Loom');
+  await nav(page, 'Review');
+  await openTab(page, 'Map');
   const timeline = page.locator('[data-testid="loop-run-timeline"]');
   await expect(timeline.getByText('No runs recorded')).toHaveCount(0);
   const card = timeline.locator('[data-testid="loop-run"]');
@@ -1175,7 +777,8 @@ test('Loop Ops: stale gate degrades node status and exposes evidence in inspecto
     summary: { counts_by_status: { draft: 3 }, open_per_loop: { 'meow-ops-dev': 2, 'meow-ops-guardrails': 1 }, total: 3 },
   });
 
-  await nav(page, 'The Loom');
+  await nav(page, 'Review');
+  await openTab(page, 'Map');
   await page.getByRole('button', { name: 'Expand all waves' }).click();
   const node = page.locator('[data-entity-id="meow-ops-dev"]');
   await expect(node.locator('[data-status="needs-review"]')).toBeVisible();
@@ -1192,23 +795,23 @@ test('Loop Ops: stale gate degrades node status and exposes evidence in inspecto
   const badge = node.getByRole('button', { name: 'Open 2 proposals for meow-ops-dev' });
   await expect(badge).toHaveText('⚑ 2');
   await badge.click();
-  await expect(page.getByRole('heading', { name: 'Review Deck', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible();
   await expect(page.locator('[data-testid="review-entity-filter"]')).toHaveText('filtered to meow-ops-dev');
   await expect(page.getByRole('button', { name: /Dev proposal one/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /Dev proposal two/ })).toBeVisible();
   await expect(page.getByText('Other entity proposal')).toHaveCount(0);
 });
 
-test('Review Deck: empty state renders without local helper', async ({ page }) => {
+test('Review Inbox: empty state renders without local helper', async ({ page }) => {
   await page.context().route('**/loop-eng/**', route => route.abort());
   await page.goto('/#/loop-review');
   await waitForApp(page);
-  await expect(page.getByRole('heading', { name: 'Review Deck', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible();
   await expect(page.getByText('No proposals yet — run npm run loop:propose')).toBeVisible();
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
-test('Review Deck: Runs tab renders empty state without local helper', async ({ page }) => {
+test('Review Inbox: Runs tab renders empty state without local helper', async ({ page }) => {
   await page.context().route('**/loop-eng/**', route => route.abort());
   await page.goto('/#/loop-review');
   await waitForApp(page);
@@ -1217,7 +820,7 @@ test('Review Deck: Runs tab renders empty state without local helper', async ({ 
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
-test('Review Deck: Ship Next ranks pending work and lists approved manual apply', async ({ page }) => {
+test('Review Inbox: Ship Next ranks pending work and lists approved manual apply', async ({ page }) => {
   const base = {
     schema_version: 1,
     loop_id: 'demo-loop',
@@ -1296,7 +899,7 @@ test('Review Deck: Ship Next ranks pending work and lists approved manual apply'
   await expect(page.getByText('Owner can apply manually after approval')).toBeVisible();
 });
 
-test('Review Deck: expired drafts leave queue but remain under expired filter', async ({ page }) => {
+test('Review Inbox: expired drafts leave queue but remain under expired filter', async ({ page }) => {
   await mockLoopEng(page, {
     proposals: [{
       schema_version: 1,
@@ -1336,7 +939,7 @@ test('Review Deck: expired drafts leave queue but remain under expired filter', 
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
-test('Review Deck: deferred proposals do not offer an invalid Undo action', async ({ page }) => {
+test('Review Inbox: deferred proposals do not offer an invalid Undo action', async ({ page }) => {
   await mockLoopEng(page, {
     proposals: [{
       schema_version: 1,
@@ -1367,7 +970,7 @@ test('Review Deck: deferred proposals do not offer an invalid Undo action', asyn
   await expect(page.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
 });
 
-test('Review Deck: mobile Digest stays within the viewport', async ({ page }) => {
+test('Review Inbox: mobile Digest stays within the viewport', async ({ page }) => {
   const digest = {
     generated_at: '2026-07-06T00:00:00.000Z',
     period: { since: '2026-07-05', until: '2026-07-06T00:00:00.000Z' },
@@ -1400,28 +1003,13 @@ test('Review Deck: mobile Digest stays within the viewport', async ({ page }) =>
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1);
 });
 
-// ── 11. Companion ─────────────────────────────────────────────────────────────
+// ── 11. Focus chip ───────────────────────────────────────────────────────────
 
-test('Companion: lazy chunk loads and WebGL canvas mounts', async ({ page }) => {
-  await nav(page, 'Companion');
-  // R3F mounts a <canvas> element — it may be hidden until fully initialised
-  await page.waitForSelector('canvas', { state: 'attached', timeout: 20_000 });
-  const canvasCount = await page.locator('canvas').count();
-  expect(canvasCount).toBeGreaterThan(0);
-});
-
-// ── 12. Live Sessions (page kept on disk, not routed in current sidebar) ────
-// The Live Sessions surface is no longer reachable from the sidebar; the
-// component file remains in src/pages/LiveSessions.jsx for future re-routing.
-// This test was removed when the nav item was removed.
-
-// ── 13. Focus Timer ───────────────────────────────────────────────────────────
-
-test('Focus Timer: renders without crash', async ({ page }) => {
-  await nav(page, 'Focus Timer');
-  await expect(page.locator('[data-vite-error]')).toHaveCount(0);
-  const rootLen = await page.evaluate(() => document.getElementById('root')?.innerHTML.length ?? 0);
-  expect(rootLen).toBeGreaterThan(500);
+test('Focus timer chip is on the shell, not a page', async ({ page }) => {
+  for (const surface of ['Today', 'Review', 'Ledger', 'Sanctum', 'Learn']) {
+    await nav(page, surface);
+    await expect(page.getByRole('button', { name: 'Start focus timer' })).toBeVisible();
+  }
 });
 
 // ── 14. PWA manifest ──────────────────────────────────────────────────────────

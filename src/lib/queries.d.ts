@@ -30,3 +30,10 @@ export type SyncStatus = {
 };
 
 export function getSyncStatus(): Promise<SyncStatus>;
+
+/** True when served from a host that is not localhost, i.e. the hosted demo. */
+export const IS_PROD: boolean;
+
+export function triggerSync(): Promise<{ ok: boolean; status?: SyncStatus; error?: string }>;
+
+export function invalidateRealSessions(): void;

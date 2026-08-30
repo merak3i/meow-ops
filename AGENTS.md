@@ -4,28 +4,29 @@
 
 ## What this is
 
-Open-source, MIT-licensed, local-first analytics dashboard for Claude Code. Parses session JSONLs from `~/.claude/projects/` (and optionally Aider, Cursor, Codex) into charts, project breakdowns, cost views, and a gamified 3D cat colony. Includes a Pomodoro focus timer with cat breeds. PWA — installs to dock. No telemetry, no accounts.
+Meow Ops is the local inbox for AI coding work. It shows what happened, what it cost, and what you should decide next. Open-source, MIT-licensed, local-first. Parses session JSONLs from `~/.claude/projects/` (and optionally Aider, Cursor, Codex, Hermes, Antigravity). PWA, installs to dock. No telemetry, no accounts.
 
-Public repo: `merak3i/meow-ops`. Currently v1.1.0.
+Primary surfaces: Today, Review, Ledger, Sanctum, Learn. The focus timer is a chip on every screen. Companion is removed from the product.
+
+Public repo: `merak3i/meow-ops`. Currently v1.2.0.
 
 ## Stack
 
 - Vite 8 + React 19 + TypeScript
 - Tailwind CSS 4 (`@tailwindcss/vite`)
 - Three.js + `@react-three/fiber` + `@react-three/drei` (Sanctum 3D scene, Lich King sprite, Dalaran environment)
-- XState v5 (`@xstate/react`) for orchestration state
 - D3 + Recharts + AG Grid for charts/tables
 - Framer Motion for transitions
 - Supabase JS client (optional — local-first by default)
 - Playwright for e2e
-- `menubar/` — companion macOS menubar app (`MeowOpsBar.app`)
+- `menubar/` — macOS menubar app (`MeowOpsBar.app`)
 
 ## Layout (top-level)
 
 ```
 src/                React app source
 sync/               export-local.mjs — parses ~/.claude/projects → public/data/sessions.json
-scripts/            generate-companion-assets.js (cats, rooms, accessories, foods)
+scripts/            leftover asset generators (not a product surface)
 menubar/            macOS menubar app build
 db/                 Supabase schema (optional remote sync)
 e2e/                Playwright specs
@@ -41,14 +42,6 @@ npm run dev                   # http://localhost:5173
 npm run build                 # vite build → dist/
 npm run lint                  # eslint
 npx playwright test           # e2e
-```
-
-Asset generation:
-```bash
-npm run gen:cats              # regenerate cat sprites
-npm run gen:rooms             # rooms
-npm run gen:accessories       # accessories
-npm run gen:foods             # foods
 ```
 
 Menubar app:
