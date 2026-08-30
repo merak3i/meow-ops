@@ -522,11 +522,8 @@ export default function CapacityUsage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <header style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 20 }}>
         <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-            <Gauge size={22} style={{ color: 'var(--accent)' }} />
-            <h2 style={{ fontSize: 22, margin: 0 }}>Capacity & Usage</h2>
-          </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+            <Gauge size={15} style={{ color: 'var(--accent)' }} />
             <SourceBadge source={source} />
             <span>generated {relativeFromMs(generated)}</span>
             <span>local file {relativeFromMs(status?.mtime)}</span>

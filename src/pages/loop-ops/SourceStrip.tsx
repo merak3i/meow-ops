@@ -33,7 +33,6 @@ export function SourceStrip({ meta, status, allExpanded, syncing, onToggleAll, o
   const specMtime = status?.files?.['spec.json']?.mtime;
   return (
     <div style={strip} data-testid="loop-source-strip">
-      <h1 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>The Loom</h1>
       <span style={{
         ...chip, color: badgeColor, borderColor: badgeColor,
         display: 'inline-flex', alignItems: 'center', gap: 5, textTransform: 'uppercase', letterSpacing: 0.4,
@@ -41,7 +40,7 @@ export function SourceStrip({ meta, status, allExpanded, syncing, onToggleAll, o
         {writesOn ? <ShieldAlert size={12} /> : <ShieldCheck size={12} />}
         {writesOn ? 'PRODUCTION WRITES ON — INVESTIGATE' : 'production writes disabled'}
       </span>
-      <span style={chip}>{meta.entityCount} entities · {meta.assistantCount} surfaces</span>
+      <span style={chip}>{meta.entityCount} items · {meta.assistantCount} surfaces</span>
       <span style={chip} title={meta.generatedBy}>{meta.masterSpec}</span>
       <span style={{ ...chip, color: 'var(--text-muted)' }}>
         {specMtime

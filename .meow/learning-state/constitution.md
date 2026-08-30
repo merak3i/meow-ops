@@ -2,36 +2,47 @@
 
 ## Mission
 
-Make AI-assisted project work legible, searchable, governable, and continuously more useful from complete local evidence.
+Meow Ops is the local inbox for AI coding work. It shows what happened, what it cost, and what you should decide next. Nothing applies until the owner says so.
 
 ## Primary outcome
 
-Meow Ops must answer what a project has learned, why the learning matters, which evidence supports it, which agents received it, and what still requires an owner decision.
+An operator opens Meow Ops and can answer, in one sitting:
+
+1. What did my agents do in this range?
+2. What did that cost, and which project burned it?
+3. What proposed change is waiting on me?
 
 ## Success measures
 
-- Codex, Claude Code, Hermes Agent, Google Antigravity, and Cursor are represented through one honest evidence model.
-- Project learning is ranked by outcome impact, recurring failure prevention, and reusable capability.
-- Approved learning reaches the native agent context without overwriting human-authored instructions.
-- Portfolio views expose coverage, conflicts, drift, stale knowledge, and pending decisions.
-- Surgical views can trace every claim back to local evidence and rollback history.
-- At least 100,000 sessions and decade-scale history remain usable through summaries, filtering, pagination, and search.
+- Primary navigation is five words: Today, Review, Ledger, Sanctum, Learn.
+- The focus timer is a chip on every screen, never a page.
+- Companion is removed from the product.
+- Every number declares its date range, sources, and archive vs preview.
+- Codex, Claude Code, Hermes, Antigravity, and Cursor share one evidence model.
+- Missing vendor fields show as unavailable. Never invented.
+- Approved learning reaches native agent files only after preview and one-use approval.
 
 ## Constraints
 
-- Local-first. No required cloud service, telemetry, account, or external analytics.
-- No agent may approve its own learning or consequential change.
-- Raw transcripts, secrets, private notes, and unapproved proposals remain outside Git.
-- Missing vendor evidence is reported as unavailable and never fabricated.
-- Meow Ops governs context and decisions; native agents continue to own coding execution.
+- Local-first. No required cloud, account, telemetry, or analytics-on-analytics.
+- No agent approves its own learning or consequential write.
+- Raw transcripts, secrets, and unapproved proposals stay out of Git.
+- Meow Ops governs context and decisions. Native agents own coding execution.
 
 ## Non-goals
 
 - Rebuilding five coding agents inside Meow Ops.
-- Autonomous consequential writes without an owner preview and approval.
-- Treating a 100,000-session safety ceiling as a permanent retention limit.
-- Promoting project learning to portfolio knowledge without separate approval.
+- A living companion, a second chat product, or seven charts of the same dataset as primary product.
+- Autonomous consequential writes without an owner preview.
+
+## Product laws
+
+1. One job. If a feature cannot serve what happened, what it cost, or what to decide next, it is a room, not a surface. Sanctum and Learn are the two allowed rooms.
+2. Every figure declares range, source, and completeness.
+3. A new feature joins Today, Review, or Ledger. Sanctum and Learn do not grow new siblings.
+4. Helper-down is one banner. Pages do not invent their own offline story.
+5. A name that needs a glossary entry is the wrong name.
 
 ## Current phase
 
-Build the project-control foundation: canonical learning state, private catalog, evidence contracts, governed learning, native-agent adapters, and the first project cockpit.
+Cut the UI to match this mission. Today, Review, Ledger, Sanctum, Learn. Timer as chrome. Companion deleted.

@@ -60,7 +60,7 @@
 .learning-status.approved, .learning-status.published { color: #75c88c; }
 .learning-status.proposed, .learning-status.deferred { color: #ddb35c; }
 .learning-status.rejected { color: #db6969; }
-.surgical-columns { grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr); }
+.detail-columns { grid-template-columns: minmax(0, 1.35fr) minmax(320px, .65fr); }
 .evidence-row { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--border); }
 .evidence-row p { margin: 0; color: var(--text-muted); font-size: 12px; text-transform: capitalize; }
 .evidence-row time { color: var(--text-muted); font-size: 11px; white-space: nowrap; }

@@ -4,8 +4,8 @@
 // LOCAL-ONLY JSON produced by sync/loop-ops-import.mjs.
 // Hard invariant: no writes to production services from any Loop-Ops code path.
 import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
-import { ShieldCheck, FileSpreadsheet, RefreshCw, SearchX } from 'lucide-react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties } from 'react';
+import { EmptyState } from '../components/ui';
 import { useLoopOpsData } from './loop-ops/useLoopOpsData';
 import { useLoopRuns } from './loop-ops/useLoopRuns';
 import { LoopCanvas } from './loop-ops/LoopCanvas';
@@ -31,89 +31,30 @@ function subscribeMobile(cb: () => void) {
 }
 
 const styles: Record<string, CSSProperties> = {
-  shell: { display: 'flex', flexDirection: 'column', height: '100vh' },
-  emptyWrap: { padding: 32, overflowY: 'auto' },
-  header: { display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 },
-  title: { fontSize: 22, fontWeight: 300, color: 'var(--text-primary)', margin: 0 },
-  badge: {
-    display: 'inline-flex', alignItems: 'center', gap: 6,
-    fontSize: 11, letterSpacing: 0.5, textTransform: 'uppercase',
-    color: 'var(--green)', border: '1px solid var(--green)',
-    borderRadius: 999, padding: '4px 12px',
-  },
-  subtitle: { fontSize: 13, color: 'var(--text-muted)', margin: '0 0 28px', maxWidth: 640, lineHeight: 1.6 },
-  grid: {
-    display: 'grid', gap: 16,
-    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', maxWidth: 1100,
-  },
-  card: {
-    background: 'var(--bg-card)', border: '1px solid var(--border)',
-    borderRadius: 10, padding: 20, display: 'flex', flexDirection: 'column', gap: 8,
-  },
-  cardTitle: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    fontSize: 13, fontWeight: 600, color: 'var(--text-primary)',
-  },
-  cardBody: { fontSize: 12.5, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 },
+  shell: { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 },
+  emptyWrap: { padding: 'var(--sp-5)', overflowY: 'auto' },
 };
 
-interface EmptyStateCard { icon: ReactNode; title: string; body: string }
-
-// Instructional empty states (spec §7) — shown until a spec import succeeds.
-const EMPTY_STATES: EmptyStateCard[] = [
-  {
-    icon: <FileSpreadsheet size={15} />,
-    title: 'Import workflow spec',
-    body: 'No spec data found at /data/loop-ops/spec.json. The importer converts '
-      + 'your workbook into local JSON: worker surfaces plus synthesized '
-      + 'coordinator/director entities.',
-  },
-  {
-    icon: <RefreshCw size={15} />,
-    title: 'Start local sync',
-    body: 'The local API on 127.0.0.1:7337 serves spec, status, and run history '
-      + 'once the Phase 4 endpoints exist. Until then data loads from the static path only.',
-  },
-  {
-    icon: <ShieldCheck size={15} />,
-    title: 'No production writes enabled',
-    body: 'Loop-Ops is a cockpit, not an executor. No code path here writes to '
-      + 'production dashboards, databases, deploy targets, or GitHub without '
-      + 'explicit approval.',
-  },
-  {
-    icon: <SearchX size={15} />,
-    title: 'Verification missing',
-    body: 'Every entity shows what was last verified and what was not. Anything '
-      + 'unverified stays labeled as such — in the canvas, the run timeline, and agent handoffs.',
-  },
-];
-
-function EmptyState({ error }: { error: string | null }) {
+// The map is empty until the importer has run once. One instruction, not the
+// four reassurance cards this used to show.
+function MapEmptyState({ error }: { error: string | null }) {
+  const brokenSpec = error && !error.includes('404');
   return (
     <div style={styles.emptyWrap}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>The Loom</h1>
-        <span style={styles.badge}><ShieldCheck size={13} />production writes disabled</span>
-      </div>
-      {error && !error.includes('404') && (
-        <p style={{ fontSize: 12, color: 'var(--warning)', margin: '0 0 12px' }}>
-          spec.json exists but failed to load: {error} — fix the data, this is not a missing import.
-        </p>
-      )}
-      <p style={styles.subtitle}>
-        Control room for multi-agent loop architecture: coordinator, director
-        lanes, and worker surfaces. Local-first: workbook → JSON → canvas.
-        Read-only toward every production system.
+      <EmptyState
+        title={brokenSpec ? 'The spec file could not be read' : 'No loop map imported yet'}
+        body={brokenSpec
+          ? `spec.json exists but failed to load: ${error}. Fix the data — this is not a missing import.`
+          : 'The importer turns your workflow workbook into local JSON: worker surfaces, plus the coordinator and director lanes above them. Run it once and the canvas fills in.'}
+        {...(brokenSpec ? {} : { command: 'node sync/loop-ops-import.mjs' })}
+      />
+      <p style={{
+        maxWidth: '58ch', margin: '0 auto', textAlign: 'center',
+        fontSize: 'var(--fs-ui)', color: 'var(--text-muted)', lineHeight: 1.65,
+      }}>
+        This surface never writes to a production system. It shows what is wired, who owns it, and
+        what was last verified.
       </p>
-      <div style={styles.grid}>
-        {EMPTY_STATES.map((card) => (
-          <div key={card.title} style={styles.card}>
-            <span style={styles.cardTitle}>{card.icon}{card.title}</span>
-            <p style={styles.cardBody}>{card.body}</p>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -146,13 +87,17 @@ export default function LoopOps() {
     ? displayEntities.find((entity) => entity.id === selected.id) ?? selected
     : null;
   const openProposals = useCallback((entityId: string) => {
-    window.location.hash = `#/loop-review?entity=${encodeURIComponent(entityId)}`;
+    window.location.hash = `#/loops/review?entity=${encodeURIComponent(entityId)}`;
   }, []);
 
   if (loading) {
-    return <div style={{ padding: 32, color: 'var(--text-muted)', fontSize: 14 }}>Loading the Loom…</div>;
+    return (
+      <div style={{ padding: 'var(--sp-5)', color: 'var(--text-muted)', fontSize: 'var(--fs-body)' }}>
+        Loading the map…
+      </div>
+    );
   }
-  if (!spec) return <EmptyState error={error} />;
+  if (!spec) return <MapEmptyState error={error} />;
 
   return (
     <div style={styles.shell}>

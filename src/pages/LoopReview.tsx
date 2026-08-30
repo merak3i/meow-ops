@@ -576,10 +576,6 @@ export default function LoopReview() {
   return (
     <div style={styles.shell}>
       <header style={styles.header}>
-        <div>
-          <h1 style={styles.title}>Review Deck</h1>
-          <p style={styles.subtitle}>Owner approval queue and Loop Engineering run deltas.</p>
-        </div>
         <div style={styles.badgeRow}>
           <span style={styles.badge}>{summary.total} proposals</span>
           <span style={styles.badge}>{summary.counts_by_status.pending_approval || 0} pending</span>
@@ -589,7 +585,7 @@ export default function LoopReview() {
       </header>
 
       <div style={styles.controls}>
-        <ToggleGroup value={view} onChange={(value: View) => setView(value)} options={VIEWS} ariaLabel="Review Deck view" />
+        <ToggleGroup value={view} onChange={(value: View) => setView(value)} options={VIEWS} ariaLabel="Review view" />
         {view === 'proposals' && (
           <ToggleGroup value={filter} onChange={(value: Filter) => setFilter(value)} options={FILTERS} size="sm" ariaLabel="Proposal status filter" />
         )}
@@ -600,27 +596,8 @@ export default function LoopReview() {
         </div>
       )}
 
-      <button
-        type="button"
-        style={{
-          ...styles.detail,
-          width: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          color: 'var(--text-secondary)',
-          fontFamily: 'inherit',
-          textAlign: 'left',
-          cursor: 'pointer',
-        }}
-        onClick={() => window.dispatchEvent(new Event('meow:open-companion'))}
-      >
-        <span>Need context? Ask Companion about proposals, sync health, or the next fix.</span>
-        <span style={{ color: 'var(--accent)', fontSize: 12 }}>Open Companion →</span>
-      </button>
-
       {loading ? (
-        <div style={styles.empty}>Loading Review Deck...</div>
+        <div style={styles.empty}>Loading review…</div>
       ) : view === 'proposals' ? (
         proposals.length === 0 ? (
           <div style={styles.empty}>No proposals yet — run npm run loop:propose</div>

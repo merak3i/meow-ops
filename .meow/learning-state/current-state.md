@@ -2,19 +2,19 @@
 
 ## Active priority
 
-Establish the deep project-control module and make Meow Ops itself the first governed project.
+Ship the inbox cut: one mission, five surfaces, timer as chrome, Companion gone, Learn usable.
 
 ## Delivery sequence
 
-1. Project catalog, constitution, learning ledger, and adapter previews: complete.
-2. Five-source normalized evidence, including Hermes: complete.
-3. Owner-governed learning decisions and adapter write-back: complete.
-4. Eagle Eye and Surgical project views: complete.
-5. Builder's Journey compatibility, full verification, loop review, and staged rollout: active.
+1. Mission lock in constitution, README, and AGENTS.md: active.
+2. IA cut to Today / Review / Ledger / Sanctum / Learn: active.
+3. Focus timer as a persistent chip: active.
+4. Learn is inferred concepts from real sessions, not a school or YouTube finder: active.
+5. Companion source tree removed from the product (chat, v2 page, stores only it imported): active. Dead page clones (ByProject, ByDay, ByAction, AnalyticsDashboard, Pomodoro) deleted.
 
 ## Open decisions
 
-- None blocking the foundation slice.
+- Owner confirmed: keep Sanctum, kill Companion, keep Learn and simplify it, timer is chrome not a page.
 
 ## Known limitations
 

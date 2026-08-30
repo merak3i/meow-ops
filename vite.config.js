@@ -147,7 +147,7 @@ function meowSyncPlugin() {
         });
       });
 
-      // Dev-mode mirror of sync/local-api.mjs for the Capacity & Usage page.
+      // Dev-mode mirror of sync/local-api.mjs for the hidden Seats page.
       server.middlewares.use('/api/superadmin-usage/status', (req, res) => {
         if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
         if (blockNonLocal(req, res)) return;

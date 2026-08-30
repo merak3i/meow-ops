@@ -20,7 +20,7 @@ import {
 } from '../lib/loop-api';
 import './ProjectControl.css';
 
-type ViewMode = 'eagle' | 'surgical';
+type ViewMode = 'summary' | 'detail';
 
 const FIELD_LABELS: Record<string, string> = {
   mission: 'Mission',
@@ -108,7 +108,7 @@ function ProjectRegistrationForm({
 export default function ProjectControl() {
   const [projects, setProjects] = useState<ProjectControlSnapshot[]>([]);
   const [selectedId, setSelectedId] = useState('');
-  const [mode, setMode] = useState<ViewMode>('eagle');
+  const [mode, setMode] = useState<ViewMode>('summary');
   const [learningState, setLearningState] = useState<ProjectLearningStateResponse | null>(null);
   const [evidence, setEvidence] = useState<ProjectEvidenceResponse | null>(null);
   const [adapterPreview, setAdapterPreview] = useState<ProjectAdapterPreview | null>(null);
@@ -180,7 +180,7 @@ export default function ProjectControl() {
   }, [selected?.project.project_id]);
 
   useEffect(() => {
-    if (mode !== 'surgical' || !selected || evidence) return;
+    if (mode !== 'detail' || !selected || evidence) return;
     void fetchProjectEvidence(selected.project.project_id, { limit: 100 }).then(setEvidence);
   }, [mode, selected?.project.project_id, evidence]);
 
@@ -247,16 +247,16 @@ export default function ProjectControl() {
           </select>
         </label>
         <div className="project-control-tabs" aria-label="Project control view">
-          <button type="button" className={mode === 'eagle' ? 'active' : ''} onClick={() => setMode('eagle')}>
-            <Eye size={15} /> Eagle Eye
+          <button type="button" className={mode === 'summary' ? 'active' : ''} onClick={() => setMode('summary')}>
+            <Eye size={15} /> Summary
           </button>
-          <button type="button" className={mode === 'surgical' ? 'active' : ''} onClick={() => setMode('surgical')}>
-            <FileSearch size={15} /> Surgical View
+          <button type="button" className={mode === 'detail' ? 'active' : ''} onClick={() => setMode('detail')}>
+            <FileSearch size={15} /> Detail
           </button>
         </div>
       </div>
 
-      {mode === 'eagle' ? (
+      {mode === 'summary' ? (
         <>
           <section className="project-control-metrics" aria-label="Project learning health">
             <article>
@@ -432,7 +432,7 @@ export default function ProjectControl() {
           </section>
         </>
       ) : (
-        <div className="project-control-columns surgical-columns">
+        <div className="project-control-columns detail-columns">
           <section className="project-control-panel">
             <div className="project-control-panel-title">
               <FileSearch size={18} />

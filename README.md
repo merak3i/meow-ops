@@ -1,35 +1,43 @@
 # 🐾 Meow Operations
 
-> **Local-first AI observability and loop engineering for people who live inside agentic coding tools.**
+> **Meow Ops is the local inbox for AI coding work. It shows what happened, what it cost, and what you should decide next.**
 
-Meow Operations turns local Claude Code, OpenAI Codex Desktop, Aider, Cursor, and Google Antigravity activity into an installable PWA. It combines token/cost analytics, source comparison, live agent timelines, a Loop Ops control room, evidence-backed review queues, optional guarded execution, a Pomodoro focus timer, and a living 3D cat companion. No required account. No telemetry. MIT-licensed.
+Meow Operations turns local Claude Code, OpenAI Codex Desktop, Aider, Cursor, Hermes, and Google Antigravity activity into an installable PWA. Five surfaces: Today, Review, Ledger, Sanctum, Learn. The focus timer sits on every screen as a chip. Companion is gone. Nothing applies until you say so. No required account. No telemetry. MIT-licensed.
+
+## What's new in 1.2.0
+
+The sidebar is five words: Today, Review, Ledger, Sanctum, Learn. The focus timer is a chip on every screen. Companion is removed.
+
+Learn mines concepts from sessions you already ran. Each card has a name, a short industry technical summary, a layman "what you did" line, a source, and an I get this mark. You search YouTube yourself. No school, no XP.
+
+Today answers what happened. Review holds proposals until you approve them. Ledger holds spend. Sanctum and Learn are the two rooms that stayed.
 
 ## Screenshots
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/01-overview.png" alt="Meow Operations overview dashboard"></td>
-    <td width="50%"><img src="docs/screenshots/02-cost-tracker.png" alt="Meow Operations cost tracker"></td>
+    <td width="50%"><img src="docs/screenshots/01-overview.png" alt="Meow Ops Today"></td>
+    <td width="50%"><img src="docs/screenshots/04-live-sessions.png" alt="Meow Ops Review"></td>
   </tr>
   <tr>
-    <td><strong>Overview</strong><br>Sessions, spend, tokens, tool mix, and source split in one view.</td>
-    <td><strong>Cost Tracker</strong><br>Daily cost, cumulative burn, and model-level spend breakdowns.</td>
+    <td><strong>Today</strong><br>Sessions, tokens, cost, and where the work went. The focus timer opens from a chip on this screen.</td>
+    <td><strong>Review</strong><br>Pending proposals. Nothing applies until you say so.</td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/03-colony.png" alt="Meow Operations cat companion"></td>
-    <td width="50%"><img src="docs/screenshots/04-live-sessions.png" alt="Meow Operations live sessions"></td>
+    <td width="50%"><img src="docs/screenshots/02-cost-tracker.png" alt="Meow Ops Ledger"></td>
+    <td width="50%"><img src="docs/screenshots/03-colony.png" alt="Meow Ops Sanctum"></td>
   </tr>
   <tr>
-    <td><strong>Cat Companion</strong><br>A WebGL companion that evolves from your actual work pattern.</td>
-    <td><strong>Live Sessions (archived surface)</strong><br>Historical screenshot of an unrouted component retained for possible future restoration.</td>
+    <td><strong>Ledger</strong><br>Spend, tokens, and unattributed provider usage.</td>
+    <td><strong>Sanctum</strong><br>The same runs as a 3D scene.</td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/05-focus-timer.png" alt="Meow Operations focus timer"></td>
-    <td width="50%"><img src="docs/screenshots/09-sessions.png" alt="Meow Operations session table"></td>
+    <td width="50%"><img src="docs/screenshots/06-by-project.png" alt="Meow Ops Learn"></td>
+    <td width="50%"><img src="docs/screenshots/05-focus-timer.png" alt="Meow Ops focus timer chip"></td>
   </tr>
   <tr>
-    <td><strong>Focus Timer</strong><br>Pomodoro flow with cat breeds, streaks, and local-only state.</td>
-    <td><strong>Sessions</strong><br>Sortable session table with tool profile and cat-type classification.</td>
+    <td><strong>Learn</strong><br>Concepts mined from your sessions. Name, technical summary, what you did, source, I get this.</td>
+    <td><strong>Focus timer</strong><br>A chip on every screen. Not a page.</td>
   </tr>
 </table>
 
@@ -109,50 +117,31 @@ Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, **Cur
 
 > **Cursor note:** Local agent transcripts under `~/.cursor/projects/*/agent-transcripts/` expose messages, tools, and parent/subagent hierarchy. They do not expose authoritative model, token, or cost values. meow-ops never infers a historical model from the currently selected Cursor model, and never treats a nested Task argument such as `model="fast"` as the parent model. Optional official enrichment uses `POST /teams/filtered-usage-events` when a team administrator sets `CURSOR_ADMIN_API_KEY`. Cursor's published response schema currently documents model, token, and cost fields but not a conversation or cloud-agent identifier. If the API explicitly returns a known conversation/cloud-agent id variant, it joins only on exact equality with a local id. Otherwise, usage stays in `cost-summary.json` as aggregate Cursor usage and is never assigned to a session. The credential is never logged, exported, or written to disk. Without a key, the local parser still works.
 
-Safe activation is owner-operated: open the Cursor dashboard, go to **Settings → Cursor Admin API Keys**, and stop if your account does not expose that team-admin surface. Create/copy the key yourself, then place `CURSOR_ADMIN_API_KEY=<YOUR_KEY>` in this repository's gitignored `.env` using a local text editor. Never paste the key into chat, Terminal history, issues, commits, screenshots, or generated data. Re-run `node sync/export-local.mjs`; verify only the non-secret `cursorUsage.status`, `matched_sessions`, and `unmatched` fields in `public/data/cost-summary.json`. The Overview displays unmatched totals separately and never attributes them to a local session.
+Safe activation is owner-operated: open the Cursor dashboard, go to **Settings → Cursor Admin API Keys**, and stop if your account does not expose that team-admin surface. Create/copy the key yourself, then place `CURSOR_ADMIN_API_KEY=<YOUR_KEY>` in this repository's gitignored `.env` using a local text editor. Never paste the key into chat, Terminal history, issues, commits, screenshots, or generated data. Re-run `node sync/export-local.mjs`; verify only the non-secret `cursorUsage.status`, `matched_sessions`, and `unmatched` fields in `public/data/cost-summary.json`. Ledger displays unmatched totals separately and never attributes them to a local session.
 
-| Page | What you see |
+| Surface | What you see |
 |---|---|
-| **Overview** | Sessions, tokens, cost, healthy/ghost ratio, daily chart, tool distribution, spend by period |
-| **Sessions** | Sortable table with cat-type classification per session |
-| **Analytics** | AG Grid analytics table powered by typed session, velocity, efficiency, burn-rate, and profile modules |
-| **Agent Ops** | Wall-clock Gantt timeline of parent + subagent runs, efficiency index, drill-down panel |
-| **Scrying Sanctum** | 3D agent pipeline visualizer — unit frames, ley lines, pixel-art sprites |
-| **The Loom** | Read-only control room for loop-based workflows, with workbook import, hierarchy, ownership, verification, and evidence |
-| **Review Deck** | Owner decisions, proposal lifecycle, run comparisons, daily digest, activity history, Companion handoff, and guarded execution |
-| **By Project** | Horizontal bar breakdown per project |
-| **By Day** | Area chart of token usage and session counts over time |
-| **By Action** | Which tools your agents actually reach for |
-| **Cost Tracker** | Daily cost line, cumulative burn, per-model breakdown |
-| **Live Sessions** | Archived, unrouted component retained on disk; not a current navigation feature |
-| **Capacity & Usage** | GitHub Actions capacity, SaaS subscriptions, renewals, and SuperAdmin usage wiring |
-| **Builder's Journey** | A private learning workshop from vibe-led exploration to first-principles understanding and verified shipping |
+| **Today** | Sessions, tokens, cost, and where the work went. Tabs: Summary, Sessions, Runs. |
+| **Review** | Pending proposals and project evidence. Nothing applies until you say so. Tabs: Inbox, Projects, Map. |
+| **Ledger** | Spend, tokens, and unattributed provider usage. |
+| **Sanctum** | The same runs as a 3D scene. |
+| **Learn** | Concepts you already practiced, mined from your sessions. Name, technical summary, what you did, source, I get this. |
 
-### The Builder's Journey
+The focus timer is a chip on every screen, not a page. Companion is removed from the product.
 
-Builder's Journey is a calm, game-shaped learning workshop for becoming less dependent on generated answers and more capable of explaining, repairing, and shipping systems from first principles.
+### Learn
 
-- Open it spontaneously and start from any code, product, marketing, GTM, or sales path.
-- Resume an unfinished workshop from last weekend with a gentle health and reminder signal. Nothing resets or expires.
-- See one next proof instead of an overwhelming curriculum dashboard.
-- Use the mobile-friendly Quick Recall view for two-minute retrieval checks up to a 360-day interval.
-- Earn separate progress for understanding, independent work, verified shipping, and consistency.
-- Keep private learning records local. The browser receives only approved concepts and aggregate progress.
-
-Mastery is evidence-derived: `Discovered -> Practiced -> Proven -> Shipped`. A failed recall check schedules a nearer return but never removes earned mastery. See `docs/learning-quest-architecture.md` for the privacy contract and `docs/learning-quest-syllabus.md` for the 12-project agent-engineering path and local-LLM capstone.
+Learn is a concept map inferred from real sessions. Each card has a name, a short industry technical summary, a layman "what you did", a source, and an I get this mark. No YouTube finder, no school, no XP, no workshop.
 
 ### Source Breakdown
 
-When you use both Claude Code and OpenAI Codex Desktop, the **Overview** page shows a full side-by-side comparison and the **sidebar** shows a compact Source Usage panel:
+When more than one source has data, **Today** shows a source split:
 
-- Sessions count and percentage share per source
-- Total cost and tokens per source
-- Average cost per session
-- Ghost rate (empty/useless sessions) with a red flag when > 15%
-- Weekly and monthly token budget tracking per source
-- Filter the whole dashboard to one source via the Claude / Codex source toggle
+- Sessions, tokens, and cost per source
+- Ghost rate per source
+- Filter the view to one source from the page
 
-The Source Usage sidebar panel is hidden automatically when only one source has data.
+Ledger is the place for unmatched provider usage that cannot be joined to a local session.
 
 ### Codex Desktop Parser
 
@@ -180,7 +169,7 @@ Run: storefront-redesign — 3 agents — $0.84 — 12m ago
 
 Click any row for a full breakdown: token split, cache hit rate, tool usage, sidechain flag.
 
-### Scrying Sanctum
+### Sanctum
 
 A 3D Dalaran-style multi-agent pipeline visualizer for local session data. Watch agent runs, token flow, latency, and session health traverse the network as animated runestones along glowing ley lines.
 
@@ -202,9 +191,9 @@ Argent Vanguard ──────────── Ebon Blade Scout ───�
 
 See `db/migrations/0003_scrying_sanctum.sql` for the full schema and RLS policies.
 
-### The Loom (Loom Ops)
+### Review Map
 
-The Loom is the read-only topology and evidence view for loop-based workflows. It imports a workbook or workflow spec, builds the hierarchy on top of it, and renders the result as an interactive React Flow canvas. The adjacent Review Deck is the owner-governed change surface.
+Review Map is the read-only topology and evidence view for loop-based workflows. It imports a workbook or workflow spec, builds the hierarchy on top of it, and renders the result as an interactive React Flow canvas. Review Inbox is the owner-governed change surface.
 
 Use it when a loop matters more than a single run:
 - Check the shape of the loop before execution starts.
@@ -222,45 +211,20 @@ Use it when a loop matters more than a single run:
  [review]      [covered]      [passed]       [blocked]
 ```
 
-These screens show the shape of the loop, the expanded waves, the inspector, the timeline, and the mobile fallback.
-
-<table>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/10-loom-01-hierarchy.png" alt="The Loom hierarchy view"></td>
-    <td width="50%"><img src="docs/screenshots/11-loom-02-waves.png" alt="The Loom waves view"></td>
-  </tr>
-  <tr>
-    <td><strong>Hierarchy</strong><br>The loop at a glance, from coordinator to worker lanes.</td>
-    <td><strong>Waves</strong><br>Expanded clusters when you need the denser shape of the system.</td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/screenshots/12-loom-03-inspector.png" alt="The Loom inspector view"></td>
-    <td width="50%"><img src="docs/screenshots/14-loom-05-mobile.png" alt="The Loom mobile fallback view"></td>
-  </tr>
-  <tr>
-    <td><strong>Inspector</strong><br>Ownership, access, verification, and what remains unverified.</td>
-    <td><strong>Mobile fallback</strong><br>Lane cards and search when the canvas is too small.</td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="docs/screenshots/13-loom-04-timeline.png" alt="The Loom run timeline view"></td>
-  </tr>
-  <tr>
-    <td colspan="2"><strong>Timeline</strong><br>Recorded runs against current cost and evidence, so gaps stay visible.</td>
-  </tr>
-</table>
+Review Map lives under Review · Map. It is the same inbox as a graph.
 
 **What it shows:**
 - Excel workbook importer with fail-loud validation. Unknown groups, duplicate keys, missing columns, or secret-shaped content stop the import with named violations.
 - Collapsible wave clusters keep dense lanes readable. Minimap, keyboard access, light and dark theme, and reduced-motion support stay on.
 - Every node answers four questions: what owns this, what it can touch, last verified state, and what was not verified.
-- Inspector shows workflow-spec knobs, guardrails, eval gates, and copyable validation commands. The Loom never executes anything itself; execution is a separate Review Deck action that requires approval.
+- Inspector shows workflow-spec knobs, guardrails, eval gates, and copyable validation commands. Review Map never executes anything itself; execution is a separate Review Inbox action that requires approval.
 - Run timeline joins recorded loop runs against real session costs. An empty evidence list stays suspicious.
 - Permanent "production writes disabled" badge. The alarm branch wears red, never the safe green.
 - All loop data is local-only, and the hosted demo intentionally shows the instructional empty state.
 
 Local API endpoints (`sync/local-api.mjs`): `GET /loop-ops/spec|status|runs`, `POST /loop-ops/sync` re-runs the importer. Import manually with `node sync/loop-ops-import.mjs`.
 
-### Loop Engineering and Review Deck
+### Review Inbox
 
 Loop Engineering is the review loop around the agents: capture what happened, turn recurring friction into small proposals, let the owner decide, and measure the next run. It is designed to improve the workflow without letting automation approve itself.
 
@@ -270,7 +234,7 @@ The local pipeline can:
 2. Intake content-free summaries from Claude, Codex, Antigravity, and optional screenshots.
 3. Mine recurring failures, wasted work, high-friction task types, and automation-health drift.
 4. Generate deterministic proposals, optionally enrich drafts with a bounded local/DeepSeek model call, and produce a daily digest with history.
-5. Route decisions through the Review Deck and explanations through the persistent Companion chat.
+5. Route decisions through Review Inbox. Nothing applies until you say so.
 6. Execute only an approved, actionable proposal, with evidence recorded back to the local ledger.
 
 Commands:
@@ -287,14 +251,14 @@ node sync/local-api.mjs
 npm run dev
 ```
 
-`npm run loop:review` runs the local sync tests, evals, lint, typecheck, and build. It writes only check IDs and exit codes outside the worktree, then creates review-only Review Deck drafts for failures; raw terminal output is never stored. Include browser coverage when needed with `npm run loop:review -- --with-e2e`.
+`npm run loop:review` runs the local sync tests, evals, lint, typecheck, and build. It writes only check IDs and exit codes outside the worktree, then creates review-only Inbox drafts for failures; raw terminal output is never stored. Include browser coverage when needed with `npm run loop:review -- --with-e2e`.
 
-Open `http://localhost:5173/#/loop-review` for the owner surface. The optional executor runs an approved proposal in a temporary detached git worktree, applies the proposed diff, runs `npm ci`, `npm run test:sync`, `npm run eval`, and `npm run build`, then either records a dry-run or, in `push` mode, creates an `executor/<proposal-id>` branch and pull request. Only the hard-coded `test` and `prompt` categories may auto-merge after green PR checks; privacy, security, money, client-data, and production-infrastructure paths are forced to review-only.
+Open `http://localhost:5173/#/review/inbox` for the owner surface. The optional executor runs an approved proposal in a temporary detached git worktree, applies the proposed diff, runs `npm ci`, `npm run test:sync`, `npm run eval`, and `npm run build`, then either records a dry-run or, in `push` mode, creates an `executor/<proposal-id>` branch and pull request. Only the hard-coded `test` and `prompt` categories may auto-merge after green PR checks; privacy, security, money, client-data, and production-infrastructure paths are forced to review-only.
 
 Guarantees:
 
 - Assistants can only create drafts. They cannot self-approve.
-- Owner approvals happen through the local Review Deck or nonce-protected local API.
+- Owner approvals happen through Review Inbox or the nonce-protected local API.
 - Every ledger write goes through `appendRecord()`, field allowlists, validators, and redaction checks.
 - The ledger lives outside the git worktree at `~/.meow-ops/loop-ledger/`.
 - Real session data, secrets, local paths, and transcript content do not belong in tracked fixtures or PRs.
@@ -305,25 +269,25 @@ Guarantees:
 The Excel workbook is the **structure** (which surfaces exist). The live **truth states** (which gate passed, the db status, last-verified time) come from a Supabase table — e.g. one an upstream system keeps current. They join through the importer's existing truth CSV, so nothing in the importer changes:
 
 ```
-Supabase table  →  sync/loop-ops-supabase.mjs  →  truth.csv  →  loop-ops-import.mjs --truth  →  spec.json  →  The Loom
+Supabase table  →  sync/loop-ops-supabase.mjs  →  truth.csv  →  loop-ops-import.mjs --truth  →  spec.json  →  Review Map
 (live state)        (this connector, opt-in)       (local)        (joins Excel + truth)            (local)       (renders)
 ```
 
-The connector is **opt-in and a no-op until configured** (set `LOOP_OPS_SUPABASE_URL/_KEY/_TABLE` in `.env`; remap differing column names with `LOOP_OPS_SUPABASE_COLMAP`). Each row is keyed by `surface_key` — the same key the workbook uses. Only the cloud pull needs network; the importer, `spec.json`, and the Loom stay fully local/offline.
+The connector is **opt-in and a no-op until configured** (set `LOOP_OPS_SUPABASE_URL/_KEY/_TABLE` in `.env`; remap differing column names with `LOOP_OPS_SUPABASE_COLMAP`). Each row is keyed by `surface_key` — the same key the workbook uses. Only the cloud pull needs network; the importer, `spec.json`, and Review Map stay fully local/offline.
 
 **Three ways to keep it synced:**
 
 | Cadence | How | Freshness |
 |---|---|---|
-| **Manual** | `node sync/loop-ops-supabase.mjs && node sync/loop-ops-import.mjs --truth public/data/loop-ops/truth.csv` (or the Loom's **Refresh** button after a pull) | on demand |
+| **Manual** | `node sync/loop-ops-supabase.mjs && node sync/loop-ops-import.mjs --truth public/data/loop-ops/truth.csv` (or Review Map **Refresh** after a pull) | on demand |
 | **Near-real-time (pull)** | run that pair on a `launchd` / GitHub Actions cron every N minutes | minutes |
 | **Real-time (push)** | `node sync/loop-ops-supabase-watch.mjs` — subscribes to Supabase **Realtime** (`postgres_changes`) and regenerates on every table change | seconds |
 
 The real-time watcher needs Realtime enabled on the table: `ALTER PUBLICATION supabase_realtime ADD TABLE <your_table>;`.
 
-### Capacity & Usage
+### Seats (hidden)
 
-A local-first SuperAdmin cockpit for the operator's software stack: GitHub Actions run volume, cache and artifact footprint, SaaS subscription run rate, renewal pressure, and source wiring for private usage ledgers.
+A local-first SuperAdmin cockpit for the operator's software stack: GitHub Actions run volume, cache and artifact footprint, SaaS subscription run rate, renewal pressure, and source wiring for private usage ledgers. Reachable from the command palette, not the sidebar.
 
 The public build ships a generic demo screen. Real account usage stays local in `public/data/superadmin-usage.json`, which is gitignored. Refresh it with:
 
@@ -341,60 +305,6 @@ MEOW_GITHUB_ACTIONS_STORAGE_GB_LIMIT=10
 ```
 
 The exporter accepts a local JSON snapshot shaped as `[{...}]`, `{ "services": [...] }`, `{ "rows": [...] }`, or `{ "saas": { "services": [...] } }`. Service-role keys and provider tokens do not belong in the snapshot.
-
-### The Cat Companion
-
-A living 3D companion rendered in WebGL with Kajiya-Kay fur shading, subsurface scattering, and proper procedural anatomy — that evolves based on your actual session data.
-
-**Procedural companion rendering** (no glTF required, runs in-browser):
-- React Three Fiber scene with breed-specific geometry, rooms, accessories, particles, and local-only gameplay state
-- Pixel-cat sprite system for lightweight companion presentation and exportable cat cards
-- XState emotional state machine driven by session profile, wellness, cursor movement, and focus state
-- Post-processing bloom was intentionally removed after WebGL stability testing on Apple GPU paths
-
-**Physical evolution — real mesh deformations:**
-
-| Morph | Driver | Visual change |
-|---|---|---|
-| **Robustness** | Heavy `Bash` usage | More muscular frame |
-| **Agility** | Heavy `Read` / `Grep` | Longer, leaner silhouette |
-| **Intelligence** | Heavy `Agent` / `PlanMode` | Larger head |
-| **Size** | Total tokens (lifetime XP) | kitten → elder |
-| **Fatigue** | 4h overload window | Drooping posture |
-
-**Tamagotchi gameplay** (lives in localStorage, nothing uploaded):
-- 5 stats: Hunger, Energy, Happiness, Health, Shine — decay over real time
-- Feed, play, groom, sleep — each triggers a particle effect on the 3D cat
-- 20+ food items, 15+ accessories, 6 rooms (each changes HDRI lighting)
-- Cat runs away after 14 days of neglect → memorial entry
-
-**Personality traits** — the cat reflects your work pattern:
-
-| 14-day dominant type | Trait | Bonus |
-|---|---|---|
-| Architect | 📐 Methodical | Happiness decay resistance |
-| Builder | 🔨 Prolific | +10% shine from feed |
-| Detective | 🔍 Vigilant | +5% health passive |
-| Commander | ⚡ Bold | +10% energy from sleep |
-
-**Memory markings** — permanent 3D marks earned once, never removed:
-- 🩹 Scar — survived health < 5%
-- ✨ Gold stripe — 7-day coding streak
-- ⭐ Star mark — 100+ total sessions
-- 🔥 Blaze — single session cost > $1
-- 👑 Crown — 30-day streak
-
-**Cat card export** — 📸 Share button → PNG download with name, breed, stats, trait badge, meow-ops watermark.
-
-**Live session detection** — page polls every 30s. When new sessions are detected while you're working, the cat reacts with a gold sparkle burst.
-
-### Companion AI Copilot
-
-Companion is a persistent local-first chat dock available on every dashboard page. It keeps the last 30 messages in localStorage, restores the thread after reload, supports Enter-to-send / Shift+Enter-for-newline, and includes premade prompts for daily changes, sync health, next-fix ranking, and evidence-bound repair briefs.
-
-Answers use deterministic local ledgers, digest data, and structured sync status first. DeepSeek is an optional provider behind the provider-neutral **Model-assisted** label only when local rules cannot answer the question; it does not execute changes. The local API keeps the existing weekly spend guard and per-process call cap. The daily operator forces `MEOW_LLM_CALLS_PER_CYCLE=1`, so its scheduled cycle can make at most one DeepSeek call and still produces a deterministic digest and nudge when AI is unavailable.
-
-See the [Companion plain-English SOP](docs/companion-sop.md) for setup, Soul Studio, Teach, privacy-safe Tune feedback, evidence labels, and troubleshooting.
 
 ### macOS Menu Bar And Local Sync API
 
@@ -499,7 +409,7 @@ At 08:30 local time, `sync/daily-operator.mjs` runs one bounded flow:
 2. Refresh usage limits as an optional, timeout-bounded phase.
 3. Run intake, automation health, deterministic proposal rules, and the digest.
 4. Allow at most one DeepSeek enrichment call.
-5. Write a local Companion nudge under `~/.meow-ops/runtime/`.
+5. Write a local operator nudge under `~/.meow-ops/runtime/`.
 
 ### 2. Keep repository review running while the laptop is off
 
@@ -535,7 +445,7 @@ That deploy publishes the UI shell only. Session analytics remain local unless y
 2. Address bar → install icon (⊕)
 3. Right-click dock icon → Options → Keep in Dock
 
-### 6. Scrying Sanctum (Supabase Realtime, optional)
+### 6. Sanctum (Supabase Realtime, optional)
 
 Run the migration to enable live agent pipeline visualization:
 
@@ -544,7 +454,7 @@ Run the migration to enable live agent pipeline visualization:
 -- Run db/migrations/0003_scrying_sanctum.sql
 ```
 
-This creates `ss_pipelines`, `ss_nodes`, `ss_edges`, `ss_runestones` with multi-tenant RLS and enables Realtime publication. Without this, the Scrying Sanctum page runs in demo mode automatically.
+This creates `ss_pipelines`, `ss_nodes`, `ss_edges`, `ss_runestones` with multi-tenant RLS and enables Realtime publication. Without this, Sanctum runs in demo mode automatically.
 
 ---
 
@@ -571,12 +481,11 @@ Local machine                                         Hosted shell (optional)
 
 PWA on dock ──► vercel.app ──── local helper first, demo fallback
               React 19 + Vite 8 + Recharts + D3 + AG Grid
-              Three.js companion + Sanctum scene (WebGL)
-              XState emotional state machine
-              Supabase Realtime (Scrying Sanctum)
+              Three.js Sanctum scene (WebGL)
+              Supabase Realtime (Sanctum, opt-in)
 ```
 
-**No hosted backend. No server-side rendering.** The default setup is a static bundle plus local JSON exports. Supabase Realtime is opt-in for the Scrying Sanctum pipeline visualizer only. `sync/upload-to-supabase.mjs` remains available for intentionally operator-managed storage, but it is not part of the default session analytics path.
+**No hosted backend. No server-side rendering.** The default setup is a static bundle plus local JSON exports. Supabase Realtime is opt-in for the Sanctum pipeline visualizer only. `sync/upload-to-supabase.mjs` remains available for intentionally operator-managed storage, but it is not part of the default session analytics path.
 
 ---
 
@@ -585,14 +494,13 @@ PWA on dock ──► vercel.app ──── local helper first, demo fallback
 | Layer | Tech |
 |---|---|
 | Frontend | React 19 + Vite 8 |
-| 3D Companion | Three.js + React Three Fiber + custom GLSL shaders |
-| State machine | XState 5 (companion emotional states) |
+| Sanctum 3D | Three.js + React Three Fiber |
 | Charts | Recharts |
 | Pipeline visualizer | D3 (zoom/pan/SVG) |
 | Styling | Tailwind CSS 4 + OKLCH design tokens |
-| Data grid | AG-Grid (session analytics table) |
+| Data grid | AG-Grid (session table) |
 | Storage | Local JSON exports by default |
-| Realtime | Supabase Realtime (Scrying Sanctum, opt-in) |
+| Realtime | Supabase Realtime (Sanctum, opt-in) |
 | Hosting | Vercel (or any static host) |
 | Sync | Node.js ESM scripts |
 | Local helper | localhost sync API on port `7337` |
@@ -614,7 +522,7 @@ Tests cover the dashboard and operations surfaces, key interactions, PWA manifes
 To run a single test file or test by name:
 
 ```bash
-npx playwright test --grep "Scrying Sanctum"
+npx playwright test --grep "Sanctum"
 npx playwright test --reporter=list
 ```
 
@@ -626,10 +534,10 @@ npx playwright test --reporter=list
 - **Why this changed.** Public `sessions.json` links were too easy to expose accidentally, so the hosted shell now avoids public session feeds by default.
 - **Public deploys fall back to demo data.** If the localhost helper is unavailable, the hosted shell shows bundled demo data instead of your private sessions.
 - **Sessions JSON contains metrics only** — token counts, tool counts, durations, model names, and project labels. No message content, no prompts, no first-user-message snippets, no chat titles, no code, and no absolute `cwd` paths.
-- **Supabase is optional and scoped.** The default app no longer depends on Supabase Storage for session analytics. Supabase Realtime remains opt-in for Scrying Sanctum.
+- **Supabase is optional and scoped.** The default app no longer depends on Supabase Storage for session analytics. Supabase Realtime remains opt-in for Sanctum.
 - **Service key is local-only.** It never appears in the production bundle.
 - **Hosted demo password gate is optional.** `VITE_ACCESS_PASSWORD` only protects demo access; it is not an account system.
-- **Optional model enrichment is bounded.** Transcript/screenshot intake uses a localhost-only LM Studio endpoint when configured. Companion can use DeepSeek only when explicitly configured, with per-process and weekly spend caps; deterministic answers remain available without it.
+- **Optional model enrichment is bounded.** Transcript/screenshot intake uses a localhost-only LM Studio endpoint when configured. DeepSeek is optional, with per-process and weekly spend caps. Deterministic answers remain available without it.
 - **No analytics, no telemetry, no tracking.** The app has no idea you exist.
 
 ---
@@ -657,18 +565,12 @@ Parsers for additional AI tools:
 - `sync/parse-openrouter.mjs` — unified cost across all OpenRouter models
 - Direct Ollama/LM Studio receipts — local model calls, once an agent exposes durable session-linked records
 
-### Scrying Sanctum enhancements _(planned)_
+### Sanctum enhancements _(planned)_
 
 - Supabase integration guide for connecting your own multi-agent pipelines
 - WebSocket bridge for non-Supabase backends
 - Node clustering for large pipelines (10+ agents)
 - Replay mode: scrub through a completed pipeline run
-
-### Community Cat Registry _(planned)_
-
-Opt-in. Share your companion's current state (not your session data) to a public registry. See how your cat's physique compares to other developers globally. Leaderboards by growth stage, rarity tier, streak length.
-
-Privacy-first and opt-in by design.
 
 ---
 
@@ -685,15 +587,10 @@ Every feature on the roadmap is an open issue. The highest-impact contributions:
 - Session quality score (output tokens / ghost ratio / tool diversity)
 - Model comparison view (same project, different models, side-by-side cost)
 
-**Companion**
-- New cat types / classifier rules for new tools
-- Sound design (purring on focus, chirps on breakthroughs)
-- Cat card frame designs (community-submitted overlays)
-
-**Agent Visualizer / Scrying Sanctum**
+**Sanctum**
 - Live replay mode (replay a session's agent operations at 10× speed)
 - Cross-run comparison (trend lines: are your runs getting cheaper?)
-- Scrying Sanctum zoom/pan canvas (true spatial layout, not horizontal scroll)
+- Sanctum zoom/pan canvas (true spatial layout, not horizontal scroll)
 
 PRs welcome. Open an issue first for anything substantial.
 
@@ -719,29 +616,23 @@ meow-ops/
 │   └── meow-ops.spec.ts         Playwright e2e tests
 ├── src/
 │   ├── analytics/               Velocity, efficiency, burn-rate, profile modules
-│   ├── companion-v2/            WebGL/pixel companion
-│   │   ├── CompanionScene.tsx   R3F canvas, HDRI rooms, particles, post-processing
-│   │   ├── CompanionPageV2.tsx  Orchestrator — polling, milestones, marks
-│   │   ├── StatsPanel.tsx       Stat bars, actions, trait badge, share button
-│   │   ├── useCompanionGame.ts  Store wrapper, personality trait, memory marks
-│   │   ├── PixelCat.tsx         Lightweight breed sprite renderer
-│   │   ├── ParticleOverlay.tsx  Per-action particle effects
-│   │   ├── MilestoneOverlay.tsx Celebration overlay (growth, streaks, spend)
-│   │   └── CatCardExport.tsx   Canvas2D overlay → PNG download
 │   ├── components/              Charts, session table, nav, password gate, date filter
 │   ├── lib/
 │   │   ├── agent-tree.ts        Forest builder, efficiency index, cache hit rate
-│   │   └── companion-store.js   Tamagotchi engine (localStorage)
+│   │   └── practice-map.ts      Learn concepts inferred from sessions
 │   ├── pages/
-│   │   ├── AgentVisualizer.tsx  Gantt timeline, ghost flagging, drill-down
-│   │   ├── AgentDetailPanel.tsx Slide-in session detail panel
-│   │   ├── ScryingSanctum.tsx   3D agent pipeline visualizer
-│   │   ├── LoopOps.tsx           The Loom loop topology and evidence view
-│   │   ├── LoopReview.tsx        Owner Review Deck, digest, Ask, and execution controls
-│   │   ├── CapacityUsage.jsx     Local-first SuperAdmin usage cockpit
-│   │   └── ...                  Overview, Sessions, ByDay, ByProject, etc.
+│   │   ├── Overview.jsx         Today · Summary
+│   │   ├── Sessions.jsx         Today · Sessions
+│   │   ├── AgentVisualizer.tsx  Today · Runs
+│   │   ├── LoopReview.tsx       Review · Inbox
+│   │   ├── ProjectControl.tsx   Review · Projects
+│   │   ├── LoopOps.tsx          Review · Map
+│   │   ├── CostTracker.jsx      Ledger
+│   │   ├── ScryingSanctum.tsx   Sanctum
+│   │   ├── LearningQuest.tsx    Learn
+│   │   └── CapacityUsage.jsx    Hidden Seats page
 │   ├── scrying-sanctum/         Realtime pipeline components for external feeds
-│   │   ├── ScryingSanctum.tsx   Main page — D3 zoom canvas, legend, loot box
+│   │   ├── ScryingSanctum.tsx   D3 zoom canvas, legend, loot box
 │   │   ├── ChampionNode.tsx     SVG foreignObject node card
 │   │   ├── LeyLine.tsx          SVG path with flow animation + runestones
 │   │   ├── Runestone.tsx        Animated token packet (RAF path-following)
@@ -749,8 +640,6 @@ meow-ops/
 │   │   ├── useScryingData.ts    Supabase/demo data hook with Realtime subscriptions
 │   │   ├── types.ts             SsNode, SsEdge, SsRunestone, SsPipeline types
 │   │   └── scrying-sanctum.css  Ley line animations, champion cards, loot box
-│   ├── state/
-│   │   └── companionMachine.ts  XState machine — emotional states, cursor tracking
 │   └── types/
 │       └── session.ts           Single source of truth for all session types
 ├── sync/
@@ -781,7 +670,7 @@ meow-ops/
 │   ├── com.meowops.localapi.plist Persistent localhost-helper template
 │   └── com.meowops.daily-digest.plist Single daily operator template
 ├── menubar/
-│   ├── MeowOpsBar.swift         macOS menu bar companion source
+│   ├── MeowOpsBar.swift         macOS menu bar source
 │   └── build.sh                 Build script for MeowOpsBar.app
 ├── playwright.config.ts         Playwright configuration
 ├── .github/workflows/

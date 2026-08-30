@@ -2228,7 +2228,7 @@ export default function ScryingSanctum({ sessions, onReload }: { sessions: Sessi
                 letterSpacing: 4.2, textTransform: 'uppercase',
                 textShadow: '0 0 18px rgba(200,168,85,.24)',
               }}>
-                Scrying Sanctum
+                Sanctum
               </div>
               <div style={{ fontSize: 10.5, color: '#a9945d', fontFamily: 'monospace', letterSpacing: 1.2 }}>
                 Dalaran agent visualizer
