@@ -77,7 +77,21 @@ const EXTRA_ALLOWED_ORIGINS = (process.env.MEOW_DASHBOARD_ORIGIN || '')
   .map((origin) => origin.trim())
   .filter(Boolean);
 const ALLOWED_ORIGINS = new Set([...DEFAULT_ALLOWED_ORIGINS, ...EXTRA_ALLOWED_ORIGINS]);
-const PRIVATE_PROJECT_ORIGINS = new Set(DEFAULT_ALLOWED_ORIGINS.filter((origin) => origin.startsWith('http://')));
+
+/** Vite increments the port when 5173 is taken (5174, Playwright 5175). */
+function isLocalDashboardOrigin(origin) {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:') return false;
+    return url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
+  } catch {
+    return false;
+  }
+}
+
+function isAllowedOrigin(origin) {
+  return ALLOWED_ORIGINS.has(origin) || isLocalDashboardOrigin(origin);
+}
 const NONCES = [];
 const NONCE_SET = new Set();
 
@@ -110,7 +124,7 @@ function hostIsLocal(req) {
 function applyCors(req, res) {
   const origin = req.headers.origin;
   if (!origin) return { ok: true };
-  if (!ALLOWED_ORIGINS.has(origin)) {
+  if (!isAllowedOrigin(origin)) {
     return { ok: false, statusCode: 403, error: 'Forbidden origin' };
   }
 
@@ -266,7 +280,7 @@ const server = createServer(async (req, res) => {
   const exposesPrivateProjectData = path === '/projects'
     || path.startsWith('/projects/')
     || path.startsWith('/project-intelligence/');
-  if (exposesPrivateProjectData && req.headers.origin && !PRIVATE_PROJECT_ORIGINS.has(req.headers.origin)) {
+  if (exposesPrivateProjectData && req.headers.origin && !isLocalDashboardOrigin(req.headers.origin)) {
     sendJson(res, 403, { ok: false, error: 'Private project data requires the local dashboard.' });
     return;
   }

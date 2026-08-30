@@ -64,12 +64,15 @@ export function useRoute() {
 
   // Normalise legacy, partial and unknown hashes in place. replaceState keeps
   // the back button pointing at wherever the user actually came from.
+  // Depend on `raw` as well as `canonical`: two aliases can share a canonical
+  // (pomodoro and companion both map to today/summary). If we only watch
+  // canonical, a second alias while already on Today never rewrites the URL.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (window.location.hash === canonical) return;
     window.history.replaceState(null, '', canonical);
-    setRaw(canonical);
-  }, [canonical]);
+    if (raw !== canonical) setRaw(canonical);
+  }, [canonical, raw]);
 
   const navigate = useCallback((surface: string, tab?: string | null, query?: string) => {
     if (!surfaceById(surface)) return;
