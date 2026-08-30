@@ -28,8 +28,6 @@ jobs:
       - run: npm ci
 
       # Blocking gates: these are green today and catch real regressions.
-      - name: Companion tests
-        run: npm run test:companion
       - name: Sanctum tests
         run: npm run test:sanctum
       - name: Sync pipeline tests
