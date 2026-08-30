@@ -31,17 +31,17 @@ const ctx = await browser.newContext({
 const page = await ctx.newPage();
 
 async function closeTimer() {
-  await page.evaluate(() => {
-    document.querySelectorAll('.mo-focus__pop').forEach((el) => el.remove());
-  });
+  await page.locator('.mo-focus__pop').evaluateAll((nodes) => {
+    for (const el of nodes) el.remove();
+  }).catch(() => {});
 }
 
 async function settle() {
-  await page.evaluate(() => {
-    document.querySelectorAll('main *').forEach((el) => {
+  await page.locator('main').evaluate((main) => {
+    main.querySelectorAll('*').forEach((el) => {
       if (el.style && el.style.opacity === '0') el.style.opacity = '1';
     });
-  });
+  }).catch(() => {});
 }
 
 for (const shot of SHOTS) {
