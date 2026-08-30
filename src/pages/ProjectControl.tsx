@@ -119,7 +119,6 @@ export default function ProjectControl() {
   const [decisionMessage, setDecisionMessage] = useState('');
   const [decidingLearningId, setDecidingLearningId] = useState('');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   const selected = useMemo(
     () => projects.find((project) => project.project.project_id === selectedId) || projects[0] || null,
@@ -128,9 +127,7 @@ export default function ProjectControl() {
 
   async function loadPortfolio(preferredId = '') {
     setLoading(true);
-    setError('');
     const result = await fetchProjectControlPortfolio();
-    if (!result.ok) setError('The local Meow Ops helper is not available.');
     setProjects(result.projects || []);
     if (preferredId) setSelectedId(preferredId);
     else if (!selectedId && result.projects?.[0]) setSelectedId(result.projects[0].project.project_id);
@@ -199,7 +196,6 @@ export default function ProjectControl() {
             await loadPortfolio(projectId);
           }}
         />
-        {error && <p className="project-control-error">{error}</p>}
       </div>
     );
   }

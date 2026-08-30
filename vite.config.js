@@ -248,7 +248,9 @@ export default defineConfig({
             { name: 'vendor-three', test: /[\\/]node_modules[\\/]three[\\/]/, priority: 40 },
             { name: 'vendor-r3f', test: /[\\/]node_modules[\\/](?:@react-three|three-stdlib)[\\/]/, priority: 30 },
             { name: 'vendor-ag-grid', test: /[\\/]node_modules[\\/]ag-grid-/, priority: 30 },
-            { name: 'vendor-recharts', test: /[\\/]node_modules[\\/](?:recharts|d3-[^/]+|internmap|decimal\.js-light)[\\/]/, priority: 30 },
+            // recharts stays in the app graph. Splitting it into vendor-recharts
+            // left createSelector undefined in the production chunk (Today and
+            // Ledger threw "s is not a function" inside the legend selector).
             { name: 'vendor-xyflow', test: /[\\/]node_modules[\\/]@xyflow[\\/]/, priority: 30 },
             { name: 'vendor-motion', test: /[\\/]node_modules[\\/](?:framer-motion|motion-dom|motion-utils)[\\/]/, priority: 30 },
           ],

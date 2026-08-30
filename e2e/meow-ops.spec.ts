@@ -237,7 +237,7 @@ test('Learn mines concepts from session tool mix', async ({ page }) => {
   await expect(page.getByText(/That is stack tracing/)).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Idempotent retries' })).toBeVisible();
   await expect(page.getByText(/You kept rewriting the same helper/)).toBeVisible();
-  await expect(page.getByText(/meow-ops, \d+ sessions?/)).toBeVisible();
+  await expect(page.getByText(/meow-ops, \d+ sessions?/).first()).toBeVisible();
   await expect(page.getByText(/YouTube/i)).toHaveCount(0);
   await page.getByRole('button', { name: 'I get this' }).first().click();
   await expect(page.getByRole('button', { name: 'I get this' }).first()).toBeVisible();
@@ -265,10 +265,11 @@ test('sidebar shows Source Usage panel when multiple sources exist', async ({ pa
 // ── 2. Overview ───────────────────────────────────────────────────────────────
 
 test('Overview: stat cards render', async ({ page }) => {
-  await expect(page.getByText('Sessions', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Tokens', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Cost', { exact: true }).first()).toBeVisible();
-  await expect(page.getByText('Time', { exact: true }).first()).toBeVisible();
+  // StatTile labels use CSS uppercase, so match the rendered text.
+  await expect(page.getByText(/^sessions$/i).first()).toBeVisible();
+  await expect(page.getByText(/^tokens$/i).first()).toBeVisible();
+  await expect(page.getByText(/^cost$/i).first()).toBeVisible();
+  await expect(page.getByText(/^time$/i).first()).toBeVisible();
 });
 
 test('Overview: daily tokens chart renders', async ({ page }) => {
@@ -1010,6 +1011,21 @@ test('Focus timer chip is on the shell, not a page', async ({ page }) => {
     await nav(page, surface);
     await expect(page.getByRole('button', { name: 'Start focus timer' })).toBeVisible();
   }
+});
+
+test('legacy hashes rewrite to Today', async ({ page }) => {
+  for (const hash of ['#/companion', '#/pomodoro', '#/overview']) {
+    await page.goto(`/${hash}`);
+    await waitForApp(page);
+    await expect(page).toHaveURL(/#\/today\/summary$/);
+    await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
+  }
+
+  // Same-session alias: canonical is already today/summary, so the rewrite
+  // must still run. This is the inbox-cut regression.
+  await page.evaluate(() => { window.location.hash = '#/pomodoro'; });
+  await expect(page).toHaveURL(/#\/today\/summary$/);
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible();
 });
 
 // ── 14. PWA manifest ──────────────────────────────────────────────────────────

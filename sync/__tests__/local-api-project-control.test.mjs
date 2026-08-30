@@ -243,6 +243,18 @@ test('Companion keeps short LCWI change variants project-scoped', async () => {
   }
 });
 
+test('Vite fallback ports on localhost can read the project catalog', async () => {
+  for (const origin of ['http://localhost:5174', 'http://localhost:5175', 'http://127.0.0.1:5174']) {
+    const response = await fetch(`${BASE}/projects`, {
+      headers: { Origin: origin, 'x-meow-ops-local': '1' },
+    });
+    assert.equal(response.status, 200, origin);
+    const body = await response.json();
+    assert.equal(body.ok, true, origin);
+    assert.ok(Array.isArray(body.projects), origin);
+  }
+});
+
 test('hosted UI receives only the safe quest projection, never private project records', async () => {
   const hostedHeaders = { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1' };
   const privateResponse = await fetch(`${BASE}/projects`, { headers: hostedHeaders });

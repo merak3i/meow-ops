@@ -110,17 +110,19 @@ async function loadRealSessions() {
   if (REAL_SESSIONS_PROMISE) return REAL_SESSIONS_PROMISE;
 
   REAL_SESSIONS_PROMISE = (async () => {
+    // A successful empty array is not "missing". Treat 404 / fetch failure as
+    // missing (demo fallback). Treat `[]` as parsed-but-empty so Learn can
+    // show its empty state instead of invented demo concepts.
     const local = await fetchLocalJson('/data/sessions.json');
-    const localData = sanitizeSessions(local);
-    if (localData.length > 0) {
-      REAL_SESSIONS = localData;
-      return localData;
+    if (local !== null) {
+      REAL_SESSIONS = sanitizeSessions(local);
+      return REAL_SESSIONS;
     }
 
-    const data = sanitizeSessions(await fetchJson(withCacheBust('/data/sessions.json')));
-    if (data.length > 0) {
-      REAL_SESSIONS = data;
-      return data;
+    const raw = await fetchJson(withCacheBust('/data/sessions.json'));
+    if (raw !== null) {
+      REAL_SESSIONS = sanitizeSessions(raw);
+      return REAL_SESSIONS;
     }
     return null;
   })();
