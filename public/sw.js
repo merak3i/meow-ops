@@ -1,4 +1,4 @@
-const CACHE = 'meow-ops-v2';
+const CACHE = 'meow-ops-v3';
 const STATIC = ['/', '/index.html'];
 
 self.addEventListener('install', (e) => {
@@ -16,6 +16,17 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
+  const requestUrl = new URL(e.request.url);
+  const isPublicDemoData = requestUrl.origin === self.location.origin
+    && /^\/data\/(?:demo-)?(?:sessions|cost-summary|superadmin-usage)\.json$/.test(requestUrl.pathname);
+  // These fixtures are privacy-sensitive even though their contents are public.
+  // Always fetch the active deployment's version and keep them out of CacheStorage.
+  if (isPublicDemoData) return;
+  const isLoopback = ['localhost', '127.0.0.1', '::1', '[::1]'].includes(requestUrl.hostname);
+  // A hosted shell can read private summaries from the optional loopback
+  // helper. Keep those responses out of the hosted origin's CacheStorage.
+  if (requestUrl.origin !== self.location.origin && isLoopback) return;
+  if (e.request.method !== 'GET' || e.request.cache === 'no-store') return;
   if (e.request.url.includes('supabase.co')) return;
   // Network-first for HTML navigation (always get latest app shell)
   if (e.request.mode === 'navigate') {

@@ -1,93 +1,41 @@
 {
   "meta": {
-    "generatedAt": "2026-06-13T06:45:00.000Z",
-    "source": "demo",
+    "generatedAt": "2026-09-27T12:00:00.000Z",
+    "source": "synthetic-demo",
     "currency": "USD",
-    "workspace": "Meow Ops public demo",
+    "workspace": "Example workspace",
     "notVerified": [
-      "Live Patherle SuperAdmin rows are not bundled in the public demo.",
-      "GitHub billable minutes require local gh auth and optional billing limits.",
-      "Provider invoices remain operator-owned unless imported through a local snapshot."
+      "Generated example data only",
+      "No provider API was queried",
+      "No billing or production values are represented"
     ]
   },
   "githubActions": {
     "period": {
-      "label": "last 30 days",
-      "startedAt": "2026-05-14T00:00:00.000Z",
-      "endedAt": "2026-06-13T06:45:00.000Z"
+      "label": "Sample 30-day period",
+      "startedAt": "2026-08-29T00:00:00.000Z",
+      "endedAt": "2026-09-27T23:59:59.000Z"
     },
     "limits": {
-      "minutesIncluded": 3000,
+      "minutesIncluded": 2000,
       "storageGbIncluded": 10,
-      "source": "demo"
+      "source": "Synthetic sample"
     },
     "totals": {
       "repos": 4,
-      "runs": 126,
-      "successful": 113,
-      "failed": 7,
-      "cancelled": 4,
-      "inProgress": 2,
-      "estimatedMinutes": 1038,
-      "cacheGb": 3.7,
-      "artifactGb": 1.1,
-      "artifactCount": 42
+      "runs": 72,
+      "successful": 70,
+      "failed": 2,
+      "cancelled": 0,
+      "inProgress": 0,
+      "estimatedMinutes": 170,
+      "cacheGb": 0.7,
+      "artifactGb": 1.28,
+      "artifactCount": 14
     },
     "repos": [
       {
-        "repo": "merak3i/meow-ops",
-        "visibility": "public",
-        "health": "healthy",
-        "runs": 48,
-        "successful": 45,
-        "failed": 1,
-        "cancelled": 2,
-        "inProgress": 0,
-        "estimatedMinutes": 312,
-        "cacheGb": 1.2,
-        "artifactGb": 0.3,
-        "artifactCount": 13,
-        "workflows": [
-          { "name": "build", "state": "active" },
-          { "name": "e2e smoke", "state": "active" }
-        ],
-        "latestRun": {
-          "name": "build",
-          "status": "completed",
-          "conclusion": "success",
-          "startedAt": "2026-06-13T04:18:00.000Z",
-          "url": "https://github.com/merak3i/meow-ops/actions"
-        },
-        "notes": ["Public build signal is clean."]
-      },
-      {
-        "repo": "merak3i/patherle",
-        "visibility": "private",
-        "health": "watch",
-        "runs": 51,
-        "successful": 44,
-        "failed": 5,
-        "cancelled": 1,
-        "inProgress": 1,
-        "estimatedMinutes": 559,
-        "cacheGb": 1.7,
-        "artifactGb": 0.5,
-        "artifactCount": 19,
-        "workflows": [
-          { "name": "release checks", "state": "active" },
-          { "name": "harness evals", "state": "active" }
-        ],
-        "latestRun": {
-          "name": "harness evals",
-          "status": "in_progress",
-          "conclusion": null,
-          "startedAt": "2026-06-13T05:41:00.000Z",
-          "url": "https://github.com/merak3i/patherle/actions"
-        },
-        "notes": ["Recent failures need triage before this can read healthy."]
-      },
-      {
-        "repo": "merak3i/patherle-agentic-loop-ops",
+        "repo": "sample-repository-01",
         "visibility": "private",
         "health": "healthy",
         "runs": 12,
@@ -95,313 +43,423 @@
         "failed": 0,
         "cancelled": 0,
         "inProgress": 0,
-        "estimatedMinutes": 74,
-        "cacheGb": 0.2,
-        "artifactGb": 0.1,
-        "artifactCount": 4,
+        "estimatedMinutes": 20,
+        "cacheGb": 0.1,
+        "artifactGb": 0.2,
+        "artifactCount": 2,
         "workflows": [
-          { "name": "agent dreaming report", "state": "active" }
+          {
+            "name": "Demo build",
+            "state": "success"
+          },
+          {
+            "name": "Demo checks",
+            "state": "success"
+          }
         ],
         "latestRun": {
-          "name": "agent dreaming report",
+          "name": "Demo checks",
           "status": "completed",
           "conclusion": "success",
-          "startedAt": "2026-06-12T20:45:00.000Z",
-          "url": "https://github.com/merak3i/patherle-agentic-loop-ops/actions"
+          "startedAt": "2026-09-27T12:00:00.000Z",
+          "url": ""
         },
-        "notes": ["Read-only report workflow only."]
+        "notes": [
+          "Synthetic sample only"
+        ]
       },
       {
-        "repo": "merak3i/meow-creative-haus-2",
-        "visibility": "public",
-        "health": "healthy",
-        "runs": 15,
-        "successful": 12,
+        "repo": "sample-repository-02",
+        "visibility": "private",
+        "health": "watch",
+        "runs": 16,
+        "successful": 15,
         "failed": 1,
-        "cancelled": 1,
-        "inProgress": 1,
-        "estimatedMinutes": 93,
-        "cacheGb": 0.6,
-        "artifactGb": 0.2,
-        "artifactCount": 6,
+        "cancelled": 0,
+        "inProgress": 0,
+        "estimatedMinutes": 35,
+        "cacheGb": 0.15,
+        "artifactGb": 0.28,
+        "artifactCount": 3,
         "workflows": [
-          { "name": "deploy", "state": "active" }
+          {
+            "name": "Demo build",
+            "state": "success"
+          },
+          {
+            "name": "Demo checks",
+            "state": "success"
+          }
         ],
         "latestRun": {
-          "name": "deploy",
-          "status": "queued",
-          "conclusion": null,
-          "startedAt": "2026-06-13T06:31:00.000Z",
-          "url": "https://github.com/merak3i/meow-creative-haus-2/actions"
+          "name": "Demo checks",
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-09-27T11:00:00.000Z",
+          "url": ""
         },
-        "notes": ["Deployment queue is visible but not blocked."]
+        "notes": [
+          "Synthetic sample only"
+        ]
+      },
+      {
+        "repo": "sample-repository-03",
+        "visibility": "private",
+        "health": "healthy",
+        "runs": 20,
+        "successful": 20,
+        "failed": 0,
+        "cancelled": 0,
+        "inProgress": 0,
+        "estimatedMinutes": 50,
+        "cacheGb": 0.2,
+        "artifactGb": 0.36,
+        "artifactCount": 4,
+        "workflows": [
+          {
+            "name": "Demo build",
+            "state": "success"
+          },
+          {
+            "name": "Demo checks",
+            "state": "success"
+          }
+        ],
+        "latestRun": {
+          "name": "Demo checks",
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-09-27T10:00:00.000Z",
+          "url": ""
+        },
+        "notes": [
+          "Synthetic sample only"
+        ]
+      },
+      {
+        "repo": "sample-repository-04",
+        "visibility": "private",
+        "health": "watch",
+        "runs": 24,
+        "successful": 23,
+        "failed": 1,
+        "cancelled": 0,
+        "inProgress": 0,
+        "estimatedMinutes": 65,
+        "cacheGb": 0.25,
+        "artifactGb": 0.44,
+        "artifactCount": 5,
+        "workflows": [
+          {
+            "name": "Demo build",
+            "state": "success"
+          },
+          {
+            "name": "Demo checks",
+            "state": "success"
+          }
+        ],
+        "latestRun": {
+          "name": "Demo checks",
+          "status": "completed",
+          "conclusion": "success",
+          "startedAt": "2026-09-27T09:00:00.000Z",
+          "url": ""
+        },
+        "notes": [
+          "Synthetic sample only"
+        ]
       }
     ]
   },
   "saas": {
     "totals": {
       "services": 12,
-      "monthlyUsd": 694,
-      "watch": 4,
-      "over": 1,
-      "renewal30d": 5
+      "monthlyUsd": 192,
+      "watch": 0,
+      "over": 0,
+      "renewal30d": 3
     },
     "services": [
       {
-        "id": "openai-codex",
-        "name": "OpenAI / Codex",
-        "vendor": "OpenAI",
-        "category": "AI",
-        "owner": "Founder",
-        "plan": "Team",
-        "environment": "daily build",
-        "status": "watch",
-        "monthlyCostUsd": 200,
-        "renewalDate": "2026-06-25",
-        "usageLabel": "estimated usage",
-        "limitLabel": "monthly working budget",
-        "usageValue": 148,
-        "limitValue": 200,
-        "usagePct": 74,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["Codex is the primary operator for Patherle loop work."]
-      },
-      {
-        "id": "github",
-        "name": "GitHub",
-        "vendor": "GitHub",
-        "category": "Infra",
-        "owner": "Founder",
-        "plan": "Team",
-        "environment": "repos and actions",
-        "status": "healthy",
-        "monthlyCostUsd": 48,
-        "renewalDate": "2026-07-01",
-        "usageLabel": "actions minutes",
-        "limitLabel": "included minutes",
-        "usageValue": 1038,
-        "limitValue": 3000,
-        "usagePct": 35,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["Wall-clock workflow minutes shown in demo."]
-      },
-      {
-        "id": "vercel",
-        "name": "Vercel",
-        "vendor": "Vercel",
-        "category": "Infra",
-        "owner": "Founder",
-        "plan": "Pro",
-        "environment": "production hosting",
-        "status": "healthy",
-        "monthlyCostUsd": 20,
-        "renewalDate": "2026-06-28",
-        "usageLabel": "build minutes",
-        "limitLabel": "team allowance",
-        "usageValue": 410,
-        "limitValue": 6000,
-        "usagePct": 7,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["Public web deploys are within allowance."]
-      },
-      {
-        "id": "supabase",
-        "name": "Supabase",
-        "vendor": "Supabase",
-        "category": "Data",
-        "owner": "Founder",
-        "plan": "Pro",
-        "environment": "Patherle staging and app data",
-        "status": "watch",
-        "monthlyCostUsd": 25,
-        "renewalDate": "2026-06-28",
-        "usageLabel": "database size",
-        "limitLabel": "project allowance",
-        "usageValue": 1.8,
-        "limitValue": 8,
-        "usagePct": 23,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["RLS status should be reviewed before exposing admin data."]
-      },
-      {
-        "id": "railway",
-        "name": "Railway",
-        "vendor": "Railway",
-        "category": "Infra",
-        "owner": "Founder",
-        "plan": "Team",
-        "environment": "backend services",
-        "status": "watch",
-        "monthlyCostUsd": 40,
-        "renewalDate": "2026-06-30",
-        "usageLabel": "monthly spend",
-        "limitLabel": "budget",
-        "usageValue": 32,
-        "limitValue": 40,
-        "usagePct": 80,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["Close to budget. Check long-running services."]
-      },
-      {
-        "id": "cloudflare",
-        "name": "Cloudflare",
-        "vendor": "Cloudflare",
-        "category": "Infra",
-        "owner": "Founder",
-        "plan": "Workers Paid",
-        "environment": "edge, DNS, queues",
-        "status": "healthy",
+        "id": "demo-service-01",
+        "name": "Demo service 01",
+        "vendor": "Example vendor",
+        "category": "Development",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
         "monthlyCostUsd": 5,
-        "renewalDate": "2026-07-03",
-        "usageLabel": "requests",
-        "limitLabel": "included requests",
-        "usageValue": 1.2,
-        "limitValue": 10,
-        "usagePct": 12,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["Edge usage is comfortably low."]
-      },
-      {
-        "id": "pinecone",
-        "name": "Pinecone",
-        "vendor": "Pinecone",
-        "category": "Data",
-        "owner": "Founder",
-        "plan": "Standard",
-        "environment": "vector search",
-        "status": "healthy",
-        "monthlyCostUsd": 70,
-        "renewalDate": "2026-07-06",
-        "usageLabel": "index storage",
-        "limitLabel": "budgeted capacity",
-        "usageValue": 38,
+        "renewalDate": "2026-10-05",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
+        "usageValue": 15,
         "limitValue": 100,
-        "usagePct": 38,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["No public namespace details in demo."]
+        "usagePct": 15,
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
       },
       {
-        "id": "sarvam",
-        "name": "Sarvam AI",
-        "vendor": "Sarvam",
-        "category": "AI",
-        "owner": "Founder",
-        "plan": "API",
-        "environment": "voice and language",
-        "status": "watch",
-        "monthlyCostUsd": 95,
-        "renewalDate": "2026-06-24",
-        "usageLabel": "monthly spend",
-        "limitLabel": "budget",
-        "usageValue": 77,
-        "limitValue": 100,
-        "usagePct": 77,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["Voice experiments should stay tagged."]
-      },
-      {
-        "id": "sentry",
-        "name": "Sentry",
-        "vendor": "Sentry",
-        "category": "Ops",
-        "owner": "Founder",
-        "plan": "Team",
-        "environment": "error monitoring",
-        "status": "healthy",
-        "monthlyCostUsd": 26,
-        "renewalDate": "2026-07-10",
-        "usageLabel": "events",
-        "limitLabel": "monthly allowance",
+        "id": "demo-service-02",
+        "name": "Demo service 02",
+        "vendor": "Example vendor",
+        "category": "Storage",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
+        "monthlyCostUsd": 7,
+        "renewalDate": "2026-10-06",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
         "usageValue": 18,
         "limitValue": 100,
         "usagePct": 18,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["Low volume after filtering noisy routes."]
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
       },
       {
-        "id": "posthog",
-        "name": "PostHog",
-        "vendor": "PostHog",
-        "category": "Ops",
-        "owner": "Founder",
-        "plan": "Usage",
-        "environment": "product analytics",
-        "status": "healthy",
-        "monthlyCostUsd": 36,
-        "renewalDate": "2026-07-08",
-        "usageLabel": "events",
-        "limitLabel": "budgeted events",
+        "id": "demo-service-03",
+        "name": "Demo service 03",
+        "vendor": "Example vendor",
+        "category": "Monitoring",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
+        "monthlyCostUsd": 9,
+        "renewalDate": "2026-10-07",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
+        "usageValue": 21,
+        "limitValue": 100,
+        "usagePct": 21,
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
+      },
+      {
+        "id": "demo-service-04",
+        "name": "Demo service 04",
+        "vendor": "Example vendor",
+        "category": "Development",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
+        "monthlyCostUsd": 11,
+        "renewalDate": "2026-11-08",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
+        "usageValue": 24,
+        "limitValue": 100,
+        "usagePct": 24,
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
+      },
+      {
+        "id": "demo-service-05",
+        "name": "Demo service 05",
+        "vendor": "Example vendor",
+        "category": "Storage",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
+        "monthlyCostUsd": 13,
+        "renewalDate": "2026-11-09",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
+        "usageValue": 27,
+        "limitValue": 100,
+        "usagePct": 27,
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
+      },
+      {
+        "id": "demo-service-06",
+        "name": "Demo service 06",
+        "vendor": "Example vendor",
+        "category": "Monitoring",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
+        "monthlyCostUsd": 15,
+        "renewalDate": "2026-11-10",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
+        "usageValue": 30,
+        "limitValue": 100,
+        "usagePct": 30,
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
+      },
+      {
+        "id": "demo-service-07",
+        "name": "Demo service 07",
+        "vendor": "Example vendor",
+        "category": "Development",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
+        "monthlyCostUsd": 17,
+        "renewalDate": "2026-12-11",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
+        "usageValue": 33,
+        "limitValue": 100,
+        "usagePct": 33,
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
+      },
+      {
+        "id": "demo-service-08",
+        "name": "Demo service 08",
+        "vendor": "Example vendor",
+        "category": "Storage",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
+        "monthlyCostUsd": 19,
+        "renewalDate": "2026-12-12",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
+        "usageValue": 36,
+        "limitValue": 100,
+        "usagePct": 36,
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
+      },
+      {
+        "id": "demo-service-09",
+        "name": "Demo service 09",
+        "vendor": "Example vendor",
+        "category": "Monitoring",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
+        "monthlyCostUsd": 21,
+        "renewalDate": "2026-12-13",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
+        "usageValue": 39,
+        "limitValue": 100,
+        "usagePct": 39,
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
+      },
+      {
+        "id": "demo-service-10",
+        "name": "Demo service 10",
+        "vendor": "Example vendor",
+        "category": "Development",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
+        "monthlyCostUsd": 23,
+        "renewalDate": "2026-13-14",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
         "usageValue": 42,
         "limitValue": 100,
         "usagePct": 42,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["No customer data in public demo."]
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
       },
       {
-        "id": "google-workspace",
-        "name": "Google Workspace",
-        "vendor": "Google",
-        "category": "Ops",
-        "owner": "Founder",
-        "plan": "Business Standard",
-        "environment": "mail, docs, storage",
-        "status": "healthy",
-        "monthlyCostUsd": 14,
-        "renewalDate": "2026-07-01",
-        "usageLabel": "seat count",
-        "limitLabel": "planned seats",
-        "usageValue": 1,
-        "limitValue": 3,
-        "usagePct": 33,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["Daily operations surface."]
+        "id": "demo-service-11",
+        "name": "Demo service 11",
+        "vendor": "Example vendor",
+        "category": "Storage",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
+        "monthlyCostUsd": 25,
+        "renewalDate": "2026-13-15",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
+        "usageValue": 45,
+        "limitValue": 100,
+        "usagePct": 45,
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
       },
       {
-        "id": "canva",
-        "name": "Canva",
-        "vendor": "Canva",
-        "category": "Design",
-        "owner": "Founder",
-        "plan": "Pro",
-        "environment": "brand assets",
-        "status": "over",
-        "monthlyCostUsd": 115,
-        "renewalDate": "2026-06-19",
-        "usageLabel": "brand project slots",
-        "limitLabel": "planned slots",
-        "usageValue": 11,
-        "limitValue": 10,
-        "usagePct": 110,
-        "lastCheckedAt": "2026-06-13T06:45:00.000Z",
-        "notes": ["Renewal is soon. Prune old workspaces before billing."]
+        "id": "demo-service-12",
+        "name": "Demo service 12",
+        "vendor": "Example vendor",
+        "category": "Monitoring",
+        "owner": "Demo operator",
+        "plan": "Sample plan",
+        "environment": "Example",
+        "status": "demo",
+        "monthlyCostUsd": 27,
+        "renewalDate": "2026-13-16",
+        "usageLabel": "Sample usage",
+        "limitLabel": "Sample limit",
+        "usageValue": 48,
+        "limitValue": 100,
+        "usagePct": 48,
+        "lastCheckedAt": "2026-09-27T12:00:00.000Z",
+        "notes": [
+          "Synthetic sample only"
+        ]
       }
     ]
   },
   "patherle": {
     "sources": [
       {
-        "name": "SuperAdmin usage snapshot",
-        "surface": "local JSON export",
-        "status": "wired",
-        "privacy": "sanitized before browser"
+        "name": "Demo provider A",
+        "surface": "sample fixture",
+        "status": "demo",
+        "privacy": "synthetic only"
       },
       {
-        "name": "GitHub Actions usage",
-        "surface": "gh api",
-        "status": "wired",
-        "privacy": "repo names and run totals only"
+        "name": "Demo provider B",
+        "surface": "sample fixture",
+        "status": "demo",
+        "privacy": "synthetic only"
       },
       {
-        "name": "Provider invoices",
-        "surface": "manual export",
-        "status": "operator-owned",
-        "privacy": "never bundled in public build"
+        "name": "Demo provider C",
+        "surface": "sample fixture",
+        "status": "demo",
+        "privacy": "synthetic only"
       },
       {
-        "name": "Patherle admin telemetry",
-        "surface": "service_logs / api_cost_ledger",
-        "status": "expected",
-        "privacy": "service role stays local"
+        "name": "Demo provider D",
+        "surface": "sample fixture",
+        "status": "demo",
+        "privacy": "synthetic only"
       }
     ]
   }

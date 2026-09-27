@@ -15,6 +15,41 @@
   ],
   "headers": [
     {
+      "source": "/data/sessions.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/data/demo-sessions.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/data/cost-summary.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/data/demo-cost-summary.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/data/demo-superadmin-usage.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" },
+        { "key": "Vercel-CDN-Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
       "source": "/sw.js",
       "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
     }

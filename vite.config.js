@@ -8,6 +8,7 @@ import { fileURLToPath } from 'url';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync/sync-runner.mjs';
 import { readLedgerLoopRuns } from './sync/loop-ledger-to-runs.mjs';
 import { querySessionHistory } from './sync/session-history.mjs';
+import { publicDemoAssets } from './sync/build-public-assets.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
@@ -234,8 +235,9 @@ export default defineConfig({
     // root install, fixing bloom + future R3F-postprocessing usage.
     dedupe: ['three', 'react', 'react-dom'],
   },
-  plugins: [react(), tailwindcss(), meowSyncPlugin()],
+  plugins: [react(), tailwindcss(), meowSyncPlugin(), publicDemoAssets(join(__dirname, 'public'))],
   build: {
+    copyPublicDir: false,
     // Split only stable vendor groups identified by a local generateBundle
     // module-size pass. includeDependenciesRecursively is off so react /
     // react-dom stay in the app graph (pulling them into a vendor group
