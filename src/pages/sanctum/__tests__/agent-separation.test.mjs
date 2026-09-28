@@ -11,11 +11,16 @@ function screenDepthPosition(distance) {
 }
 
 test('screen-clear same-row and separate-row positions do not get nudged', () => {
-  const horizontal = screenRightPosition(3);
+  const horizontal = screenRightPosition(5.25);
   const depth = screenDepthPosition(5.8);
 
   assert.deepEqual(agentSeparationNudge(...horizontal, 0, 0, 'a', 'b', 1 / 60), [0, 0]);
   assert.deepEqual(agentSeparationNudge(...depth, 0, 0, 'a', 'b', 1 / 60), [0, 0]);
+});
+
+test('screen-near same-row positions get a separating nudge', () => {
+  const near = screenRightPosition(5.24);
+  assert.notDeepEqual(agentSeparationNudge(...near, 0, 0, 'a', 'b', 1 / 60), [0, 0]);
 });
 
 test('screen-overlapping pairs receive bounded opposite nudges', () => {
@@ -24,7 +29,7 @@ test('screen-overlapping pairs receive bounded opposite nudges', () => {
   const reverse = agentSeparationNudge(0, 0, ...close, 'b', 'a', 1 / 60);
 
   assert.ok(Math.hypot(...forward) >= 0.03);
-  assert.ok(Math.hypot(...forward) <= 0.16);
+  assert.ok(Math.max(...forward.map(Math.abs)) <= 0.16);
   assert.deepEqual(reverse, forward.map(value => -value));
 });
 
