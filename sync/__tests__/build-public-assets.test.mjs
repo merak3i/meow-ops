@@ -118,6 +118,17 @@ test('Vercel does not retain public demo JSON in client or CDN caches', async ()
   }
 });
 
+test('Vercel removes wildcard CORS from every response', async () => {
+  const config = JSON.parse(await readFile(join(ROOT, 'vercel.json'), 'utf8'));
+  const transform = config.routes
+    .find((route) => route.src === '/(.*)')
+    ?.transforms?.find((entry) => entry.type === 'response.headers'
+      && entry.op === 'delete'
+      && entry.target?.key === 'Access-Control-Allow-Origin');
+
+  assert.ok(transform, 'a catch-all response transform must remove Access-Control-Allow-Origin');
+});
+
 test('service worker deletes its prior cache and passes public demo data through', async () => {
   const source = await readFile(join(ROOT, 'public', 'sw.js'), 'utf8');
   const handlers = new Map();

@@ -13,6 +13,19 @@
       "destination": "/index.html"
     }
   ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "continue": true,
+      "transforms": [
+        {
+          "type": "response.headers",
+          "op": "delete",
+          "target": { "key": "Access-Control-Allow-Origin" }
+        }
+      ]
+    }
+  ],
   "headers": [
     {
       "source": "/data/sessions.json",
