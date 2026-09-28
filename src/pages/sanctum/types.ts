@@ -11,7 +11,7 @@ export type PerfLevel = 'low' | 'normal' | 'ornate';
 
 export interface PerfStats {
   fps: number;
-  ms: number;
+  p95Ms: number;
   calls: number;
   triangles: number;
   geometries: number;
@@ -42,6 +42,8 @@ export interface SessionIdentifier {
 // ─── Eternal stats (the custodian's domain) ──────────────────────────────────
 
 export interface EternalStats {
+  scope?: 'archive' | 'preview';
+  importedAt?: string;
   totalSpend:    number;  // sum of estimated_cost_usd across every session
   totalTokens:   number;  // sum of total_tokens across every session
   totalSessions: number;  // count of all sessions ever parsed
@@ -84,5 +86,4 @@ export interface PositionedNode {
   pos:      [number, number, number];
   cls:      ClassConfig;
   name:     string;
-  role:     string;
 }

@@ -23,13 +23,27 @@ function meowSyncPlugin() {
       // (DNS-rebinding) and any cross-origin request. Without this, a page the
       // developer visits during `npm run dev` could POST /api/sync.
       function blockNonLocal(req, res) {
-        const host = String(req.headers.host || '').split(':')[0].replace(/[[\]]/g, '');
-        const okHost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+        const address = server.httpServer?.address();
+        const activePort = typeof address === 'object' && address
+          ? address.port
+          : Number(server.config.server.port || 5173);
+        const isLoopback = (hostname) => ['localhost', '127.0.0.1', '::1']
+          .includes(hostname.replace(/^\[|\]$/g, '').toLowerCase());
+        const portOf = (url) => Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+        let okHost = false;
+        try {
+          const host = new URL(`http://${req.headers.host || ''}`);
+          okHost = isLoopback(host.hostname) && portOf(host) === activePort;
+        } catch { /* Reject malformed Host headers. */ }
         let okOrigin = true;
         if (req.headers.origin) {
           try {
-            const h = new URL(req.headers.origin).hostname;
-            okOrigin = h === 'localhost' || h === '127.0.0.1' || h === '::1';
+            const origin = new URL(req.headers.origin);
+            const protocol = server.config.server.https ? 'https:' : 'http:';
+            okOrigin = origin.origin === req.headers.origin
+              && origin.protocol === protocol
+              && isLoopback(origin.hostname)
+              && portOf(origin) === activePort;
           } catch { okOrigin = false; }
         }
         if (!okHost || !okOrigin) {

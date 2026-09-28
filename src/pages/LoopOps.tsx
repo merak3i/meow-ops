@@ -10,7 +10,7 @@ import { useLoopOpsData } from './loop-ops/useLoopOpsData';
 import { useLoopRuns } from './loop-ops/useLoopRuns';
 import { LoopCanvas } from './loop-ops/LoopCanvas';
 import { InspectorDrawer } from './loop-ops/InspectorDrawer';
-import { SourceStrip } from './loop-ops/SourceStrip';
+import { ProductionWritesBadge, SourceStrip } from './loop-ops/SourceStrip';
 import { MobileFallback } from './loop-ops/MobileFallback';
 import { RunTimeline } from './loop-ops/RunTimeline';
 import type { LoopEntity } from './loop-ops/types';
@@ -48,6 +48,9 @@ function MapEmptyState({ error }: { error: string | null }) {
           : 'The importer turns your workflow workbook into local JSON: worker surfaces, plus the coordinator and director lanes above them. Run it once and the canvas fills in.'}
         {...(brokenSpec ? {} : { command: 'node sync/loop-ops-import.mjs' })}
       />
+      <div style={{ display: 'flex', justifyContent: 'center', margin: '0 auto var(--sp-3)' }}>
+        <ProductionWritesBadge writesOn={false} />
+      </div>
       <p style={{
         maxWidth: '58ch', margin: '0 auto', textAlign: 'center',
         fontSize: 'var(--fs-ui)', color: 'var(--text-muted)', lineHeight: 1.65,

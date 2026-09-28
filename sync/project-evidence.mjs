@@ -5,27 +5,87 @@
 // redacted before hashing and writing; files are private and kept outside Git.
 
 import {
-  appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync,
+  appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync,
   unlinkSync, writeFileSync,
 } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
+import { unambiguousProjectLabels } from './project-control.mjs';
 import { assertHistoryOutsideWorktree } from './session-history.mjs';
 
 export const AGENT_EVENT_SOURCES = ['antigravity', 'claude', 'codex', 'cursor', 'hermes'];
 export const EVIDENCE_SENSITIVITY = ['public', 'internal', 'private', 'restricted'];
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 500;
+const PROJECT_ROOT_CACHE = new Map();
+
+function realProjectRoot(project) {
+  if (typeof project?.root !== 'string' || !isAbsolute(project.root)) return null;
+  if (PROJECT_ROOT_CACHE.has(project.root)) return PROJECT_ROOT_CACHE.get(project.root);
+  let root = null;
+  try { root = realpathSync.native(project.root); } catch {}
+  PROJECT_ROOT_CACHE.set(project.root, root);
+  return root;
+}
+
+/** Resolve a scanned session only to an explicitly registered project. */
+export function projectForSession(session, catalog = []) {
+  let cwd = null;
+  if (typeof session?.cwd === 'string' && isAbsolute(session.cwd)) {
+    try { cwd = realpathSync.native(resolve(session.cwd)); } catch {}
+  }
+  const roots = cwd ? catalog.flatMap((project) => {
+    const root = realProjectRoot(project);
+    if (!root) return [];
+    const fromRoot = relative(root, cwd);
+    const contained = fromRoot === ''
+      || (!isAbsolute(fromRoot) && fromRoot !== '..' && !fromRoot.startsWith(`..${sep}`));
+    return contained ? [{ project, rootLength: root.length }] : [];
+  }) : [];
+
+  if (roots.length > 0) {
+    roots.sort((left, right) => right.rootLength - left.rootLength);
+    if (roots[1]?.rootLength === roots[0].rootLength) return null;
+    return roots[0].project;
+  }
+
+  // A resolved working directory is stronger evidence than a source project
+  // label. Do not let an out-of-root sibling claim a registered project by name.
+  if (cwd) return null;
+
+  const projectName = String(session?.project || '').trim().toLowerCase();
+  if (!projectName) return null;
+  const nameMatches = catalog.filter((project) => [project.name, ...(project.aliases || [])]
+    .some((name) => typeof name === 'string' && name.trim().toLowerCase() === projectName));
+  return nameMatches.length === 1 ? nameMatches[0] : null;
+}
 
 const SECRET_PATTERNS = [
-  /\bsk-[A-Za-z0-9_-]{16,}\b/g,
-  /\b(?:ghp|github_pat|glpat|xox[baprs])[-_A-Za-z0-9]{16,}\b/g,
-  /\beyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
-  /\b(authorization\s*:\s*(?:bearer|token)\s+)[^\s,;]+/gi,
-  /\b(api[_ -]?key|secret|password|token)\s*[:=]\s*['"]?[^\s,'";]{8,}/gi,
+  { pattern: /\bsk-[A-Za-z0-9_-]{16,}\b/g, replace: () => '[redacted]' },
+  { pattern: /\b(?:sk|rk)[-_](?:live|test|proj|ant)[-_A-Za-z0-9]{8,}\b/gi, replace: () => '[redacted]' },
+  { pattern: /\b(?:gsk|hf)_[A-Za-z0-9_-]{16,}\b/g, replace: () => '[redacted]' },
+  { pattern: /\bxai-[A-Za-z0-9_-]{16,}\b/g, replace: () => '[redacted]' },
+  { pattern: /\bAIza[A-Za-z0-9_-]{30,}\b/g, replace: () => '[redacted]' },
+  { pattern: /\bAKIA[A-Z0-9]{16}\b/g, replace: () => '[redacted]' },
+  { pattern: /\b(?:ghp|github_pat|glpat|xox[baprs])[-_A-Za-z0-9]{16,}\b/g, replace: () => '[redacted]' },
+  { pattern: /\beyJ[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, replace: () => '[redacted]' },
+  { pattern: /\b(authorization\s*:\s*(?:bearer|token)\s+)[^\s,;]+/gi, replace: (_match, prefix) => `${prefix}[redacted]` },
+  { pattern: /\b(bearer\s+)[^\s,;]+/gi, replace: (_match, prefix) => `${prefix}[redacted]` },
+  {
+    pattern: /(?<![A-Z0-9_])"?([A-Z0-9_]*(?:API[_ -]?KEY|ACCESS[_ -]?KEY|ANON[_ -]?KEY|SERVICE[_ -]?KEY|SECRET(?:[_ -]?ACCESS)?(?:[_ -]?KEY)?|CLIENT[_ -]?SECRET|AUTH(?:ORIZATION)?[_ -]?TOKEN|PRIVATE[_ -]?KEY|CREDENTIALS?|PASSWORD|PASSWD|TOKEN)[A-Z0-9_]*)"?(\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}\]]+)/gi,
+    replace: (_match, key, separator) => `${key}${separator}[redacted]`,
+  },
+  {
+    pattern: /\b((?:https?|postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis):\/\/[^:\s/@]+:)[^@\s/]+(@)/gi,
+    replace: (_match, prefix, suffix) => `${prefix}[redacted]${suffix}`,
+  },
+  {
+    pattern: /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/gi,
+    replace: () => '[redacted private key]',
+  },
 ];
 
 const text = (value, field, max = 1_000_000) => {
@@ -44,12 +104,7 @@ const hash = (value) => createHash('sha256').update(String(value)).digest('hex')
 
 export function redactEvidenceText(value) {
   let result = String(value ?? '');
-  for (const pattern of SECRET_PATTERNS) {
-    result = result.replace(pattern, (...args) => {
-      const prefix = typeof args[1] === 'string' && /authorization/i.test(args[1]) ? args[1] : '';
-      return `${prefix}[redacted]`;
-    });
-  }
+  for (const { pattern, replace } of SECRET_PATTERNS) result = result.replace(pattern, replace);
   return result;
 }
 
@@ -247,6 +302,8 @@ export function queryAgentEvidence(options = {}) {
   const to = options.to ? Date.parse(options.to) : null;
   const search = String(options.search || '').trim().toLowerCase();
   const filtered = readAllEvents(dir).filter((event) => {
+    if (options.session_id && event.session_id !== options.session_id) return false;
+    if (options.session_project && event.metadata?.project !== options.session_project) return false;
     if (options.project_id && event.project_id !== options.project_id) return false;
     if (options.source && event.source !== options.source) return false;
     if (options.event_type && event.event_type !== options.event_type) return false;
@@ -337,17 +394,11 @@ export function archiveRawTextArtifact(input = {}, options = {}) {
 
 export function archiveSessionEvidence(sessions, options = {}) {
   const catalog = Array.isArray(options.catalog) ? options.catalog : [];
-  const projectByName = new Map();
-  for (const project of catalog) {
-    for (const name of [project.name, ...(project.aliases || [])]) {
-      projectByName.set(String(name).trim().toLowerCase(), project);
-    }
-  }
   const events = [];
   const artifacts = [];
   let skipped = 0;
   for (const session of Array.isArray(sessions) ? sessions : []) {
-    const project = projectByName.get(String(session.project || '').trim().toLowerCase());
+    const project = projectForSession(session, catalog);
     if (!project || !AGENT_EVENT_SOURCES.includes(session.source)) {
       skipped++;
       continue;
@@ -387,8 +438,8 @@ export function archiveMessageEvidence(messages, options = {}) {
   const catalog = Array.isArray(options.catalog) ? options.catalog : [];
   const projectByName = new Map();
   for (const project of catalog) {
-    for (const name of [project.name, ...(project.aliases || [])]) {
-      projectByName.set(String(name).trim().toLowerCase(), project);
+    for (const name of unambiguousProjectLabels(project, catalog)) {
+      projectByName.set(name, project);
     }
   }
   const events = [];

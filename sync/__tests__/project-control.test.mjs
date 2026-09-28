@@ -100,6 +100,38 @@ test('control snapshot exposes constitution, agent coverage, and learning queue'
   assert.equal(snapshot.learning.counts.proposed, 1);
 }));
 
+test('control snapshot fails closed on duplicate project labels and honors exact IDs', () => withProjectControl((dir) => {
+  const firstRoot = join(dir, 'first');
+  const secondRoot = join(dir, 'second');
+  mkdirSync(firstRoot);
+  mkdirSync(secondRoot);
+  const project = registerProject({ name: 'Shared Name', root: firstRoot, aliases: ['shared-alias'] });
+  const duplicate = registerProject({ name: 'Shared Name', root: secondRoot, aliases: ['shared-alias'] });
+
+  const snapshot = buildProjectControlSnapshot({
+    project_id: project.project_id,
+    sessions: [
+      { source: 'codex', project: 'Shared Name', session_id: 'ambiguous-name' },
+      { source: 'cursor', project: 'shared-alias', session_id: 'ambiguous-alias' },
+      { source: 'claude', project: 'Other label', project_id: project.project_id, session_id: 'exact-owner' },
+      { source: 'hermes', project: 'Shared Name', project_id: duplicate.project_id, session_id: 'exact-other' },
+    ],
+    claims: [
+      { project: 'Shared Name', field: 'mission', value: 'ambiguous name', status: 'owner_confirmed' },
+      { project: 'shared-alias', field: 'vision', value: 'ambiguous alias', status: 'owner_confirmed' },
+      { project_id: duplicate.project_id, field: 'outcome', value: 'other project', status: 'owner_confirmed' },
+      { project_id: project.project_id, field: 'constraint', value: 'exact project', status: 'owner_confirmed' },
+    ],
+  });
+
+  assert.deepEqual(snapshot.agents.observed, ['claude']);
+  assert.equal(snapshot.constitution.coverage.confirmed, 1);
+  assert.equal(snapshot.constitution.fields.mission, null);
+  assert.equal(snapshot.constitution.fields.vision, null);
+  assert.equal(snapshot.constitution.fields.outcome, null);
+  assert.equal(snapshot.constitution.fields.constraint.value, 'exact project');
+}));
+
 test('adapter preview preserves existing instructions and targets all five agents', () => withProjectControl((dir) => {
   const root = join(dir, 'project');
   mkdirSync(join(root, '.hermes'), { recursive: true });

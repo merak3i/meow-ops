@@ -158,7 +158,7 @@ export function parseAntigravityTranscript(filePath, uuid) {
   }
 
   if (malformed > 0) {
-    console.warn(`  ⚠ antigravity/${uuid}: skipped ${malformed} malformed transcript line(s)`);
+    console.warn(`  ⚠ Antigravity transcript: skipped ${malformed} malformed line(s)`);
   }
 
   return session;

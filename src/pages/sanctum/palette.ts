@@ -1,12 +1,11 @@
-// One Ritual, One Light. Decoration stays in the night/stone families;
-// signal colors are reserved for data-bound elements.
+// Archive palette: graphite, teal and copper. Session data owns the brighter accents.
 export const SANCTUM_PALETTE = {
-  night900: '#07040F',
-  night700: '#140C26',
-  stone500: '#2B2149',
-  stone300: '#4A3D73',
-  gold:     '#F2D06B',
-  cyan:     '#5CD2FF',
-  mint:     '#63F7B3',
-  ember:    '#EF4460',
+  night900: '#071114',
+  night700: '#14252A',
+  stone500: '#26383D',
+  stone300: '#465A5D',
+  gold:     '#D7A463',
+  cyan:     '#64E5C2',
+  mint:     '#8DE3B7',
+  ember:    '#EF705E',
 } as const;

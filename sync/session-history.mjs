@@ -6,18 +6,26 @@
 
 import {
   appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync,
-  statSync, writeFileSync,
+  realpathSync, statSync, writeFileSync,
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
-const FORBIDDEN_KEYS = new Set(['cwd', 'session_title', 'first_user_message']);
+const FORBIDDEN_KEYS = new Set(['cwd', 'raw_ref', 'session_title', 'first_user_message']);
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 500;
 const DEFAULT_WARNING_THRESHOLD = 100_000;
 
 export function assertHistoryOutsideWorktree(dir) {
   let current = resolve(dir);
+  const missingParts = [];
+  while (!existsSync(current)) {
+    const parent = dirname(current);
+    if (parent === current) break;
+    missingParts.unshift(basename(current));
+    current = parent;
+  }
+  current = resolve(realpathSync(current), ...missingParts);
   while (true) {
     if (existsSync(join(current, '.git'))) {
       throw new Error(`[worktree-guard] session history ${dir} is inside a git worktree (${current}) — refusing`);
@@ -161,6 +169,11 @@ export function updateSessionHistory(sessions, options = {}) {
 export function readSessionHistory(options = {}) {
   const dir = resolveSessionHistoryDir(options.dir);
   return sortedSessions(readIndex(dir).sessions);
+}
+
+export function readSessionHistorySnapshot(options = {}) {
+  const index = readIndex(resolveSessionHistoryDir(options.dir));
+  return { updatedAt: index.updatedAt, sessions: index.sessions };
 }
 
 function encodeCursor(session, snapshotBytes) {

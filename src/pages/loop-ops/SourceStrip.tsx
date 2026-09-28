@@ -25,21 +25,27 @@ interface SourceStripProps {
   onRefresh: () => void;
 }
 
+export function ProductionWritesBadge({ writesOn }: { writesOn: boolean }) {
+  const color = writesOn ? 'var(--red)' : 'var(--green)';
+  return (
+    <span style={{
+      ...chip, color, borderColor: color,
+      display: 'inline-flex', alignItems: 'center', gap: 5, textTransform: 'uppercase', letterSpacing: 0.4,
+    }}>
+      {writesOn ? <ShieldAlert size={12} /> : <ShieldCheck size={12} />}
+      {writesOn ? 'PRODUCTION WRITES ON — INVESTIGATE' : 'production writes disabled'}
+    </span>
+  );
+}
+
 export function SourceStrip({ meta, status, allExpanded, syncing, onToggleAll, onRefresh }: SourceStripProps) {
   // The alarm branch must never wear the safe color: a spec claiming
   // production writes are enabled is the exact event this badge exists for.
   const writesOn = meta.productionWritesEnabled;
-  const badgeColor = writesOn ? 'var(--red)' : 'var(--green)';
   const specMtime = status?.files?.['spec.json']?.mtime;
   return (
     <div style={strip} data-testid="loop-source-strip">
-      <span style={{
-        ...chip, color: badgeColor, borderColor: badgeColor,
-        display: 'inline-flex', alignItems: 'center', gap: 5, textTransform: 'uppercase', letterSpacing: 0.4,
-      }}>
-        {writesOn ? <ShieldAlert size={12} /> : <ShieldCheck size={12} />}
-        {writesOn ? 'PRODUCTION WRITES ON — INVESTIGATE' : 'production writes disabled'}
-      </span>
+      <ProductionWritesBadge writesOn={writesOn} />
       <span style={chip}>{meta.entityCount} items · {meta.assistantCount} surfaces</span>
       <span style={chip} title={meta.generatedBy}>{meta.masterSpec}</span>
       <span style={{ ...chip, color: 'var(--text-muted)' }}>

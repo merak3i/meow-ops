@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 import { parseCodexFile } from '../parse-codex.mjs';
@@ -63,11 +64,45 @@ test('fixture set: every rollout parses to a sane session shape (schema drift gu
     assert.ok(s, `${file}: parser returned null`);
     assert.equal(typeof s.session_id, 'string', `${file}: session_id`);
     assert.equal(typeof s.project, 'string', `${file}: project`);
-    assert.equal(typeof s.model, 'string', `${file}: model`);
+    assert.ok(s.model === null || typeof s.model === 'string', `${file}: model`);
     assert.equal(typeof s.message_count, 'number', `${file}: message_count`);
     assert.equal(typeof s.total_tokens, 'number', `${file}: total_tokens`);
     assert.ok(Number.isFinite(s.total_tokens), `${file}: total_tokens should be finite`);
     assert.ok(s.total_tokens >= 0, `${file}: total_tokens should be non-negative`);
     assert.ok(s.tools && typeof s.tools === 'object', `${file}: tools`);
+  }
+});
+
+test('parser preserves a UTF-8 character split across read chunks', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'meow-codex-parser-'));
+  try {
+    const filePath = join(directory, 'rollout-stream-boundary.jsonl');
+    const chunkBytes = 1 << 20;
+    const prefix = '{"type":"session_meta","payload":{"id":"stream-fixture","cwd":"/tmp/stream","base_instructions":{"text":"GPT-5"},"padding":"';
+    const paddingBytes = chunkBytes - 2 - Buffer.byteLength(prefix);
+    const sessionMeta = `${prefix}${'x'.repeat(paddingBytes)}🐈"}}`;
+    const lines = [
+      sessionMeta,
+      JSON.stringify({
+        type: 'event_msg',
+        timestamp: '2026-09-27T00:00:00.000Z',
+        payload: { type: 'user_message', message: 'hello' },
+      }),
+      JSON.stringify({
+        type: 'event_msg',
+        timestamp: '2026-09-27T00:00:01.000Z',
+        payload: { type: 'agent_message', message: 'world' },
+      }),
+    ];
+    writeFileSync(filePath, `${lines.join('\n')}\n`, 'utf8');
+
+    const session = parseCodexFile(filePath);
+
+    assert.ok(session);
+    assert.equal(session.session_id, 'stream-fixture');
+    assert.equal(session.model, 'gpt-5');
+    assert.equal(session.message_count, 2);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });

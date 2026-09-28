@@ -37,6 +37,10 @@ public/data/*
 .DS_Store
 *.sw?
 
+# Blender working files and the local Sanctum source archive stay out of public Git.
+*.blend[0-9]*
+/design/sanctum/
+
 # Deploy
 .vercel
 

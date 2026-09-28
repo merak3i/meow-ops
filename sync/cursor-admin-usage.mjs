@@ -1,8 +1,8 @@
 // cursor-admin-usage.mjs — optional official Cursor Admin API usage enricher.
 //
-// Official source (Cursor docs, retrieved 2026-08-15):
+// Official source (Cursor docs, checked 2026-09-27):
 //   POST https://api.cursor.com/teams/filtered-usage-events
-//   https://cursor.com/docs/account/teams/admin-api#get-usage-events-data
+//   https://prod.cursor.com/docs/account/teams/admin-api
 //   Availability: team administrators with an Admin API key.
 //
 // What this connector will and will not do:
@@ -12,14 +12,13 @@
 //   * Never call a model-inference endpoint. This is a documented usage-read API
 //     with rate limits, not a billed completion API. Callers should still keep
 //     live traffic off unless they intend to use their own Enterprise key.
-//   * Join an event to a local session only when an official event identifier
-//     exactly equals a locally observed identifier:
-//       an explicitly returned conversation/cloud-agent id
+//   * Cursor documents conversationId as the conversation (agent session) ID;
+//     the field can be omitted for events without an associated conversation.
+//     Join only when that returned ID exactly equals a locally observed ID:
 //         === session.composer_id | session.conversation_id | session.cloud_agent_id
-//   * Cursor's published Admin API schema currently does not document a
-//     conversation or cloud-agent identifier. The connector accepts known
-//     camelCase/snake_case response variants when present, but exact equality
-//     is the only join. No time-window, model-name, or Task-argument matching.
+//   * The endpoint returns the model and chargedCents; Cursor says its usage
+//     records are hourly aggregates. No time-window, model-name, or Task-argument
+//     matching is used to join records.
 //   * Events that lack a join key, or whose key does not equal a local id,
 //     stay in unmatched aggregate Cursor usage. They are never assigned to a
 //     session.
@@ -38,8 +37,9 @@ const KEY_SHAPE = /\bcrsr_[A-Za-z0-9]+|Basic\s+[A-Za-z0-9+/=]+/gi;
 
 export const CURSOR_USAGE_LIMITATION = [
   'POST /teams/filtered-usage-events is the official usage-events API and requires a team Admin API key.',
-  'The published response schema does not currently document a conversation or cloud-agent identifier.',
-  'Known identifier field variants are accepted only when the API explicitly returns them.',
+  'Cursor documents conversationId as the conversation (agent session) ID and may omit it when an event has no associated conversation.',
+  'Usage records include model and chargedCents and are hourly aggregates according to Cursor.',
+  'chargedCents, isChargeable, token model cost, request units, and the optional Cursor Token Rate are summarized independently; Cursor documentation examples show chargedCents alongside isChargeable=false.',
   'Local transcripts are keyed by composerId. Events are assigned to a session only on exact identifier equality.',
   'Unmatched events are kept as aggregate Cursor usage and are never attributed to a session.',
 ].join(' ');
@@ -66,6 +66,20 @@ function centsToUsd(cents) {
   return Number.isFinite(n) ? n / 100 : 0;
 }
 
+function optionalNumber(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function flagCounts(value, name) {
+  return {
+    [`${name}_true_events`]: value === true ? 1 : 0,
+    [`${name}_false_events`]: value === false ? 1 : 0,
+    [`${name}_unknown_events`]: typeof value === 'boolean' ? 0 : 1,
+  };
+}
+
 export function emptyCursorUsageReport(overrides = {}) {
   return {
     enabled: false,
@@ -74,12 +88,17 @@ export function emptyCursorUsageReport(overrides = {}) {
     availability: CURSOR_ADMIN_USAGE_AVAILABILITY,
     join_key: 'explicit conversation/cloud-agent id exact-match to local composer_id|conversation_id|cloud_agent_id',
     limitation: CURSOR_USAGE_LIMITATION,
+    period: null,
     matched_sessions: 0,
     matched_events: 0,
     unmatched_events: 0,
+    totals: emptyUsageTotals(),
+    by_model: [],
+    by_kind: [],
     unmatched: {
       totals: emptyUsageTotals(),
       by_model: [],
+      by_kind: [],
     },
     error: null,
     ...overrides,
@@ -95,19 +114,33 @@ function emptyUsageTotals() {
     cache_read_tokens: 0,
     total_tokens: 0,
     charged_cents: 0,
+    charged_cents_events: 0,
     estimated_cost_usd: 0,
+    token_model_cost_cents: 0,
+    token_model_cost_events: 0,
+    cursor_token_fee_cents: 0,
+    cursor_token_fee_events: 0,
+    requests_cost_units: 0,
+    requests_cost_events: 0,
+    chargeable_true_events: 0,
+    chargeable_false_events: 0,
+    chargeable_unknown_events: 0,
+    charged_cents_when_chargeable_true: 0,
+    charged_cents_when_chargeable_false: 0,
+    charged_cents_when_chargeability_unknown: 0,
+    token_based_true_events: 0,
+    token_based_false_events: 0,
+    token_based_unknown_events: 0,
+    headless_true_events: 0,
+    headless_false_events: 0,
+    headless_unknown_events: 0,
   };
 }
 
+const USAGE_SUM_FIELDS = Object.keys(emptyUsageTotals());
+
 function addUsage(target, usage) {
-  target.events += usage.events || 0;
-  target.input_tokens += usage.input_tokens || 0;
-  target.output_tokens += usage.output_tokens || 0;
-  target.cache_creation_tokens += usage.cache_creation_tokens || 0;
-  target.cache_read_tokens += usage.cache_read_tokens || 0;
-  target.total_tokens += usage.total_tokens || 0;
-  target.charged_cents += usage.charged_cents || 0;
-  target.estimated_cost_usd += usage.estimated_cost_usd || 0;
+  for (const field of USAGE_SUM_FIELDS) target[field] += usage[field] || 0;
 }
 
 export function summarizeCursorEvent(event) {
@@ -118,9 +151,13 @@ export function summarizeCursorEvent(event) {
   const output = Math.max(0, numberOrZero(tokenUsage.outputTokens));
   const cacheWrite = Math.max(0, numberOrZero(tokenUsage.cacheWriteTokens));
   const cacheRead = Math.max(0, numberOrZero(tokenUsage.cacheReadTokens));
-  const chargedCents = event && event.chargedCents != null
-    ? numberOrZero(event.chargedCents)
-    : numberOrZero(tokenUsage.totalCents);
+  const chargedCents = optionalNumber(event?.chargedCents);
+  const modelCostCents = optionalNumber(tokenUsage.totalCents);
+  const cursorTokenFee = optionalNumber(event?.cursorTokenFee);
+  const requestsCosts = optionalNumber(event?.requestsCosts);
+  const chargeability = flagCounts(event?.isChargeable, 'chargeable');
+  const tokenBased = flagCounts(event?.isTokenBasedCall, 'token_based');
+  const headless = flagCounts(event?.isHeadless, 'headless');
   return {
     events: 1,
     input_tokens: input,
@@ -128,9 +165,23 @@ export function summarizeCursorEvent(event) {
     cache_creation_tokens: cacheWrite,
     cache_read_tokens: cacheRead,
     total_tokens: input + output + cacheWrite + cacheRead,
-    charged_cents: chargedCents,
-    estimated_cost_usd: centsToUsd(chargedCents),
+    charged_cents: chargedCents ?? 0,
+    charged_cents_events: chargedCents == null ? 0 : 1,
+    estimated_cost_usd: centsToUsd(chargedCents ?? 0),
+    token_model_cost_cents: modelCostCents ?? 0,
+    token_model_cost_events: modelCostCents == null ? 0 : 1,
+    cursor_token_fee_cents: cursorTokenFee ?? 0,
+    cursor_token_fee_events: cursorTokenFee == null ? 0 : 1,
+    requests_cost_units: requestsCosts ?? 0,
+    requests_cost_events: requestsCosts == null ? 0 : 1,
+    ...chargeability,
+    charged_cents_when_chargeable_true: event?.isChargeable === true ? chargedCents ?? 0 : 0,
+    charged_cents_when_chargeable_false: event?.isChargeable === false ? chargedCents ?? 0 : 0,
+    charged_cents_when_chargeability_unknown: typeof event?.isChargeable === 'boolean' ? 0 : chargedCents ?? 0,
+    ...tokenBased,
+    ...headless,
     model: typeof event?.model === 'string' && event.model.trim() ? event.model.trim() : null,
+    kind: typeof event?.kind === 'string' && event.kind.trim() ? event.kind.trim().slice(0, 120) : 'unknown',
   };
 }
 
@@ -188,7 +239,9 @@ export async function fetchCursorUsageEvents(options = {}) {
   }
 
   const baseUrl = String(options.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
-  const pageSize = Math.min(1000, Math.max(1, Number(options.pageSize) || 100));
+  // Cursor's Admin API accepts up to 1,000 usage events per page. Use the
+  // maximum by default so a normal 30-day team window fits within the page cap.
+  const pageSize = Math.min(1000, Math.max(1, Number(options.pageSize) || 1000));
   const maxPages = Math.min(100, Math.max(1, Number(options.maxPages) || 20));
   const window = {
     startDate: Number(options.startDate) || defaultWindow(options.now).startDate,
@@ -255,15 +308,31 @@ export async function fetchCursorUsageEvents(options = {}) {
       if (event && typeof event === 'object') events.push(event);
     }
 
-    const pagination = payload.pagination || {};
-    const hasNext = pagination.hasNextPage === true
-      || (Number(pagination.numPages) > page);
+    const pagination = payload.pagination;
+    if (!pagination || typeof pagination !== 'object' || Array.isArray(pagination)) {
+      return { ok: false, status: 'malformed', events: [], error: 'pagination object missing' };
+    }
+    const declaredHasNext = typeof pagination.hasNextPage === 'boolean' ? pagination.hasNextPage : null;
+    const numPages = optionalNumber(pagination.numPages);
+    if (declaredHasNext == null && numPages == null) {
+      return { ok: false, status: 'malformed', events: [], error: 'pagination completeness is unknown' };
+    }
+    if (numPages != null && (!Number.isInteger(numPages) || numPages < page || (declaredHasNext != null && declaredHasNext !== (numPages > page)))) {
+      return { ok: false, status: 'malformed', events: [], error: 'pagination fields disagree' };
+    }
+    const hasNext = declaredHasNext ?? numPages > page;
     if (!hasNext) {
-      return { ok: true, status: 'ok', events, error: null };
+      return { ok: true, status: 'ok', events, period: window, error: null };
     }
   }
 
-  return { ok: true, status: 'ok', events, error: null };
+  return {
+    ok: false,
+    status: 'page-limit',
+    events: [],
+    period: window,
+    error: 'pagination limit reached; refusing to summarize an incomplete result',
+  };
 }
 
 function indexSessionsByJoinId(sessions) {
@@ -291,19 +360,25 @@ function resolveExactSession(event, index) {
   return null;
 }
 
-function aggregateUnmatched(events) {
+function aggregateEvents(events) {
   const totals = emptyUsageTotals();
   const byModel = new Map();
+  const byKind = new Map();
   for (const event of events) {
+    if (!event || typeof event !== 'object') continue;
     const usage = summarizeCursorEvent(event);
     addUsage(totals, usage);
     const modelKey = usage.model || 'unknown';
     if (!byModel.has(modelKey)) byModel.set(modelKey, { key: modelKey, ...emptyUsageTotals() });
     addUsage(byModel.get(modelKey), usage);
+    if (!byKind.has(usage.kind)) byKind.set(usage.kind, { key: usage.kind, ...emptyUsageTotals() });
+    addUsage(byKind.get(usage.kind), usage);
   }
+  const sortRows = (rows) => [...rows.values()].sort((a, b) => b.charged_cents - a.charged_cents || a.key.localeCompare(b.key));
   return {
     totals,
-    by_model: [...byModel.values()].sort((a, b) => b.estimated_cost_usd - a.estimated_cost_usd || a.key.localeCompare(b.key)),
+    by_model: sortRows(byModel),
+    by_kind: sortRows(byKind),
   };
 }
 
@@ -356,12 +431,16 @@ export function applyCursorUsageEvents(sessions, events, report = emptyCursorUsa
     applyUsageToSession(session, usages);
   }
 
-  const unmatched = aggregateUnmatched(unmatchedEvents.filter((event) => event && typeof event === 'object'));
+  const allAggregates = aggregateEvents(incoming);
+  const unmatched = aggregateEvents(unmatchedEvents);
   report.enabled = true;
   report.status = 'ok';
   report.matched_sessions = matched.size;
   report.matched_events = [...matched.values()].reduce((sum, rows) => sum + rows.length, 0);
   report.unmatched_events = unmatched.totals.events;
+  report.totals = allAggregates.totals;
+  report.by_model = allAggregates.by_model;
+  report.by_kind = allAggregates.by_kind;
   report.unmatched = unmatched;
   report.error = null;
   return { sessions: list, report };
@@ -383,5 +462,6 @@ export async function enrichCursorSessions(sessions, options = {}) {
     return { sessions: Array.isArray(sessions) ? sessions : [], report };
   }
 
+  report.period = fetched.period;
   return applyCursorUsageEvents(sessions, fetched.events, report);
 }

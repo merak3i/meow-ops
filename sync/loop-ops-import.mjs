@@ -6,7 +6,7 @@
 // Outputs spec.json + gates.json under public/data/loop-ops/ (LOCAL-ONLY).
 // runs.json is never touched. No git, no network, no production writes.
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve, basename } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ExcelJS from 'exceljs';
 
@@ -107,7 +107,7 @@ async function main() {
   const outDir = resolve(arg('out', DEFAULT_OUT));
 
   if (!existsSync(specPath)) {
-    console.error(`loop-ops-import: workbook not found at ${specPath}. Pass --spec <xlsx>.`);
+    console.error('loop-ops-import: workbook not found. Pass --spec <xlsx>.');
     process.exit(1);
   }
 
@@ -129,12 +129,12 @@ async function main() {
   const groups = [...new Set(registry.map((r) => String(r.group).trim()))].sort();
   const unknownGroups = groups.filter((g) => !GROUPS.includes(g));
   if (unknownGroups.length) {
-    errors.push(`groups must be drawn from {${GROUPS.join(', ')}}, found unknown {${unknownGroups.join(', ')}}`);
+    errors.push(`groups must be drawn from {${GROUPS.join(', ')}}`);
   }
   const seen = new Map();
   for (const r of registry) {
     const key = String(r.surface_key).trim();
-    if (seen.has(key)) errors.push(`duplicate surface_key "${key}" (rows ${seen.get(key)} and ${r.__row})`);
+    if (seen.has(key)) errors.push(`duplicate surface_key (rows ${seen.get(key)} and ${r.__row})`);
     else seen.set(key, r.__row);
   }
   if (errors.length) {
@@ -160,15 +160,15 @@ async function main() {
     const source = String(row.source ?? '').trim();
     const target = String(row.target ?? '').trim();
     if (!seen.has(source) || !seen.has(target)) {
-      errors.push(`dependency row ${row.__row} must reference known surface_key values, got "${source}" -> "${target}"`);
+      errors.push(`dependency row ${row.__row} must reference known surface_key values`);
       continue;
     }
     if (source === target) {
-      errors.push(`dependency row ${row.__row} cannot point "${source}" to itself`);
+      errors.push(`dependency row ${row.__row} cannot point a surface to itself`);
       continue;
     }
     const id = `dep.${source}.${target}`;
-    if (dependencyIds.has(id)) errors.push(`duplicate dependency "${source}" -> "${target}"`);
+    if (dependencyIds.has(id)) errors.push(`duplicate dependency at row ${row.__row}`);
     else {
       dependencyIds.add(id);
       dependencyEdges.push({ id, source, target });
@@ -239,7 +239,7 @@ async function main() {
       ? [...String(truth.source_refs ?? '').matchAll(/https:\/\/\S+?(?=\s|\||$)/g)].map((m) => m[0])
       : [];
     const notVerified = truth
-      ? [`Status derived from truth snapshot ${basename(truthPath)}, not a live probe`]
+      ? ['Status derived from the provided truth snapshot, not a live probe']
       : ['No truth snapshot found - status reflects workbook coverage only'];
     const hasRealCase = ev && String(ev.case_name) && !String(ev.case_name).startsWith('TBD');
     const validationCommand = hasRealCase ? 'npm run test:sync' : 'npm run build';
@@ -250,7 +250,7 @@ async function main() {
       group: g, surfaceKey: key,
       archetype: String(r.archetype).trim(), riskClass: String(r.riskClass).trim(),
       wave: Number(r.wave), status: statusFor(truth),
-      sources: [`registry tab '1 · Registry' row ${r.__row}`, ...(truth ? [`truth-sync ${basename(truthPath)}`] : [])],
+      sources: [`registry tab '1 · Registry' row ${r.__row}`, ...(truth ? ['truth-sync provided'] : [])],
       repoLinks: refs,
       allowedActions: ['inspect', 'open-link'],
       detail: {
@@ -309,9 +309,9 @@ async function main() {
       specVersion: 1,
       generatedBy: 'sync/loop-ops-import.mjs',
       generatedAt: new Date().toISOString(),
-      masterSpec: basename(specPath),
+      masterSpec: 'user-supplied workbook',
       masterSpecMtime: statSync(specPath).mtime.toISOString(),
-      truthSync: truthUsed ? basename(truthPath) : null,
+      truthSync: truthUsed ? 'provided' : null,
       entityCount: entities.length,
       assistantCount: registry.length,
       productionWritesEnabled: false,
@@ -328,7 +328,7 @@ async function main() {
   for (const [name, blob] of [['spec.json', specBlob], ['gates.json', gatesBlob]]) {
     const hit = blob.match(SECRET_RE);
     if (hit) {
-      console.error(`loop-ops-import: secret-pattern hit in generated ${name} ("${hit[0].slice(0, 12)}...") - nothing written.`);
+      console.error(`loop-ops-import: secret-pattern hit in generated ${name} - nothing written.`);
       process.exit(1);
     }
   }
@@ -339,11 +339,11 @@ async function main() {
     writeFileSync(tmp, blob);
     renameSync(tmp, join(outDir, name));
   }
-  console.log(`loop-ops-import: OK - ${entities.length} entities (${registry.length} surfaces), ${edges.length} edges, ${gates.length} gates -> ${outDir}`);
-  console.log(`loop-ops-import: truth-sync ${truthUsed ? `enriched from ${basename(truthPath)}` : 'NOT found - statuses reflect workbook coverage only'}`);
+  console.log(`loop-ops-import: OK - ${entities.length} entities (${registry.length} surfaces), ${edges.length} edges, ${gates.length} gates`);
+  console.log(`loop-ops-import: truth-sync ${truthUsed ? 'enriched' : 'not found - statuses reflect workbook coverage only'}`);
 }
 
 main().catch((err) => {
-  console.error(`loop-ops-import: FAILED - ${err.message}`);
+  console.error(`loop-ops-import: FAILED - ${err instanceof Error ? err.name : 'unknown error'}; no data was written.`);
   process.exit(1);
 });

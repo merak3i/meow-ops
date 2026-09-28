@@ -122,7 +122,7 @@ export const NAV: readonly NavSurface[] = [
     description: 'The same runs as a 3D scene.',
     shortcut: 's',
     fullBleed: true,
-    keywords: ['scrying', 'cinematic', '3d', 'dalaran', 'webgl', 'scrying sanctum'],
+    keywords: ['scrying', 'cinematic', '3d', 'archive', 'webgl', 'scrying sanctum'],
   },
   {
     id: 'learn',

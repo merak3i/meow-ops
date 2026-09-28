@@ -3,6 +3,10 @@
 import {
   queryAgentEvidence, rebuildEvidenceIndex, searchEvidenceIndex,
 } from './project-evidence.mjs';
+import { join } from 'node:path';
+import { loadEnv } from './load-env.mjs';
+
+loadEnv(join(import.meta.dirname, '..'));
 
 function option(name) {
   const index = process.argv.indexOf(`--${name}`);

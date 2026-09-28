@@ -11,8 +11,9 @@
 //   { type: "response_item", ... }
 //   { type: "turn_context",  ... }
 
-import { readFileSync, readdirSync, statSync, existsSync } from 'fs';
+import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
+import { StringDecoder } from 'string_decoder';
 import { calculateCostDetailed } from './cost-calculator.mjs';
 import { createSession, makeSnippet, snippetize, snippetsDisabled } from './session-utils.mjs';
 
@@ -106,9 +107,6 @@ function toolNameFromResponseItem(payload) {
 }
 
 export function parseCodexFile(filePath) {
-  const content = readFileSync(filePath, 'utf8');
-  const lines = content.split('\n').filter(Boolean);
-
   const session = createSession({
     project: 'codex',
     source: 'codex',
@@ -121,12 +119,18 @@ export function parseCodexFile(filePath) {
   // Last non-null token_count info wins (cumulative totals at turn end).
   let lastTokenUsage = null;
   const seenToolCalls = new Set();
+  let responseUserMessages = 0;
+  let responseAssistantMessages = 0;
+  const observedModels = new Set();
 
-  for (const line of lines) {
+  for (const line of readJsonlLines(filePath)) {
     let entry;
     try { entry = JSON.parse(line); } catch { continue; }
 
     const ts = entry.timestamp;
+    if (entry.type === 'turn_context' && typeof entry.payload?.model === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,149}$/.test(entry.payload.model)) {
+      observedModels.add(entry.payload.model);
+    }
     if (ts) {
       if (!session.started_at || ts < session.started_at) session.started_at = ts;
       if (!session.ended_at   || ts > session.ended_at)   session.ended_at   = ts;
@@ -161,6 +165,10 @@ export function parseCodexFile(filePath) {
 
     if (entry.type === 'response_item') {
       const p = entry.payload || {};
+      if (p.type === 'message' && ['user', 'assistant'].includes(p.role)) {
+        if (p.role === 'user') responseUserMessages++;
+        else responseAssistantMessages++;
+      }
       const toolName = toolNameFromResponseItem(p);
       if (!toolName) continue;
 
@@ -177,6 +185,14 @@ export function parseCodexFile(filePath) {
 
   if (!session.started_at) return null;
 
+  // New Desktop logs store message records without legacy message events.
+  // Use one representation so logs containing both are not double-counted.
+  if (responseUserMessages + responseAssistantMessages > 0) {
+    session.user_message_count = Math.max(session.user_message_count, responseUserMessages);
+    session.assistant_message_count = Math.max(session.assistant_message_count, responseAssistantMessages);
+    session.message_count = session.user_message_count + session.assistant_message_count;
+  }
+
   // Apply cumulative token totals from the last token_count event.
   // OpenAI's `input_tokens` is INCLUSIVE of cached input tokens, so splitting
   // out the cached subset (priced at the cheaper cache-read rate) and keeping
@@ -192,7 +208,12 @@ export function parseCodexFile(filePath) {
       + session.cache_creation_tokens + session.cache_read_tokens;
   }
 
-  session.model = session.model || 'gpt-4o';
+  if (observedModels.size === 1) {
+    session.model = [...observedModels][0];
+  } else if (observedModels.size > 1) {
+    // Cumulative session tokens cannot all be assigned to one model after a switch.
+    session.model = null;
+  }
   session.project = projectFromCwd(session.cwd);
 
   const priced = calculateCostDetailed(
@@ -214,6 +235,26 @@ export function parseCodexFile(filePath) {
   }
 
   return session;
+}
+
+function* readJsonlLines(filePath) {
+  const fd = openSync(filePath, 'r');
+  const buffer = Buffer.allocUnsafe(1 << 20);
+  const decoder = new StringDecoder('utf8');
+  let pending = '';
+
+  try {
+    let bytesRead;
+    while ((bytesRead = readSync(fd, buffer, 0, buffer.length, null)) > 0) {
+      const chunks = (pending + decoder.write(buffer.subarray(0, bytesRead))).split('\n');
+      pending = chunks.pop() ?? '';
+      for (const line of chunks) if (line) yield line;
+    }
+    pending += decoder.end();
+    if (pending) yield pending;
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function scanCodexSessions(codexDir) {

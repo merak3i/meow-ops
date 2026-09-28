@@ -132,6 +132,62 @@ test('rate-limit response stops enrichment without assigning events', async () =
   assert.equal(result.sessions.every((session) => session.usage_available === false), true);
 });
 
+test('pagination limit refuses to summarize an incomplete billing window', async () => {
+  const fetched = await fetchCursorUsageEvents({
+    apiKey: FIXTURE_KEY,
+    startDate: 1000,
+    endDate: 2000,
+    pageSize: 1,
+    maxPages: 1,
+    fetchImpl: async () => mockResponse({
+      body: {
+        usageEvents: [{ conversationId: PARENT_ID, chargedCents: 4 }],
+        pagination: { hasNextPage: true, numPages: 2 },
+      },
+    }),
+  });
+
+  assert.equal(fetched.ok, false);
+  assert.equal(fetched.status, 'page-limit');
+  assert.deepEqual(fetched.events, []);
+  assert.deepEqual(fetched.period, { startDate: 1000, endDate: 2000 });
+});
+
+test('default usage queries request Cursor maximum page size across every page', async () => {
+  const requests = [];
+  const fetched = await fetchCursorUsageEvents({
+    apiKey: FIXTURE_KEY,
+    now: 1_000_000_000_000,
+    fetchImpl: async (_url, options) => {
+      const body = JSON.parse(options.body);
+      requests.push(body);
+      return mockResponse({ body: {
+        usageEvents: [],
+        pagination: { hasNextPage: body.page === 1, numPages: 2 },
+      } });
+    },
+  });
+
+  assert.equal(fetched.ok, true);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests.map(({ page, pageSize }) => ({ page, pageSize })), [
+    { page: 1, pageSize: 1000 },
+    { page: 2, pageSize: 1000 },
+  ]);
+});
+
+test('missing or contradictory pagination metadata cannot masquerade as a complete report', async () => {
+  for (const pagination of [undefined, {}, { hasNextPage: false, numPages: 2 }]) {
+    const fetched = await fetchCursorUsageEvents({
+      apiKey: FIXTURE_KEY,
+      fetchImpl: async () => mockResponse({ body: { usageEvents: [{ chargedCents: 4 }], pagination } }),
+    });
+    assert.equal(fetched.ok, false);
+    assert.equal(fetched.status, 'malformed');
+    assert.deepEqual(fetched.events, []);
+  }
+});
+
 test('unmappable records stay in aggregate Cursor usage', () => {
   const sessions = localSessions();
   const { report } = applyCursorUsageEvents(sessions, [
@@ -162,6 +218,69 @@ test('unmappable records stay in aggregate Cursor usage', () => {
   assert.equal(report.unmatched.by_model.some((row) => row.key === 'composer-2'), true);
   assert.equal(report.unmatched.by_model.some((row) => row.key === 'gpt-5'), true);
   assert.equal(sessions.find((session) => session.composer_id === '22222222-2222-4222-8222-222222222222').usage_available, false);
+});
+
+test('billing aggregates preserve official cost and classification fields without event identity', () => {
+  const sessions = localSessions();
+  const { report } = applyCursorUsageEvents(sessions, [
+    {
+      userEmail: 'private@example.com',
+      conversationId: PARENT_ID,
+      model: 'model-a',
+      kind: 'Usage-based',
+      requestsCosts: 1,
+      isTokenBasedCall: true,
+      isChargeable: true,
+      isHeadless: false,
+      tokenUsage: { inputTokens: 10, outputTokens: 5, totalCents: 3.2 },
+      chargedCents: 3.5,
+      cursorTokenFee: 0.3,
+    },
+    {
+      userEmail: 'private@example.com',
+      conversationId: 'unmatched-private-conversation',
+      model: 'model-a',
+      kind: 'Included in Business',
+      requestsCosts: 1.4,
+      isTokenBasedCall: false,
+      isChargeable: false,
+      isHeadless: true,
+      tokenUsage: { totalCents: 7.5 },
+      chargedCents: 8,
+    },
+    {
+      model: 'model-b',
+      kind: 'Usage-based',
+      tokenUsage: { totalCents: 2 },
+    },
+  ]);
+
+  assert.equal(report.totals.events, 3);
+  assert.equal(report.totals.charged_cents, 11.5);
+  assert.equal(report.totals.charged_cents_events, 2);
+  assert.equal(report.totals.estimated_cost_usd, 0.115);
+  assert.equal(report.totals.token_model_cost_cents, 12.7);
+  assert.equal(report.totals.token_model_cost_events, 3);
+  assert.equal(report.totals.cursor_token_fee_cents, 0.3);
+  assert.equal(report.totals.cursor_token_fee_events, 1);
+  assert.equal(report.totals.requests_cost_units, 2.4);
+  assert.equal(report.totals.requests_cost_events, 2);
+  assert.equal(report.totals.chargeable_true_events, 1);
+  assert.equal(report.totals.chargeable_false_events, 1);
+  assert.equal(report.totals.chargeable_unknown_events, 1);
+  assert.equal(report.totals.charged_cents_when_chargeable_true, 3.5);
+  assert.equal(report.totals.charged_cents_when_chargeable_false, 8);
+  assert.equal(report.totals.charged_cents_when_chargeability_unknown, 0);
+  assert.equal(report.totals.token_based_true_events, 1);
+  assert.equal(report.totals.token_based_false_events, 1);
+  assert.equal(report.totals.token_based_unknown_events, 1);
+  assert.equal(report.totals.headless_true_events, 1);
+  assert.equal(report.totals.headless_false_events, 1);
+  assert.equal(report.totals.headless_unknown_events, 1);
+  assert.equal(report.by_kind.find((row) => row.key === 'Included in Business').charged_cents, 8);
+  assert.equal(report.unmatched.totals.charged_cents, 8);
+  assert.equal(JSON.stringify(report).includes('private@example.com'), false);
+  assert.equal(JSON.stringify(report).includes('unmatched-private-conversation'), false);
 });
 
 test('known explicit identifier variants still require exact equality', () => {

@@ -14,7 +14,7 @@ Public repo: `merak3i/meow-ops`. Currently v1.2.0.
 
 - Vite 8 + React 19 + TypeScript
 - Tailwind CSS 4 (`@tailwindcss/vite`)
-- Three.js + `@react-three/fiber` + `@react-three/drei` (Sanctum 3D scene, Lich King sprite, Dalaran environment)
+- Three.js + `@react-three/fiber` + `@react-three/drei` (Sanctum 3D session archive, Archive Warden, modular archive atrium)
 - D3 + Recharts + AG Grid for charts/tables
 - Framer Motion for transitions
 - Supabase JS client (optional — local-first by default)
@@ -59,7 +59,7 @@ npm run menubar:open          # launches it from ~/Applications/
 
 Standard global prefixes: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`. Co-author trailers OK on this repo (it's public, not Vercel Hobby–blocked). Recent style trends:
 - `feat(sanctum): ...` for the 3D dashboard scene work.
-- `feat(dalaran): ...` for the violet citadel environment progression (D1 → D5).
+- `feat(sanctum): ...` for the original archive environment and session-bound character work.
 - `chore: update session data (YYYY-MM-DD)` for the daily session-JSONL refresh commit.
 - `chore: bump <pkg> X → Y (<advisory>)` when patching CVEs.
 
@@ -69,7 +69,7 @@ Standard global prefixes: `feat:`, `fix:`, `refactor:`, `chore:`, `docs:`. Co-au
 - **`test-results/` and `playwright-report/` are gitignored.** Don't add them back.
 - **PostCSS pinned for security.** Last pinned `8.5.8 → 8.5.12` for advisory `GHSA-qx2v-qp2m-jg93`. Keep an eye on PostCSS advisories before bumping.
 - **Bloom postprocessing was abandoned** for the Sanctum 3D scene (caused Vite resolve.dedupe issues). Don't re-introduce without checking the abandonment commit (`5a2d75b chore: vite resolve.dedupe + abandon bloom postprocessing (2nd attempt)`).
-- **The "Sanctum" gamification is intentional product, not noise.** Lich King = permanent custodian of eternal ops stats. Each champion is uniquely tied to its session. Dalaran = violet citadel environment. LLM Sun = engraved label + streaming token emitter. Treat the fantasy framing as load-bearing branding.
+- **The Sanctum is an intentional local session archive.** Use original archive imagery: the faceless Archive Warden, modular stepped record stacks, and Session Index Dial. Each champion stays uniquely tied to its session. Keep the engraved `LLM SUN` label and live token stream. The repeated Archive Seal uses four long teal rays, four short copper rays, a broken octagonal track, and a two-color center stone. Keep the local guide originalized as a fictional archive worker without deity-specific or religious cues; retain the Archive Seal as its comparison feature and preserve the guide's privacy and quality gates.
 - **Local-first is a hard product principle.** No telemetry. No accounts. No analytics-on-analytics. Anything that phones home must be opt-in and clearly disclosed in the README.
 
 ## What this repo is NOT

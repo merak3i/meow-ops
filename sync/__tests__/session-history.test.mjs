@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync,
+  mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -144,7 +144,7 @@ test('cursor snapshot preserves ordering when an unseen session timestamp change
 test('archive rejects content-bearing fields, unsafe indexes, and worktree storage', () => {
   const dir = mkdtempSync(join(tmpdir(), 'meow-session-privacy-'));
   try {
-    for (const key of ['cwd', 'session_title', 'first_user_message']) {
+    for (const key of ['cwd', 'raw_ref', 'session_title', 'first_user_message']) {
       assert.throws(
         () => updateSessionHistory([fixture('unsafe', { metadata: { [key]: 'secret' } })], { dir }),
         /forbidden-key/,
@@ -163,6 +163,12 @@ test('archive rejects content-bearing fields, unsafe indexes, and worktree stora
     mkdirSync(join(repo, '.git'), { recursive: true });
     assert.throws(() => updateSessionHistory([fixture('blocked')], {
       dir: join(repo, 'archive'),
+    }), /worktree-guard/);
+
+    const linkedRepo = join(dir, 'repo-link');
+    symlinkSync(repo, linkedRepo, 'dir');
+    assert.throws(() => updateSessionHistory([fixture('linked-blocked')], {
+      dir: join(linkedRepo, 'archive'),
     }), /worktree-guard/);
   } finally {
     rmSync(dir, { recursive: true, force: true });

@@ -17,7 +17,7 @@
 import { createServer } from 'node:http';
 import { spawn, execFileSync } from 'node:child_process';
 import { statSync, existsSync, readFileSync } from 'node:fs';
-import { isAbsolute, join, dirname } from 'node:path';
+import { isAbsolute, join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 
@@ -34,6 +34,7 @@ import {
   appendLearningCandidate, applyProjectAdapters, buildProjectControlSnapshot,
   decideLearningCandidate, previewProjectAdapters, readLearningCandidates,
   publishLearningCandidate, readProjectCatalog, registerProject, rollbackProjectAdapters,
+  unambiguousProjectLabels,
 } from './project-control.mjs';
 import { queryAgentEvidence } from './project-evidence.mjs';
 import { buildProjectActivity } from './project-activity.mjs';
@@ -52,7 +53,12 @@ import {
 } from './companion-preferences.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
 import { readLedgerLoopRuns } from './loop-ledger-to-runs.mjs';
-import { querySessionHistory } from './session-history.mjs';
+import { querySessionHistory, readSessionHistorySnapshot } from './session-history.mjs';
+import { summarizeEternal } from './eternal-stats.mjs';
+import { answerSanctumGuide } from './sanctum-guide.mjs';
+import { explainGuideEvidence } from './sanctum-local-model.mjs';
+import { getCursorRequestReport } from './cursor-request-report.mjs';
+import { generateGuideVoice, guideVoiceStatus } from './guide-voicebox.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -60,15 +66,21 @@ const IS_CLI = process.argv[1] && import.meta.url === pathToFileURL(process.argv
 if (IS_CLI) loadEnv(ROOT);
 const PORT = Number(process.env.MEOW_LOCAL_API_PORT || process.env.MEOW_SYNC_PORT || 7337);
 const LOCAL_ACCESS_HEADER = 'x-meow-ops-local';
-const LOOP_OPS_DIR = join(ROOT, 'public', 'data', 'loop-ops');
+const LOOP_OPS_DIR = resolve(process.env.MEOW_LOOP_OPS_DIR || join(ROOT, 'public', 'data', 'loop-ops'));
 const SUPERADMIN_USAGE_FILE = join(ROOT, 'public', 'data', 'superadmin-usage.json');
 const SESSIONS_FILE = process.env.MEOW_SESSIONS_FILE || join(ROOT, 'public', 'data', 'sessions.json');
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://meow-ops.vercel.app',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
+  'http://localhost:5174',
+  'http://127.0.0.1:5174',
+  'http://localhost:5175',
+  'http://127.0.0.1:5175',
   'http://localhost:4173',
   'http://127.0.0.1:4173',
+  'http://localhost:4273',
+  'http://127.0.0.1:4273',
   `http://localhost:${PORT}`,
   `http://127.0.0.1:${PORT}`,
 ];
@@ -77,16 +89,42 @@ const EXTRA_ALLOWED_ORIGINS = (process.env.MEOW_DASHBOARD_ORIGIN || '')
   .map((origin) => origin.trim())
   .filter(Boolean);
 const ALLOWED_ORIGINS = new Set([...DEFAULT_ALLOWED_ORIGINS, ...EXTRA_ALLOWED_ORIGINS]);
+const LOCAL_DASHBOARD_PORTS = new Set([4173, 4174, 4175, 4273, 4275, 5173, 5174, 5175, 5176, PORT]);
 
-/** Vite increments the port when 5173 is taken (5174, Playwright 5175). */
+for (const origin of EXTRA_ALLOWED_ORIGINS) {
+  try {
+    const url = new URL(origin);
+    if (url.protocol === 'http:' && ['localhost', '127.0.0.1', '::1', '[::1]'].includes(url.hostname)) {
+      LOCAL_DASHBOARD_PORTS.add(Number(url.port || 80));
+    }
+  } catch {}
+}
+
+/** Only known or explicitly configured local dashboard ports may read private data. */
 function isLocalDashboardOrigin(origin) {
   try {
     const url = new URL(origin);
-    if (url.protocol !== 'http:') return false;
-    return url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '::1';
+    if (url.origin !== origin || url.protocol !== 'http:') return false;
+    if (!['localhost', '127.0.0.1', '::1', '[::1]'].includes(url.hostname)) return false;
+    return LOCAL_DASHBOARD_PORTS.has(Number(url.port || 80));
   } catch {
     return false;
   }
+}
+
+function requiresLocalDashboard(path, method) {
+  return path.startsWith('/session-history/')
+    || path === '/data/sessions.json'
+    || path === '/data/cost-summary.json'
+    || path.startsWith('/sync')
+    || path === '/projects'
+    || path.startsWith('/loop-eng/')
+    || path.startsWith('/loop-ops/')
+    || path.startsWith('/superadmin-usage/')
+    || path.startsWith('/projects/')
+    || path.startsWith('/project-intelligence/')
+    || path.startsWith('/companion/')
+    || (path.startsWith('/learning-quest/') && !(method === 'GET' && path === '/learning-quest/snapshot'));
 }
 
 function isAllowedOrigin(origin) {
@@ -262,6 +300,18 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  const requestUrl = new URL(req.url, `http://localhost:${PORT}`);
+  const path = requestUrl.pathname;
+  const origin = req.headers.origin;
+  const requestedMethod = req.method === 'OPTIONS'
+    ? (req.headers['access-control-request-method'] || '').toUpperCase()
+    : req.method;
+  if (requiresLocalDashboard(path, requestedMethod) && origin && !isLocalDashboardOrigin(origin)) {
+    res.statusCode = 403;
+    res.end(JSON.stringify({ ok: false, error: 'This operation requires the local dashboard.' }));
+    return;
+  }
+
   const cors = applyCors(req, res);
   if (!cors.ok) {
     res.statusCode = cors.statusCode;
@@ -275,15 +325,6 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  const requestUrl = new URL(req.url, `http://localhost:${PORT}`);
-  const path = requestUrl.pathname;
-  const exposesPrivateProjectData = path === '/projects'
-    || path.startsWith('/projects/')
-    || path.startsWith('/project-intelligence/');
-  if (exposesPrivateProjectData && req.headers.origin && !isLocalDashboardOrigin(req.headers.origin)) {
-    sendJson(res, 403, { ok: false, error: 'Private project data requires the local dashboard.' });
-    return;
-  }
   const needsBrowserHeader =
     path.startsWith('/sync')
     || path === '/data/sessions.json'
@@ -297,6 +338,36 @@ const server = createServer(async (req, res) => {
     || path.startsWith('/companion/');
 
   if (needsBrowserHeader && !requireBrowserHeader(req, res)) return;
+
+  if (path === '/loop-eng/eternal-stats' && req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const stats = summarizeEternal(readSessionHistorySnapshot());
+      sendJson(res, stats ? 200 : 503, stats ? { ok: true, stats } : { ok: false, error: 'Local archive unavailable.' });
+    } catch { sendJson(res, 503, { ok: false, error: 'Local archive unavailable.' }); }
+    return;
+  }
+
+  if (path === '/loop-eng/guide-voice' && ['GET', 'POST'].includes(req.method)) {
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method === 'GET') { sendJson(res, 200, await guideVoiceStatus()); return; }
+    let body;
+    try { body = await readJsonBody(req, 8000); }
+    catch { sendJson(res, 400, { ok: false, error: 'Invalid voice request.' }); return; }
+    const controller = new AbortController();
+    res.once('close', () => controller.abort());
+    const result = await generateGuideVoice(body?.text, { signal: controller.signal, align: body?.align === true });
+    if (res.destroyed) return;
+    if (result.status === 'ok') {
+      if (body?.align === true) {
+        sendJson(res, 200, { ok: true, audio: result.bytes.toString('base64'), mime: 'audio/wav', alignment: result.alignment });
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'audio/wav', 'Content-Length': result.bytes.length });
+      res.end(result.bytes);
+    } else sendJson(res, result.status === 'invalid-text' ? 400 : result.status === 'busy' ? 409 : 503, { ok: false, error: result.status });
+    return;
+  }
 
   // ── GET /sync/status ──────────────────────────────────────────────────────
   if (path === '/sync/status' && req.method === 'GET') {
@@ -339,8 +410,8 @@ const server = createServer(async (req, res) => {
         model: requestUrl.searchParams.get('model'),
       });
       sendJson(res, 200, result);
-    } catch (err) {
-      sendJson(res, 500, { ok: false, error: err instanceof Error ? err.message : String(err) });
+    } catch {
+      sendJson(res, 500, { ok: false, error: 'Local session history is unavailable.' });
     }
     return;
   }
@@ -478,7 +549,11 @@ const server = createServer(async (req, res) => {
 
   const projectRoute = path.match(/^\/projects\/([^/]+)\/(control-snapshot|learning-state|evidence|learnings|adapters\/(?:preview|apply|rollback))$/);
   const learningDecisionRoute = path.match(/^\/projects\/([^/]+)\/learnings\/([^/]+)\/decision$/);
-  const catalogProject = (id) => readProjectCatalog().find((project) => project.project_id === decodeURIComponent(id));
+  const catalogProject = (id) => {
+    let decodedId;
+    try { decodedId = decodeURIComponent(id); } catch { return null; }
+    return readProjectCatalog().find((project) => project.project_id === decodedId);
+  };
 
   // Learning Quest exposes only an allowlisted conceptual projection. Stored
   // topics, project links, event records, paths, and proof metadata stay local.
@@ -600,7 +675,7 @@ const server = createServer(async (req, res) => {
         sendJson(res, 200, { ok: true, project_id: project.project_id, evidence_kind: 'agent_event', ...normalized });
         return;
       }
-      const fallback = querySessionHistory({
+      const fallbackResult = querySessionHistory({
         limit: requestUrl.searchParams.get('limit') || 100,
         cursor: requestUrl.searchParams.get('cursor'),
         from: requestUrl.searchParams.get('from'),
@@ -609,6 +684,15 @@ const server = createServer(async (req, res) => {
         source: requestUrl.searchParams.get('source'),
         model: requestUrl.searchParams.get('model'),
       });
+      const projectLabels = unambiguousProjectLabels(project);
+      const projectName = String(project.name || '').trim().toLowerCase();
+      const fallback = projectLabels.has(projectName) ? fallbackResult : {
+        ...fallbackResult,
+        items: [],
+        total: 0,
+        nextCursor: null,
+        facets: { projects: [], sources: [], models: [] },
+      };
       sendJson(res, 200, { ok: true, project_id: project.project_id, evidence_kind: 'session_summary', ...fallback });
       return;
     }
@@ -866,6 +950,31 @@ const server = createServer(async (req, res) => {
     } catch (err) {
       ruleError(res, 400, 'companion-preference', err instanceof Error ? err.message : String(err));
     }
+    return;
+  }
+
+  if (path === '/loop-eng/cursor-request-usage' && req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store');
+    sendJson(res, 200, { ok: true, report: await getCursorRequestReport() });
+    return;
+  }
+
+  if (path === '/loop-eng/sanctum-guide' && req.method === 'POST') {
+    const controller = new AbortController();
+    const disconnect = () => controller.abort();
+    res.once('close', disconnect);
+    try {
+      const body = await readJsonBody(req);
+      const result = answerSanctumGuide(body, readSessionHistorySnapshot(), new Date(), queryAgentEvidence);
+      if (body.explain === true && result.kind === 'observed-events') {
+        result.explanation = await explainGuideEvidence(body.question, result.evidence, { signal: controller.signal });
+        if (result.explanation.status === 'ok') result.capabilities = result.capabilities.map(item => item.id === 'model-synthesis' ? { ...item, status: 'available', source: 'local Ollama / qwen3:4b' } : item);
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      if (!controller.signal.aborted) sendJson(res, result.status, result);
+    } catch {
+      if (!controller.signal.aborted) sendJson(res, 400, { ok: false, error: 'Unable to read the question or local archive. Check the helper and retry.' });
+    } finally { res.off('close', disconnect); }
     return;
   }
 
@@ -1140,15 +1249,15 @@ const server = createServer(async (req, res) => {
 
   if (path === '/loop-ops/sync' && req.method === 'POST') {
     console.log(`\n[${new Date().toLocaleTimeString()}] Loop-Ops import triggered from browser`);
-    const child = spawn(NODE, [join(ROOT, 'sync', 'loop-ops-import.mjs')], {
+    const child = spawn(NODE, [join(ROOT, 'sync', 'loop-ops-import.mjs'), '--out', LOOP_OPS_DIR], {
       cwd: ROOT,
       env: { ...process.env },
     });
 
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (c) => { stdout += c; process.stdout.write(c); });
-    child.stderr.on('data', (c) => { stderr += c; });
+    // Importer output can include user-supplied workbook values. Drain both
+    // streams without logging or returning them through the local API.
+    child.stdout.on('data', () => {});
+    child.stderr.on('data', () => {});
 
     const timer = setTimeout(() => child.kill(), 90_000);
 
@@ -1156,7 +1265,7 @@ const server = createServer(async (req, res) => {
       clearTimeout(timer);
       let mtime = null;
       try { mtime = statSync(join(LOOP_OPS_DIR, 'spec.json')).mtimeMs; } catch {}
-      res.end(JSON.stringify({ ok: code === 0, code, stdout: stdout.slice(-2000), stderr: stderr.slice(-500), mtime }));
+      res.end(JSON.stringify({ ok: code === 0, code, mtime }));
     });
 
     child.on('error', (err) => {

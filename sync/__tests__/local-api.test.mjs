@@ -5,11 +5,11 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import http from 'node:http';
+import { createServer } from 'node:net';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { updateSessionHistory } from '../session-history.mjs';
 
 // Raw GET so we can spoof the Host header (fetch forbids overriding it).
@@ -25,18 +25,27 @@ function rawGet(path, headers) {
 }
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PORT = 7437;
-const BASE = `http://127.0.0.1:${PORT}`;
-const SPEC_PRESENT = existsSync(join(ROOT, 'public', 'data', 'loop-ops', 'spec.json'));
+let PORT;
+let BASE;
 const WORKBOOK = process.env.LOOP_OPS_SPEC || join(ROOT, 'examples', 'loop-ops', 'demo-spec.xlsx');
 
 let server;
 let ledgerDir;
 let historyDir;
+let loopOpsDir;
 
 before(async () => {
+  const probe = createServer();
+  await new Promise((resolve, reject) => {
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', resolve);
+  });
+  PORT = probe.address().port;
+  BASE = `http://127.0.0.1:${PORT}`;
+  await new Promise((resolve) => probe.close(resolve));
   ledgerDir = mkdtempSync(join(tmpdir(), 'meow-loop-api-'));
   historyDir = mkdtempSync(join(tmpdir(), 'meow-history-api-'));
+  loopOpsDir = mkdtempSync(join(tmpdir(), 'meow-loop-ops-api-'));
   updateSessionHistory([
     {
       session_id: 'history-a', project: 'alpha', source: 'codex', model: 'gpt-5',
@@ -58,32 +67,42 @@ before(async () => {
     metrics: { sessions: 1, duration_seconds: 2, total_tokens: 150, cost_usd_real: 1.5, message_count: 2, tool_error_count: 0 },
     schema_version: 1,
   })}\n`, 'utf8');
-  server = spawn('node', [join(ROOT, 'sync', 'local-api.mjs')], {
+  server = spawn(process.execPath, [join(ROOT, 'sync', 'local-api.mjs')], {
     cwd: ROOT,
     env: {
       ...process.env,
       MEOW_LOCAL_API_PORT: String(PORT),
       MEOW_LOOP_DIR: ledgerDir,
       MEOW_SESSION_HISTORY_DIR: historyDir,
+      MEOW_LOOP_OPS_DIR: loopOpsDir,
+      LOOP_OPS_SPEC: WORKBOOK,
     },
     stdio: 'pipe',
   });
-  // Wait for the listener — poll instead of trusting startup logs.
-  for (let i = 0; i < 40; i++) {
-    try {
-      await fetch(`${BASE}/loop-ops/status`);
-      return;
-    } catch {
-      await sleep(100);
-    }
-  }
-  throw new Error('local-api did not start on test port');
+  // Readiness must come from our child, never an unrelated listener.
+  await new Promise((resolve, reject) => {
+    let output = '';
+    const timer = setTimeout(() => reject(new Error('fixture helper startup timed out')), 5000);
+    const cleanup = () => { clearTimeout(timer); server.off('exit', failed); server.off('error', failed); server.stdout.off('data', ready); };
+    const failed = () => { cleanup(); reject(new Error('fixture helper exited before listening')); };
+    const ready = (chunk) => {
+      output = (output + chunk).slice(-4000);
+      if (output.includes(BASE)) { cleanup(); resolve(); }
+    };
+    server.once('exit', failed);
+    server.once('error', failed);
+    server.stdout.on('data', ready);
+  });
+  assert.equal((await fetch(`${BASE}/loop-ops/status`)).status, 200);
 });
 
-after(() => {
-  server?.kill();
-  rmSync(ledgerDir, { recursive: true, force: true });
-  rmSync(historyDir, { recursive: true, force: true });
+after(async () => {
+  if (server && server.exitCode === null && server.signalCode === null) {
+    await new Promise((resolve) => { server.once('exit', resolve); server.kill(); });
+  }
+  if (ledgerDir) rmSync(ledgerDir, { recursive: true, force: true });
+  if (historyDir) rmSync(historyDir, { recursive: true, force: true });
+  if (loopOpsDir) rmSync(loopOpsDir, { recursive: true, force: true });
 });
 
 test('GET /session-history/sessions filters before paginating the full archive', async () => {
@@ -96,16 +115,100 @@ test('GET /session-history/sessions filters before paginating the full archive',
   assert.deepEqual(body.facets.projects, ['alpha', 'beta']);
 });
 
-test('browser-origin session history requests require the local access header', async () => {
+test('session history is local-origin-only and still requires the local access header', async () => {
   const missing = await fetch(`${BASE}/session-history/sessions`, {
-    headers: { Origin: 'https://meow-ops.vercel.app' },
+    headers: { Origin: 'http://localhost:4273' },
   });
   assert.equal(missing.status, 400);
 
-  const allowed = await fetch(`${BASE}/session-history/sessions`, {
+  const hosted = await fetch(`${BASE}/session-history/sessions`, {
     headers: { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1' },
   });
-  assert.equal(allowed.status, 200);
+  assert.equal(hosted.status, 403);
+
+  const local = await fetch(`${BASE}/session-history/sessions`, {
+    headers: { Origin: 'http://localhost:4273', 'x-meow-ops-local': '1' },
+  });
+  assert.equal(local.status, 200);
+});
+
+test('hosted dashboards cannot fetch raw local session or cost summaries', async () => {
+  for (const path of ['/data/sessions.json', '/data/cost-summary.json']) {
+    const response = await fetch(`${BASE}${path}`, {
+      headers: { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1' },
+    });
+    assert.equal(response.status, 403, path);
+  }
+});
+
+test('hosted dashboards cannot read or trigger local operational APIs', async () => {
+  const hostedHeaders = { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1' };
+  const requests = [
+    ['/sync/status', 'GET'],
+    ['/sync', 'POST'],
+    ['/sync/runs/example', 'GET'],
+    ['/loop-eng/summary', 'GET'],
+    ['/loop-eng/decisions', 'GET'],
+    ['/loop-ops/spec', 'GET'],
+    ['/loop-ops/status', 'GET'],
+    ['/loop-ops/sync', 'POST'],
+    ['/superadmin-usage/data', 'GET'],
+    ['/superadmin-usage/status', 'GET'],
+    ['/superadmin-usage/sync', 'POST'],
+  ];
+
+  for (const [path, method] of requests) {
+    const response = await fetch(`${BASE}${path}`, { method, headers: hostedHeaders });
+    assert.equal(response.status, 403, `${method} ${path}`);
+  }
+});
+
+test('hosted preflights cannot request private API access', async () => {
+  const origin = 'https://meow-ops.vercel.app';
+  for (const [path, method] of [
+    ['/session-history/sessions', 'GET'],
+    ['/data/sessions.json', 'GET'],
+    ['/data/cost-summary.json', 'GET'],
+    ['/sync', 'POST'],
+    ['/loop-eng/summary', 'GET'],
+    ['/loop-ops/status', 'GET'],
+    ['/superadmin-usage/status', 'GET'],
+    ['/projects', 'GET'],
+    ['/project-intelligence/snapshot', 'POST'],
+    ['/companion/preferences', 'GET'],
+    ['/learning-quest/snapshot', 'POST'],
+  ]) {
+    const response = await fetch(`${BASE}${path}`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: origin,
+        'Access-Control-Request-Method': method,
+        'Access-Control-Request-Headers': 'x-meow-ops-local',
+      },
+    });
+    assert.equal(response.status, 403, `${method} ${path}`);
+    assert.equal(response.headers.get('access-control-allow-origin'), null, `${method} ${path}`);
+    assert.equal(response.headers.get('access-control-allow-private-network'), null, `${method} ${path}`);
+  }
+
+  const publicSnapshot = await fetch(`${BASE}/learning-quest/snapshot`, {
+    method: 'OPTIONS',
+    headers: { Origin: origin, 'Access-Control-Request-Method': 'GET' },
+  });
+  assert.equal(publicSnapshot.status, 204);
+  assert.equal(publicSnapshot.headers.get('access-control-allow-origin'), origin);
+});
+
+test('private local API rejects untrusted localhost ports and accepts the current preview port', async () => {
+  const untrusted = await fetch(`${BASE}/session-history/sessions`, {
+    headers: { Origin: 'http://localhost:65530', 'x-meow-ops-local': '1' },
+  });
+  assert.equal(untrusted.status, 403);
+
+  const preview = await fetch(`${BASE}/session-history/sessions`, {
+    headers: { Origin: 'http://localhost:4273', 'x-meow-ops-local': '1' },
+  });
+  assert.equal(preview.status, 200);
 });
 
 test('GET /loop-ops/status reports files and the writes-disabled invariant', async () => {
@@ -114,18 +217,11 @@ test('GET /loop-ops/status reports files and the writes-disabled invariant', asy
   const body = await res.json();
   assert.equal(body.productionWritesEnabled, false);
   assert.ok('spec.json' in body.files && 'gates.json' in body.files && 'runs.json' in body.files);
-  assert.equal(body.ok, SPEC_PRESENT);
+  assert.equal(body.ok, false);
+  assert.equal(body.files['spec.json'], null);
 });
 
-test('GET /loop-ops/spec serves the local spec', { skip: !SPEC_PRESENT }, async () => {
-  const res = await fetch(`${BASE}/loop-ops/spec`);
-  assert.equal(res.status, 200);
-  const spec = await res.json();
-  assert.ok(spec.meta.entityCount > 0);
-  assert.equal(spec.meta.productionWritesEnabled, false);
-});
-
-test('GET /loop-ops/spec 404s with guidance when the file is absent', { skip: SPEC_PRESENT }, async () => {
+test('GET /loop-ops/spec reports a missing spec before import', async () => {
   const res = await fetch(`${BASE}/loop-ops/spec`);
   assert.equal(res.status, 404);
   assert.match((await res.json()).error, /loop-ops\/sync/);
@@ -176,11 +272,36 @@ test('allows a same-origin / no-Origin request', async () => {
   assert.equal(res.status, 200);
 });
 
+test('failed Loop Ops sync does not expose workbook paths or importer output', { skip: existsSync(WORKBOOK) }, async () => {
+  const output = [];
+  const capture = (chunk) => output.push(String(chunk));
+  server.stdout.on('data', capture);
+  server.stderr.on('data', capture);
+  try {
+    const response = await fetch(`${BASE}/loop-ops/sync`, { method: 'POST' });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.deepEqual(body, { ok: false, code: 1, mtime: null });
+    assert.equal(JSON.stringify(body).includes(WORKBOOK), false);
+  } finally {
+    server.stdout.off('data', capture);
+    server.stderr.off('data', capture);
+  }
+  assert.equal(output.join('').includes(WORKBOOK), false);
+});
+
 test('POST /loop-ops/sync runs the bundled demo importer end-to-end', { skip: !existsSync(WORKBOOK) }, async () => {
   const res = await fetch(`${BASE}/loop-ops/sync`, { method: 'POST' });
   assert.equal(res.status, 200);
   const body = await res.json();
-  assert.equal(body.ok, true, body.stderr);
-  assert.match(body.stdout, /entities \(\d+ surfaces\)/);
+  assert.equal(body.ok, true);
+  assert.equal(body.code, 0);
+  assert.equal('stdout' in body, false);
+  assert.equal('stderr' in body, false);
   assert.ok(typeof body.mtime === 'number');
+  const specResponse = await fetch(`${BASE}/loop-ops/spec`);
+  assert.equal(specResponse.status, 200);
+  const spec = await specResponse.json();
+  assert.ok(spec.meta.entityCount > 0);
+  assert.equal(spec.meta.productionWritesEnabled, false);
 });

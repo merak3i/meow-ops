@@ -10,6 +10,7 @@ import { useRef, useMemo, useState, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Session } from '@/types/session';
 
 // ─── Constants exposed to Scene ──────────────────────────────────────────────
@@ -17,7 +18,7 @@ import type { Session } from '@/types/session';
 export const SUN_POSITION = new THREE.Vector3(-4, 8, -4);
 
 // Sentinel selection ID used when the sun's panel is open. Champions never
-// have this session_id, so all WoWNameplates stay closed while the sun is
+// have this session_id, so all session nameplates stay closed while the sun is
 // selected.
 export const SUN_SELECTION_ID = '__llm_sun__';
 
@@ -225,7 +226,7 @@ export function ClaudeSun({ binding, selected, onClick }: {
   const coreRef  = useRef<THREE.Mesh>(null);
   const haloRef  = useRef<THREE.Mesh>(null);
   const halo2Ref = useRef<THREE.Mesh>(null);
-  const raysRef  = useRef<THREE.Group>(null);
+  const raysRef  = useRef<THREE.Mesh>(null);
 
   const palette  = TIER_PALETTE[binding.modelTier];
   const eclipsed = binding.eclipsed;
@@ -233,15 +234,30 @@ export function ClaudeSun({ binding, selected, onClick }: {
   // load factor — even an idle Sanctum reads as "API is awake."
   const brightness = eclipsed ? 0.06 : (0.55 + binding.loadFactor * 0.45);
 
-  const rayGeom = useMemo(() => new THREE.PlaneGeometry(0.6, 6), []);
-  const rayMats = useMemo(
-    () => Array.from({ length: 12 }, () => new THREE.MeshBasicMaterial({
-      color: palette.ray, transparent: true, opacity: 0.18,
-      side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
-    })),
-    // Recolor when model tier changes.
-    [palette.ray],
-  );
+  const rayGeometry = useMemo(() => {
+    const parts = Array.from({ length: 12 }, (_, index) => {
+      const geometry = new THREE.PlaneGeometry(0.6, 6);
+      const transform = new THREE.Object3D();
+      transform.rotation.y = (index / 12) * Math.PI * 2;
+      transform.updateMatrix();
+      geometry.applyMatrix4(transform.matrix);
+      return geometry;
+    });
+    try {
+      const merged = mergeGeometries(parts, false);
+      if (!merged) throw new Error('LLM Sun ray geometry could not be merged');
+      return merged;
+    } finally {
+      parts.forEach((part) => part.dispose());
+    }
+  }, []);
+  const rayMaterial = useMemo(() => new THREE.MeshBasicMaterial({
+    color: palette.ray, transparent: true, opacity: 0.18,
+    side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+  }), [palette.ray]);
+
+  useEffect(() => () => rayGeometry.dispose(), [rayGeometry]);
+  useEffect(() => () => rayMaterial.dispose(), [rayMaterial]);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -262,10 +278,7 @@ export function ClaudeSun({ binding, selected, onClick }: {
     }
     if (raysRef.current) {
       raysRef.current.rotation.y = t * 0.08;
-      raysRef.current.children.forEach((child, i) => {
-        const mat = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
-        mat.opacity = (0.12 + Math.abs(Math.sin(t * 0.9 + i * 0.7)) * 0.14) * brightness;
-      });
+      rayMaterial.opacity = (0.12 + Math.abs(Math.sin(t * 0.9)) * 0.14) * brightness;
     }
   });
 
@@ -308,14 +321,7 @@ export function ClaudeSun({ binding, selected, onClick }: {
         </mesh>
       )}
       {/* Radiating ray planes (crossed billboards) */}
-      <group ref={raysRef}>
-        {Array.from({ length: 12 }, (_, i) => {
-          const a = (i / 12) * Math.PI * 2;
-          return (
-            <mesh key={i} rotation={[0, a, 0]} geometry={rayGeom} material={rayMats[i]!} />
-          );
-        })}
-      </group>
+      <mesh ref={raysRef} geometry={rayGeometry} material={rayMaterial} />
 
       {/* Always-on "LLM SUN" label above the orb. Cinzel for the engraved
           headline, monospace for the tier subtitle. Sits above the corona

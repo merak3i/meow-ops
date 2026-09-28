@@ -120,14 +120,15 @@ function ProgressBar({ pct, color }) {
 }
 
 function SourceBadge({ source }) {
-  const safeSource = source === 'demo' ? 'demo data' : source || 'local data';
+  const isDemo = source === 'demo' || source === 'synthetic-demo';
+  const safeSource = isDemo ? 'synthetic demo data' : source || 'local data';
   return (
     <span style={{
       display: 'inline-flex',
       alignItems: 'center',
       gap: 6,
-      color: source === 'demo' ? 'var(--amber)' : 'var(--green)',
-      border: `1px solid ${source === 'demo' ? 'var(--amber)' : 'var(--green)'}`,
+      color: isDemo ? 'var(--amber)' : 'var(--green)',
+      border: `1px solid ${isDemo ? 'var(--amber)' : 'var(--green)'}`,
       borderRadius: 999,
       padding: '4px 10px',
       fontSize: 11,

@@ -11,8 +11,8 @@ import type { AgentTreeNode, SessionRunGroup } from '@/lib/agent-tree';
 import { toISTDate } from '@/lib/format';
 import {
   CLASS_MAP, FALLBACK_CLASS, SESSION_ACCENTS,
-  getPipelineRole,
 } from './classes';
+import { sessionLanePosition, sessionLaneRowCount } from './session-layout.mjs';
 import type { EternalStats, PositionedNode, SessionIdentifier } from './types';
 
 // ─── Session hash + identifier ───────────────────────────────────────────────
@@ -31,7 +31,7 @@ export function sessionHash(sid: string): number {
  *  stays compact in 3D space. Empty branch → fall back to "#hashShort". */
 export function sessionIdentifier(s: Session): SessionIdentifier {
   const h = sessionHash(s.session_id);
-  const hashShort = h.toString(16).slice(0, 4).toUpperCase().padStart(4, '0');
+  const hashShort = h.toString(16).slice(-4).toUpperCase().padStart(4, '0');
   const branchRaw = (s.git_branch ?? '').trim();
   const branch = branchRaw
     .replace(/^(feat|fix|chore|docs|refactor|test|perf|build|ci)\//, '')
@@ -82,7 +82,7 @@ export function formatGold(usd: number): string {
   return `${usd.toFixed(4)}g`;
 }
 
-// Compact gold formatter for the dropdown — keeps the WoW theme but uses
+// Compact gold formatter for the dropdown — keeps the archive styling and uses
 // fewer decimals so labels stay scannable. 149.4901g → 149.5g, 0.345g stays
 // readable, sub-cent values still render in copper (`c`).
 export function formatGoldShort(usd: number): string {
@@ -204,13 +204,13 @@ export function layoutNodes(roots: AgentTreeNode[]): PositionedNode[] {
   const allPositioned: PositionedNode[] = [];
   let globalIdx = 0;
   const total = byDepth.reduce((acc, arr) => acc + arr.length, 0);
+  const totalRows = byDepth.reduce((acc, row) => acc + sessionLaneRowCount(row.length), 0);
+  let firstRow = 0;
 
   byDepth.forEach((row, depth) => {
     const count = row.length;
     row.forEach(({ node }, i) => {
-      // Distribute across waypoint area — clamp to plaza bounds
-      const x = Math.max(-5, Math.min(5, (i - (count - 1) / 2) * 3.5));
-      const z = Math.max(-5, Math.min(5, (depth - 1) * 3));
+      const [x, z] = sessionLanePosition(i, count, firstRow, totalRows);
       const cat = node.session.cat_type ?? 'ghost';
       allPositioned.push({
         session: node.session,
@@ -220,10 +220,10 @@ export function layoutNodes(roots: AgentTreeNode[]): PositionedNode[] {
         pos:     [x, 0, z],
         cls:     CLASS_MAP[cat] ?? FALLBACK_CLASS,
         name:    formatSessionDisplayName(node.session, { maxTitle: 34, maxFolder: 18 }),
-        role:    getPipelineRole(globalIdx, total),
       });
       globalIdx++;
     });
+    firstRow += sessionLaneRowCount(count);
   });
 
   return allPositioned;

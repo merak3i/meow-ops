@@ -5,10 +5,19 @@
  * Covers the five surfaces (Today, Review, Ledger, Sanctum, Learn) plus key interactions.
  */
 import { expect, test } from '@playwright/test';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { loadEnv } from 'vite';
 
 // Network-backed cockpit tests need route mocks to reach Playwright instead of
 // being answered by a previously installed production service worker.
 test.use({ serviceWorkers: 'block' });
+
+const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const LOCAL_HELPER_ORIGIN = new URL(
+  loadEnv('production', PROJECT_ROOT, 'VITE_').VITE_LOCAL_SYNC_URL || 'http://127.0.0.1:7337',
+).origin;
+const LOCAL_HELPER_ROUTE = `${LOCAL_HELPER_ORIGIN}/**`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,7 +79,7 @@ test('Projects: Summary and Detail views use governed local evidence', async ({ 
     agents: { observed: ['codex', 'claude'], blind_spots: ['antigravity', 'cursor', 'hermes'] },
     learning: { counts: { proposed: 1 }, candidates: [] },
   };
-  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, (route) => {
+  await page.route(LOCAL_HELPER_ROUTE, (route) => {
     const headers = {
       'access-control-allow-origin': '*',
       'access-control-allow-headers': 'x-meow-ops-local, content-type',
@@ -136,7 +145,7 @@ test('Project Control: register a local project and govern proposed learning end
     },
   });
 
-  await page.route(/^http:\/\/(?:127\.0\.0\.1|localhost):7337\//, async (route) => {
+  await page.route(LOCAL_HELPER_ROUTE, async (route) => {
     const headers = {
       'access-control-allow-origin': '*',
       'access-control-allow-headers': 'x-meow-ops-local, content-type',
@@ -319,9 +328,25 @@ test('Overview: unmatched Cursor Admin usage is visible but not assigned to sess
       cursorUsage: {
         enabled: true,
         status: 'ok',
+        period: { startDate: 1787616000000, endDate: 1790467200000 },
         matched_sessions: 1,
         matched_events: 2,
         unmatched_events: 3,
+        totals: {
+          events: 5,
+          charged_cents: 50,
+          charged_cents_events: 5,
+          token_model_cost_cents: 42,
+          cursor_token_fee_cents: 8,
+          requests_cost_units: 4,
+          chargeable_true_events: 4,
+          chargeable_false_events: 1,
+          chargeable_unknown_events: 0,
+        },
+        by_kind: [
+          { key: 'Usage-based', events: 4, requests_cost_units: 4, charged_cents: 50 },
+          { key: 'Included in Business', events: 1, requests_cost_units: 0, charged_cents: 0 },
+        ],
         unmatched: {
           totals: { events: 3, total_tokens: 1200, estimated_cost_usd: 0.42 },
           by_model: [
@@ -336,7 +361,10 @@ test('Overview: unmatched Cursor Admin usage is visible but not assigned to sess
   await waitForApp(page);
 
   await nav(page, 'Ledger');
-  await expect(page.getByText(/not matched to a session/i)).toBeVisible();
+  await expect(page.getByText('Provider-reported usage', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Cursor Admin API billing summary')).toContainText('5 events');
+  await expect(page.getByRole('region', { name: 'Cursor billing categories' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Cursor billing categories' })).toContainText('Usage-based');
   await expect(page.getByText('gpt-5', { exact: true })).toBeVisible();
   await expect(page.getByText('composer-2', { exact: true })).toBeVisible();
 });
@@ -451,26 +479,202 @@ test('Agent Ops: Gantt timeline renders', async ({ page }) => {
 
 test('Sanctum: page loads', async ({ page }) => {
   await nav(page, 'Sanctum');
-  // Loading state shows "Scrying…" immediately; wait for it then wait for full render
-  await page.waitForFunction(
-    () => {
-      const root = document.getElementById('root')!;
-      // Accept loading state or fully rendered (with SVG canvas)
-      return root.innerHTML.includes('Sanctum') || root.innerHTML.length > 2000;
-    },
-    { timeout: 10_000 },
-  );
+  await expect(page.getByRole('heading', { name: 'Sanctum', exact: true }))
+    .toBeVisible({ timeout: 20_000 });
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
 test('Sanctum: header bar visible', async ({ page }) => {
   await nav(page, 'Sanctum');
-  // Wait for the component to at least start rendering
-  await page.waitForFunction(
-    () => document.getElementById('root')!.innerHTML.includes('Sanctum'),
-    { timeout: 10_000 },
-  );
-  await expect(page.locator('text=Sanctum').first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText('Sanctum session archive', { exact: true }))
+    .toBeVisible({ timeout: 15_000 });
+});
+
+test('Sanctum: production loads Seal-marked roster art and keeps 3D studies local-only', async ({ page }) => {
+  const modelRequests: string[] = [];
+  const artResponses: { path: string; status: number }[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (url.pathname.startsWith('/design/sanctum/blender/') && url.pathname.endsWith('.glb')) {
+      modelRequests.push(url.pathname);
+    }
+  });
+  page.on('response', (response) => {
+    const url = new URL(response.url());
+    if (url.pathname.startsWith('/assets/') && url.pathname.endsWith('.webp')) {
+      artResponses.push({ path: url.pathname, status: response.status() });
+    }
+  });
+  const now = Date.now();
+  const roles = [
+    ['detective', 'Gloamwhisker'],
+    ['builder', 'Rivetwren'],
+    ['architect', 'Gridwhisk'],
+    ['commander', 'Skirlbell'],
+    ['guardian', 'Shieldheart'],
+    ['storyteller', 'Foliosong'],
+    ['ghost', 'Lanternmote'],
+  ] as const;
+  const syntheticRoles = [...roles, ['builder', 'Rivetwren copy'] as const];
+  await page.route('**/loop-eng/eternal-stats', (route) => route.abort());
+  await page.route('**/data/sessions.json*', (route) => route.fulfill({
+    json: syntheticRoles.map(([catType, label], index) => ({
+      session_id: `sanctum-production-roster-${index}`,
+      project: 'sanctum-production-roster-gate',
+      model: 'claude-sonnet-4-6',
+      entrypoint: 'test',
+      git_branch: 'production-roster-gate',
+      started_at: new Date(now + index * 1_000).toISOString(),
+      ended_at: new Date(now + index * 1_000 + 300_000).toISOString(),
+      duration_seconds: 300,
+      message_count: 2,
+      user_message_count: 1,
+      assistant_message_count: 1,
+      input_tokens: 10,
+      output_tokens: 5,
+      cache_creation_tokens: 0,
+      cache_read_tokens: 0,
+      total_tokens: 15,
+      estimated_cost_usd: 0,
+      cat_type: catType,
+      is_ghost: false,
+      source: 'codex',
+      agent_slug: `roster-gate-${index}`,
+      session_title: `Synthetic ${label} archive session`,
+      tools: { Read: 1 },
+    })),
+  }));
+  await page.goto('/?roster=3d#/sanctum');
+  await expect(page.getByText('Sanctum session archive', { exact: true }))
+    .toBeVisible({ timeout: 15_000 });
+  const roster = page.locator('.sanctum-roster button');
+  await expect(roster).toHaveCount(8, { timeout: 20_000 });
+  await expect(page.locator('[data-testid="sanctum-roster-character-loaded"]')).toHaveCount(8, { timeout: 20_000 });
+  await expect.poll(() => artResponses.length).toBe(7);
+  expect(artResponses.every(({ status }) => status === 200)).toBe(true);
+  for (const [catType, label] of roles) {
+    await page.locator(`.sanctum-roster button[title^="Synthetic ${label} archive session"]`).click();
+    await expect(page.locator(`[data-testid="sanctum-roster-character-loaded"][data-session-selected="true"][data-roster-role="${catType}"]`))
+      .toHaveCount(1, { timeout: 20_000 });
+  }
+  expect(new Set(artResponses.map(({ path }) => path)).size).toBe(7);
+  await expect(page.locator('[data-testid="sanctum-roster-model-loaded"]')).toHaveCount(0);
+  expect(modelRequests).toEqual([]);
+});
+
+test('Sanctum: archive scene fits a narrow viewport', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await nav(page, 'Sanctum');
+  await expect(page.getByText('Sanctum session archive', { exact: true }))
+    .toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('ARCHIVE WARDEN', { exact: true }))
+    .toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('canvas').first()).toBeVisible();
+
+  const viewport = await page.evaluate(() => ({
+    width: window.innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+  }));
+  const wardenBounds = await page.getByText('ARCHIVE WARDEN', { exact: true }).evaluate((element) => {
+    const { left, right, top, bottom } = element.getBoundingClientRect();
+    return { left, right, top, bottom };
+  });
+  await page.screenshot({ path: 'test-results/sanctum-mobile.png' });
+  expect(viewport.width).toBe(390);
+  expect(viewport.documentWidth).toBeLessThanOrEqual(viewport.width + 1);
+  expect(wardenBounds.left).toBeGreaterThanOrEqual(72);
+  expect(wardenBounds.right).toBeLessThanOrEqual(viewport.width);
+  expect(wardenBounds.bottom).toBeLessThanOrEqual(844);
+});
+
+test('Sanctum: selected mobile session tag stays outside the inspector', async ({ browser }) => {
+  test.setTimeout(60_000);
+  const page = await browser.newPage({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const baseTime = Date.now();
+  await page.route('**/loop-eng/eternal-stats', (route) => route.abort());
+  await page.route('**/data/sessions.json*', (route) => route.fulfill({
+    json: [{
+      session_id: 'sanctum-mobile-rivetwren',
+      project: 'sanctum-mobile-e2e',
+      model: 'claude-sonnet-4-6',
+      entrypoint: 'test',
+      git_branch: 'mobile-roster-marker',
+      started_at: new Date(baseTime).toISOString(),
+      ended_at: new Date(baseTime + 300_000).toISOString(),
+      duration_seconds: 300,
+      message_count: 2,
+      user_message_count: 1,
+      assistant_message_count: 1,
+      input_tokens: 10,
+      output_tokens: 5,
+      cache_creation_tokens: 0,
+      cache_read_tokens: 0,
+      total_tokens: 15,
+      estimated_cost_usd: 0,
+      cat_type: 'builder',
+      is_ghost: false,
+      source: 'codex',
+      agent_slug: 'mobile-builder',
+      session_title: 'Synthetic mobile builder',
+      tools: { Read: 1 },
+    }],
+  }));
+
+  await page.goto('/');
+  await waitForApp(page);
+  await nav(page, 'Sanctum');
+  const roster = page.locator('.sanctum-roster button');
+  const inspector = page.locator('[data-testid="sanctum-session-inspector"]');
+  await expect(roster).toHaveCount(1, { timeout: 20_000 });
+  const seal = roster.first().getByRole('img', { name: 'Archive Seal' });
+  await expect(seal).toBeVisible();
+  const sealBounds = await seal.boundingBox();
+  expect(sealBounds?.width).toBeGreaterThanOrEqual(18);
+  expect(sealBounds?.height).toBeGreaterThanOrEqual(18);
+  await roster.first().click();
+  await expect(inspector.getByText('Synthetic mobile builder [sanctum-mobile-e2e]', { exact: true }))
+    .toBeVisible();
+  await expect(page.getByText('Session index', { exact: true })).toBeVisible();
+  await expect(inspector.getByText('BUILDER · RIVETWREN · claude-sonnet-4-6', { exact: true }))
+    .toBeVisible();
+  await page.waitForTimeout(1_500);
+  await page.screenshot({ path: 'test-results/sanctum-mobile-selected-seal.png' });
+
+  const stageTag = page.locator('[data-session-tag="true"]');
+  await expect(stageTag).toHaveCount(1);
+  await expect(stageTag).toHaveText(/^#[0-9A-F]{4}$/);
+  const stageBounds = await stageTag.evaluate((element) => {
+    const { left, right, top, bottom } = element.getBoundingClientRect();
+    return { left, right, top, bottom };
+  });
+  const inspectorBounds = await inspector.evaluate((element) => {
+    const { left, right, top, bottom } = element.getBoundingClientRect();
+    return { left, right, top, bottom };
+  });
+  const minimap = page.locator('canvas.sanctum-hud-round');
+  await expect(minimap).toBeVisible();
+  const minimapBounds = await minimap.evaluate((element) => {
+    const { left } = element.getBoundingClientRect();
+    return { left };
+  });
+  expect(inspectorBounds.bottom).toBeLessThanOrEqual(844);
+  expect(inspectorBounds.right).toBeLessThan(minimapBounds.left);
+  expect(stageBounds!.left).toBeGreaterThanOrEqual(72);
+  expect(stageBounds!.right).toBeLessThanOrEqual(390);
+  expect(stageBounds!.bottom <= inspectorBounds.top
+    || stageBounds!.top >= inspectorBounds.bottom
+    || stageBounds!.right <= inspectorBounds.left
+    || stageBounds!.left >= inspectorBounds.right,
+  JSON.stringify({ stageBounds, inspectorBounds })).toBe(true);
+
+  const nameplate = page.getByTestId('sanctum-session-nameplate');
+  await expect(nameplate).toBeHidden();
+  await page.close();
 });
 
 test('Sanctum: run-group dropdown labels render', async ({ page }) => {
@@ -525,16 +729,358 @@ test('Sanctum: scene renders without throwing into the error boundary', async ({
 });
 
 test('Sanctum: per-session roster visible', async ({ page }) => {
-  await nav(page, 'Sanctum');
-  // Phase B replaced the static class legend ("Healthy Ley Line"-era) with
-  // a per-session roster list. Each roster row is a button containing a
-  // Arcane Order class label (Forgepaw / Gloamwhisker / Hexcaller / etc.). At least one
-  // should be present once demo sessions load.
-  await page.waitForFunction(
-    () => /FORGEPAW|GLOAMWHISKER|HEXCALLER|VOIDMANE|SHIELDHEART|LOREWEAVER|NINELIVES/i
-      .test(document.body.innerText),
-    { timeout: 10_000 },
+  test.setTimeout(60_000);
+  page.setDefaultTimeout(20_000);
+  await page.route('**/loop-eng/eternal-stats', (route) => route.abort());
+  const baseTime = Date.now();
+  const roles = [
+    { id: 'builder-a', cat_type: 'builder', label: 'RIVETWREN' },
+    { id: 'builder-b', cat_type: 'builder', label: 'RIVETWREN' },
+    { id: 'detective', cat_type: 'detective', label: 'GLOAMWHISKER' },
+    { id: 'commander', cat_type: 'commander', label: 'SKIRLBELL' },
+    { id: 'architect', cat_type: 'architect', label: 'GRIDWHISK' },
+    { id: 'guardian', cat_type: 'guardian', label: 'SHIELDHEART' },
+    { id: 'storyteller', cat_type: 'storyteller', label: 'FOLIOSONG' },
+    { id: 'ghost', cat_type: 'ghost', label: 'LANTERNMOTE' },
+  ] as const;
+  const makeSession = (id: string, cat_type: string, project: string, startedAt: number) => ({
+    session_id: `sanctum-roster-${id}`,
+    project,
+    model: 'claude-sonnet-4-6',
+    entrypoint: 'test',
+    git_branch: `test/${id}`,
+    started_at: new Date(startedAt).toISOString(),
+    ended_at: new Date(startedAt + 300_000).toISOString(),
+    duration_seconds: 300,
+    message_count: 2,
+    user_message_count: 1,
+    assistant_message_count: 1,
+    input_tokens: 10,
+    output_tokens: 5,
+    cache_creation_tokens: 0,
+    cache_read_tokens: 0,
+    total_tokens: 15,
+    estimated_cost_usd: 0,
+    cat_type,
+    is_ghost: false,
+    source: 'codex' as const,
+    agent_slug: `roster-${id}`,
+    session_title: `Synthetic ${id}`,
+    tools: { Read: 1 },
+  });
+  const rosterSessions = roles.map((role, index) => (
+    makeSession(role.id, role.cat_type, 'sanctum-roster-e2e', baseTime - (roles.length - index) * 60_000)
+  ));
+  const selectionName = (id: string, project = 'sanctum-roster-e2e') => (
+    `Synthetic ${id} [${project}]`
   );
+  rosterSessions.push(makeSession('older-group', 'detective', 'old-run', baseTime - 7_200_000));
+  await page.route('**/data/sessions.json*', (route) => route.fulfill({
+    json: rosterSessions,
+  }));
+  await page.goto('/');
+  await waitForApp(page);
+  await nav(page, 'Sanctum');
+  const roster = page.locator('.sanctum-roster button');
+  const inspector = page.locator('[data-testid="sanctum-session-inspector"]');
+  await expect(roster).toHaveCount(8, { timeout: 20_000 });
+  await expect(page.locator('canvas').first()).toBeVisible();
+  await page.waitForTimeout(1_500);
+  const stageTags = page.locator('[data-session-tag="true"]');
+  await expect(stageTags).toHaveCount(8);
+  await page.screenshot({ path: 'test-results/sanctum-desktop-roster-seal.png' });
+  for (const role of roles) {
+    const row = roster.filter({ hasText: role.id }).filter({ hasText: role.label });
+    await expect(row).toHaveCount(1);
+    await expect(row.getByRole('img', { name: 'Archive Seal' })).toBeVisible();
+  }
+  await expect(roster.filter({ hasText: 'RIVETWREN' })).toHaveCount(2);
+  const builderTag = async (id: string) => {
+    const text = await roster.filter({ hasText: id }).innerText();
+    return text.match(/#([0-9A-F]{4})/)?.[1];
+  };
+  const builderTags = async () => [await builderTag('builder-a'), await builderTag('builder-b')];
+  await expect.poll(builderTags).toEqual([
+    expect.stringMatching(/^[0-9A-F]{4}$/),
+    expect.stringMatching(/^[0-9A-F]{4}$/),
+  ]);
+  const [firstBuilderTag, secondBuilderTag] = await builderTags();
+  expect(firstBuilderTag).not.toBe(secondBuilderTag);
+
+  // Two builders keep the same class label but carry separate session IDs, branch
+  // tags, and titles. Selecting each row must resolve its own session instance.
+  for (const id of ['builder-a', 'builder-b']) {
+    await roster.filter({ hasText: id }).click();
+    await expect(inspector.getByText(selectionName(id), { exact: true })).toBeVisible();
+    await expect(inspector.getByText('BUILDER · RIVETWREN · claude-sonnet-4-6', { exact: true }))
+      .toBeVisible();
+  }
+  for (const role of roles.slice(2)) {
+    await roster.filter({ hasText: role.id }).click();
+    await expect(inspector.getByText(selectionName(role.id), { exact: true })).toBeVisible();
+    await expect(inspector.getByText(`${role.cat_type.toUpperCase()} · ${role.label} · claude-sonnet-4-6`, { exact: true }))
+      .toBeVisible();
+  }
+
+  // A held movement key must move the selected session while preserving that
+  // exact session in the inspector. Keep a second builder present so class
+  // identity alone cannot make the selection appear correct.
+  await expect(roster.filter({ hasText: 'builder-b' })).toHaveCount(1);
+  await roster.filter({ hasText: 'builder-a' }).click();
+  await expect(inspector.getByText(selectionName('builder-a'), { exact: true })).toBeVisible();
+  // Read the selected halo from the minimap; its full-opacity teal pixels are
+  // distinct from its translucent border and from the class-colored dots.
+  const minimap = page.locator('canvas.sanctum-hud-round');
+  const selectedMarker = async () => minimap.evaluate((element) => {
+    const canvas = element as HTMLCanvasElement;
+    const context = canvas.getContext('2d');
+    if (!context) return { x: -1, y: -1, count: 0 };
+    const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+    let x = 0;
+    let y = 0;
+    let count = 0;
+    for (let index = 0; index < data.length; index += 4) {
+      const red = data[index]!;
+      const green = data[index + 1]!;
+      const blue = data[index + 2]!;
+      const alpha = data[index + 3]!;
+      if (alpha > 220 && red > 60 && red < 130 && green > 170 && blue > 140 && green > red * 1.4) {
+        const pixel = index / 4;
+        x += pixel % width;
+        y += Math.floor(pixel / width);
+        count++;
+      }
+    }
+    return { x: count ? x / count : -1, y: count ? y / count : -1, count };
+  });
+  const otherBuilderMarker = async (selectedCenter: { x: number; y: number }) => (
+    minimap.evaluate((element, selected) => {
+      const canvas = element as HTMLCanvasElement;
+      const context = canvas.getContext('2d');
+      if (!context) return { x: -1, y: -1, count: 0 };
+      const { data, width } = context.getImageData(0, 0, canvas.width, canvas.height);
+      let x = 0;
+      let y = 0;
+      let count = 0;
+      for (let index = 0; index < data.length; index += 4) {
+        const red = data[index]!;
+        const green = data[index + 1]!;
+        const blue = data[index + 2]!;
+        // Builder dots use #d68a3a. The color window also includes its 70%
+        // alpha version while excluding the other six role colors.
+        if (red < 140 || red > 230 || green < 85 || green > 160 || blue < 25 || blue > 75
+          || red < green * 1.3) continue;
+        const pixel = index / 4;
+        const px = pixel % width;
+        const py = Math.floor(pixel / width);
+        // The selected halo reaches about 5.5 minimap pixels; a 6px mask
+        // removes its own orange fill while preserving nearby builder dots.
+        if (Math.hypot(px - selected.x, py - selected.y) < 6) continue;
+        x += px;
+        y += py;
+        count++;
+      }
+      return { x: count ? x / count : -1, y: count ? y / count : -1, count };
+    }, selectedCenter)
+  );
+  await page.waitForTimeout(350);
+  const beforeMove = await selectedMarker();
+  expect(beforeMove.count).toBeGreaterThan(8);
+  const beforeOtherBuilder = await otherBuilderMarker(beforeMove);
+  expect(beforeOtherBuilder.count).toBeGreaterThan(0);
+  await page.keyboard.down('w');
+  await page.waitForTimeout(1_400);
+  await page.keyboard.up('w');
+  let afterMove = { x: -1, y: -1, count: 0 };
+  await expect.poll(async () => {
+    afterMove = await selectedMarker();
+    return Math.hypot(afterMove.x - beforeMove.x, afterMove.y - beforeMove.y);
+  }, { timeout: 5_000 }).toBeGreaterThan(2);
+  const afterOtherBuilder = await otherBuilderMarker(afterMove);
+  expect(afterOtherBuilder.count).toBeGreaterThan(0);
+  const selectedDelta = { x: afterMove.x - beforeMove.x, y: afterMove.y - beforeMove.y };
+  const otherDelta = {
+    x: afterOtherBuilder.x - beforeOtherBuilder.x,
+    y: afterOtherBuilder.y - beforeOtherBuilder.y,
+  };
+  expect(selectedDelta.y).toBeLessThan(-2);
+  expect(Math.hypot(selectedDelta.x - otherDelta.x, selectedDelta.y - otherDelta.y))
+    .toBeGreaterThan(1.5);
+  await expect(inspector.getByText(selectionName('builder-a'), { exact: true })).toBeVisible();
+
+  // Switching run groups clears the previous session selection before the
+  // older group's distinct session can be selected.
+  await page.locator('select.sanctum-toolbar-run-group').selectOption('1');
+  await expect(roster).toHaveCount(1);
+  await expect(inspector).toHaveCount(0);
+  await roster.first().click();
+  await expect(inspector.getByText(selectionName('older-group', 'old-run'), { exact: true }))
+    .toBeVisible();
+});
+
+test('Sanctum: selected-session speech stops when the guide closes and session changes', async ({ page }) => {
+  test.setTimeout(60_000);
+  const baseTime = Date.now();
+  const sessions = ['guide-a', 'guide-b'].map((id, index) => ({
+    session_id: `sanctum-guide-${id}`,
+    project: 'sanctum-guide-e2e',
+    model: 'claude-sonnet-4-6',
+    entrypoint: 'test',
+    git_branch: `test/${id}`,
+    started_at: new Date(baseTime + index * 60_000).toISOString(),
+    ended_at: new Date(baseTime + index * 60_000 + 300_000).toISOString(),
+    duration_seconds: 300,
+    message_count: 2,
+    user_message_count: 1,
+    assistant_message_count: 1,
+    input_tokens: 10,
+    output_tokens: 5,
+    cache_creation_tokens: 0,
+    cache_read_tokens: 0,
+    total_tokens: 15,
+    estimated_cost_usd: 0,
+    cat_type: 'builder',
+    is_ghost: false,
+    source: 'codex' as const,
+    agent_slug: id,
+    session_title: `Synthetic ${id}`,
+    tools: { Read: 1 },
+  }));
+  const guideRequests: Array<{ session_id?: string; project?: string }> = [];
+  let spokenText = '';
+
+  await page.addInitScript(() => {
+    class MockAudio {
+      paused = true;
+      playbackRate = 1;
+      volume = 1;
+      onended: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      onplay: (() => void) | null = null;
+
+      constructor(_src: string) {
+        const testWindow = window as Window & { __guideTestPlayers?: MockAudio[] };
+        testWindow.__guideTestPlayers ??= [];
+        testWindow.__guideTestPlayers.push(this);
+      }
+
+      async play() { this.paused = false; this.onplay?.(); }
+      pause() { this.paused = true; }
+      removeAttribute(_name: string) {}
+      load() {}
+    }
+    Object.defineProperty(window, 'Audio', { configurable: true, value: MockAudio });
+  });
+  await page.route('**/data/sessions.json*', (route) => route.fulfill({ json: sessions }));
+  await page.route('**/loop-eng/sanctum-guide', async (route) => {
+    const request = route.request();
+    const headers = {
+      'Access-Control-Allow-Origin': request.headers().origin ?? 'http://127.0.0.1:4275',
+      'Access-Control-Allow-Headers': 'content-type,x-meow-ops-local',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    };
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    const body = request.postDataJSON() as { session_id?: string; project?: string };
+    guideRequests.push(body);
+    return route.fulfill({
+      headers,
+      json: {
+        ok: true,
+        answer: `Synthetic evidence for ${body.session_id}`,
+        kind: 'observed-events',
+        imported_at: null,
+        unknowns: [],
+        evidence: [{
+          store: 'private project evidence',
+          record_id: 'synthetic-event-guide-a',
+          project: 'sanctum-guide-e2e',
+          fields: {
+            event_type: 'Synthetic verification',
+            timestamp: new Date(baseTime).toISOString(),
+            excerpt: 'Synthetic status verification.',
+          },
+        }],
+        explanation: { status: 'invalid-response' },
+        capabilities: [],
+      },
+    });
+  });
+  await page.route('**/loop-eng/guide-voice', async (route) => {
+    const request = route.request();
+    const headers = {
+      'Access-Control-Allow-Origin': request.headers().origin ?? 'http://127.0.0.1:4275',
+      'Access-Control-Allow-Headers': 'content-type,x-meow-ops-local',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    };
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    if (request.method() === 'GET') return route.fulfill({ headers, json: { available: true, status: 'ready' } });
+    const body = request.postDataJSON() as { text?: string };
+    spokenText = body.text ?? '';
+    return route.fulfill({
+      headers,
+      json: { mime: 'audio/wav', audio: Buffer.from('RIFF0000WAVEfixture').toString('base64') },
+    });
+  });
+  await page.goto('/');
+  await waitForApp(page);
+  await nav(page, 'Sanctum');
+
+  const roster = page.locator('.sanctum-roster button');
+  await roster.filter({ hasText: 'guide-a' }).click();
+  await page.getByRole('button', { name: 'Ask the guide' }).click();
+  const dialog = page.getByRole('dialog', { name: /Sanctum archive guide/ });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Ask', exact: true }).click();
+  await expect(dialog.getByText('Synthetic evidence for sanctum-guide-guide-a', { exact: true }))
+    .toBeVisible();
+  await expect(dialog.getByText(/local model explanation is unavailable \(invalid-response\).*original evidence remains available below/i))
+    .toBeVisible();
+  await expect(dialog.getByText('synthetic-event-guide-a', { exact: true })).toHaveCount(2);
+  const useVoicebox = dialog.getByLabel(/Use local Voicebox/);
+  await expect(useVoicebox).toBeEnabled();
+  await useVoicebox.check();
+  expect(guideRequests).toHaveLength(1);
+  expect(guideRequests[0]).toMatchObject({
+    session_id: 'sanctum-guide-guide-a',
+    project: 'sanctum-guide-e2e',
+  });
+
+  await dialog.getByRole('button', { name: 'Read aloud / replay' }).click();
+  await expect(dialog.getByRole('status')).toHaveText('Speaking');
+  expect(spokenText).toBe('Synthetic evidence for sanctum-guide-guide-a');
+  const audioStarted = await page.evaluate(() => {
+    const testWindow = window as Window & { __guideTestPlayers?: Array<{ paused: boolean }> };
+    return testWindow.__guideTestPlayers?.some((player) => !player.paused) ?? false;
+  });
+  expect(audioStarted).toBe(true);
+
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await expect(dialog).not.toBeVisible();
+  const audioStopped = await page.evaluate(() => {
+    const testWindow = window as Window & { __guideTestPlayers?: Array<{ paused: boolean }> };
+    return testWindow.__guideTestPlayers?.every((player) => player.paused) ?? false;
+  });
+  expect(audioStopped).toBe(true);
+  await roster.filter({ hasText: 'guide-b' }).click();
+  await page.getByRole('button', { name: 'Ask the guide' }).click();
+  const nextDialog = page.getByRole('dialog', { name: /Sanctum archive guide/ });
+  await expect(nextDialog).toBeVisible();
+  await expect(nextDialog.getByText('sanctum-guide-guide-b', { exact: true })).toBeVisible();
+  await expect(nextDialog.getByText('Synthetic evidence for sanctum-guide-guide-a', { exact: true }))
+    .toHaveCount(0);
+});
+
+test('Sanctum: guide runtime model loads with its mouth and animation controls', async ({ page }) => {
+  test.setTimeout(60_000);
+  await nav(page, 'Sanctum');
+  const askGuide = page.getByRole('button', { name: 'Ask the guide' });
+  await expect(askGuide).toBeVisible({ timeout: 30_000 });
+  await askGuide.click();
+  await expect(page.getByRole('heading', { name: 'Sanctum archive guide' })).toBeVisible();
+  await page.getByRole('button', { name: 'Load guide character' }).click();
+  await expect(page.getByText('Character study loaded. Local Voicebox speech drives the mouth when alignment is available.'))
+    .toBeVisible({ timeout: 45_000 });
+  await expect(page.locator('.guide-character canvas')).toHaveCount(1);
 });
 
 // ── 10b. Loop Ops ─────────────────────────────────────────────────────────────
@@ -1043,4 +1589,503 @@ test('/data/sessions.json or demo-sessions.json is reachable', async ({ page }) 
   // vercel.json rewrites /data/sessions.json → /data/demo-sessions.json in preview
   const res = await page.request.get('/data/sessions.json');
   expect([200, 301, 302]).toContain(res.status());
+
+  const demo = await page.request.get('/data/demo-sessions.json');
+  expect(demo.status()).toBe(200);
+  const rows = await demo.json();
+  expect(rows).toHaveLength(60);
+  expect(rows[0].session_id).toBe('demo-session-0001');
+  const privateFields = ['cwd', 'raw_ref', 'session_title', 'first_user_message'];
+  expect(rows.every((row: Record<string, unknown>) => privateFields.every(key => !(key in row)))).toBe(true);
+});
+
+test('Capacity Usage marks generated public values as synthetic demo data', async ({ page }) => {
+  await page.goto('/#/capacity');
+  await expect(page.getByText('synthetic demo data', { exact: true })).toBeVisible({ timeout: 20_000 });
+});
+
+test('Sanctum: linked synthetic sessions under configured CPU profile', async ({ page }) => {
+  const sampleDurationMs = Number(process.env.SANCTUM_PERF_DURATION_MS ?? '5000');
+  if (!Number.isInteger(sampleDurationMs) || sampleDurationMs < 5_000 || sampleDurationMs > 30_000) {
+    throw new Error('SANCTUM_PERF_DURATION_MS must be an integer from 5000 to 30000.');
+  }
+  test.setTimeout(Math.max(90_000, sampleDurationMs * 2 + 60_000));
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const baseTime = Date.now();
+  const roles = [
+    ['builder-a', 'builder'], ['builder-b', 'builder'], ['detective', 'detective'],
+    ['commander', 'commander'], ['architect', 'architect'], ['guardian', 'guardian'],
+    ['storyteller', 'storyteller'], ['ghost', 'ghost'],
+  ] as const;
+  const sessionCount = Number(process.env.SANCTUM_PERF_SESSION_COUNT ?? '8');
+  if (sessionCount !== 1 && sessionCount !== roles.length) {
+    throw new Error(`SANCTUM_PERF_SESSION_COUNT must be 1 or ${roles.length}.`);
+  }
+  const cpuThrottleRate = Number(process.env.SANCTUM_PERF_CPU_RATE ?? '4');
+  if (cpuThrottleRate !== 1 && cpuThrottleRate !== 4) {
+    throw new Error('SANCTUM_PERF_CPU_RATE must be 1 or 4.');
+  }
+  const sessions = roles.slice(0, sessionCount).map(([id, cat_type], index) => ({
+    session_id: `sanctum-cpu4-${id}`,
+    ...(index > 0 ? { parent_session_id: 'sanctum-cpu4-builder-a' } : {}),
+    project: 'sanctum-cpu4-e2e',
+    model: 'synthetic',
+    entrypoint: 'test',
+    git_branch: `test/${id}`,
+    started_at: new Date(baseTime + index * 60_000).toISOString(),
+    ended_at: new Date(baseTime + index * 60_000 + 300_000).toISOString(),
+    duration_seconds: 300,
+    message_count: 2,
+    user_message_count: 1,
+    assistant_message_count: 1,
+    input_tokens: 10,
+    output_tokens: 5,
+    cache_creation_tokens: 0,
+    cache_read_tokens: 0,
+    total_tokens: 15,
+    estimated_cost_usd: 0,
+    cat_type,
+    is_ghost: false,
+    source: 'codex' as const,
+    agent_slug: `cpu4-${id}`,
+    session_title: `Synthetic ${id}`,
+    tools: { Read: 1 },
+  }));
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.route('**/data/sessions.json*', (route) => route.fulfill({ json: sessions }));
+  await page.route('**/loop-eng/**', (route) => route.abort());
+  await page.addInitScript(() => {
+    let seed = 0x5ec0a7;
+    Math.random = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 0x1_0000_0000;
+    };
+  });
+
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpuThrottleRate });
+  const profileCpu = process.env.SANCTUM_PERF_PROFILE === '1';
+  const traceFrames = process.env.SANCTUM_PERF_TRACE === '1';
+  if (profileCpu && traceFrames) {
+    throw new Error('Run CPU profiling and frame tracing in separate passes.');
+  }
+  if ((profileCpu || traceFrames) && process.env.SANCTUM_PERF_ENFORCE === '1') {
+    throw new Error('Diagnostic instrumentation changes timing; leave SANCTUM_PERF_ENFORCE unset.');
+  }
+  if (profileCpu) {
+    await cdp.send('Profiler.enable');
+    await cdp.send('Profiler.setSamplingInterval', { interval: 1000 });
+  }
+  await page.goto('about:blank');
+  const idleBrowserBaseline = await page.evaluate(() => new Promise((resolve) => {
+    const deltas: number[] = [];
+    let previous = performance.now();
+    const started = previous;
+    const frame = (now: number) => {
+      deltas.push(now - previous);
+      previous = now;
+      if (now - started >= 2_000) {
+        const sorted = [...deltas].sort((left, right) => left - right);
+        resolve({
+          frames: deltas.length,
+          fps: Math.round(deltas.length * 1000 / (now - started)),
+          p95Ms: Number((sorted[Math.floor(sorted.length * 0.95)] ?? 0).toFixed(2)),
+        });
+        return;
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }));
+  await page.goto('/');
+  await waitForApp(page);
+  const navigation = await page.evaluate(() => {
+    const entry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+    return Math.round(entry.duration);
+  });
+  await nav(page, 'Sanctum');
+  const roster = page.locator('.sanctum-roster button');
+  await expect(roster).toHaveCount(sessions.length, { timeout: 25_000 });
+  await expect(page.locator('canvas').first()).toBeVisible();
+  const sessionTagPositions = () => page.locator('[data-session-tag="true"]').evaluateAll((elements) => (
+    elements.map((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        label: element.textContent ?? '',
+        x: Number((rect.left + rect.width / 2).toFixed(1)),
+        y: Number((rect.top + rect.height / 2).toFixed(1)),
+      };
+    })
+  ));
+  await expect(page.locator('[data-session-tag="true"]')).toHaveCount(sessions.length);
+  const initialSessionTagPositions = await sessionTagPositions();
+  await page.waitForTimeout(3_000);
+  const settledSessionTagPositions = await sessionTagPositions();
+  const overlappingSessionTags: string[] = [];
+  for (let left = 0; left < settledSessionTagPositions.length; left++) {
+    for (let right = left + 1; right < settledSessionTagPositions.length; right++) {
+      const a = settledSessionTagPositions[left]!;
+      const b = settledSessionTagPositions[right]!;
+      const dx = Math.abs(a.x - b.x);
+      const dy = Math.abs(a.y - b.y);
+      if (dx < 80 && dy < 105) overlappingSessionTags.push(`${a.label}/${b.label} (${dx}x${dy})`);
+    }
+  }
+  expect(overlappingSessionTags, JSON.stringify({
+    message: '8-session labels must leave room for both character silhouettes',
+    initialSessionTagPositions,
+    settledSessionTagPositions,
+  })).toEqual([]);
+  const webglRenderer = await page.locator('canvas').first().evaluate((canvas) => {
+    const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+    if (!gl) return 'unavailable';
+    const debug = gl.getExtension('WEBGL_debug_renderer_info');
+    return debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : 'masked';
+  });
+  const hud = page.locator('.sanctum-hud-panel').filter({ hasText: 'PERF HUD' });
+
+  const sample = async () => page.evaluate((durationMs: number) => new Promise((resolve) => {
+    const deltas: number[] = [];
+    let previous = performance.now();
+    const started = previous;
+    const frame = (now: number) => {
+      deltas.push(now - previous);
+      previous = now;
+      if (now - started >= durationMs) {
+        const sorted = [...deltas].sort((left, right) => left - right);
+        resolve({
+          frames: deltas.length,
+          fps: Math.round(deltas.length * 1000 / (now - started)),
+          p50Ms: Number((sorted[Math.floor(sorted.length * 0.50)] ?? 0).toFixed(2)),
+          p95Ms: Number((sorted[Math.floor(sorted.length * 0.95)] ?? 0).toFixed(2)),
+        });
+        return;
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }), sampleDurationMs);
+  type CpuProfileNode = {
+    callFrame: { functionName: string; url: string; lineNumber: number };
+    hitCount?: number;
+  };
+  const summarizeCpuProfile = (nodes: CpuProfileNode[]) => {
+    const samplesByFrame = new Map<string, number>();
+    for (const node of nodes) {
+      const samples = node.hitCount ?? 0;
+      if (samples === 0) continue;
+      const { functionName, url, lineNumber } = node.callFrame;
+      const source = url.split('/').pop() || '<runtime>';
+      const frame = `${functionName || '(anonymous)'} @ ${source}:${lineNumber + 1}`;
+      samplesByFrame.set(frame, (samplesByFrame.get(frame) ?? 0) + samples);
+    }
+    return [...samplesByFrame.entries()]
+      .map(([frame, samples]) => ({ frame, samples }))
+      .sort((left, right) => right.samples - left.samples)
+      .slice(0, 12);
+  };
+  type ChromiumTraceEvent = {
+    name?: string;
+    cat?: string;
+    ph?: string;
+    dur?: number;
+    pid?: number;
+    tid?: number;
+    args?: Record<string, unknown>;
+  };
+  const summarizeFrameTrace = (events: ChromiumTraceEvent[]) => {
+    const threadNames = new Map<string, string>();
+    for (const event of events) {
+      if (event.ph !== 'M' || event.name !== 'thread_name' || typeof event.args?.name !== 'string') continue;
+      threadNames.set(`${event.pid ?? 0}:${event.tid ?? 0}`, event.args.name);
+    }
+    const metrics = new Map<string, { thread: string; event: string; count: number; totalMs: number; maxMs: number }>();
+    for (const event of events) {
+      if (event.ph !== 'X' || !event.name || !event.dur || event.dur < 1_000) continue;
+      const thread = threadNames.get(`${event.pid ?? 0}:${event.tid ?? 0}`) ?? 'unknown thread';
+      const key = `${thread}::${event.name}`;
+      const metric = metrics.get(key) ?? { thread, event: event.name, count: 0, totalMs: 0, maxMs: 0 };
+      const durationMs = event.dur / 1000;
+      metric.count += 1;
+      metric.totalMs += durationMs;
+      metric.maxMs = Math.max(metric.maxMs, durationMs);
+      metrics.set(key, metric);
+    }
+    return [...metrics.values()]
+      .sort((left, right) => right.totalMs - left.totalMs)
+      .slice(0, 20)
+      .map((metric) => ({
+        ...metric,
+        totalMs: Number(metric.totalMs.toFixed(1)),
+        maxMs: Number(metric.maxMs.toFixed(2)),
+      }));
+  };
+  const sampleWithFrameTrace = async () => {
+    if (!traceFrames) return { frames: await sample(), trace: undefined };
+    const traceEvents: ChromiumTraceEvent[] = [];
+    const onDataCollected = (payload: { value: ChromiumTraceEvent[] }) => traceEvents.push(...payload.value);
+    cdp.on('Tracing.dataCollected', onDataCollected);
+    const tracingComplete = new Promise<void>((resolve) => {
+      cdp.once('Tracing.tracingComplete', () => resolve());
+    });
+    await cdp.send('Tracing.start', {
+      categories: [
+        'toplevel', 'devtools.timeline', 'disabled-by-default-devtools.timeline',
+        'disabled-by-default-devtools.timeline.frame', 'cc', 'gpu', 'viz',
+      ].join(','),
+      transferMode: 'ReportEvents',
+    });
+    const frames = await sample();
+    await cdp.send('Tracing.end');
+    await tracingComplete;
+    cdp.off('Tracing.dataCollected', onDataCollected);
+    return { frames, trace: summarizeFrameTrace(traceEvents) };
+  };
+  const readHud = () => hud.innerText();
+  const drawCalls = (hudText: string) => Number(hudText.match(/DRAW\s+(\d+)/)?.[1]);
+  const captureHud = async (drawCallsBelow?: number) => {
+    await page.keyboard.press('Backquote');
+    await expect(hud).toBeVisible();
+    await expect.poll(async () => {
+      const calls = drawCalls(await readHud());
+      return drawCallsBelow === undefined ? calls > 0 : calls < drawCallsBelow;
+    }, { timeout: 8_000 }).toBe(true);
+    const text = await readHud();
+    await page.keyboard.press('Backquote');
+    await expect(hud).toHaveCount(0);
+    await page.waitForTimeout(250);
+    return text;
+  };
+  const preset = page.locator('button[title^="Cycle performance preset"]');
+  const setPreset = async (target: 'NORMAL' | 'LOW') => {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if ((await preset.innerText()).trim() === target) return;
+      await preset.click();
+    }
+    await expect(preset).toHaveText(target);
+  };
+
+  await setPreset('NORMAL');
+  await page.waitForTimeout(1_000);
+  if (profileCpu) await cdp.send('Profiler.start');
+  const normalRun = await sampleWithFrameTrace();
+  const normal = normalRun.frames;
+  const normalProfile = profileCpu
+    ? summarizeCpuProfile((await cdp.send('Profiler.stop')).profile.nodes)
+    : undefined;
+  const normalHud = await captureHud();
+  await setPreset('LOW');
+  await page.waitForTimeout(1_000);
+  if (profileCpu) await cdp.send('Profiler.start');
+  const lowRun = await sampleWithFrameTrace();
+  const low = lowRun.frames;
+  const lowProfile = profileCpu
+    ? summarizeCpuProfile((await cdp.send('Profiler.stop')).profile.nodes)
+    : undefined;
+  const lowHud = await captureHud(drawCalls(normalHud));
+  await page.screenshot({ path: `test-results/sanctum-cpu${cpuThrottleRate}-sessions${sessionCount}-low.png` });
+  console.info('SYNTHETIC_SANCTUM_PERF', JSON.stringify({
+    viewport: '1280x720', sessions: sessions.length, cpuThrottle: `${cpuThrottleRate}x`, navigationMs: navigation,
+    idleBrowserBaseline,
+    webglRenderer, normal, normalHud, low, lowHud, pageErrors,
+    cpuProfiles: profileCpu ? { normal: normalProfile, low: lowProfile } : undefined,
+    frameTraces: traceFrames ? { normal: normalRun.trace, low: lowRun.trace } : undefined,
+    note: 'Synthetic session roster on the configured Chromium CPU profile; not low-tier-device acceptance.',
+  }));
+  await expect(page.getByText(/scene error.*reload if stuck/i)).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+  expect(normal.frames).toBeGreaterThan(0);
+  expect(low.frames).toBeGreaterThan(0);
+  expect(drawCalls(lowHud)).toBeLessThan(drawCalls(normalHud));
+  if (process.env.SANCTUM_PERF_ENFORCE === '1') {
+    expect(normal.p95Ms, 'Normal preset frame p95 must meet the 16.7 ms budget').toBeLessThanOrEqual(16.7);
+    expect(low.p95Ms, 'Low preset frame p95 must meet the 16.7 ms budget').toBeLessThanOrEqual(16.7);
+  }
+  await cdp.detach();
+});
+
+test('Sanctum: eight-session guide with muted local speech stays responsive', async ({ page }) => {
+  test.skip(process.env.SANCTUM_PERF_GUIDE !== '1', 'Run explicitly on a headful Mac with local speech enabled.');
+  const sampleDurationMs = Number(process.env.SANCTUM_PERF_DURATION_MS ?? '5000');
+  if (!Number.isInteger(sampleDurationMs) || sampleDurationMs < 5_000 || sampleDurationMs > 30_000) {
+    throw new Error('SANCTUM_PERF_DURATION_MS must be an integer from 5000 to 30000.');
+  }
+  const startReducedMotion = process.env.SANCTUM_PERF_START_REDUCED_MOTION === '1';
+  const targetPreset = process.env.SANCTUM_PERF_PRESET ?? (startReducedMotion ? 'LOW' : 'NORMAL');
+  if (targetPreset !== 'NORMAL' && targetPreset !== 'LOW') throw new Error('SANCTUM_PERF_PRESET must be NORMAL or LOW.');
+  test.setTimeout(Math.max(120_000, sampleDurationMs * 4 + 60_000));
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const baseTime = Date.now();
+  const roles = [
+    ['builder-a', 'builder'], ['builder-b', 'builder'], ['detective', 'detective'],
+    ['commander', 'commander'], ['architect', 'architect'], ['guardian', 'guardian'],
+    ['storyteller', 'storyteller'], ['ghost', 'ghost'],
+  ] as const;
+  const sessions = roles.map(([id, cat_type], index) => ({
+    session_id: `sanctum-integrated-${id}`,
+    ...(index > 0 ? { parent_session_id: 'sanctum-integrated-builder-a' } : {}),
+    project: 'sanctum-integrated-e2e',
+    model: 'synthetic',
+    entrypoint: 'test',
+    git_branch: `test/${id}`,
+    started_at: new Date(baseTime + index * 60_000).toISOString(),
+    ended_at: new Date(baseTime + index * 60_000 + 300_000).toISOString(),
+    duration_seconds: 300,
+    message_count: 2,
+    user_message_count: 1,
+    assistant_message_count: 1,
+    input_tokens: 10,
+    output_tokens: 5,
+    cache_creation_tokens: 0,
+    cache_read_tokens: 0,
+    total_tokens: 15,
+    estimated_cost_usd: 0,
+    cat_type,
+    is_ghost: false,
+    source: 'codex' as const,
+    agent_slug: `integrated-${id}`,
+    session_title: `Synthetic ${id}`,
+    tools: { Read: 1 },
+  }));
+  const pageErrors: string[] = [];
+  const guideRequests: string[] = [];
+  const longSyntheticAnswer = 'Synthetic archive guide performance sample. No private records are used. '.repeat(36);
+  page.on('pageerror', error => pageErrors.push(error.message));
+  await page.route('**/data/sessions.json*', route => route.fulfill({ json: sessions }));
+  await page.route(LOCAL_HELPER_ROUTE, async route => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    const headers = {
+      'Access-Control-Allow-Origin': request.headers().origin ?? 'http://127.0.0.1:4275',
+      'Access-Control-Allow-Headers': 'content-type,x-meow-ops-local',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Private-Network': 'true',
+    };
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    if (pathname.endsWith('/guide-voice')) {
+      if (request.method() !== 'GET') guideRequests.push('unexpected-voice-generation');
+      return route.fulfill({ headers, json: { available: false, status: 'unavailable' } });
+    }
+    if (pathname.endsWith('/sanctum-guide') && request.method() === 'POST') {
+      guideRequests.push('synthetic-guide-answer');
+      return route.fulfill({ headers, json: {
+        ok: true,
+        answer: longSyntheticAnswer,
+        kind: 'explanation',
+        imported_at: null,
+        unknowns: [],
+        evidence: [],
+        capabilities: [],
+      } });
+    }
+    return route.abort();
+  });
+  await page.addInitScript(() => {
+    let seed = 0x5ec0a7;
+    Math.random = () => {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      return seed / 0x1_0000_0000;
+    };
+  });
+  if (startReducedMotion) await page.emulateMedia({ reducedMotion: 'reduce' });
+  const cpuThrottleRate = Number(process.env.SANCTUM_PERF_CPU_RATE ?? '4');
+  if (cpuThrottleRate !== 1 && cpuThrottleRate !== 4) throw new Error('SANCTUM_PERF_CPU_RATE must be 1 or 4.');
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpuThrottleRate });
+  await page.goto('about:blank');
+  await page.goto('/');
+  await waitForApp(page);
+  await nav(page, 'Sanctum');
+  await expect(page.locator('.sanctum-roster button')).toHaveCount(sessions.length, { timeout: 25_000 });
+  const preset = page.locator('button[title^="Cycle performance preset"]');
+  for (let attempt = 0; attempt < 3 && (await preset.innerText()).trim() !== targetPreset; attempt++) await preset.click();
+  await expect(preset).toHaveText(targetPreset);
+  await page.waitForTimeout(3_000);
+
+  const sample = async (durationMs = sampleDurationMs) => page.evaluate((durationMs: number) => new Promise<{
+    frames: number; fps: number; p50Ms: number; p95Ms: number; missedFrames: number;
+  }>(resolve => {
+    const deltas: number[] = [];
+    let previous = performance.now();
+    const started = previous;
+    const frame = (now: number) => {
+      deltas.push(now - previous);
+      previous = now;
+      if (now - started >= durationMs) {
+        const sorted = [...deltas].sort((left, right) => left - right);
+        const percentile = (p: number) => sorted[Math.min(Math.ceil(sorted.length * p) - 1, sorted.length - 1)] ?? 0;
+        resolve({
+          frames: deltas.length,
+          fps: Math.round(deltas.length * 1000 / (now - started)),
+          p50Ms: Number(percentile(0.5).toFixed(2)),
+          p95Ms: Number(percentile(0.95).toFixed(2)),
+          missedFrames: deltas.filter(delta => delta > 25).length,
+        });
+        return;
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }), sampleDurationMs);
+  const rosterOnly = await sample();
+
+  await page.getByRole('button', { name: 'Ask the guide' }).click();
+  const dialog = page.getByRole('dialog', { name: /Sanctum archive guide/ });
+  await expect(dialog).toBeVisible();
+  await page.getByRole('button', { name: 'Load guide character' }).click();
+  await expect(dialog.locator('.guide-character canvas')).toHaveCount(1, { timeout: 45_000 });
+  await expect.poll(() => page.evaluate(() => speechSynthesis.getVoices().filter(voice => voice.localService).length), {
+    timeout: 15_000,
+  }).toBeGreaterThan(0);
+  await dialog.getByRole('button', { name: 'Ask', exact: true }).click();
+  await expect(dialog.getByText(longSyntheticAnswer, { exact: true })).toBeVisible();
+  const volume = dialog.getByLabel('Speech volume');
+  await volume.evaluate(element => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    setter?.call(element, '0');
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect(volume).toHaveValue('0');
+  await dialog.getByRole('button', { name: 'Read aloud / replay' }).click();
+  await expect(dialog.getByRole('status')).toHaveText('Speaking');
+  await expect(dialog.locator('.guide-character canvas')).toHaveCount(1);
+  const guideSpeaking = await sample();
+  await expect(dialog.getByRole('status')).toHaveText('Speaking');
+
+  await dialog.getByLabel(/Animate character/).uncheck();
+  const bodyAnimationPaused = await sample();
+  await expect(dialog.getByRole('status')).toHaveText('Speaking');
+  await page.addStyleTag({ content: '.sanctum-guide::backdrop { backdrop-filter: none !important; }' });
+  const backdropBlurRemoved = await sample(Math.min(sampleDurationMs, 5_000));
+
+  const renderer = await page.locator('canvas').first().evaluate(canvas => {
+    const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+    if (!gl) return 'unavailable';
+    const debug = gl.getExtension('WEBGL_debug_renderer_info');
+    return debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : 'masked';
+  });
+  console.info('SANCTUM_INTEGRATED_GUIDE_PERF', JSON.stringify({
+    viewport: '1280x720', sessions: sessions.length, cpuThrottle: `${cpuThrottleRate}x`, preset: targetPreset,
+    reducedMotionAtStart: startReducedMotion, sampleDurationMs, renderer,
+    rosterOnly, guideSpeaking, bodyAnimationPaused, backdropBlurRemoved,
+    guideRequests, pageErrors,
+    note: 'System speech synthesis was muted at volume zero; Voicebox was unavailable and no generation request was made. Diagnostic browser profile, not low-tier-device acceptance.',
+  }));
+  expect(guideRequests).toEqual(['synthetic-guide-answer']);
+  expect(pageErrors).toEqual([]);
+  expect([rosterOnly, guideSpeaking, bodyAnimationPaused, backdropBlurRemoved].every(result => result.frames > 0)).toBe(true);
+  for (const [name, result] of Object.entries({ rosterOnly, guideSpeaking, bodyAnimationPaused })) {
+    expect(result.fps, `${name} must sustain at least 58 FPS`).toBeGreaterThanOrEqual(58);
+    expect(result.missedFrames, `${name} must not miss a 60 Hz presentation interval`).toBe(0);
+  }
+  expect(backdropBlurRemoved.fps, 'The short backdrop diagnostic must sustain at least 58 FPS').toBeGreaterThanOrEqual(58);
+  if (process.env.SANCTUM_PERF_ENFORCE === '1') {
+    for (const [name, result] of Object.entries({ rosterOnly, guideSpeaking, bodyAnimationPaused })) {
+      expect(result.p95Ms, `${name} frame p95 must meet the 16.7 ms budget`).toBeLessThanOrEqual(16.7);
+    }
+  }
+  await dialog.getByRole('button', { name: 'Close' }).click();
+  await cdp.detach();
 });

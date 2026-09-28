@@ -1,0 +1,51 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { syncGuideEvidence } from '../guide-evidence-sync.mjs';
+import { queryAgentEvidence } from '../project-evidence.mjs';
+
+test('sync imports exact registered sessions privately, redacts and deduplicates without mutating metrics', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'meow-guide-sync-'));
+  try {
+    const sourceRoot = join(root, 'rollouts');
+    const cwd = join(root, 'project');
+    mkdirSync(sourceRoot); mkdirSync(cwd);
+    const file = join(sourceRoot, 'session.jsonl');
+    const rows = [{ type: 'session_meta', payload: { id: 'fixture', cwd } }, { type: 'response_item', timestamp: '2026-09-13T00:00:00Z', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Recorded fixture. password=abcdefghijk12345' }] } }];
+    writeFileSync(file, rows.map(JSON.stringify).join('\n'));
+    const session = { source: 'codex', session_id: 'codex-fixture', project: 'fixture', cwd, raw_ref: file, total_tokens: 3 };
+    const before = JSON.stringify(session);
+    const options = { sourceRoot, dir: join(root, 'evidence'), catalog: [{ project_id: 'fixture', name: 'fixture', root: cwd }] };
+    const first = await syncGuideEvidence([session], options);
+    assert.equal(first.appended, 1);
+    assert.equal(first.imported_sessions, 1);
+    assert.equal(first.coverage.includes('capped at 2,000 characters'), true);
+    const repeated = await syncGuideEvidence([session], options);
+    assert.equal(repeated.appended, 0);
+    assert.equal(repeated.duplicates, 1);
+    const events = queryAgentEvidence({ dir: options.dir });
+    assert.equal(events.total, 1);
+    assert.doesNotMatch(events.items[0].content, /abcdefghijk/);
+    assert.equal(JSON.stringify(session), before);
+    const unregistered = await syncGuideEvidence([{ ...session, project: 'unregistered' }], options);
+    assert.equal(unregistered.imported_sessions, 0);
+    assert.equal(unregistered.unregistered_sessions, 1);
+    const invalidBinding = await syncGuideEvidence([{ ...session, cwd: root }], options);
+    assert.equal(invalidBinding.imported_sessions, 0);
+    assert.equal(invalidBinding.invalid_bindings, 1);
+    const outside = join(root, 'outside.jsonl');
+    writeFileSync(outside, rows.map(JSON.stringify).join('\n'));
+    const linked = join(sourceRoot, 'linked.jsonl');
+    symlinkSync(outside, linked);
+    const escapedBinding = await syncGuideEvidence([{ ...session, raw_ref: linked }], options);
+    assert.equal(escapedBinding.imported_sessions, 0);
+    assert.equal(escapedBinding.invalid_bindings, 1);
+    const emptyFile = join(sourceRoot, 'empty-messages.jsonl');
+    writeFileSync(emptyFile, JSON.stringify({ type: 'session_meta', payload: { id: 'empty', cwd } }));
+    const noMessages = await syncGuideEvidence([{ ...session, session_id: 'codex-empty', raw_ref: emptyFile }], options);
+    assert.equal(noMessages.imported_sessions, 0);
+    assert.equal(noMessages.no_qualifying_messages, 1);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

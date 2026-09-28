@@ -56,6 +56,27 @@ export function readProjectCatalog() {
   return Array.isArray(value) ? value : [];
 }
 
+const normalizeProjectLabel = (value) => String(value || '').trim().toLowerCase();
+
+export function unambiguousProjectLabels(project, catalog = readProjectCatalog()) {
+  if (!project?.project_id) return new Set();
+  const owners = new Map();
+  for (const candidate of catalog) {
+    for (const label of new Set([candidate.name, ...(candidate.aliases || [])]
+      .map(normalizeProjectLabel).filter(Boolean))) {
+      const projectIds = owners.get(label) || new Set();
+      projectIds.add(candidate.project_id);
+      owners.set(label, projectIds);
+    }
+  }
+  return new Set([...new Set([project.name, ...(project.aliases || [])]
+    .map(normalizeProjectLabel).filter(Boolean))]
+    .filter((label) => {
+      const projectIds = owners.get(label);
+      return projectIds?.size === 1 && projectIds.has(project.project_id);
+    }));
+}
+
 export function registerProject(input = {}) {
   const name = cleanText(input.name, 'name', 120);
   const root = resolve(cleanText(input.root, 'root', 2_000));
@@ -269,11 +290,14 @@ function sourceName(value) {
 
 export function buildProjectControlSnapshot({ project_id, sessions = [], claims = [] } = {}) {
   const id = cleanText(project_id, 'project_id', 120);
-  const project = readProjectCatalog().find((item) => item.project_id === id);
+  const catalog = readProjectCatalog();
+  const project = catalog.find((item) => item.project_id === id);
   if (!project) throw new Error('[project-control] project is not registered');
-  const names = new Set([project.name, ...(project.aliases || [])].map((name) => String(name).trim().toLowerCase()));
-  const belongsToProject = (row) => row?.project_id === id
-    || names.has(String(row?.project_name || row?.project || '').trim().toLowerCase());
+  const names = unambiguousProjectLabels(project, catalog);
+  const belongsToProject = (row) => {
+    if (typeof row?.project_id === 'string' && row.project_id.trim()) return row.project_id === id;
+    return names.has(normalizeProjectLabel(row?.project_name || row?.project));
+  };
   const latestClaims = new Map();
   for (const claim of Array.isArray(claims) ? claims : []) {
     if (belongsToProject(claim) && PROJECT_CONSTITUTION_FIELDS.includes(claim.field)) {

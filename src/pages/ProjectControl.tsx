@@ -91,7 +91,7 @@ function ProjectRegistrationForm({
       </label>
       <label>
         Local project folder
-        <input value={root} onChange={(event) => setRoot(event.target.value)} placeholder="/Users/you/projects/meow-ops" />
+        <input value={root} onChange={(event) => setRoot(event.target.value)} placeholder="Paste a local project folder path" />
       </label>
       <label>
         Aliases <span>(optional, comma-separated)</span>

@@ -88,7 +88,7 @@ as a legacy alias for the preview limit; it is not a retention setting.
 
 Run locally, then in Chrome: **address bar → install icon (⊕)** → the dashboard installs to your dock or desktop. Works offline via service worker.
 
-For a hosted shell that still reads local data from the same machine, see the **Hosted shell (still local-only for session data)** section below.
+For the hosted demo and the local-data boundary, see **Hosted demo shell (session data stays local)** below.
 
 ---
 
@@ -115,9 +115,9 @@ Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, **Cur
 
 > **Google Antigravity note:** Antigravity stores session **time, tools, and project** locally (parsed from `~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`), but it does **not** expose **token counts, the model used, or cost** on disk — the conversation store is encrypted and usage lives server-side. Antigravity sessions are therefore tracked for time/tools/project and shown with `usage_available: false`; tokens and cost are never fabricated or estimated for them.
 
-> **Cursor note:** Local agent transcripts under `~/.cursor/projects/*/agent-transcripts/` expose messages, tools, and parent/subagent hierarchy. They do not expose authoritative model, token, or cost values. meow-ops never infers a historical model from the currently selected Cursor model, and never treats a nested Task argument such as `model="fast"` as the parent model. Optional official enrichment uses `POST /teams/filtered-usage-events` when a team administrator sets `CURSOR_ADMIN_API_KEY`. Cursor's published response schema currently documents model, token, and cost fields but not a conversation or cloud-agent identifier. If the API explicitly returns a known conversation/cloud-agent id variant, it joins only on exact equality with a local id. Otherwise, usage stays in `cost-summary.json` as aggregate Cursor usage and is never assigned to a session. The credential is never logged, exported, or written to disk. Without a key, the local parser still works.
+> **Cursor note:** Local agent transcripts under `~/.cursor/projects/*/agent-transcripts/` expose messages, tools, and parent/subagent hierarchy, but not authoritative response-model, token, or cost values. meow-ops never infers a historical model from the currently selected Cursor model or a nested Task argument. Optional official enrichment uses `POST /teams/filtered-usage-events` with a team Admin API key. Cursor's current schema documents the response model, `conversationId` (when a conversation is associated), token usage, `chargedCents`, billing `kind`, `requestsCosts`, `isChargeable`, `isTokenBasedCall`, `isHeadless`, and the optional `cursorTokenFee`; these usage records are hourly aggregates. Summing `chargedCents` reconciles event totals with `/teams/spend`. The local report summarizes these numeric fields and classifications separately, retains no raw event, email, or identifier, and never derives the charged total from `isChargeable` or `tokenUsage.totalCents`. A record joins a local session only when its `conversationId` exactly equals a local identifier. Records with no exact match stay in `cost-summary.json` as aggregate Cursor usage. This proves API-reported usage and cost for the returned period, not an individual response per local transcript message. The credential is never logged, exported, or written to disk. Without a key, the local parser still works. See [Cursor Admin API docs](https://prod.cursor.com/docs/account/teams/admin-api).
 
-Safe activation is owner-operated: open the Cursor dashboard, go to **Settings → Cursor Admin API Keys**, and stop if your account does not expose that team-admin surface. Create/copy the key yourself, then place `CURSOR_ADMIN_API_KEY=<YOUR_KEY>` in this repository's gitignored `.env` using a local text editor. Never paste the key into chat, Terminal history, issues, commits, screenshots, or generated data. Re-run `node sync/export-local.mjs`; verify only the non-secret `cursorUsage.status`, `matched_sessions`, and `unmatched` fields in `public/data/cost-summary.json`. Ledger displays unmatched totals separately and never attributes them to a local session.
+Safe activation is owner-operated: open the Cursor dashboard, go to **Settings → Cursor Admin API Keys**, and stop if your account does not expose that team-admin surface. Create/copy the key yourself, then place `CURSOR_ADMIN_API_KEY=<YOUR_KEY>` in this repository's gitignored `.env` using a local text editor. Never paste the key into chat, Terminal history, issues, commits, screenshots, or generated data. Re-run `node sync/export-local.mjs`; inspect only the non-secret `cursorUsage.period`, `totals`, `by_model`, `by_kind`, and `unmatched` aggregates in `public/data/cost-summary.json`. Ledger keeps unmatched totals separate and never assigns them to a local session. Incomplete pagination fails closed instead of summarizing a partial billing window.
 
 | Surface | What you see |
 |---|---|
@@ -171,23 +171,26 @@ Click any row for a full breakdown: token split, cache hit rate, tool usage, sid
 
 ### Sanctum
 
-A 3D Dalaran-style multi-agent pipeline visualizer for local session data. Watch agent runs, token flow, latency, and session health traverse the network as animated runestones along glowing ley lines.
+A 3D civic archive atrium for local session data. Follow session activity, token flow, latency, and health as session characters move along signal paths.
 
 ```
-Argent Vanguard ──────────── Ebon Blade Scout ──────────── Dalaran Archmage ──── Argent Herald
-  [active]       healthy ley     [active]       choked ley     [active]            [idle]
+Record Scout ─────────────── Run Keeper ─────────────── Session Scribe ───────── Review Herald
+  [active]       healthy path    [active]       slow path      [active]            [idle]
   $0.0009                        $0.0041                        $0.0223             $0.0003
   112ms                          1480ms                         3240ms              58ms
 ```
 
 **Features:**
-- Four champion node types with distinct sigils and accent colors
-- Ley line health states: `healthy` (fast flow), `choked` (slow flow), `severed` (flickering)
-- Animated runestones travel along ley line paths carrying JSON/text/error payloads
-- Click any runestone to open a Loot Box modal showing full payload, token count, and latency
-- WebGL plaza scene with performance guardrails, minimap, Lich King custodian, and LLM Sun token emitter
+- Seven session roles — builder, detective, commander, architect, guardian, storyteller, and ghost — each with a distinct character class
+- Signal-path states: `healthy` (fast flow), `choked` (slow flow), `severed` (flickering)
+- Session characters move along animated paths; select one to inspect its available metrics, tools, and milestones
+- WebGL archive scene with performance guardrails, minimap, an Archive Warden, modular record stacks, a Session Index Dial, and the engraved LLM Sun token emitter
+- The recurring Archive Seal pairs four long teal rays and four short copper rays with a broken octagonal track and a copper diamond with a teal center; see [the visual identity note](docs/sanctum-visual-identity.md)
+- Optional local, read-only archive guide for concept explanations and selected-session evidence; local model and Voicebox speech are disclosed in the guide UI
 - Demo mode and local-session mode with no Supabase account required
 - Supabase Realtime schema remains available for external pipelines in `db/migrations/0003_scrying_sanctum.sql`
+
+The standard scene uses seven originalized, role-matched still cutouts with the exact authored Archive Seal composited on each; they follow session movement but have no limb animation. Vite bundles their WebP runtime assets from `src/pages/sanctum/assets/roster`. Original cutouts, prompts, rejected studies, and review renders stay in the local-only design archive. The same distinctive Seal recurs on the Warden, index dial, roster, and guide. Its authored vector, prompts, source files, revision history, and hashes support comparison if copied; they do not by themselves prove plagiarism or rights. The 3D roster models and guide remain local construction studies, not finished character art; 3D roster models load only in the local development preview at `?roster=3d`. Linked guide evidence is read through the local helper, and enabled Voicebox speech stores spoken text and generated audio in local history.
 
 See `db/migrations/0003_scrying_sanctum.sql` for the full schema and RLS policies.
 
@@ -316,13 +319,13 @@ npm run agents:install
 
 The installer renders paths for the current clone, keeps logs under `~/Library/Logs/meow-ops/`, removes the retired duplicate hourly jobs, keeps `com.meowops.localapi` alive, and runs `com.meowops.daily` once at 08:30 local time.
 
-For a hosted dashboard that can trigger sync from the browser, run the local API on your machine:
+For a local dashboard to sync from your machine, run the local API:
 
 ```bash
 node sync/local-api.mjs           # export local data (no git push — that is retired)
 ```
 
-It listens on `http://localhost:7337`, serves fresh local `sessions.json` and `cost-summary.json`, and exposes asynchronous `POST /sync`, `GET /sync/status`, and `GET /sync/runs/:id`. A POST returns `202` with a run ID; the UI then follows `preflight → export sessions → verify artifacts → refresh limits`. Failures remain visible with a sanitized phase, code, and retry hint. Runtime metadata lives outside the worktree at `~/.meow-ops/runtime/`. This process reads only local files on your machine and never pushes to git. Requests are restricted to localhost; if you call it from a hosted dashboard URL, allowlist that origin with `MEOW_DASHBOARD_ORIGIN` (see `.env.example`).
+It listens on `http://localhost:7337` by default, serves fresh local `sessions.json` and `cost-summary.json`, and exposes asynchronous `POST /sync`, `GET /sync/status`, and `GET /sync/runs/:id`. A POST returns `202` with a run ID; the local UI then follows `preflight → export sessions → verify artifacts → refresh limits`. Failures remain visible with a sanitized phase, code, and retry hint. Runtime metadata lives outside the worktree at `~/.meow-ops/runtime/`. This process reads local files on your machine and never pushes to git. Private data and operational routes require a local dashboard origin; the hosted Vercel shell cannot read them or trigger local sync, even if its origin is allowlisted for CORS.
 
 ### How Sessions Are Classified
 
@@ -386,16 +389,20 @@ Useful commands:
 
 ```bash
 node sync/export-local.mjs
+npm run audit:ingestion
+npm run evidence:status
 node sync/fetch-claude-limits.mjs
 ```
 
+`audit:ingestion` compares aggregate local-source counts, the private archive, and registered-project coverage without writing or printing session content. It never calls the Cursor Admin API. Both audit and evidence-status commands load this repository's `.env` so they use the configured private stores.
+
 ---
 
-## Hosted shell (still local-only for session data)
+## Hosted demo shell (session data stays local)
 
 This is optional. The default Meow Ops setup is local-only.
 
-> **Privacy change:** hosted builds no longer rely on `VITE_SESSIONS_URL` or a public `sessions.json`. Older public-bucket setups exposed session metadata more broadly than intended, so the default path is now localhost helper first, demo fallback second.
+> **Privacy boundary:** the localhost helper restricts session history, raw summaries, sync, Loop Engineering, Loop Ops, and SuperAdmin usage routes to local dashboard origins. Hosted session, cost, and usage endpoints serve synthetic fixtures; the Privacy section records the latest live check. Open Meow Ops on localhost to view private session data or use local operations.
 
 ### 1. Install one daily local cycle
 
@@ -423,13 +430,13 @@ Run the same cloud-safe review locally with:
 npm run daily:cloud
 ```
 
-### 3. Optional: keep the localhost helper running
+### 3. Optional: run the localhost helper for a local dashboard
 
-If you want the hosted `vercel.app` shell to read local data from the same machine, keep the helper alive with launchd:
+The helper serves private local data and operational APIs only to a local dashboard origin. It cannot send session data or accept sync and workflow actions from the hosted `vercel.app` shell.
 
 `npm run agents:install` installs this service together with the daily job. To run only in the current terminal, use `node sync/local-api.mjs`.
 
-The hosted shell will try `127.0.0.1:7337` first. If the helper is not running, it falls back to bundled demo data instead of pulling a public session feed.
+When the helper is unavailable, a local dashboard can use its bundled demo fallback. The hosted shell uses static demo endpoints; see the Privacy section for the verified state of the current deployment.
 
 ### 4. Optional: deploy the static shell to Vercel
 
@@ -461,7 +468,7 @@ This creates `ss_pipelines`, `ss_nodes`, `ss_edges`, `ss_runestones` with multi-
 ## Architecture
 
 ```
-Local machine                                         Hosted shell (optional)
+Local machine                                         Hosted demo shell (optional)
 ─────────────                                         ───────────────────────
 ~/.claude/projects/         ~/.codex/sessions/
   ├── <session>.jsonl          └── <session>.jsonl
@@ -475,11 +482,11 @@ Local machine                                         Hosted shell (optional)
               ├──── public/data/sessions.json
               │          │
               │          ├──── localhost:5173 / preview
-              │          └──── sync/local-api.mjs ──► hosted shell on same machine
+              │          └──── sync/local-api.mjs ──► local dashboard only
               │
               └──── daily operator: sync → verify → review → nudge
 
-PWA on dock ──► vercel.app ──── local helper first, demo fallback
+PWA on dock ──► vercel.app ──── reviewed synthetic demo endpoints
               React 19 + Vite 8 + Recharts + D3 + AG Grid
               Three.js Sanctum scene (WebGL)
               Supabase Realtime (Sanctum, opt-in)
@@ -509,14 +516,14 @@ PWA on dock ──► vercel.app ──── local helper first, demo fallback
 
 ## Testing
 
-End-to-end tests run against the production build using Playwright:
+Playwright runs browser tests against both the production preview and the Vite development server:
 
 ```bash
 npm run build         # build dist/
 npx playwright test   # runs the Playwright suite against npm run preview
 ```
 
-Tests cover the dashboard and operations surfaces, key interactions, PWA manifest, and data endpoints. The `playwright.config.ts` uses a single Chromium project against `http://localhost:4173` (Vite preview port). The sync suite covers parsers, local API boundaries, intake redaction, loop ledger transitions, proposals, digests, execution gates, and SuperAdmin snapshots.
+The `chromium` project checks the built app on port `4275`; `dev-smoke` checks development-only server boundaries on `5176`; `service-worker` checks production privacy behavior. Some Loop Ops tests skip when their local-only workbook/spec fixtures are absent. The sync suite covers parsers, local API boundaries, intake redaction, loop ledger transitions, proposals, digests, execution gates, and SuperAdmin snapshots. Sanctum-specific unit tests run with `npm run test:sanctum`.
 `npm run eval` is the blocking privacy + loop-integrity gate.
 
 To run a single test file or test by name:
@@ -530,15 +537,16 @@ npx playwright test --reporter=list
 
 ## Privacy
 
-- **Local-only by default.** Session analytics are loaded from local files or the localhost helper, not from a public cloud feed.
-- **Why this changed.** Public `sessions.json` links were too easy to expose accidentally, so the hosted shell now avoids public session feeds by default.
-- **Public deploys fall back to demo data.** If the localhost helper is unavailable, the hosted shell shows bundled demo data instead of your private sessions.
-- **Sessions JSON contains metrics only** — token counts, tool counts, durations, model names, and project labels. No message content, no prompts, no first-user-message snippets, no chat titles, no code, and no absolute `cwd` paths.
+- **Private sessions and operations stay local.** Local dashboards read session analytics from local files or the localhost helper. Hosted dashboards cannot read private session-history, raw summary, sync, Loop Engineering, Loop Ops, or SuperAdmin usage helper routes.
+- **Current source builds exclude private session files.** The build allowlist publishes only the three reviewed `demo-*` JSON files and validates their synthetic labels and fields.
+- **The current hosted fixtures were checked on 2026-09-27.** All five checked public session, cost, and usage URLs matched the approved synthetic fixture hashes and returned `no-store` response headers. Vercel reported cached edge responses during the check, so this confirms the bytes served at those URLs; it does not verify historical cache contents, prior deployments, or a cache purge. Verify the served fixtures again after each hosted release.
+- **Verify each hosted release.** A clean local build does not prove which fixtures or access settings the current Vercel deployment serves.
+- **Current source session fixtures contain metrics only** — token counts, tool counts, durations, model names, and project labels. They omit message content, prompts, first-user-message snippets, chat titles, code, and absolute `cwd` paths. The build allowlist rejects private session files.
 - **Supabase is optional and scoped.** The default app no longer depends on Supabase Storage for session analytics. Supabase Realtime remains opt-in for Sanctum.
 - **Service key is local-only.** It never appears in the production bundle.
-- **Hosted demo password gate is optional.** `VITE_ACCESS_PASSWORD` only protects demo access; it is not an account system.
+- **Hosted demo prompt is optional and cosmetic.** Vite exposes `VITE_` variables in client code ([Vite environment-variable docs](https://vite.dev/guide/env-and-mode#env-variables)), so `VITE_ACCESS_PASSWORD` can be recovered or bypassed; never rely on it to protect private data. Deploy only reviewed public demo assets unless hosting-level access control is configured.
 - **Optional model enrichment is bounded.** Transcript/screenshot intake uses a localhost-only LM Studio endpoint when configured. DeepSeek is optional, with per-process and weekly spend caps. Deterministic answers remain available without it.
-- **No analytics, no telemetry, no tracking.** The app has no idea you exist.
+- **No third-party product analytics or tracking scripts are configured in the app.**
 
 ---
 
@@ -631,15 +639,13 @@ meow-ops/
 │   │   ├── ScryingSanctum.tsx   Sanctum
 │   │   ├── LearningQuest.tsx    Learn
 │   │   └── CapacityUsage.jsx    Hidden Seats page
-│   ├── scrying-sanctum/         Realtime pipeline components for external feeds
-│   │   ├── ScryingSanctum.tsx   D3 zoom canvas, legend, loot box
-│   │   ├── ChampionNode.tsx     SVG foreignObject node card
-│   │   ├── LeyLine.tsx          SVG path with flow animation + runestones
-│   │   ├── Runestone.tsx        Animated token packet (RAF path-following)
-│   │   ├── championsConfig.ts   Node metadata, colors, Bezier path builder
-│   │   ├── useScryingData.ts    Supabase/demo data hook with Realtime subscriptions
-│   │   ├── types.ts             SsNode, SsEdge, SsRunestone, SsPipeline types
-│   │   └── scrying-sanctum.css  Ley line animations, champion cards, loot box
+│   ├── sanctum/                 3D archive scene, session roster, local guide
+│   │   ├── ArchiveWarden.tsx    Data-bound archive figure and signature seal
+│   │   ├── Sun.tsx              Engraved LLM Sun and live token stream
+│   │   ├── SanctumGuide.tsx     Local concept and session-evidence guide
+│   │   ├── GuideCharacter.tsx   Guide portrait and speech animation
+│   │   ├── classes.ts           Session-class colors, profiles, and quotes
+│   │   └── textures.ts          Procedural floor and original cat sprites
 │   └── types/
 │       └── session.ts           Single source of truth for all session types
 ├── sync/

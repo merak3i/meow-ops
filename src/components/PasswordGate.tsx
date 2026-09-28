@@ -1,6 +1,6 @@
-// PasswordGate.tsx — Blocks access to the demo deployment unless the correct
-// password is entered. Only active when VITE_ACCESS_PASSWORD is set (i.e. on
-// the Vercel demo). In local dev (no env var) the gate is transparent.
+// PasswordGate.tsx — Adds a casual client-side prompt to the demo deployment.
+// VITE_ACCESS_PASSWORD is compiled into browser code, so this is not an access
+// control boundary and must never protect private data. In local dev, no prompt.
 
 import { useState, useEffect } from 'react';
 

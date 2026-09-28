@@ -34,6 +34,29 @@ test('evidence normalization redacts secrets and produces a stable content hash'
   assert.match(first.event_id, /^evt_[a-f0-9]{24}$/);
 });
 
+test('evidence redaction covers credential env names, bearer values, connection URLs and private keys', () => {
+  const fakeValue = `fixture_${'x'.repeat(24)}`;
+  const source = [
+    `OPENAI_API_KEY=${fakeValue}`,
+    `AWS_SECRET_ACCESS_KEY=${fakeValue}`,
+    'PASSWORD=x',
+    `{"DATABASE_PASSWORD":"fixture with spaces"}`,
+    `Authorization: Bearer ${fakeValue}`,
+    `DATABASE_URL=postgres://fixture:${fakeValue}@localhost/fixture`,
+    `-----BEGIN ${'PRIVATE KEY'}-----\n${fakeValue}\n-----END ${'PRIVATE KEY'}-----`,
+  ].join('\n');
+  const redacted = normalizeAgentEvent(fixture({ content: source })).content;
+  assert.doesNotMatch(redacted, /fixture_x{24}/);
+  assert.doesNotMatch(redacted, /fixture with spaces/);
+  assert.match(redacted, /OPENAI_API_KEY=\[redacted\]/);
+  assert.match(redacted, /AWS_SECRET_ACCESS_KEY=\[redacted\]/);
+  assert.match(redacted, /PASSWORD=\[redacted\]/);
+  assert.match(redacted, /DATABASE_PASSWORD:\[redacted\]/);
+  assert.match(redacted, /Authorization: Bearer \[redacted\]/);
+  assert.match(redacted, /DATABASE_URL=postgres:\/\/fixture:\[redacted\]@localhost\/fixture/);
+  assert.match(redacted, /\[redacted private key\]/);
+});
+
 test('append-only evidence partitions by project, source, and month and deduplicates', () => {
   const dir = mkdtempSync(join(tmpdir(), 'meow-evidence-'));
   try {
@@ -155,6 +178,49 @@ test('session evidence archives only registered project and supported agent sour
   }
 });
 
+test('session evidence matches a registered repository root and excludes its sibling', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-root-evidence-'));
+  const projectRoot = join(dir, 'registered-project');
+  const nestedWorkdir = join(projectRoot, 'packages', 'app');
+  const siblingWorkdir = join(dir, 'registered-project-copy');
+  const aliasSiblingWorkdir = join(dir, 'alias-project-copy');
+  mkdirSync(nestedWorkdir, { recursive: true });
+  mkdirSync(siblingWorkdir);
+  mkdirSync(aliasSiblingWorkdir);
+  try {
+    const result = archiveSessionEvidence([
+      {
+        session_id: 'claude-root-match', source: 'claude', project: 'app', cwd: nestedWorkdir,
+        started_at: '2026-07-19T10:00:00.000Z',
+      },
+      {
+        session_id: 'cursor-sibling', source: 'cursor', project: 'project-copy', cwd: siblingWorkdir,
+        started_at: '2026-07-19T10:01:00.000Z',
+      },
+      {
+        session_id: 'cursor-sibling-same-name', source: 'cursor', project: 'Meow Ops', cwd: siblingWorkdir,
+        started_at: '2026-07-19T10:02:00.000Z',
+      },
+      {
+        session_id: 'cursor-sibling-same-alias', source: 'cursor', project: 'meow-ops', cwd: aliasSiblingWorkdir,
+        started_at: '2026-07-19T10:03:00.000Z',
+      },
+    ], {
+      dir,
+      catalog: [{ project_id: 'meow-ops-4efe35ade3', name: 'Meow Ops', aliases: [], root: projectRoot }],
+    });
+
+    assert.equal(result.considered, 1);
+    assert.equal(result.appended, 1);
+    assert.equal(result.skipped, 3);
+    const evidence = queryAgentEvidence({ dir, project_id: 'meow-ops-4efe35ade3' });
+    assert.equal(evidence.items.length, 1);
+    assert.equal(evidence.items[0].source, 'claude');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('message evidence maps only registered projects into the private vault', () => {
   const dir = mkdtempSync(join(tmpdir(), 'meow-message-evidence-'));
   try {
@@ -180,6 +246,32 @@ test('message evidence maps only registered projects into the private vault', ()
     const evidence = queryAgentEvidence({ dir, project_id: 'meow-ops-4efe35ade3' });
     assert.equal(evidence.items[0].source, 'hermes');
     assert.equal(evidence.items[0].event_type, 'message_user');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('message evidence skips aliases shared by multiple registered projects', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-ambiguous-message-evidence-'));
+  try {
+    const result = archiveMessageEvidence([{
+      source: 'hermes', project: 'shared-alias', session_id: 'hermes-ambiguous',
+      timestamp: '2026-07-19T10:00:00.000Z', event_type: 'message_user',
+      content: 'This message must not be assigned by an ambiguous label.',
+      raw_ref: '/tmp/hermes.db#messages:3', sensitivity: 'private', metadata: {},
+    }], {
+      dir,
+      catalog: [
+        { project_id: 'project-one', name: 'Project One', aliases: ['shared-alias'] },
+        { project_id: 'project-two', name: 'Project Two', aliases: ['shared-alias'] },
+      ],
+    });
+
+    assert.equal(result.considered, 0);
+    assert.equal(result.appended, 0);
+    assert.equal(result.skipped, 1);
+    assert.equal(queryAgentEvidence({ dir, project_id: 'project-one' }).total, 0);
+    assert.equal(queryAgentEvidence({ dir, project_id: 'project-two' }).total, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

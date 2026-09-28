@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseAntigravityTranscript } from '../parse-antigravity.mjs';
@@ -54,6 +54,30 @@ test('returns null for an empty transcript', () => {
   try {
     assert.equal(parseAntigravityTranscript(file, 'empty'), null);
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('malformed transcript warnings do not expose the session identifier', () => {
+  const { dir, file } = writeTranscript([
+    { step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', created_at: '2026-06-08T10:00:00Z', content: 'request' },
+    { step_index: 1, source: 'MODEL', type: 'GENERIC', created_at: '2026-06-08T10:00:02Z' },
+  ]);
+  appendFileSync(file, '{malformed\n{"step_index":2,"source":"MODEL","type":"GENERIC","created_at":"2026-06-08T10:00:04Z"}\n');
+  const originalWarn = console.warn;
+  const warnings = [];
+  console.warn = (message) => warnings.push(String(message));
+  try {
+    const session = parseAntigravityTranscript(file, 'private-session-id');
+    assert.ok(session);
+    assert.equal(session.message_count, 3);
+    assert.equal(session.assistant_message_count, 2);
+    assert.equal(session.ended_at, '2026-06-08T10:00:04Z');
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /skipped 1 malformed line/);
+    assert.equal(warnings[0].includes('private-session-id'), false);
+  } finally {
+    console.warn = originalWarn;
     rmSync(dir, { recursive: true, force: true });
   }
 });

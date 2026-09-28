@@ -20,7 +20,7 @@ Use **Why I answered this way** to inspect evidence, **Confirm** to promote a hy
 - `POST /project-intelligence/claims` — append one owner-confirmed fact with a nonce.
 - `POST /project-intelligence/confirm` — promote one inferred claim with a nonce.
 
-Project and confirmation writes stay local. The hosted demo cannot read or mutate the private ledger without the localhost helper.
+Project and confirmation reads and writes stay local. The hosted demo cannot read or mutate the private ledger, even while the localhost helper is running; it may receive only the separately sanitized public projections documented in the local API tests.
 
 ## Phased build
 

@@ -181,13 +181,18 @@ export interface CostSummary {
     availability?: string;
     join_key?: string;
     limitation?: string;
+    period?: { startDate: number; endDate: number } | null;
     matched_sessions?: number;
     matched_events?: number;
     unmatched_events?: number;
     unmatched?: {
       totals?: Record<string, number>;
       by_model?: Array<Record<string, string | number>>;
+      by_kind?: Array<Record<string, string | number>>;
     };
+    totals?: Record<string, number>;
+    by_model?: Array<Record<string, string | number>>;
+    by_kind?: Array<Record<string, string | number>>;
     error?: string | null;
   };
   hermesModelUsage?: {

@@ -12,6 +12,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { registerProject } from '../project-control.mjs';
 import { appendAgentEvents } from '../project-evidence.mjs';
 import { appendLearningEvent, upsertLearningTopic } from '../learning-quest.mjs';
+import { updateSessionHistory } from '../session-history.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PORT = 7451;
@@ -57,6 +58,10 @@ before(async () => {
   writeFileSync(sessionsFile, JSON.stringify([
     { session_id: 'codex-1', source: 'codex', project: 'Meow Ops', started_at: '2026-07-19T00:00:00.000Z' },
   ]));
+  updateSessionHistory([{
+    session_id: 'codex-ambiguous-history', source: 'codex', project: 'Meow Ops',
+    started_at: '2026-07-19T00:00:00.000Z',
+  }], { dir: join(temp, 'history') });
 
   previousControl = process.env.MEOW_PROJECT_CONTROL_DIR;
   previousQuest = process.env.MEOW_LEARNING_QUEST_DIR;
@@ -428,4 +433,27 @@ test('adapter apply and rollback require owner nonces and preserve backups', asy
   });
   assert.equal(rolledBack.status, 200);
   assert.equal(existsSync(join(project.root, 'CLAUDE.md')), false);
+});
+
+test('project evidence hides name-only session history when project labels collide', async () => {
+  const duplicateRoot = join(temp, 'duplicate-meow-ops');
+  mkdirSync(duplicateRoot);
+  const duplicate = registerProject({ name: 'Meow Ops', root: duplicateRoot, aliases: ['meow-ops'] });
+
+  const response = await get(`/projects/${duplicate.project_id}/evidence`);
+  assert.equal(response.status, 200);
+  assert.equal(response.body.evidence_kind, 'session_summary');
+  assert.equal(response.body.total, 0);
+  assert.deepEqual(response.body.items, []);
+  assert.deepEqual(response.body.facets.projects, []);
+  assert.doesNotMatch(JSON.stringify(response.body), /codex-ambiguous-history/);
+});
+
+test('malformed encoded project IDs return 404 without terminating the helper', async () => {
+  const malformed = await fetch(`${BASE}/projects/%ZZ/learning-state`, { headers: HEADERS });
+  assert.equal(malformed.status, 404);
+  assert.equal((await malformed.json()).ok, false);
+
+  const valid = await get(`/projects/${project.project_id}/learning-state`);
+  assert.equal(valid.status, 200);
 });

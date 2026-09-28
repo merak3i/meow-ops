@@ -38,6 +38,8 @@ self.addEventListener('fetch', (e) => {
   // Cache-first for static assets
   e.respondWith(
     caches.match(e.request).then((r) => r || fetch(e.request).then((res) => {
+      const cacheControl = res.headers.get('Cache-Control') || '';
+      if (!res.ok || cacheControl.split(',').some((value) => value.trim().toLowerCase() === 'no-store')) return res;
       const clone = res.clone();
       caches.open(CACHE).then((c) => c.put(e.request, clone));
       return res;

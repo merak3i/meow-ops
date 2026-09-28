@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&display=swap');
-/* Dalaran D5 — Cinzel for engraved-Roman titles in the Sanctum (LLM Sun
-   panel header, Eternal label, page title). Used sparingly so the rest
+/* Cinzel for engraved-Roman titles in the Sanctum (LLM Sun
+   panel header, Archive Warden label, page title). Used sparingly so the rest
    of the HUD stays scannable in monospace. */
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&display=swap');
 @import "tailwindcss";
@@ -107,13 +107,41 @@
 
 /* Sanctum A9: one surface recipe and a 9px minimum for secondary HUD copy. */
 .sanctum-hud-panel {
-  background: rgba(8, 5, 20, .72) !important;
-  border: 1px solid rgba(242, 208, 107, .12) !important;
+  background: rgba(8, 18, 23, .72) !important;
+  border: 1px solid rgba(100, 229, 194, .14) !important;
   border-radius: 10px !important;
   backdrop-filter: blur(14px) !important;
   box-shadow: 0 18px 44px rgba(0, 0, 0, .32), inset 0 1px rgba(255, 255, 255, .025) !important;
   font-family: 'JetBrains Mono', monospace !important;
   font-size: 10px;
+}
+
+@media (max-width: 720px) {
+  .sanctum-toolbar {
+    min-height: 0 !important;
+    padding: 9px 12px !important;
+    gap: 7px !important;
+  }
+
+  .sanctum-toolbar-brand {
+    min-width: 0 !important;
+    flex: 1 1 100%;
+  }
+
+  .sanctum-toolbar-metrics {
+    display: none !important;
+  }
+
+  .sanctum-toolbar-controls {
+    min-width: 0 !important;
+    flex: 1 1 100% !important;
+    gap: 6px !important;
+  }
+
+  .sanctum-toolbar-run-group {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+  }
 }
 
 .sanctum-hud-panel [style*="font-size: 7"],
@@ -315,11 +343,13 @@ code, .font-mono {
    whether it came from the complete archive or the bounded preview. */
 .mo-scope {
   display: inline-flex;
+  flex-wrap: wrap;
+  min-width: 0;
   align-items: center;
   gap: var(--sp-1);
   font-size: var(--fs-meta);
   color: var(--text-muted);
-  white-space: nowrap;
+  white-space: normal;
 }
 .mo-scope__dot { opacity: 0.4; }
 .mo-scope--warn { color: var(--amber); }

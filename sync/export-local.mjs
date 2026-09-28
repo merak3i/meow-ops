@@ -16,6 +16,7 @@ import { readSessionHistory, updateSessionHistory } from './session-history.mjs'
 import { buildSessionRollups } from './session-rollups.mjs';
 import { archiveMessageEvidence, archiveSessionEvidence } from './project-evidence.mjs';
 import { readProjectCatalog } from './project-control.mjs';
+import { syncGuideEvidence } from './guide-evidence-sync.mjs';
 import { loadEnv } from './load-env.mjs';
 
 loadEnv(join(import.meta.dirname, '..'));
@@ -273,6 +274,8 @@ console.log(`Total unique session entries: ${allUnique.length}${dupCount > 0 ? `
 // agent sources enter the private vault.
 try {
   const catalog = readProjectCatalog();
+  const guideEvidence = await syncGuideEvidence(allUnique, { catalog, sourceRoot: CODEX_DIR });
+  console.log(`Guide evidence: ${guideEvidence.appended} new message(s), ${guideEvidence.duplicates} duplicate(s), ${guideEvidence.imported_sessions}/${guideEvidence.considered} registered session(s) imported, ${guideEvidence.skipped} skipped (${guideEvidence.unregistered_sessions} unregistered, ${guideEvidence.invalid_bindings} invalid binding, ${guideEvidence.no_qualifying_messages} without qualifying messages), ${guideEvidence.failed} unreadable session(s); ${guideEvidence.coverage}`);
   const evidence = archiveSessionEvidence(allUnique, { catalog });
   console.log(`Project evidence: ${evidence.appended} new event(s), ${evidence.duplicates} duplicate(s), ${evidence.skipped} unregistered/unsupported session(s)`);
   if (HERMES_STATE_DB && existsSync(HERMES_STATE_DB)) {

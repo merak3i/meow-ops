@@ -14,11 +14,12 @@
 //                                black-screening the page.
 //
 // All four were defined inline in ScryingSanctum.tsx; pulling them here lets
-// the env / champion / Sun / Eternal sub-modules import what they need
+// the environment / champion / Sun / Archive Warden modules import what they need
 // without dragging the 5500-line page file in.
 
 import { Component, createContext, useContext, useEffect, useRef, type ReactNode } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
+import { summarizeFrameDeltas } from './perf-metrics.mjs';
 import type { PerfLevel, PerfStats } from './types';
 
 // ─── Perf context ────────────────────────────────────────────────────────────
@@ -48,16 +49,23 @@ export class SceneErrorBoundary extends Component<
 
 export function PerfReader({ statsRef }: { statsRef: React.MutableRefObject<PerfStats> }) {
   const { gl } = useThree();
-  const fpsBuffer = useRef<number[]>([]);
+  const frameDeltas = useRef<number[]>(Array(120).fill(0));
+  const nextFrameDelta = useRef(0);
+  const sampleCount = useRef(0);
+  const framesSinceSummary = useRef(0);
 
   useFrame((_, delta) => {
-    if (delta <= 0) return;
-    fpsBuffer.current.push(1 / delta);
-    if (fpsBuffer.current.length > 30) fpsBuffer.current.shift();
-    const avg = fpsBuffer.current.reduce((a, b) => a + b, 0) / fpsBuffer.current.length;
+    if (!Number.isFinite(delta) || delta <= 0) return;
+    frameDeltas.current[nextFrameDelta.current] = delta;
+    nextFrameDelta.current = (nextFrameDelta.current + 1) % frameDeltas.current.length;
+    sampleCount.current = Math.min(sampleCount.current + 1, frameDeltas.current.length);
+    framesSinceSummary.current += 1;
+    if (framesSinceSummary.current < 30) return;
+    framesSinceSummary.current = 0;
+    const { fps, p95Ms } = summarizeFrameDeltas(frameDeltas.current.slice(0, sampleCount.current));
     statsRef.current = {
-      fps:        Math.round(avg),
-      ms:         Math.round(delta * 1000 * 10) / 10,
+      fps,
+      p95Ms,
       calls:      gl.info.render.calls,
       triangles:  gl.info.render.triangles,
       geometries: gl.info.memory.geometries,

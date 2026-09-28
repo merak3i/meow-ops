@@ -112,6 +112,7 @@ export default function Sidebar({
                 type="button"
                 onClick={() => onNavigate(id)}
                 title={`${description}  (g ${shortcut})`}
+                aria-label={label}
                 aria-current={active ? 'page' : undefined}
                 className="sidebar-nav-button"
                 style={{

@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtempSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,10 +54,10 @@ async function makeWorkbook(rows, { dropColumn, dependencies } = {}) {
   return path;
 }
 
-async function runImporter(specPath) {
+async function runImporter(specPath, truthPath = '/nonexistent.csv') {
   const out = mkdtempSync(join(tmpdir(), 'loopops-out-'));
   try {
-    const { stdout } = await exec('node', [IMPORTER, '--spec', specPath, '--truth', '/nonexistent.csv', '--out', out]);
+    const { stdout } = await exec('node', [IMPORTER, '--spec', specPath, '--truth', truthPath, '--out', out]);
     return { code: 0, stdout, stderr: '', out };
   } catch (err) {
     return { code: err.code, stdout: err.stdout ?? '', stderr: err.stderr ?? '', out };
@@ -74,12 +74,25 @@ test('valid workbook imports with coordinator, four directors, workers, and no t
   assert.equal(spec.edges.length, 2);
   assert.ok(spec.edges.every((edge) => edge.id.startsWith('dep.')));
   assert.equal(spec.meta.productionWritesEnabled, false);
+  assert.equal(spec.meta.masterSpec, 'user-supplied workbook');
   assert.equal(spec.meta.truthSync, null);
   const assistant = spec.entities.find((e) => e.kind === 'assistant');
   assert.equal(assistant.status, 'covered');
   assert.match(assistant.detail.notVerified.join(' '), /No truth snapshot/);
   const gates = JSON.parse(readFileSync(join(res.out, 'gates.json'), 'utf8'));
   assert.equal(gates.filter((g) => g.gateType === 'eval').length, 12);
+});
+
+test('truth workbook paths are not copied into generated metadata', async () => {
+  const specPath = await makeWorkbook(defaultRows());
+  const truthPath = join(dirname(specPath), 'private-client-truth.csv');
+  writeFileSync(truthPath, 'surface_key,status\nworker.1,passed\n');
+  const res = await runImporter(specPath, truthPath);
+  assert.equal(res.code, 0, res.stderr);
+  const spec = JSON.parse(readFileSync(join(res.out, 'spec.json'), 'utf8'));
+  assert.doesNotMatch(JSON.stringify(spec), /private-client-truth/);
+  assert.equal(spec.meta.truthSync, 'provided');
+  assert.ok(spec.entities.some((entity) => entity.detail.notVerified?.some((item) => /provided truth snapshot/.test(item))));
 });
 
 test('empty registry fails loudly naming the count rule', async () => {
@@ -94,7 +107,7 @@ test('unknown group fails loudly naming the groups rule', async () => {
   const res = await runImporter(await makeWorkbook(rows));
   assert.equal(res.code, 1);
   assert.match(res.stderr, /groups must be drawn from/);
-  assert.match(res.stderr, /private-client-lane/);
+  assert.doesNotMatch(res.stderr, /private-client-lane/);
 });
 
 test('duplicate surface_key fails loudly naming both rows', async () => {
@@ -103,6 +116,7 @@ test('duplicate surface_key fails loudly naming both rows', async () => {
   const res = await runImporter(await makeWorkbook(rows));
   assert.equal(res.code, 1);
   assert.match(res.stderr, /duplicate surface_key/);
+  assert.doesNotMatch(res.stderr, /worker\.1/);
 });
 
 test('dependency edges must reference known surfaces', async () => {
@@ -112,6 +126,7 @@ test('dependency edges must reference known surfaces', async () => {
   }));
   assert.equal(res.code, 1);
   assert.match(res.stderr, /must reference known surface_key/);
+  assert.doesNotMatch(res.stderr, /missing\.surface|worker\.1/);
 });
 
 test('missing required column fails loudly naming the column', async () => {
@@ -126,6 +141,7 @@ test('secret pattern in workbook content aborts before writing', async () => {
   const res = await runImporter(await makeWorkbook(rows));
   assert.equal(res.code, 1);
   assert.match(res.stderr, /secret-pattern hit/);
+  assert.doesNotMatch(res.stderr, /sk-a1b2c3d4/);
 });
 
 test('failed validation writes nothing - no partial output', async () => {
@@ -139,6 +155,7 @@ test('failed validation writes nothing - no partial output', async () => {
 test('metadata contains no private project clone awareness', async () => {
   const res = await runImporter(await makeWorkbook(defaultRows()));
   assert.equal(res.code, 0, res.stderr);
+  assert.doesNotMatch(res.stdout, /loopops-out-|spec\.xlsx/);
   const spec = JSON.parse(readFileSync(join(res.out, 'spec.json'), 'utf8'));
   assert.equal('privateProject' in spec.meta, false);
   assert.deepEqual(Object.keys(spec.meta.links), ['meowOps']);

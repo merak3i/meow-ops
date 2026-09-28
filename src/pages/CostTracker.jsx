@@ -3,6 +3,7 @@ import { AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveCont
 import { DollarSign, TrendingUp, CalendarRange } from 'lucide-react';
 import ModelBadge from '../components/ModelBadge';
 import SpendChart from '../components/SpendChart';
+import CursorRequestUsage from '../components/CursorRequestUsage';
 import { Card, Eyebrow, HelpTip, Scope, StatTile } from '../components/ui';
 import { formatCost, formatTokens } from '../lib/format';
 import { sourceMeta } from '../lib/sources';
@@ -60,10 +61,18 @@ function PeriodCard({ label, current, previous, sessions, tokens, highlight }) {
 // a local session. Shown separately so it is never folded into project totals.
 function UnattributedUsage({ cursor, hermes }) {
   const cursorModels = Array.isArray(cursor?.unmatched?.by_model) ? cursor.unmatched.by_model : [];
+  const cursorKinds = Array.isArray(cursor?.by_kind) ? cursor.by_kind : [];
+  const cursorTotals = cursor?.totals;
   const hermesModels = Array.isArray(hermes?.by_model) ? hermes.by_model : [];
-  const hasCursor = cursor?.enabled === true && cursorModels.length > 0;
+  const hasCursorReport = cursor?.enabled === true && Number(cursorTotals?.events) > 0;
+  const hasCursor = cursor?.enabled === true && (cursorModels.length > 0 || hasCursorReport);
   const hasHermes = hermes && hermes.status === 'ok' && hermesModels.length > 0;
   if (!hasCursor && !hasHermes) return null;
+  const cursorPeriod = cursor?.period
+    && Number.isFinite(Number(cursor.period.startDate))
+    && Number.isFinite(Number(cursor.period.endDate))
+    ? `${new Date(Number(cursor.period.startDate)).toISOString()} to ${new Date(Number(cursor.period.endDate)).toISOString()}`
+    : null;
 
   const rows = [
     ...cursorModels.map((row) => ({
@@ -74,7 +83,7 @@ function UnattributedUsage({ cursor, hermes }) {
       cost: Number(row.estimated_cost_usd) || 0,
     })),
     ...hermesModels.map((row) => ({
-      key: `hermes:${row.model}`,
+      key: `hermes:${row.key || `${row.provider || 'unknown'}:${row.model}:${row.billing_mode || ''}`}`,
       source: 'hermes',
       model: String(row.model ?? 'unknown'),
       tokens: Number(row.total_tokens) || 0,
@@ -85,20 +94,51 @@ function UnattributedUsage({ cursor, hermes }) {
   return (
     <section className="mo-section">
       <div className="mo-section__head">
-        <Eyebrow>Reported by provider, not matched to a session</Eyebrow>
+        <Eyebrow>Provider-reported usage</Eyebrow>
         <Scope source="Cursor and Hermes account usage" />
       </div>
       <Card>
+        {hasCursorReport && (
+          <div aria-label="Cursor Admin API billing summary" style={{ marginBottom: 'var(--sp-4)' }}>
+            <p style={{ fontSize: 'var(--fs-ui)', color: 'var(--text-secondary)', marginBottom: 'var(--sp-2)', lineHeight: 1.6 }}>
+              Cursor Admin API returned {Number(cursorTotals.events).toLocaleString()} events{cursorPeriod ? ` for ${cursorPeriod}` : ''}. `chargedCents` totals {formatCost((Number(cursorTotals.charged_cents) || 0) / 100)} across {Number(cursorTotals.charged_cents_events || 0).toLocaleString()} events with that field. Token model cost is {formatCost((Number(cursorTotals.token_model_cost_cents) || 0) / 100)} across {Number(cursorTotals.token_model_cost_events || 0).toLocaleString()} events with token cost; Cursor Token Rate is {formatCost((Number(cursorTotals.cursor_token_fee_cents) || 0) / 100)} across {Number(cursorTotals.cursor_token_fee_events || 0).toLocaleString()} events with that fee; request units total {Number(cursorTotals.requests_cost_units || 0).toLocaleString()} across {Number(cursorTotals.requests_cost_events || 0).toLocaleString()} events with request units.
+            </p>
+            <p style={{ fontSize: 'var(--fs-meta)', color: 'var(--text-muted)', marginBottom: 'var(--sp-3)', lineHeight: 1.6 }}>
+              API flags: {Number(cursorTotals.chargeable_true_events || 0).toLocaleString()} chargeable, {Number(cursorTotals.chargeable_false_events || 0).toLocaleString()} marked not chargeable, {Number(cursorTotals.chargeable_unknown_events || 0).toLocaleString()} unreported. The API's `chargedCents` amount is totaled independently of `isChargeable`; raw events, emails, and identifiers are not kept in this summary.
+            </p>
+            {cursorKinds.length > 0 && (
+              <div role="region" aria-label="Cursor billing categories" tabIndex={0} style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: 480, borderCollapse: 'collapse', fontSize: 'var(--fs-ui)' }}>
+                  <thead><tr>
+                    <th scope="col" style={{ textAlign: 'left' }}>Billing category</th>
+                    <th scope="col">Events</th>
+                    <th scope="col">Request units</th>
+                    <th scope="col">chargedCents / events</th>
+                  </tr></thead>
+                  <tbody>{cursorKinds.map((row) => (
+                    <tr key={row.key} style={{ borderTop: '1px solid var(--border)' }}>
+                      <th scope="row" style={{ textAlign: 'left', fontWeight: 400, paddingBlock: 'var(--sp-2)' }}>{String(row.key ?? 'unknown')}</th>
+                      <td className="mo-num" style={{ textAlign: 'center' }}>{Number(row.events || 0).toLocaleString()}</td>
+                      <td className="mo-num" style={{ textAlign: 'center' }}>{Number(row.requests_cost_units || 0).toLocaleString()}</td>
+                      <td className="mo-num" style={{ textAlign: 'right' }}>{formatCost((Number(row.charged_cents) || 0) / 100)} / {Number(row.charged_cents_events || 0).toLocaleString()}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
         <p style={{ fontSize: 'var(--fs-ui)', color: 'var(--text-muted)', marginBottom: 'var(--sp-3)', maxWidth: '68ch', lineHeight: 1.6 }}>
-          These providers report usage at the account level without a session identifier, so it is
-          counted here and never attributed to a project or a local session.
+          Only usage that could not be matched to a local session appears in the breakdown below.
+          These provider figures stay separate from project totals.
         </p>
-        <div style={{ display: 'grid', gap: 'var(--sp-2)' }}>
+        <div role="region" aria-label="Provider usage breakdown" tabIndex={0} style={{ display: 'grid', gap: 'var(--sp-2)', overflowX: 'auto' }}>
           {rows.map((row) => (
             <div
               key={row.key}
               style={{
                 display: 'grid',
+                minWidth: 420,
                 gridTemplateColumns: 'minmax(90px, 120px) minmax(0, 1fr) 80px 72px',
                 gap: 'var(--sp-3)',
                 fontSize: 'var(--fs-ui)',
@@ -310,6 +350,7 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
           <Scope range="All time" completeness={completeness} />
         </div>
         <Card pad={false}>
+          <div role="region" aria-label="Model cost breakdown" tabIndex={0} style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-ui)' }}>
             <thead>
               <tr>
@@ -338,13 +379,15 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       </section>
 
       <UnattributedUsage cursor={costSummary?.cursorUsage} hermes={costSummary?.hermesModelUsage} />
+      <CursorRequestUsage />
 
       <p style={{ fontSize: 'var(--fs-meta)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
-        Every figure here is estimated from token counts and published prices.
+        Session cost estimates use token counts and published prices. Provider reports and Cursor request counts are labeled separately.
         <HelpTip term="cost-estimate" />
       </p>
     </>

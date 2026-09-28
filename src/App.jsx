@@ -285,7 +285,9 @@ export default function App() {
     }
   }
 
-  const showLoader = loading && !SELF_LOADING.has(path);
+  // Keep the active scene and guide mounted during background metric refreshes.
+  const showLoader = loading && !SELF_LOADING.has(path)
+    && !(path === 'sanctum' && allSessions.length > 0);
 
   const header = (
     <>
