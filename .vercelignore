@@ -43,6 +43,6 @@ sync/*
 !sync/loop-schema.mjs
 !sync/session-history.mjs
 !sync/sync-runner.mjs
-# Keep only the approved runtime guide export in the deployment package.
+# Keep only the selected runtime guide export in the deployment package.
 src/pages/sanctum/assets/guide-originalized-v*-runtime.glb
-!src/pages/sanctum/assets/guide-originalized-v92-runtime.glb
+!src/pages/sanctum/assets/guide-originalized-v110-runtime.glb

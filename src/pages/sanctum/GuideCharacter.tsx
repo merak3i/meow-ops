@@ -3,10 +3,13 @@ import type { RefObject } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { mouthWeightsAt } from './guide-mouth.mjs';
+import { measureGuideAnimationBounds } from './guide-animation-bounds.mjs';
+import { guideCameraDistance, guideProjectedBoundsFit } from './guide-camera.mjs';
 import { createGuideSetting } from './guide-setting';
+import type { GuideSetting } from './guide-setting';
 import { disposeGuideResources } from './guide-resources';
 import type { MouthCue } from './guide-mouth.mjs';
-import modelUrl from './assets/guide-originalized-v92-runtime.glb?url';
+import modelUrl from './assets/guide-originalized-v110-runtime.glb?url';
 
 export interface GuidePlayback { audio: HTMLAudioElement | null; cues: MouthCue[] | null }
 export type GuideMotion = 'idle' | 'listening' | 'explaining_gesture';
@@ -28,14 +31,14 @@ export function GuideCharacter({ playback, motion }: { playback: RefObject<Guide
   }, []);
   const [loaded, setLoaded] = useState(false);
   const [performanceSample, setPerformanceSample] = useState('');
-  const [status, setStatus] = useState('Character construction · loads 9.8 MB on request.');
+  const [status, setStatus] = useState('Character construction · loads 10.1 MB on request.');
   useEffect(() => {
     if (!loaded || !container.current) return;
     const host = container.current;
     const controller = new AbortController();
     let disposed = false;
     let model: THREE.Group | undefined;
-    let setting: THREE.Group | undefined;
+    let setting: GuideSetting | undefined;
     let renderer: THREE.WebGLRenderer | undefined;
     let observer: ResizeObserver | undefined;
     let loopActive = false;
@@ -90,9 +93,20 @@ export function GuideCharacter({ playback, motion }: { playback: RefObject<Guide
     void loadModel().then(gltf => {
       if (disposed) { disposeGuideResources(gltf.scene); return; }
       model = gltf.scene;
+      const motionNames = ['idle', 'listening', 'explaining_gesture'] as const;
+      const motionClips = motionNames.map(name => {
+        const clip = gltf.animations.find(item => item.name === name);
+        if (!clip) throw new Error('Guide animation missing');
+        return { name, clip };
+      });
+      const modelBounds = measureGuideAnimationBounds(model, motionClips.map(({ clip }) => clip));
+      const modelSize = modelBounds.getSize(new THREE.Vector3());
+      const modelCenter = modelBounds.getCenter(new THREE.Vector3());
       const scene = new THREE.Scene();
       scene.background = new THREE.Color('#172e31');
-      setting = createGuideSetting();
+      setting = createGuideSetting(modelBounds.min.y, modelSize.y);
+      setting.position.x = modelCenter.x;
+      setting.position.z = modelCenter.z;
       scene.add(model, setting, new THREE.HemisphereLight(0xe4edee, 0x66523c, 1.6));
       const light = new THREE.DirectionalLight(0xffecd1, 3);
       light.position.set(2, 3, 4); scene.add(light);
@@ -110,16 +124,11 @@ export function GuideCharacter({ playback, motion }: { playback: RefObject<Guide
       });
       const mixer = new THREE.AnimationMixer(model);
       const actions = new Map<GuideMotion, THREE.AnimationAction>();
-      for (const name of ['idle', 'listening', 'explaining_gesture'] as const) {
-        const clip = gltf.animations.find(item => item.name === name);
-        if (!clip) throw new Error('Guide animation missing');
-        actions.set(name, mixer.clipAction(clip));
-      }
+      motionClips.forEach(({ name, clip }) => actions.set(name, mixer.clipAction(clip)));
       if (!meshes.some(mesh => mesh.morphTargetDictionary?.viseme_aa !== undefined)) throw new Error('Guide face missing');
       let activeMotion: GuideMotion = 'idle';
       actions.get(activeMotion)?.play();
       const camera = new THREE.PerspectiveCamera(30, 1, .01, 100);
-      camera.position.set(0, 1.55, 1.9); camera.lookAt(0, 1.45, 0);
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.domElement.addEventListener('webglcontextlost', contextLost);
       renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -128,7 +137,37 @@ export function GuideCharacter({ playback, motion }: { playback: RefObject<Guide
       const resize = () => {
         const { width, height } = host.getBoundingClientRect();
         if (!width || !height) return;
-        renderer?.setSize(width, height); camera.aspect = width / height; camera.updateProjectionMatrix();
+        delete host.dataset.guideFrameFits;
+        renderer?.setSize(width, height);
+        camera.aspect = width / height;
+        if (setting) {
+          setting.scale.x = Math.min(1, camera.aspect);
+          setting.updateMatrixWorld(true);
+        }
+        const frameBounds = modelBounds.clone();
+        if (setting) frameBounds.union(setting.frameBounds.clone().applyMatrix4(setting.matrixWorld));
+        const frameSize = frameBounds.getSize(new THREE.Vector3());
+        const frameCenter = frameBounds.getCenter(new THREE.Vector3());
+        const padding = 1.2;
+        const distance = guideCameraDistance({
+          width: frameSize.x,
+          height: frameSize.y,
+          depth: frameSize.z,
+        }, { fovDegrees: camera.fov, aspect: camera.aspect, padding });
+        camera.position.set(frameCenter.x, frameCenter.y, frameCenter.z + distance);
+        camera.lookAt(frameCenter);
+        camera.updateProjectionMatrix();
+        camera.updateMatrixWorld(true);
+        const projectedCorners: THREE.Vector3[] = [];
+        for (const x of [frameBounds.min.x, frameBounds.max.x]) {
+          for (const y of [frameBounds.min.y, frameBounds.max.y]) {
+            for (const z of [frameBounds.min.z, frameBounds.max.z]) {
+              projectedCorners.push(new THREE.Vector3(x, y, z).project(camera));
+            }
+          }
+        }
+        host.dataset.guideFrameFits = String(guideProjectedBoundsFit(projectedCorners, padding));
+        host.dataset.guideFrameSize = `${Math.round(width)}x${Math.round(height)}`;
       };
       observer = new ResizeObserver(resize); observer.observe(host); resize();
       let lastFrameTime = 0;
