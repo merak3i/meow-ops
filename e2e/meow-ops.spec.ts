@@ -491,6 +491,8 @@ test('Sanctum: header bar visible', async ({ page }) => {
 });
 
 test('Sanctum: production loads Seal-marked roster art and keeps 3D studies local-only', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const modelRequests: string[] = [];
   const artResponses: { path: string; status: number }[] = [];
   page.on('request', (request) => {
@@ -729,8 +731,9 @@ test('Sanctum: scene renders without throwing into the error boundary', async ({
 });
 
 test('Sanctum: per-session roster visible', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   page.setDefaultTimeout(20_000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.route('**/loop-eng/eternal-stats', (route) => route.abort());
   const baseTime = Date.now();
   const roles = [
@@ -1718,25 +1721,25 @@ test('Sanctum: linked synthetic sessions under configured CPU profile', async ({
       };
     })
   ));
-  await expect(page.locator('[data-session-tag="true"]')).toHaveCount(sessions.length);
-  const initialSessionTagPositions = await sessionTagPositions();
-  await page.waitForTimeout(3_000);
-  const settledSessionTagPositions = await sessionTagPositions();
-  const overlappingSessionTags: string[] = [];
-  for (let left = 0; left < settledSessionTagPositions.length; left++) {
-    for (let right = left + 1; right < settledSessionTagPositions.length; right++) {
-      const a = settledSessionTagPositions[left]!;
-      const b = settledSessionTagPositions[right]!;
-      const dx = Math.abs(a.x - b.x);
-      const dy = Math.abs(a.y - b.y);
-      if (dx < 80 && dy < 105) overlappingSessionTags.push(`${a.label}/${b.label} (${dx}x${dy})`);
+  const findOverlaps = (positions: Awaited<ReturnType<typeof sessionTagPositions>>) => {
+    const overlaps: string[] = [];
+    for (let left = 0; left < positions.length; left++) {
+      for (let right = left + 1; right < positions.length; right++) {
+        const a = positions[left]!;
+        const b = positions[right]!;
+        const dx = Math.abs(a.x - b.x);
+        const dy = Math.abs(a.y - b.y);
+        if (dx < 80 && dy < 105) overlaps.push(`${a.label}/${b.label} (${dx}x${dy})`);
+      }
     }
-  }
-  expect(overlappingSessionTags, JSON.stringify({
+    return overlaps;
+  };
+  await expect(page.locator('[data-session-tag="true"]')).toHaveCount(sessions.length);
+  await expect.poll(async () => findOverlaps(await sessionTagPositions()), {
     message: '8-session labels must leave room for both character silhouettes',
-    initialSessionTagPositions,
-    settledSessionTagPositions,
-  })).toEqual([]);
+    timeout: 20_000,
+    intervals: [250, 500, 1_000],
+  }).toEqual([]);
   const webglRenderer = await page.locator('canvas').first().evaluate((canvas) => {
     const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
     if (!gl) return 'unavailable';

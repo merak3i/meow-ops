@@ -62,6 +62,10 @@ test('Sanctum local 3D study preview loads each selected session model', async (
     '/design/sanctum/blender/shieldheart-rig-v3.glb',
     '/design/sanctum/blender/gridwhisk-rig-v11.glb',
   ];
+  test.skip(
+    !expectedModelPaths.every(modelPath => existsSync(join(ROOT, 'public', modelPath.slice(1)))),
+    'requires local-only 3D study assets excluded from public checkouts and deployments',
+  );
   const expectedModelPathSet = new Set(expectedModelPaths);
   const sessions = roles.map(({ id, catType }, index) => ({
     session_id: `sanctum-3d-${id}`,
@@ -165,14 +169,14 @@ test('Sanctum local 3D study preview loads each selected session model', async (
 test('Loop Ops settles past the loading state under dev React (StrictMode liveness)', async ({ page }) => {
   await page.goto('/#/loop-ops');
   // The page must reach EITHER the loaded source strip or the instructional
-  // empty state. Staying on "Loading Loop Ops…" means a mount-effect liveness
+  // empty state. Staying on "Loading the map…" means a mount-effect liveness
   // regression — exactly what a cleanup-only alive ref caused under
   // StrictMode's mount→cleanup→mount cycle.
   const settled = page
     .locator('[data-testid="loop-source-strip"]')
-    .or(page.getByText('Import workflow spec'));
+    .or(page.getByText('No loop map imported yet', { exact: true }));
   await expect(settled.first()).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText('Loading the Loom…')).toHaveCount(0);
+  await expect(page.getByText('Loading the map…')).toHaveCount(0);
 });
 
 test('refresh advances the imported-mtime chip with the service worker active', async ({ page }) => {
@@ -202,6 +206,7 @@ test('refresh advances the imported-mtime chip with the service worker active', 
 
 test('Sanctum renders the originalized v2 roster with session-bound selections', async ({ page }, testInfo) => {
   test.setTimeout(60_000);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const now = Date.now();
   const roles = [
     { id: 'detective', catType: 'detective', label: 'Gloamwhisker', asset: 'gloamwhisker-realistic-cutout-v2.webp' },

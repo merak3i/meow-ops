@@ -28,6 +28,12 @@ async function fetchJson(url: string, init?: RequestInit): Promise<unknown> {
   // calls, and the dev middleware sends no Cache-Control headers.
   const res = await fetch(url, { cache: 'no-store', ...init });
   if (!res.ok) throw new Error(`${url} HTTP ${res.status}`);
+  const contentType = res.headers.get('content-type')?.toLowerCase() ?? '';
+  if (!contentType.includes('json')) {
+    // Vite's SPA fallback serves index.html with HTTP 200 for missing local
+    // JSON fixtures. Treat that response as a missing file, not corrupt data.
+    throw new Error(DEV ? `${url} HTTP 404` : `${url} returned a non-JSON response`);
+  }
   return res.json();
 }
 
