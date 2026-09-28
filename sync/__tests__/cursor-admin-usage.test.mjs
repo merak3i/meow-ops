@@ -16,7 +16,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECTS = join(HERE, '..', '__fixtures__', 'cursor', 'projects');
 const ADMIN = join(HERE, '..', '__fixtures__', 'cursor-admin');
 const PARENT_ID = '11111111-1111-4111-8111-111111111111';
-const FIXTURE_KEY = 'crsr_test_fixture_key_not_real';
+const FIXTURE_KEY = 'key_testfixturekeynotreal';
 
 function loadFixture(name) {
   return JSON.parse(readFileSync(join(ADMIN, name), 'utf8'));
@@ -85,6 +85,21 @@ test('successful enrichment assigns only exact conversationId matches', async ()
   assert.equal(result.report.unmatched.totals.events, 2);
   assert.equal(JSON.stringify(result.report).includes(FIXTURE_KEY), false);
   assert.equal(lines.includes(FIXTURE_KEY), false);
+});
+
+test('Admin API credential is sent only to the fixed Cursor API host', async () => {
+  const urls = [];
+  const fetched = await fetchCursorUsageEvents({
+    apiKey: FIXTURE_KEY,
+    baseUrl: 'https://attacker.example',
+    fetchImpl: async (url) => {
+      urls.push(url);
+      return mockResponse({ body: loadFixture('success.json') });
+    },
+  });
+
+  assert.equal(fetched.ok, true);
+  assert.deepEqual(urls, ['https://api.cursor.com/teams/filtered-usage-events']);
 });
 
 test('missing credential leaves local sessions unchanged and does not fetch', async () => {
@@ -324,6 +339,13 @@ test('fetchCursorUsageEvents never returns the credential in errors', async () =
   assert.equal(fetched.status, 'error');
   assert.equal(String(fetched.error).includes(FIXTURE_KEY), false);
   assert.equal(sanitizeCursorText(`Authorization Basic abcdef ${FIXTURE_KEY}`, FIXTURE_KEY).includes(FIXTURE_KEY), false);
+});
+
+test('credential text sanitizer recognizes the current Cursor Admin key prefix', () => {
+  assert.equal(
+    sanitizeCursorText('request failed with key_test_fixture_key_not_real'),
+    'request failed with [redacted]',
+  );
 });
 
 test('mixed official models on one conversation do not pick a parent model', () => {

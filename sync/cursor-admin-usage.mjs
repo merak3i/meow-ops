@@ -1,6 +1,6 @@
 // cursor-admin-usage.mjs — optional official Cursor Admin API usage enricher.
 //
-// Official source (Cursor docs, checked 2026-09-27):
+// Official source (Cursor docs, checked 2026-09-29):
 //   POST https://api.cursor.com/teams/filtered-usage-events
 //   https://prod.cursor.com/docs/account/teams/admin-api
 //   Availability: team administrators with an Admin API key.
@@ -33,7 +33,7 @@ const DEFAULT_BASE_URL = 'https://api.cursor.com';
 export const CURSOR_ADMIN_USAGE_PATH = '/teams/filtered-usage-events';
 export const CURSOR_ADMIN_USAGE_AVAILABILITY = 'team-admin-api';
 
-const KEY_SHAPE = /\bcrsr_[A-Za-z0-9]+|Basic\s+[A-Za-z0-9+/=]+/gi;
+const KEY_SHAPE = /\b(?:crsr|key)_[A-Za-z0-9_-]+|Basic\s+[A-Za-z0-9+/=]+/gi;
 
 export const CURSOR_USAGE_LIMITATION = [
   'POST /teams/filtered-usage-events is the official usage-events API and requires a team Admin API key.',
@@ -238,7 +238,9 @@ export async function fetchCursorUsageEvents(options = {}) {
     return { ok: false, status: 'error', events: [], error: 'fetch is not available' };
   }
 
-  const baseUrl = String(options.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
+  // Keep the credential pinned to Cursor's documented API host. Tests can
+  // replace fetchImpl without routing the Authorization header elsewhere.
+  const baseUrl = DEFAULT_BASE_URL;
   // Cursor's Admin API accepts up to 1,000 usage events per page. Use the
   // maximum by default so a normal 30-day team window fits within the page cap.
   const pageSize = Math.min(1000, Math.max(1, Number(options.pageSize) || 1000));
