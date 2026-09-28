@@ -40,6 +40,7 @@ public/data/*
 # Blender working files and the local Sanctum source archive stay out of public Git.
 *.blend[0-9]*
 /design/sanctum/
+src/pages/sanctum/assets/guide-originalized-v109-runtime.glb
 
 # Deploy
 .vercel
@@ -51,3 +52,7 @@ playwright-report/
 # Claude Code session metadata
 .claude/
 .claude-history/
+.env
+.env.*
+!.env.example
+!.env.*.example
