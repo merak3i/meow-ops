@@ -12,10 +12,15 @@ function screenDepthPosition(distance) {
 
 test('screen-clear same-row and separate-row positions do not get nudged', () => {
   const horizontal = screenRightPosition(5.25);
-  const depth = screenDepthPosition(5.8);
+  const depth = screenDepthPosition(7.5);
 
   assert.deepEqual(agentSeparationNudge(...horizontal, 0, 0, 'a', 'b', 1 / 60), [0, 0]);
   assert.deepEqual(agentSeparationNudge(...depth, 0, 0, 'a', 'b', 1 / 60), [0, 0]);
+});
+
+test('screen-near hierarchy rows get a separating nudge', () => {
+  const depth = screenDepthPosition(5.8);
+  assert.notDeepEqual(agentSeparationNudge(...depth, 0, 0, 'a', 'b', 1 / 60), [0, 0]);
 });
 
 test('screen-near same-row positions get a separating nudge', () => {
