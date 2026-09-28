@@ -192,6 +192,22 @@ Record Scout ─────────────── Run Keeper ───�
 
 The standard scene uses seven originalized, role-matched still cutouts with the exact authored Archive Seal composited on each; they follow session movement but have no limb animation. Vite bundles their WebP runtime assets from `src/pages/sanctum/assets/roster`. Original cutouts, prompts, rejected studies, and review renders stay in the local-only design archive. The guide depicts a fictional archive worker with no deity-specific or religious cues. Its Archive Seal also recurs on the Warden, index dial, and roster; the guide adds an asymmetric shoulder yoke, page-corner tabs, and a copper-index folio as visual comparison features. The guide runtime is `guide-originalized-v110-runtime.glb` (SHA-256 `068320d713f5694b097adee6f48547b41600957156c583e2386dac042dbfb01f`); the design archive's prompts, source files, revision history, and hashes help identify and compare versions if copied, but do not prevent copying, prove plagiarism, or establish rights. The model remains stylized art pending independent similarity and rights review. The 3D roster models remain local construction studies, not finished character art, and load only in the local development preview at `?roster=3d`. Linked guide evidence is read through the local helper, and enabled Voicebox speech stores spoken text and generated audio in local history.
 
+#### Optional local guide speech
+
+Voicebox speech stays on this Mac. Start Voicebox and download the Kokoro model. Confirm the local API is healthy:
+
+```bash
+curl -fsS http://127.0.0.1:17493/health | jq -e '.status == "healthy"'
+```
+
+Use a preset profile with engine `kokoro` and voice ID `bm_george`; the guide does not use cloned voice samples. To find its profile ID, query the local Voicebox API:
+
+```bash
+curl -fsS http://127.0.0.1:17493/profiles | jq -r '.[] | select(.voice_type == "preset" and .preset_engine == "kokoro" and .preset_voice_id == "bm_george") | .id'
+```
+
+Add `MEOW_GUIDE_VOICEBOX_PROFILE=<PROFILE_ID>` to the repository's gitignored `.env`, then start the local helper with `node sync/local-api.mjs`. The helper accepts only the loopback Voicebox URL. It will not download models; Voicebox keeps generated text and audio in its local history. See the [Voicebox profile API](https://docs.voicebox.sh/api-reference/profiles/list_profiles_profiles_get).
+
 See `db/migrations/0003_scrying_sanctum.sql` for the full schema and RLS policies.
 
 ### Review Map
