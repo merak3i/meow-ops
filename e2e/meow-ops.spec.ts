@@ -4,7 +4,8 @@
  * Runs against the Vite preview build (dist/).
  * Covers the five surfaces (Today, Review, Ledger, Sanctum, Learn) plus key interactions.
  */
-import { expect, test } from '@playwright/test';
+import { expect, test, type CDPSession } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadEnv } from 'vite';
@@ -18,6 +19,112 @@ const LOCAL_HELPER_ORIGIN = new URL(
   loadEnv('production', PROJECT_ROOT, 'VITE_').VITE_LOCAL_SYNC_URL || 'http://127.0.0.1:7337',
 ).origin;
 const LOCAL_HELPER_ROUTE = `${LOCAL_HELPER_ORIGIN}/**`;
+
+type ChromiumTraceEvent = {
+  name?: string;
+  cat?: string;
+  ph?: string;
+  ts?: number;
+  dur?: number;
+  pid?: number;
+  tid?: number;
+  args?: Record<string, unknown>;
+};
+
+type PresentationIntervalMetric = {
+  thread: string;
+  stage: string;
+  completedFrames: number;
+  durationP95Ms: number | null;
+  presentationIntervalP95Ms: number | null;
+  uniquePresentations: number;
+  uniquePresentationIntervalP95Ms: number | null;
+  uniqueIntervalsOver25ms: number;
+};
+
+const COMPOSITOR_TRACE_CATEGORIES = [
+  'toplevel', 'devtools.timeline', 'disabled-by-default-devtools.timeline',
+  'disabled-by-default-devtools.timeline.frame', 'benchmark', 'cc', 'gpu', 'graphics.pipeline', 'viz',
+].join(',');
+
+async function captureChromiumTrace<T>(cdp: CDPSession, sample: () => Promise<T>) {
+  const events: ChromiumTraceEvent[] = [];
+  const onDataCollected = (payload: { value: ChromiumTraceEvent[] }) => events.push(...payload.value);
+  const tracingComplete = new Promise<void>((resolve) => {
+    cdp.once('Tracing.tracingComplete', () => resolve());
+  });
+  cdp.on('Tracing.dataCollected', onDataCollected);
+  try {
+    await cdp.send('Tracing.start', { categories: COMPOSITOR_TRACE_CATEGORIES, transferMode: 'ReportEvents' });
+    const result = await sample();
+    await cdp.send('Tracing.end');
+    await tracingComplete;
+    return { result, events };
+  } finally {
+    cdp.off('Tracing.dataCollected', onDataCollected);
+  }
+}
+
+function summarizePresentationIntervals(events: ChromiumTraceEvent[]): PresentationIntervalMetric[] {
+  const threadNames = new Map<string, string>();
+  for (const event of events) {
+    if (event.ph !== 'M' || event.name !== 'thread_name' || typeof event.args?.name !== 'string') continue;
+    threadNames.set(`${event.pid ?? 0}:${event.tid ?? 0}`, event.args.name);
+  }
+  const stageNames = new Set([
+    'SubmitCompositorFrameToPresentationCompositorFrame',
+    'SubmitUpdateDisplayTreeToPresentationCompositorFrame',
+  ]);
+  const openStages = new Map<string, number[]>();
+  const completedStages = new Map<string, { thread: string; stage: string; ends: number[]; durations: number[] }>();
+  for (const event of events.filter((candidate) => (
+    stageNames.has(candidate.name ?? '')
+    && Number.isFinite(candidate.ts)
+    && ['B', 'E', 'b', 'e'].includes(candidate.ph ?? '')
+  )).sort((left, right) => (left.ts ?? 0) - (right.ts ?? 0))) {
+    const threadKey = `${event.pid ?? 0}:${event.tid ?? 0}`;
+    const key = `${threadKey}:${event.name ?? 'unknown'}`;
+    const stack = openStages.get(key) ?? [];
+    if (event.ph === 'B' || event.ph === 'b') {
+      stack.push(event.ts ?? 0);
+      openStages.set(key, stack);
+      continue;
+    }
+    const start = stack.pop();
+    if (start == null) continue;
+    const metric = completedStages.get(key) ?? {
+      thread: threadNames.get(threadKey) ?? 'unknown thread',
+      stage: event.name ?? 'unknown',
+      ends: [],
+      durations: [],
+    };
+    metric.ends.push(event.ts ?? 0);
+    metric.durations.push(((event.ts ?? 0) - start) / 1000);
+    completedStages.set(key, metric);
+  }
+  const percentile95 = (values: number[]) => {
+    const sorted = values.filter((value) => Number.isFinite(value) && value > 0).sort((left, right) => left - right);
+    const value = sorted[Math.min(Math.ceil(sorted.length * 0.95) - 1, sorted.length - 1)];
+    return value == null ? null : Number(value.toFixed(2));
+  };
+  return [...completedStages.values()].map((metric) => {
+    const timestamps = [...metric.ends].sort((left, right) => left - right);
+    // Multiple pipeline reporters can complete at one presentation timestamp.
+    const uniqueTimestamps = [...new Set(timestamps)];
+    const intervals = timestamps.slice(1).map((timestamp, index) => (timestamp - (timestamps[index] ?? timestamp)) / 1000);
+    const uniqueIntervals = uniqueTimestamps.slice(1).map((timestamp, index) => (timestamp - (uniqueTimestamps[index] ?? timestamp)) / 1000);
+    return {
+      thread: metric.thread,
+      stage: metric.stage,
+      completedFrames: metric.ends.length,
+      durationP95Ms: percentile95(metric.durations),
+      presentationIntervalP95Ms: percentile95(intervals),
+      uniquePresentations: uniqueTimestamps.length,
+      uniquePresentationIntervalP95Ms: percentile95(uniqueIntervals),
+      uniqueIntervalsOver25ms: uniqueIntervals.filter((interval) => interval > 25).length,
+    };
+  }).filter((metric) => metric.completedFrames > 0);
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1059,11 +1166,10 @@ test('Sanctum: selected-session speech stops when the guide closes and session c
 
   await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).not.toBeVisible();
-  const audioStopped = await page.evaluate(() => {
+  await expect.poll(() => page.evaluate(() => {
     const testWindow = window as Window & { __guideTestPlayers?: Array<{ paused: boolean }> };
     return testWindow.__guideTestPlayers?.every((player) => player.paused) ?? false;
-  });
-  expect(audioStopped).toBe(true);
+  })).toBe(true);
   await roster.filter({ hasText: 'guide-b' }).click();
   await page.getByRole('button', { name: 'Ask the guide' }).click();
   const nextDialog = page.getByRole('dialog', { name: /Sanctum archive guide/ });
@@ -1080,10 +1186,47 @@ test('Sanctum: guide runtime model loads with its mouth and animation controls',
   await expect(askGuide).toBeVisible({ timeout: 30_000 });
   await askGuide.click();
   await expect(page.getByRole('heading', { name: 'Sanctum archive guide' })).toBeVisible();
+  const guideModelResponse = page.waitForResponse((response) => {
+    const path = new URL(response.url()).pathname;
+    return response.ok() && /\/guide-originalized-v110-runtime-[\w-]+\.glb$/.test(path);
+  });
   await page.getByRole('button', { name: 'Load guide character' }).click();
+  const modelBytes = await (await guideModelResponse).body();
+  expect(createHash('sha256').update(modelBytes).digest('hex'))
+    .toBe('068320d713f5694b097adee6f48547b41600957156c583e2386dac042dbfb01f');
+  const jsonChunkLength = modelBytes.readUInt32LE(12);
+  expect(modelBytes.readUInt32LE(16)).toBe(0x4e4f534a);
+  const modelJson = JSON.parse(modelBytes.toString('utf8', 20, 20 + jsonChunkLength)) as {
+    meshes?: Array<{ name?: string }>;
+    nodes?: Array<{ name?: string }>;
+  };
+  expect(modelJson.nodes?.some((node) => node.name === 'Guide.Archive Seal v33')).toBe(true);
+  expect(modelJson.meshes?.some((mesh) => mesh.name === 'Archive Seal exact geometry v33')).toBe(true);
   await expect(page.getByText('Character study loaded. Local Voicebox speech drives the mouth when alignment is available.'))
     .toBeVisible({ timeout: 45_000 });
-  await expect(page.locator('.guide-character canvas')).toHaveCount(1);
+  const guideView = page.locator('.guide-character');
+  await expect(guideView).toHaveAttribute('data-guide-frame-fits', 'true');
+  await expect(guideView.locator('canvas')).toHaveCount(1);
+  const desktopFrameSize = await guideView.getAttribute('data-guide-frame-size');
+  expect(desktopFrameSize).toBeTruthy();
+  await page.screenshot({ path: 'test-results/sanctum-guide-runtime-v110.png' });
+  await page.setViewportSize({ width: 320, height: 844 });
+  await expect.poll(() => guideView.getAttribute('data-guide-frame-size')).not.toBe(desktopFrameSize);
+  const mobileFrameSize = await guideView.evaluate(element => {
+    const { width, height } = element.getBoundingClientRect();
+    return `${Math.round(width)}x${Math.round(height)}`;
+  });
+  await expect(guideView).toHaveAttribute('data-guide-frame-size', mobileFrameSize);
+  await expect(guideView).toHaveAttribute('data-guide-frame-fits', 'true');
+  const guideBounds = await guideView.evaluate(element => {
+    const { left, right, width, height } = element.getBoundingClientRect();
+    return { left, right, width, height, viewportWidth: window.innerWidth };
+  });
+  expect(guideBounds.left).toBeGreaterThanOrEqual(0);
+  expect(guideBounds.right).toBeLessThanOrEqual(guideBounds.viewportWidth);
+  expect(guideBounds.width).toBeGreaterThan(0);
+  expect(guideBounds.height).toBeGreaterThan(0);
+  await page.screenshot({ path: 'test-results/sanctum-guide-runtime-v110-mobile.png' });
 });
 
 // ── 10b. Loop Ops ─────────────────────────────────────────────────────────────
@@ -1673,34 +1816,38 @@ test('Sanctum: linked synthetic sessions under configured CPU profile', async ({
   if (profileCpu && traceFrames) {
     throw new Error('Run CPU profiling and frame tracing in separate passes.');
   }
-  if ((profileCpu || traceFrames) && process.env.SANCTUM_PERF_ENFORCE === '1') {
-    throw new Error('Diagnostic instrumentation changes timing; leave SANCTUM_PERF_ENFORCE unset.');
+  if (profileCpu && process.env.SANCTUM_PERF_ENFORCE === '1') {
+    throw new Error('CPU profiling changes timing; leave SANCTUM_PERF_ENFORCE unset.');
+  }
+  if (process.env.SANCTUM_PERF_ENFORCE === '1') {
+    expect(traceFrames, 'The strict presentation gate requires SANCTUM_PERF_TRACE=1').toBe(true);
   }
   if (profileCpu) {
     await cdp.send('Profiler.enable');
     await cdp.send('Profiler.setSamplingInterval', { interval: 1000 });
   }
   await page.goto('about:blank');
-  const idleBrowserBaseline = await page.evaluate(() => new Promise((resolve) => {
+  const idleBrowserBaseline = await page.evaluate((durationMs: number) => new Promise((resolve) => {
     const deltas: number[] = [];
     let previous = performance.now();
     const started = previous;
     const frame = (now: number) => {
       deltas.push(now - previous);
       previous = now;
-      if (now - started >= 2_000) {
+      if (now - started >= durationMs) {
         const sorted = [...deltas].sort((left, right) => left - right);
+        const percentile = (p: number) => sorted[Math.min(Math.ceil(sorted.length * p) - 1, sorted.length - 1)] ?? 0;
         resolve({
-          frames: deltas.length,
-          fps: Math.round(deltas.length * 1000 / (now - started)),
-          p95Ms: Number((sorted[Math.floor(sorted.length * 0.95)] ?? 0).toFixed(2)),
+          callbackCount: deltas.length,
+          rafHz: Math.round(deltas.length * 1000 / (now - started)),
+          rafIntervalP95Ms: Number(percentile(0.95).toFixed(2)),
         });
         return;
       }
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
-  }));
+  }), sampleDurationMs);
   await page.goto('/');
   await waitForApp(page);
   const navigation = await page.evaluate(() => {
@@ -1746,6 +1893,11 @@ test('Sanctum: linked synthetic sessions under configured CPU profile', async ({
     const debug = gl.getExtension('WEBGL_debug_renderer_info');
     return debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : 'masked';
   });
+  if (process.env.SANCTUM_PERF_ENFORCE === '1') {
+    expect(process.env.SANCTUM_PERF_HEADFUL, 'The strict callback gate must run in a headed browser on the target desktop GPU').toBe('1');
+    expect(webglRenderer, 'The strict callback gate needs a readable WebGL renderer').not.toMatch(/^(masked|unavailable)$/i);
+    expect(webglRenderer, 'The strict callback gate cannot use a software WebGL renderer').not.toMatch(/swiftshader|llvmpipe|software rasterizer/i);
+  }
   const hud = page.locator('.sanctum-hud-panel').filter({ hasText: 'PERF HUD' });
 
   const sample = async () => page.evaluate((durationMs: number) => new Promise((resolve) => {
@@ -1757,11 +1909,13 @@ test('Sanctum: linked synthetic sessions under configured CPU profile', async ({
       previous = now;
       if (now - started >= durationMs) {
         const sorted = [...deltas].sort((left, right) => left - right);
+        const percentile = (p: number) => sorted[Math.min(Math.ceil(sorted.length * p) - 1, sorted.length - 1)] ?? 0;
         resolve({
-          frames: deltas.length,
-          fps: Math.round(deltas.length * 1000 / (now - started)),
-          p50Ms: Number((sorted[Math.floor(sorted.length * 0.50)] ?? 0).toFixed(2)),
-          p95Ms: Number((sorted[Math.floor(sorted.length * 0.95)] ?? 0).toFixed(2)),
+          callbackCount: deltas.length,
+          rafHz: Math.round(deltas.length * 1000 / (now - started)),
+          rafIntervalP50Ms: Number(percentile(0.5).toFixed(2)),
+          rafIntervalP95Ms: Number(percentile(0.95).toFixed(2)),
+          callbacksOver25ms: deltas.filter(delta => delta > 25).length,
         });
         return;
       }
@@ -1788,15 +1942,6 @@ test('Sanctum: linked synthetic sessions under configured CPU profile', async ({
       .sort((left, right) => right.samples - left.samples)
       .slice(0, 12);
   };
-  type ChromiumTraceEvent = {
-    name?: string;
-    cat?: string;
-    ph?: string;
-    dur?: number;
-    pid?: number;
-    tid?: number;
-    args?: Record<string, unknown>;
-  };
   const summarizeFrameTrace = (events: ChromiumTraceEvent[]) => {
     const threadNames = new Map<string, string>();
     for (const event of events) {
@@ -1815,7 +1960,7 @@ test('Sanctum: linked synthetic sessions under configured CPU profile', async ({
       metric.maxMs = Math.max(metric.maxMs, durationMs);
       metrics.set(key, metric);
     }
-    return [...metrics.values()]
+    const taskDurations = [...metrics.values()]
       .sort((left, right) => right.totalMs - left.totalMs)
       .slice(0, 20)
       .map((metric) => ({
@@ -1823,27 +1968,36 @@ test('Sanctum: linked synthetic sessions under configured CPU profile', async ({
         totalMs: Number(metric.totalMs.toFixed(1)),
         maxMs: Number(metric.maxMs.toFixed(2)),
       }));
+    const pipelineEvents = events.filter((event) => (
+      /PipelineReporter|Graphics\.Pipeline|FramePresented|SubmitCompositorFrameToPresentationCompositorFrame|SubmitUpdateDisplayTreeToPresentationCompositorFrame/.test(event.name ?? '')
+    ));
+    const pipelineStages = new Map<string, { name: string; phase: string; step: string; count: number; maxMs: number; argsKeys: string[] }>();
+    for (const event of pipelineEvents) {
+      const args = event.args ?? {};
+      const step = typeof args.step === 'string' ? args.step : '';
+      const key = `${event.name ?? 'unknown'}::${event.ph ?? 'unknown'}::${step}`;
+      const metric = pipelineStages.get(key) ?? {
+        name: event.name ?? 'unknown',
+        phase: event.ph ?? 'unknown',
+        step,
+        count: 0,
+        maxMs: 0,
+        argsKeys: Object.keys(args).sort(),
+      };
+      metric.count += 1;
+      metric.maxMs = Math.max(metric.maxMs, Math.max(0, event.dur ?? 0) / 1000);
+      pipelineStages.set(key, metric);
+    }
+    return {
+      taskDurations,
+      pipelineStages: [...pipelineStages.values()].sort((left, right) => right.count - left.count).slice(0, 30),
+      presentationIntervals: summarizePresentationIntervals(events),
+    };
   };
   const sampleWithFrameTrace = async () => {
     if (!traceFrames) return { frames: await sample(), trace: undefined };
-    const traceEvents: ChromiumTraceEvent[] = [];
-    const onDataCollected = (payload: { value: ChromiumTraceEvent[] }) => traceEvents.push(...payload.value);
-    cdp.on('Tracing.dataCollected', onDataCollected);
-    const tracingComplete = new Promise<void>((resolve) => {
-      cdp.once('Tracing.tracingComplete', () => resolve());
-    });
-    await cdp.send('Tracing.start', {
-      categories: [
-        'toplevel', 'devtools.timeline', 'disabled-by-default-devtools.timeline',
-        'disabled-by-default-devtools.timeline.frame', 'cc', 'gpu', 'viz',
-      ].join(','),
-      transferMode: 'ReportEvents',
-    });
-    const frames = await sample();
-    await cdp.send('Tracing.end');
-    await tracingComplete;
-    cdp.off('Tracing.dataCollected', onDataCollected);
-    return { frames, trace: summarizeFrameTrace(traceEvents) };
+    const { result: frames, events } = await captureChromiumTrace(cdp, sample);
+    return { frames, trace: summarizeFrameTrace(events) };
   };
   const readHud = () => hud.innerText();
   const drawCalls = (hudText: string) => Number(hudText.match(/DRAW\s+(\d+)/)?.[1]);
@@ -1880,13 +2034,14 @@ test('Sanctum: linked synthetic sessions under configured CPU profile', async ({
   const normalHud = await captureHud();
   await setPreset('LOW');
   await page.waitForTimeout(1_000);
+  const lowHud = await captureHud(Math.floor(drawCalls(normalHud) * 0.8));
+  await page.waitForTimeout(250);
   if (profileCpu) await cdp.send('Profiler.start');
   const lowRun = await sampleWithFrameTrace();
   const low = lowRun.frames;
   const lowProfile = profileCpu
     ? summarizeCpuProfile((await cdp.send('Profiler.stop')).profile.nodes)
     : undefined;
-  const lowHud = await captureHud(drawCalls(normalHud));
   await page.screenshot({ path: `test-results/sanctum-cpu${cpuThrottleRate}-sessions${sessionCount}-low.png` });
   console.info('SYNTHETIC_SANCTUM_PERF', JSON.stringify({
     viewport: '1280x720', sessions: sessions.length, cpuThrottle: `${cpuThrottleRate}x`, navigationMs: navigation,
@@ -1894,22 +2049,36 @@ test('Sanctum: linked synthetic sessions under configured CPU profile', async ({
     webglRenderer, normal, normalHud, low, lowHud, pageErrors,
     cpuProfiles: profileCpu ? { normal: normalProfile, low: lowProfile } : undefined,
     frameTraces: traceFrames ? { normal: normalRun.trace, low: lowRun.trace } : undefined,
-    note: 'Synthetic session roster on the configured Chromium CPU profile; not low-tier-device acceptance.',
+    note: 'Synthetic roster. The strict gate uses unique Chromium compositor-to-presentation intervals; macOS presentation timestamps are estimates, and this is not low-tier-device acceptance.',
   }));
   await expect(page.getByText(/scene error.*reload if stuck/i)).toHaveCount(0);
   expect(pageErrors).toEqual([]);
-  expect(normal.frames).toBeGreaterThan(0);
-  expect(low.frames).toBeGreaterThan(0);
+  expect(normal.callbackCount).toBeGreaterThan(0);
+  expect(low.callbackCount).toBeGreaterThan(0);
   expect(drawCalls(lowHud)).toBeLessThan(drawCalls(normalHud));
   if (process.env.SANCTUM_PERF_ENFORCE === '1') {
-    expect(normal.p95Ms, 'Normal preset frame p95 must meet the 16.7 ms budget').toBeLessThanOrEqual(16.7);
-    expect(low.p95Ms, 'Low preset frame p95 must meet the 16.7 ms budget').toBeLessThanOrEqual(16.7);
+    const assertPresentationBudget = (name: string, result: typeof normal, trace: ReturnType<typeof summarizeFrameTrace> | undefined) => {
+      expect(result.rafHz, `${name} preset must sustain at least 58 browser rAF callbacks per second`).toBeGreaterThanOrEqual(58);
+      expect(result.callbacksOver25ms, `${name} preset must not have a browser rAF callback gap over 25 ms`).toBe(0);
+      const presentation = trace?.presentationIntervals.find(metric => (
+        metric.thread === 'Compositor'
+        && metric.stage === 'SubmitCompositorFrameToPresentationCompositorFrame'
+        && metric.uniquePresentations > 0
+      ));
+      expect(presentation, `${name} preset must produce Chromium compositor presentation samples`).toBeDefined();
+      if (!presentation) throw new Error(`${name} preset has no compositor presentation samples.`);
+      expect(presentation.uniquePresentations, `${name} preset must report at least 95% of sampled browser frames`).toBeGreaterThanOrEqual(Math.floor(result.callbackCount * 0.95));
+      expect(presentation.uniquePresentationIntervalP95Ms, `${name} preset compositor presentation interval p95 must meet the 16.7 ms budget`).toBeLessThanOrEqual(16.7);
+    };
+    assertPresentationBudget('normal', normal, normalRun.trace);
+    assertPresentationBudget('low', low, lowRun.trace);
   }
   await cdp.detach();
 });
 
 test('Sanctum: eight-session guide with muted local speech stays responsive', async ({ page }) => {
   test.skip(process.env.SANCTUM_PERF_GUIDE !== '1', 'Run explicitly on a headful Mac with local speech enabled.');
+  expect(process.env.SANCTUM_PERF_HEADFUL, 'The guide performance gate must run in a headed browser on the target desktop GPU').toBe('1');
   const sampleDurationMs = Number(process.env.SANCTUM_PERF_DURATION_MS ?? '5000');
   if (!Number.isInteger(sampleDurationMs) || sampleDurationMs < 5_000 || sampleDurationMs > 30_000) {
     throw new Error('SANCTUM_PERF_DURATION_MS must be an integer from 5000 to 30000.');
@@ -1997,17 +2166,10 @@ test('Sanctum: eight-session guide with muted local speech stays responsive', as
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpuThrottleRate });
   await page.goto('about:blank');
-  await page.goto('/');
-  await waitForApp(page);
-  await nav(page, 'Sanctum');
-  await expect(page.locator('.sanctum-roster button')).toHaveCount(sessions.length, { timeout: 25_000 });
-  const preset = page.locator('button[title^="Cycle performance preset"]');
-  for (let attempt = 0; attempt < 3 && (await preset.innerText()).trim() !== targetPreset; attempt++) await preset.click();
-  await expect(preset).toHaveText(targetPreset);
-  await page.waitForTimeout(3_000);
-
-  const sample = async (durationMs = sampleDurationMs) => page.evaluate((durationMs: number) => new Promise<{
-    frames: number; fps: number; p50Ms: number; p95Ms: number; missedFrames: number;
+  const idleBrowserBaseline = await page.evaluate((durationMs: number) => new Promise<{
+    callbackCount: number;
+    rafHz: number;
+    rafIntervalP95Ms: number;
   }>(resolve => {
     const deltas: number[] = [];
     let previous = performance.now();
@@ -2019,11 +2181,9 @@ test('Sanctum: eight-session guide with muted local speech stays responsive', as
         const sorted = [...deltas].sort((left, right) => left - right);
         const percentile = (p: number) => sorted[Math.min(Math.ceil(sorted.length * p) - 1, sorted.length - 1)] ?? 0;
         resolve({
-          frames: deltas.length,
-          fps: Math.round(deltas.length * 1000 / (now - started)),
-          p50Ms: Number(percentile(0.5).toFixed(2)),
-          p95Ms: Number(percentile(0.95).toFixed(2)),
-          missedFrames: deltas.filter(delta => delta > 25).length,
+          callbackCount: deltas.length,
+          rafHz: Math.round(deltas.length * 1000 / (now - started)),
+          rafIntervalP95Ms: Number(percentile(0.95).toFixed(2)),
         });
         return;
       }
@@ -2031,7 +2191,46 @@ test('Sanctum: eight-session guide with muted local speech stays responsive', as
     };
     requestAnimationFrame(frame);
   }), sampleDurationMs);
-  const rosterOnly = await sample();
+  await page.goto('/');
+  await waitForApp(page);
+  await nav(page, 'Sanctum');
+  await expect(page.locator('.sanctum-roster button')).toHaveCount(sessions.length, { timeout: 25_000 });
+  const preset = page.locator('button[title^="Cycle performance preset"]');
+  for (let attempt = 0; attempt < 3 && (await preset.innerText()).trim() !== targetPreset; attempt++) await preset.click();
+  await expect(preset).toHaveText(targetPreset);
+  await page.waitForTimeout(3_000);
+
+  const sample = async (durationMs = sampleDurationMs) => page.evaluate((durationMs: number) => new Promise<{
+    callbackCount: number; rafHz: number; rafIntervalP50Ms: number; rafIntervalP95Ms: number; callbacksOver25ms: number;
+  }>(resolve => {
+    const deltas: number[] = [];
+    let previous = performance.now();
+    const started = previous;
+    const frame = (now: number) => {
+      deltas.push(now - previous);
+      previous = now;
+      if (now - started >= durationMs) {
+        const sorted = [...deltas].sort((left, right) => left - right);
+        const percentile = (p: number) => sorted[Math.min(Math.ceil(sorted.length * p) - 1, sorted.length - 1)] ?? 0;
+        resolve({
+          callbackCount: deltas.length,
+          rafHz: Math.round(deltas.length * 1000 / (now - started)),
+          rafIntervalP50Ms: Number(percentile(0.5).toFixed(2)),
+          rafIntervalP95Ms: Number(percentile(0.95).toFixed(2)),
+          callbacksOver25ms: deltas.filter(delta => delta > 25).length,
+        });
+        return;
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }), sampleDurationMs);
+  const sampleWithPresentationTrace = async (durationMs = sampleDurationMs) => {
+    const { result: frames, events } = await captureChromiumTrace(cdp, () => sample(durationMs));
+    return { frames, presentationIntervals: summarizePresentationIntervals(events) };
+  };
+  const rosterOnlyRun = await sampleWithPresentationTrace();
+  const rosterOnly = rosterOnlyRun.frames;
 
   await page.getByRole('button', { name: 'Ask the guide' }).click();
   const dialog = page.getByRole('dialog', { name: /Sanctum archive guide/ });
@@ -2054,40 +2253,70 @@ test('Sanctum: eight-session guide with muted local speech stays responsive', as
   await dialog.getByRole('button', { name: 'Read aloud / replay' }).click();
   await expect(dialog.getByRole('status')).toHaveText('Speaking');
   await expect(dialog.locator('.guide-character canvas')).toHaveCount(1);
-  const guideSpeaking = await sample();
-  await expect(dialog.getByRole('status')).toHaveText('Speaking');
-
-  await dialog.getByLabel(/Animate character/).uncheck();
-  const bodyAnimationPaused = await sample();
-  await expect(dialog.getByRole('status')).toHaveText('Speaking');
-  await page.addStyleTag({ content: '.sanctum-guide::backdrop { backdrop-filter: none !important; }' });
-  const backdropBlurRemoved = await sample(Math.min(sampleDurationMs, 5_000));
-
-  const renderer = await page.locator('canvas').first().evaluate(canvas => {
+  const renderer = await page.locator('.guide-character canvas').evaluate(canvas => {
     const gl = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
     if (!gl) return 'unavailable';
     const debug = gl.getExtension('WEBGL_debug_renderer_info');
     return debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : 'masked';
   });
+  expect(renderer, 'The guide performance gate needs a readable WebGL renderer').not.toMatch(/^(masked|unavailable)$/i);
+  expect(renderer, 'The guide performance gate cannot use a software WebGL renderer').not.toMatch(/swiftshader|llvmpipe|software rasterizer/i);
+  const guideSpeakingRun = await sampleWithPresentationTrace();
+  const guideSpeaking = guideSpeakingRun.frames;
+  await expect(dialog.getByRole('status')).toHaveText('Speaking');
+
+  await dialog.getByLabel(/Animate character/).uncheck();
+  const bodyAnimationPausedRun = await sampleWithPresentationTrace();
+  const bodyAnimationPaused = bodyAnimationPausedRun.frames;
+  await expect(dialog.getByRole('status')).toHaveText('Speaking');
+  await page.addStyleTag({ content: '.sanctum-guide::backdrop { backdrop-filter: none !important; }' });
+  const backdropBlurRemovedRun = await sampleWithPresentationTrace(Math.min(sampleDurationMs, 5_000));
+  const backdropBlurRemoved = backdropBlurRemovedRun.frames;
+  const frameIntervalP95BudgetMs = 16.7;
+
   console.info('SANCTUM_INTEGRATED_GUIDE_PERF', JSON.stringify({
     viewport: '1280x720', sessions: sessions.length, cpuThrottle: `${cpuThrottleRate}x`, preset: targetPreset,
     reducedMotionAtStart: startReducedMotion, sampleDurationMs, renderer,
-    rosterOnly, guideSpeaking, bodyAnimationPaused, backdropBlurRemoved,
+    idleBrowserBaseline, rosterOnly, guideSpeaking, bodyAnimationPaused, backdropBlurRemoved,
+    presentationIntervals: {
+      rosterOnly: rosterOnlyRun.presentationIntervals,
+      guideSpeaking: guideSpeakingRun.presentationIntervals,
+      bodyAnimationPaused: bodyAnimationPausedRun.presentationIntervals,
+      backdropBlurRemoved: backdropBlurRemovedRun.presentationIntervals,
+    },
     guideRequests, pageErrors,
-    note: 'System speech synthesis was muted at volume zero; Voicebox was unavailable and no generation request was made. Diagnostic browser profile, not low-tier-device acceptance.',
+    frameIntervalP95BudgetMs: process.env.SANCTUM_PERF_ENFORCE === '1' ? frameIntervalP95BudgetMs : undefined,
+    note: 'System speech synthesis was muted at volume zero; Voicebox was unavailable and no generation request was made. The strict gate uses Chromium compositor-to-presentation intervals; macOS timestamps are estimates and this is not low-tier-device acceptance.',
   }));
   expect(guideRequests).toEqual(['synthetic-guide-answer']);
   expect(pageErrors).toEqual([]);
-  expect([rosterOnly, guideSpeaking, bodyAnimationPaused, backdropBlurRemoved].every(result => result.frames > 0)).toBe(true);
+  expect([rosterOnly, guideSpeaking, bodyAnimationPaused, backdropBlurRemoved].every(result => result.callbackCount > 0)).toBe(true);
   for (const [name, result] of Object.entries({ rosterOnly, guideSpeaking, bodyAnimationPaused })) {
-    expect(result.fps, `${name} must sustain at least 58 FPS`).toBeGreaterThanOrEqual(58);
-    expect(result.missedFrames, `${name} must not miss a 60 Hz presentation interval`).toBe(0);
+    expect(result.rafHz, `${name} must sustain at least 58 browser rAF callbacks per second`).toBeGreaterThanOrEqual(58);
+    expect(result.callbacksOver25ms, `${name} must not have a browser rAF callback gap over 25 ms`).toBe(0);
   }
-  expect(backdropBlurRemoved.fps, 'The short backdrop diagnostic must sustain at least 58 FPS').toBeGreaterThanOrEqual(58);
+  expect(backdropBlurRemoved.rafHz, 'The short backdrop diagnostic must sustain at least 58 browser rAF callbacks per second').toBeGreaterThanOrEqual(58);
   if (process.env.SANCTUM_PERF_ENFORCE === '1') {
-    for (const [name, result] of Object.entries({ rosterOnly, guideSpeaking, bodyAnimationPaused })) {
-      expect(result.p95Ms, `${name} frame p95 must meet the 16.7 ms budget`).toBeLessThanOrEqual(16.7);
+    const assertPresentationBudget = (
+      name: string,
+      result: typeof rosterOnly,
+      intervals: PresentationIntervalMetric[],
+    ) => {
+      expect(result.rafHz, `${name} must sustain at least 58 browser rAF callbacks per second`).toBeGreaterThanOrEqual(58);
+      expect(result.callbacksOver25ms, `${name} must not have a browser rAF callback gap over 25 ms`).toBe(0);
+      const presentation = intervals.find(metric => (
+        metric.thread === 'Compositor'
+        && metric.stage === 'SubmitCompositorFrameToPresentationCompositorFrame'
+        && metric.uniquePresentations > 0
+      ));
+      expect(presentation, `${name} must produce Chromium compositor presentation samples`).toBeDefined();
+      if (!presentation) throw new Error(`${name} has no compositor presentation samples.`);
+      expect(presentation.uniquePresentations, `${name} must report at least 95% of sampled browser frames`).toBeGreaterThanOrEqual(Math.floor(result.callbackCount * 0.95));
+      expect(presentation.uniquePresentationIntervalP95Ms, `${name} compositor presentation interval p95 must meet the ${frameIntervalP95BudgetMs} ms budget`).toBeLessThanOrEqual(frameIntervalP95BudgetMs);
     }
+    assertPresentationBudget('roster only', rosterOnly, rosterOnlyRun.presentationIntervals);
+    assertPresentationBudget('guide speaking', guideSpeaking, guideSpeakingRun.presentationIntervals);
+    assertPresentationBudget('body animation paused', bodyAnimationPaused, bodyAnimationPausedRun.presentationIntervals);
   }
   await dialog.getByRole('button', { name: 'Close' }).click();
   await cdp.detach();
