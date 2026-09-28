@@ -45,6 +45,7 @@ import {
   PerfReader, WebGLContextWatcher,
 } from './sanctum/perf';
 import { ArchiveWarden } from './sanctum/ArchiveWarden';
+import { FloatingArchiveDistrict } from './sanctum/FloatingArchiveDistrict';
 import { ArchiveSeal, ArchiveSealMark } from './sanctum/ArchiveSeal';
 import { loadRosterArtTexture, SESSION_ROSTER_ART_SPECS } from './sanctum/roster-art';
 import { SessionRosterModel } from './sanctum/SessionRosterModel';
@@ -618,7 +619,7 @@ function ArchiveAtrium() {
       }
     }
 
-    // Three offset elliptical roof rims give daylight a physical source without a tower silhouette.
+    // Three offset roof rims bring daylight into the archive beneath the suspended district.
     const skylightCount = perf === 'low' ? 1 : 3;
     const skylights = [
       { x: -6.5, z: -2.3, radiusX: 2.2, radiusZ: 1.45 },
@@ -861,6 +862,7 @@ function ArchiveEnvironment() {
       <StageRim />
       <AtmosphericFog />
       <ArchiveAtrium />
+      <FloatingArchiveDistrict />
       <IndexSpindle />
       <ArchiveIndexMarkers />
       {/* The four aisles stay open so the archive floor and session paths remain readable. */}

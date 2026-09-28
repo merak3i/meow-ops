@@ -1,12 +1,16 @@
 # Sanctum visual identity
 
-The Sanctum is an original civic archive atrium for reviewing local session activity. Its Archive Warden, Session Index Dial, and session roster share one recurring mark: the Archive Seal.
+The Sanctum is an original civic archive atrium for reviewing local session activity. Its Archive Warden, Session Index Dial, and session roster share one recurring mark: the Archive Seal. A five-island floating archive district and copper skybridges extend that identity into the skyline.
 
 ## Archive Seal
 
 Keep the authored design consistent: four long teal rays alternate with four short copper rays inside a broken octagonal track, around a copper diamond with a teal center. Reuse the same geometry on the Warden, the Index Dial, and the session characters. The mobile session index uses the same mark so it remains recognizable at roster size.
 
 The vector is defined in `src/pages/sanctum/archive-seal-mark.ts`. `src/pages/sanctum/ArchiveSeal.tsx` renders it on the Warden, Index Dial, and roster rows. The standard seven-role cutouts use `src/pages/sanctum/roster-art.ts`, which overlays the same vector on each role image in `src/pages/sanctum/assets/roster/`. The Canvas sprite path in `src/pages/sanctum/textures.ts` also uses the shared vector. Generated character references may approximate the Seal. Finished assets should use the authored geometry so the arrangement and colors stay consistent.
+
+## Floating archive district
+
+`src/pages/sanctum/FloatingArchiveDistrict.tsx` builds five faceted archive isles, copper skybridges, teal-lit windows, and a central tower carrying the exact 3D Archive Seal. The camera-space placement keeps the skyline inside the default Sanctum view; the low performance preset shows three isles. This skyline and beacon form an additional, specific feature for comparing versions if copied. The geometry and design records support that comparison but do not prevent copying, prove plagiarism, or establish rights; independent similarity and rights review remains open.
 
 ## Provenance and comparison
 
