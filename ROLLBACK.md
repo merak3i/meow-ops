@@ -85,19 +85,20 @@ Vercel keeps every deployment. You can reactivate any previous one instantly.
 
 ### Via CLI
 ```bash
-# List recent deployments
-vercel ls meow-ops
+# Return production traffic to the previous production deployment
+vercel rollback
+vercel rollback status
 
-# Promote a specific deployment URL to production
-vercel promote <deployment-url> --scope <your-team>
+# Inspect production deployment history
+vercel list --prod
 ```
 
 ### Verification
-- Check PWA loads and can be installed from browser
-- Verify session data loads (Overview stat cards show numbers)
-- Confirm charts render (Daily Chart, Spend Chart)
-- Check Companion tab loads without Three.js errors
-- Confirm Pomodoro timer works
+- Open Today, Review, Ledger, Sanctum, and Learn; check that each surface loads without an error.
+- Confirm the public session and cost endpoints contain synthetic demo data, not local session history.
+- Confirm the Sanctum scene and guide load without Three.js errors.
+- Confirm the focus timer chip opens and counts down.
+- Check that the service worker registers and the PWA can be installed.
 
 ---
 
@@ -171,14 +172,15 @@ gh pr create --base main --head hotfix/rollback-to-v1.0.0 \
 
 ## Post-Rollback Checklist
 
-- [ ] PWA loads and installs from browser correctly
-- [ ] Overview stat cards show correct token/cost data
+- [ ] Today, Review, Ledger, Sanctum, and Learn load without errors
+- [ ] Public session and cost endpoints serve synthetic demo data
 - [ ] Sessions table loads and filters work
 - [ ] Cost tracker charts render
-- [ ] Companion tab loads (WebGL 3D scene renders without console errors)
-- [ ] Pomodoro timer counts down correctly
-- [ ] Service worker registers and cache is valid
-- [ ] Data fetches from Supabase Storage (if cloud mode) or local JSON (if local mode)
+- [ ] Sanctum scene and guide load without console errors
+- [ ] Focus timer chip opens and counts down correctly
+- [ ] Service worker registers and the PWA can be installed
+- [ ] Public JSON endpoints return synthetic demo data with `no-store` and no permissive CORS header
+- [ ] Local session sync remains local; Supabase Realtime is used only if explicitly configured
 
 ---
 
@@ -196,10 +198,6 @@ Then add a row to the Version Tag Reference table above.
 
 ## Data Rollback Notes
 
-meow-ops uses file-based session data. The source of truth is:
-- **Local**: `~/.claude/projects/` (raw JSONL from Claude Code)
-- **Cloud**: Supabase Storage bucket (if `VITE_SUPABASE_URL` is set)
+Meow Ops reads session data from each enabled agent's native local store. Rolling back the app does **not** change those source logs. Hosted `public/data/demo-*` files are synthetic fixtures, not backups of local history.
 
-Rolling back the app does **not** affect the data. If a sync script corrupted `sessions.json`:
-1. Re-run `node sync/export-local.mjs` to regenerate from source JSONL files
-2. Or restore the last known-good `sessions.json` from git history (if committed) or Supabase Storage version history
+`node sync/export-local.mjs` regenerates local metrics, but it also updates the local history/evidence archive and may call Cursor's read-only Usage API when its optional Admin key is configured. Treat it as a sync operation, not an automatic rollback step; verify the configured inputs before running it. Its `--push` option is retired. Supabase Realtime is optional transport for the Sanctum pipeline visualizer, not session-history storage or a default backup. `sync/upload-to-supabase.mjs` is a separate operator-managed tool.

@@ -190,7 +190,7 @@ Record Scout ─────────────── Run Keeper ───�
 - Demo mode and local-session mode with no Supabase account required
 - Supabase Realtime schema remains available for external pipelines in `db/migrations/0003_scrying_sanctum.sql`
 
-The standard scene uses seven originalized, role-matched still cutouts with the exact authored Archive Seal composited on each; they follow session movement but have no limb animation. Vite bundles their WebP runtime assets from `src/pages/sanctum/assets/roster`. Original cutouts, prompts, rejected studies, and review renders stay in the local-only design archive. The same distinctive Seal recurs on the Warden, index dial, roster, and guide. Its authored vector, prompts, source files, revision history, and hashes support comparison if copied; they do not by themselves prove plagiarism or rights. The app bundles the originalized v92 guide runtime; it remains stylized art pending independent similarity and rights review. The 3D roster models remain local construction studies, not finished character art, and load only in the local development preview at `?roster=3d`. Linked guide evidence is read through the local helper, and enabled Voicebox speech stores spoken text and generated audio in local history.
+The standard scene uses seven originalized, role-matched still cutouts with the exact authored Archive Seal composited on each; they follow session movement but have no limb animation. Vite bundles their WebP runtime assets from `src/pages/sanctum/assets/roster`. Original cutouts, prompts, rejected studies, and review renders stay in the local-only design archive. The guide depicts a fictional archive worker with no deity-specific or religious cues. Its Archive Seal also recurs on the Warden, index dial, and roster; the guide adds an asymmetric shoulder yoke, page-corner tabs, and a copper-index folio as visual comparison features. The guide runtime is `guide-originalized-v110-runtime.glb` (SHA-256 `068320d713f5694b097adee6f48547b41600957156c583e2386dac042dbfb01f`); the design archive's prompts, source files, revision history, and hashes help identify and compare versions if copied, but do not prevent copying, prove plagiarism, or establish rights. The model remains stylized art pending independent similarity and rights review. The 3D roster models remain local construction studies, not finished character art, and load only in the local development preview at `?roster=3d`. Linked guide evidence is read through the local helper, and enabled Voicebox speech stores spoken text and generated audio in local history.
 
 See `db/migrations/0003_scrying_sanctum.sql` for the full schema and RLS policies.
 
@@ -526,6 +526,22 @@ npx playwright test   # runs the Playwright suite against npm run preview
 The `chromium` project checks the built app on port `4275`; `dev-smoke` checks development-only server boundaries on `5176`; `service-worker` checks production privacy behavior. Some Loop Ops tests skip when their local-only workbook/spec fixtures are absent. The sync suite covers parsers, local API boundaries, intake redaction, loop ledger transitions, proposals, digests, execution gates, and SuperAdmin snapshots. Sanctum-specific unit tests run with `npm run test:sanctum`.
 `npm run eval` is the blocking privacy + loop-integrity gate.
 
+The Sanctum performance check reports browser `requestAnimationFrame` timing and Chromium compositor-to-presentation intervals. Its strict gate keeps the 16.7 ms presentation-interval p95 budget, requires at least 58 browser callbacks per second with no browser callback gap over 25 ms, and rejects known software WebGL renderers such as SwiftShader. Trace-reported long presentation intervals remain diagnostic because Chromium notes that macOS presentation timestamps may be estimates.
+
+Run the eight-session roster gate in a headed browser on the target desktop GPU:
+
+```bash
+SANCTUM_PERF_HEADFUL=1 SANCTUM_PERF_CPU_RATE=1 SANCTUM_PERF_TRACE=1 SANCTUM_PERF_ENFORCE=1 npx playwright test --grep "linked synthetic sessions under configured CPU profile"
+```
+
+Run the guide gate with LOW preset and reduced motion:
+
+```bash
+SANCTUM_PERF_HEADFUL=1 SANCTUM_PERF_CPU_RATE=4 SANCTUM_PERF_GUIDE=1 SANCTUM_PERF_PRESET=LOW SANCTUM_PERF_START_REDUCED_MOTION=1 SANCTUM_PERF_ENFORCE=1 npx playwright test --grep "eight-session guide with muted local speech stays responsive"
+```
+
+The guide test mutes system speech and does not verify acoustic quality or Voicebox generation. An M4 host run does not establish low-tier-device performance; verify on the named target device before release.
+
 To run a single test file or test by name:
 
 ```bash
@@ -539,7 +555,7 @@ npx playwright test --reporter=list
 
 - **Private sessions and operations stay local.** Local dashboards read session analytics from local files or the localhost helper. Hosted dashboards cannot read private session-history, raw summary, sync, Loop Engineering, Loop Ops, or SuperAdmin usage helper routes.
 - **Current source builds exclude private session files.** The build allowlist publishes only the three reviewed `demo-*` JSON files and validates their synthetic labels and fields.
-- **The current hosted fixtures were checked on 2026-09-27.** All five checked public session, cost, and usage URLs matched the approved synthetic fixture hashes and returned `no-store` response headers. Vercel reported cached edge responses during the check, so this confirms the bytes served at those URLs; it does not verify historical cache contents, prior deployments, or a cache purge. Verify the served fixtures again after each hosted release.
+- **The current hosted fixtures were checked on 2026-09-29.** All five public session, cost, and usage JSON URLs matched the approved synthetic fixture hashes and returned `Cache-Control: no-store`. Requests with `Origin: https://example.com` received no `Access-Control-Allow-Origin` header. This confirms only the bytes and headers served at those URLs during the check; it does not verify historical cache contents, prior deployments, or a cache purge. Verify the served fixtures again after each hosted release.
 - **Verify each hosted release.** A clean local build does not prove which fixtures or access settings the current Vercel deployment serves.
 - **Current source session fixtures contain metrics only** — token counts, tool counts, durations, model names, and project labels. They omit message content, prompts, first-user-message snippets, chat titles, code, and absolute `cwd` paths. The build allowlist rejects private session files.
 - **Supabase is optional and scoped.** The default app no longer depends on Supabase Storage for session analytics. Supabase Realtime remains opt-in for Sanctum.
