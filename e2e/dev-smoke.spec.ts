@@ -164,6 +164,43 @@ test('Sanctum local 3D study preview loads each selected session model', async (
   await expect(inspector.getByText(/LANTERNMOTE/)).toBeVisible();
   await expect(page.getByTestId('sanctum-roster-model-loaded'))
     .toHaveText('LANTERNMOTE · 3D study');
+
+  const selectedRosterRow = roster.filter({ hasText: 'LANTERNMOTE' });
+  await selectedRosterRow.click();
+  await expect(page.getByTestId('sanctum-roster-model-loaded')).toHaveCount(0);
+
+  const lanternmotePath = '**/design/sanctum/blender/lanternmote-rig-v2.glb*';
+  let reloadRequests = 0;
+  await page.route(lanternmotePath, async route => {
+    reloadRequests += 1;
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await route.continue();
+  });
+  await page.evaluate(() => {
+    document.documentElement.dataset.sanctumReadySamples = '';
+    const observer = new MutationObserver(() => {
+      const label = document.querySelector('[data-testid="sanctum-roster-model-loaded"]');
+      if (label) {
+        const root = document.documentElement;
+        root.dataset.sanctumReadySamples = `${root.dataset.sanctumReadySamples ?? ''}|${label.textContent ?? ''}`;
+      }
+    });
+    observer.observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['data-testid'],
+    });
+  });
+
+  await selectedRosterRow.click();
+  await expect.poll(() => reloadRequests, { timeout: 10_000 }).toBe(1);
+  await page.waitForTimeout(100);
+  const readySamples = await page.locator('html').getAttribute('data-sanctum-ready-samples');
+  expect(readySamples ?? '').not.toContain('LANTERNMOTE · 3D study');
+  await page.unroute(lanternmotePath);
+  await expect(page.getByTestId('sanctum-roster-model-loaded'))
+    .toHaveText('LANTERNMOTE · 3D study', { timeout: 30_000 });
 });
 
 test('Loop Ops settles past the loading state under dev React (StrictMode liveness)', async ({ page }) => {

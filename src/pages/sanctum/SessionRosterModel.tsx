@@ -104,6 +104,7 @@ export function SessionRosterModel({
     );
     return () => {
       active = false;
+      onReadyChange(false);
       if (ownedInstance) {
         const instance = ownedInstance;
         // React StrictMode replays mount effects in development.
