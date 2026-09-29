@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createChampionInstance, type ChampionInstance } from './champion-instance.mjs';
+import { createGltfSourceCache } from './roster-source-cache.mjs';
 
 export const SESSION_ROSTER_MODEL_URLS: Readonly<Record<string, string>> = {
   builder: '/design/sanctum/blender/rivetwren-rig-v10.glb',
@@ -15,24 +16,15 @@ export const SESSION_ROSTER_MODEL_URLS: Readonly<Record<string, string>> = {
   ghost: '/design/sanctum/blender/lanternmote-rig-v2.glb',
 };
 
-const sourceLoads = new Map<string, Promise<GLTF>>();
+const sourceCache = createGltfSourceCache(
+  (url: string) => new GLTFLoader().loadAsync(url),
+);
 
 type PreparedModel = {
   instance: ChampionInstance;
   fittedRoot: THREE.Group;
   animations: THREE.AnimationClip[];
 };
-
-function loadSource(url: string): Promise<GLTF> {
-  const existing = sourceLoads.get(url);
-  if (existing) return existing;
-  const request = new GLTFLoader().loadAsync(url);
-  sourceLoads.set(url, request);
-  void request.catch(() => {
-    if (sourceLoads.get(url) === request) sourceLoads.delete(url);
-  });
-  return request;
-}
 
 export function SessionRosterModel({
   catType,
@@ -61,9 +53,13 @@ export function SessionRosterModel({
       setFailed(true);
       return () => { active = false; };
     }
-    void loadSource(url).then(
+    const source = sourceCache.acquire(url);
+    void source.promise.then(
       gltf => {
-        if (!active) return;
+        if (!active) {
+          source.release();
+          return;
+        }
         let instance: ChampionInstance | null = null;
         try {
           instance = createChampionInstance(gltf.scene, gltf.animations);
@@ -94,11 +90,13 @@ export function SessionRosterModel({
           setPrepared({ instance, fittedRoot, animations: gltf.animations });
         } catch {
           instance?.dispose();
+          source.release();
           setFailed(true);
           onReadyChange(false);
         }
       },
       () => {
+        source.release();
         if (!active) return;
         setFailed(true);
         onReadyChange(false);
@@ -109,7 +107,12 @@ export function SessionRosterModel({
       if (ownedInstance) {
         const instance = ownedInstance;
         // React StrictMode replays mount effects in development.
-        setTimeout(() => instance.dispose(), 0);
+        setTimeout(() => {
+          instance.dispose();
+          source.release();
+        }, 0);
+      } else {
+        source.release();
       }
     };
   }, [catType, onReadyChange, url]);
