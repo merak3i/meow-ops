@@ -7,6 +7,7 @@ import { measureGuideAnimationBounds } from './guide-animation-bounds.mjs';
 import { guideCameraDistance, guideProjectedBoundsFit } from './guide-camera.mjs';
 import { createGuideSetting } from './guide-setting';
 import type { GuideSetting } from './guide-setting';
+import { applyKrishnaGuideIdentity } from './guide-identity';
 import { disposeGuideResources } from './guide-resources';
 import type { MouthCue } from './guide-mouth.mjs';
 import modelUrl from './assets/guide-originalized-v110-runtime.glb?url';
@@ -93,6 +94,7 @@ export function GuideCharacter({ playback, motion }: { playback: RefObject<Guide
     void loadModel().then(gltf => {
       if (disposed) { disposeGuideResources(gltf.scene); return; }
       model = gltf.scene;
+      applyKrishnaGuideIdentity(model);
       const motionNames = ['idle', 'listening', 'explaining_gesture'] as const;
       const motionClips = motionNames.map(name => {
         const clip = gltf.animations.find(item => item.name === name);
@@ -148,7 +150,7 @@ export function GuideCharacter({ playback, motion }: { playback: RefObject<Guide
         if (setting) frameBounds.union(setting.frameBounds.clone().applyMatrix4(setting.matrixWorld));
         const frameSize = frameBounds.getSize(new THREE.Vector3());
         const frameCenter = frameBounds.getCenter(new THREE.Vector3());
-        const padding = 1.2;
+        const padding = 1.08;
         const distance = guideCameraDistance({
           width: frameSize.x,
           height: frameSize.y,
@@ -177,7 +179,8 @@ export function GuideCharacter({ playback, motion }: { playback: RefObject<Guide
       const blinkStarts = [3.6, 8.7, 12.9, 18.9];
       const shouldAnimate = () => {
         const audio = playback.current.audio;
-        return animateRef.current || motionRef.current !== 'idle' || Boolean(audio && !audio.paused && !audio.ended);
+        const speechActive = Boolean(audio && !audio.paused && !audio.ended);
+        return animateRef.current || speechActive;
       };
       const renderFrame = (time: number) => {
         if (disposed || !renderer) return;

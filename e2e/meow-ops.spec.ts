@@ -695,6 +695,11 @@ test('Sanctum: archive scene fits a narrow viewport', async ({ page }) => {
   expect(wardenBounds.left).toBeGreaterThanOrEqual(72);
   expect(wardenBounds.right).toBeLessThanOrEqual(viewport.width);
   expect(wardenBounds.bottom).toBeLessThanOrEqual(844);
+
+  const sceneCanvas = page.locator('canvas').first();
+  await expect(sceneCanvas).toHaveAttribute('data-scene-camera-zoom', '14');
+  await page.setViewportSize({ width: 960, height: 844 });
+  await expect(sceneCanvas).toHaveAttribute('data-scene-camera-zoom', '38');
 });
 
 test('Sanctum: selected mobile session tag stays outside the inspector', async ({ browser }) => {

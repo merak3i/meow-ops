@@ -1,6 +1,6 @@
 .guide-open, .sanctum-guide button { border: 1px solid #b99a62; border-radius: 7px; padding: 8px 12px; color: #f5e6c8; background: #34291e; cursor: pointer; }
 .sanctum-guide { margin: auto; width: min(640px, calc(100vw - 24px)); max-height: calc(100dvh - 32px); padding: 28px; border: 1px solid #c6a86e; border-radius: 18px; background: #faf4e8; color: #352e24; box-shadow: 0 24px 90px #0008; overflow: auto; line-height: 1.6; }
-.sanctum-guide::backdrop { background: #070711b8; backdrop-filter: blur(6px); }
+.sanctum-guide::backdrop { background: #070711b8; }
 .guide-character { height: 320px; width: 100%; overflow: hidden; border-radius: 12px; background: #222633; }
 .guide-character canvas { display: block; }
 @media (max-width: 640px) {
