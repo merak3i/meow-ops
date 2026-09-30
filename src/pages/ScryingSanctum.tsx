@@ -45,7 +45,6 @@ import {
   PerfReader, WebGLContextWatcher,
 } from './sanctum/perf';
 import { ArchiveWarden } from './sanctum/ArchiveWarden';
-import { FloatingArchiveDistrict } from './sanctum/FloatingArchiveDistrict';
 import { ArchiveSeal, ArchiveSealMark } from './sanctum/ArchiveSeal';
 import { loadRosterArtTexture, SESSION_ROSTER_ART_SPECS } from './sanctum/roster-art';
 import { SessionRosterModel } from './sanctum/SessionRosterModel';
@@ -505,7 +504,7 @@ function SessionPathNetwork() {
   );
 }
 
-function ArchiveReadingGallery() {
+function ArchiveAtrium() {
   const perf = usePerfLevel();
   const geometry = useMemo(() => {
     const casework: THREE.BufferGeometry[] = [];
@@ -544,16 +543,19 @@ function ArchiveReadingGallery() {
     };
     const radialSegments = perf === 'low' ? 32 : 48;
     const shelfRows = perf === 'low' ? 2 : 3;
-    const shelfRadius = 15.8;
+    const shelfRadius = 13.2;
     const shelfHeight = 2.15;
     const shelfDepth = 1.0;
-    const galleryCenter = Math.PI * 1.25;
-    const galleryHalfAngle = Math.PI * 0.52;
+    const gateHalfWidth = 1.9;
+    const gateAngles = [0, Math.PI / 2, Math.PI, Math.PI * 1.5];
 
     for (let index = 0; index < radialSegments; index += 1) {
       const angle = ((index + 0.5) / radialSegments) * Math.PI * 2;
-      const galleryOffset = Math.atan2(Math.sin(angle - galleryCenter), Math.cos(angle - galleryCenter));
-      if (Math.abs(galleryOffset) > galleryHalfAngle) continue;
+      const gateDistance = gateAngles.reduce((nearest, gate) => {
+        const difference = Math.atan2(Math.sin(angle - gate), Math.cos(angle - gate));
+        return Math.min(nearest, Math.abs(difference) * shelfRadius);
+      }, Number.POSITIVE_INFINITY);
+      if (gateDistance < gateHalfWidth) continue;
 
       const radialX = Math.cos(angle);
       const radialZ = Math.sin(angle);
@@ -601,16 +603,35 @@ function ArchiveReadingGallery() {
       }
     }
 
-    // Two low piers finish the open gallery ends without closing the view.
-    for (const side of [-1, 1]) {
-      const angle = galleryCenter + side * galleryHalfAngle;
+    // Low limestone piers define four wide aisles through the continuous shelf ring.
+    for (const angle of gateAngles) {
       const radialX = Math.cos(angle);
       const radialZ = Math.sin(angle);
+      const tangentX = -radialZ;
+      const tangentZ = radialX;
       const rotationY = -Math.PI / 2 - angle;
-      const x = radialX * shelfRadius;
-      const z = radialZ * shelfRadius;
-      addBox(stone, [x, shelfHeight / 2, z], [0.38, shelfHeight + 0.24, shelfDepth + 0.18], rotationY);
-      addBox(copper, [x, shelfHeight + 0.23, z], [0.52, 0.06, shelfDepth + 0.22], rotationY);
+      for (const side of [-1, 1]) {
+        const offset = side * (gateHalfWidth + 0.28);
+        const x = radialX * shelfRadius + tangentX * offset;
+        const z = radialZ * shelfRadius + tangentZ * offset;
+        addBox(stone, [x, shelfHeight / 2, z], [0.38, shelfHeight + 0.24, shelfDepth + 0.18], rotationY);
+        addBox(copper, [x, shelfHeight + 0.23, z], [0.52, 0.06, shelfDepth + 0.22], rotationY);
+      }
+    }
+
+    // Three offset elliptical roof rims frame the skylights without a tower silhouette.
+    const skylightCount = perf === 'low' ? 1 : 3;
+    const skylights = [
+      { x: -6.5, z: -2.3, radiusX: 2.2, radiusZ: 1.45 },
+      { x: 0.3, z: 2.1, radiusX: 2.45, radiusZ: 1.55 },
+      { x: 6.4, z: -2.2, radiusX: 2.2, radiusZ: 1.45 },
+    ];
+    for (const opening of skylights.slice(0, skylightCount)) {
+      const rim = new THREE.TorusGeometry(1, 0.09, 5, 64);
+      rim.rotateX(Math.PI / 2);
+      rim.scale(opening.radiusX, 1, opening.radiusZ);
+      rim.translate(opening.x, 6.9, opening.z);
+      stone.push(rim);
     }
 
     const merge = (parts: THREE.BufferGeometry[]) => {
@@ -833,15 +854,14 @@ function IndexSpindle() {
 
 
 
-function ArchiveEnvironment({ cameraTarget }: { cameraTarget: THREE.Vector3 }) {
+function ArchiveEnvironment() {
   return (
     <>
       <ArchiveFloor />
       <ArchivePaving />
       <StageRim />
       <AtmosphericFog />
-      <ArchiveReadingGallery />
-      <FloatingArchiveDistrict cameraTarget={cameraTarget} />
+      <ArchiveAtrium />
       <IndexSpindle />
       <ArchiveIndexMarkers />
       {/* The four aisles stay open so the archive floor and session paths remain readable. */}
@@ -2209,7 +2229,7 @@ function Scene({ group, selectedId, onSelect, livePosMapOut, nowEpoch, possessed
           the file path with `files=` instead of `preset=`. */}
 
       <Suspense fallback={null}>
-        <ArchiveEnvironment cameraTarget={cameraCenter} />
+        <ArchiveEnvironment />
       </Suspense>
 
       {/* Archive Warden: permanent record keeper for cumulative local stats. */}

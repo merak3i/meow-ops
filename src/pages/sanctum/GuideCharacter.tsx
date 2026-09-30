@@ -7,7 +7,7 @@ import { measureGuideAnimationBounds } from './guide-animation-bounds.mjs';
 import { guideCameraDistance, guideProjectedBoundsFit } from './guide-camera.mjs';
 import { createGuideSetting } from './guide-setting';
 import type { GuideSetting } from './guide-setting';
-import { applyKrishnaGuideIdentity } from './guide-identity';
+import { applyOriginalizedGuideIdentity } from './guide-identity';
 import { disposeGuideResources } from './guide-resources';
 import type { MouthCue } from './guide-mouth.mjs';
 import modelUrl from './assets/guide-originalized-v110-runtime.glb?url';
@@ -94,7 +94,7 @@ export function GuideCharacter({ playback, motion }: { playback: RefObject<Guide
     void loadModel().then(gltf => {
       if (disposed) { disposeGuideResources(gltf.scene); return; }
       model = gltf.scene;
-      applyKrishnaGuideIdentity(model);
+      applyOriginalizedGuideIdentity(model);
       const motionNames = ['idle', 'listening', 'explaining_gesture'] as const;
       const motionClips = motionNames.map(name => {
         const clip = gltf.animations.find(item => item.name === name);
