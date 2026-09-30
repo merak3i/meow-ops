@@ -348,6 +348,7 @@ test('Learn mines concepts from session tool mix', async ({ page }) => {
   await page.reload();
   await waitForApp(page);
   await nav(page, 'Learn');
+  await page.getByRole('group', { name: 'Date range' }).getByRole('button', { name: 'All' }).click();
   await expect(page.getByRole('list', { name: 'Inferred concepts' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Stack tracing' })).toBeVisible();
   await expect(page.getByText(/That is stack tracing/)).toBeVisible();
