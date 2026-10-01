@@ -177,6 +177,28 @@ test('disconnected sample data never claims a healthy sync or a complete archive
   await expect(activity.getByText('Ready', { exact: true })).toHaveCount(0);
 });
 
+test('source collection status stays readable on a narrow screen', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const status = { ok: true, state: 'succeeded', artifact: { source_health: {
+    claude: { state: 'collected', sessions: 948 }, codex: { state: 'collected', sessions: 157 },
+    hermes: { state: 'collected', sessions: 53 }, antigravity: { state: 'no-readable-sessions', sessions: 0 },
+    aider: { state: 'not-configured', sessions: 0 }, cursor: { state: 'excluded', sessions: 0 },
+  } } };
+  await page.route(LOCAL_HELPER_ROUTE, route => {
+    const path = new URL(route.request().url()).pathname;
+    return path === '/sync/status' ? route.fulfill({ json: status })
+      : path === '/sync' ? route.fulfill({ json: { ok: true, status } }) : route.abort();
+  });
+  await page.reload();
+  await page.locator('.sidebar-sync-button').click();
+  const facts = page.locator('.sync-activity__facts').last();
+  await expect(facts.getByText('not configured', { exact: true })).toBeVisible();
+  expect(await facts.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  expect(await facts.locator('div').evaluateAll(cells => (
+    cells.every(cell => cell.scrollWidth <= cell.clientWidth)
+  ))).toBe(true);
+});
+
 // ── 1. App shell ──────────────────────────────────────────────────────────────
 
 test('page title is Meow Operations', async ({ page }) => {
