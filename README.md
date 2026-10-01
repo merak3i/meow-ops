@@ -46,9 +46,9 @@ Today answers what happened. Review holds proposals until you approve them. Ledg
 ## Install — 2 minutes, zero accounts
 
 ### Prerequisites
-- **Node.js 18+** — check with `node --version`
+- **Node.js 20.19+ or 22.12+**: check with `node --version` (Vite's supported versions)
 - **npm** (comes with Node) or pnpm
-- **Claude Code** installed and used at least once (your sessions live in `~/.claude/projects/`)
+- At least one supported harness with local session history. Claude Code is optional; its sessions live in `~/.claude/projects/`.
 
 ### Download and run
 
@@ -113,7 +113,7 @@ Meow Operations fixes all four. For free. For everyone.
 ### Analytics Dashboard
 Tracks sessions from **Claude Code**, **OpenAI Codex Desktop**, **Aider**, **Cursor**, and **Google Antigravity** in one unified view. Cost tables for 30+ models.
 
-> **Google Antigravity note:** Antigravity stores session **time, tools, and project** locally (parsed from `~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`), but it does **not** expose **token counts, the model used, or cost** on disk — the conversation store is encrypted and usage lives server-side. Antigravity sessions are therefore tracked for time/tools/project and shown with `usage_available: false`; tokens and cost are never fabricated or estimated for them.
+> **Google Antigravity note:** Meow Ops reads the [documented transcript logs](https://www.antigravity.google/docs/hooks) under `~/.gemini/antigravity/brain/<id>/.system_generated/logs/transcript.jsonl`. It also reads `conversations/<id>.db` through SQLite's read-only mode to recover step metadata missing from those logs. Repeated updates to the same step are counted once. Database-only sessions can provide time and step counts without a captured prompt or project path. Unknown database step types and unreadable stores are reported as coverage gaps. Binary `.pb` payloads, generation metadata, model names, token usage and cost are not decoded by this adapter; usage remains unavailable rather than invented.
 
 > **Cursor note:** Local agent transcripts under `~/.cursor/projects/*/agent-transcripts/` expose messages, tools, and parent/subagent hierarchy, but not authoritative response-model, token, or cost values. meow-ops never infers a historical model from the currently selected Cursor model or a nested Task argument. Optional official enrichment uses `POST /teams/filtered-usage-events` with a team Admin API key. Cursor's current schema documents the response model, `conversationId` (when a conversation is associated), token usage, `chargedCents`, billing `kind`, `requestsCosts`, `isChargeable`, `isTokenBasedCall`, `isHeadless`, and the optional `cursorTokenFee`; these usage records are hourly aggregates. Summing `chargedCents` reconciles event totals with `/teams/spend`. The local report summarizes these numeric fields and classifications separately, retains no raw event, email, or identifier, and never derives the charged total from `isChargeable` or `tokenUsage.totalCents`. A record joins a local session only when its `conversationId` exactly equals a local identifier. Records with no exact match stay in `cost-summary.json` as aggregate Cursor usage. This proves API-reported usage and cost for the returned period, not an individual response per local transcript message. The key is read only from the process environment and is never logged or copied into generated data or archives. Supply it through an OS credential manager or approved secret injector; do not put it in a repository `.env` or working folder. Without a key, the local parser still works. See [Cursor Admin API docs](https://prod.cursor.com/docs/account/teams/admin-api).
 
@@ -346,6 +346,43 @@ It listens on `http://localhost:7337` by default, serves fresh local `sessions.j
 
 The browser bundle uses `VITE_LOCAL_SYNC_URL` at build time and defaults to `http://127.0.0.1:7337`. If the local helper uses another port, set the browser URL to the same loopback port. This value is public in the browser bundle and must not contain credentials.
 
+### Private local sync with Cursor excluded
+
+Open Terminal in the cloned `meow-ops` folder. Run the collector and helper with the same data directory and source settings:
+
+```bash
+export MEOW_DATA_DIR="$HOME/.meow-ops/data"
+export MEOW_SKIP_CURSOR=1
+export MEOW_REFRESH_LIMITS=0
+node sync/export-local.mjs
+node sync/local-api.mjs
+```
+
+The helper stays running in that Terminal. In a second Terminal, open the same clone and start the built dashboard:
+
+```bash
+npm run build
+npm run preview -- --host 127.0.0.1 --port 4273 --strictPort
+```
+
+Open [the local dashboard](http://127.0.0.1:4273/#/today/summary), then use **Sync sessions** or **Sync now**. A local preview build can connect to the helper just like the development dashboard.
+
+| Setting or status | Meaning |
+|---|---|
+| `MEOW_DATA_DIR` | Keeps generated session and summary files outside the checkout. Set it for both collector and helper. |
+| `MEOW_SKIP_CURSOR=1` | Skips new Cursor transcript scans and Cursor Admin API calls. Existing archived Cursor records are preserved. |
+| `MEOW_REFRESH_LIMITS=0` | Skips the session runner's optional provider-limit refresh. |
+| **Last sync succeeded** | The last collection and artifact verification completed. Check individual source coverage too. |
+| **Local sync disconnected** | Collection status is unavailable. **Reload data** reloads the dashboard; it does not collect sessions. |
+| **Sample data** | The displayed records are examples, not local session history. |
+| **Preview sessions / Preview sources** | Counts from the bounded preview, not the full archive or the number of sources newly collected. |
+
+The sync drawer reports each source as collected, excluded, unavailable or collected with gaps. Aider requires configured `AIDER_PROJECTS`; a missing harness is not represented by invented sessions. Antigravity reports recovered database steps and unreadable or unknown coverage. Full archive totals and the newest-session source breakdown label their different scopes.
+
+For an operator-managed five-minute macOS refresh, a LaunchAgent can run `node sync/sync-runner.mjs --no-limits` with `StartInterval=300` and the same environment settings. The repaired local installation uses `com.meowops.harness-sync`; this job is separate from the daily operator installed by `npm run agents:install`. A successful job normally shows `not running` between scheduled runs, with exit code `0`; its run count should increase. Automatic collection requires the Mac to be awake and the user logged in.
+
+The hosted site remains a sample-data shell under the current privacy boundary. Adding its origin to `MEOW_DASHBOARD_ORIGIN` does not grant access to private history or sync routes. Session counts, token estimates and elapsed thread duration do not by themselves verify a vendor invoice or active working time.
+
 ### How Sessions Are Classified
 
 Every session is auto-tagged by tool usage profile:
@@ -392,13 +429,15 @@ Unknown variants match by family fuzzy search.
 It currently:
 - Reads Claude Code JSONL files from `~/.claude/projects/`
 - Reads Codex Desktop rollouts from `~/.codex/sessions/`
-- Reads Google Antigravity transcripts from `~/.gemini/antigravity/` (time/tools/project only; usage not exposed by Antigravity)
+- Reads Google Antigravity transcripts and supplements missing steps from read-only local SQLite stores; reports coverage gaps and keeps undecoded usage unavailable
+- Reads Hermes sessions and native usage fields from its local SQLite state
 - Reads Cursor agent transcripts from `CURSOR_PROJECTS_DIR` or `~/.cursor/projects` (time/tools/project; usage not on disk)
 - Optionally enriches Cursor usage from the official Enterprise Admin API when `CURSOR_ADMIN_API_KEY` is set
+- Skips both Cursor scanning and API enrichment when `MEOW_SKIP_CURSOR=1`
 - Optionally reads Aider project histories from `AIDER_PROJECTS`
 - Deduplicates and classifies sessions, refines project names from `cwd`, calculates model cost, and sorts by latest activity
-- Writes `public/data/sessions.json`
-- Writes `public/data/cost-summary.json` for all-session daily and spend buckets
+- Writes `sessions.json` and `cost-summary.json` under `MEOW_DATA_DIR`, or under `public/data/` when that override is unset
+- Records per-source collection state and latest activity in the summary's `sourceHealth` field
 - Strips `cwd`, chat titles, and first-user-message snippets from the exported sessions payload
 - Keeps `sync/upload-to-supabase.mjs` and `sync/full-sync.mjs` as optional advanced workflows, not the default analytics path
 
