@@ -1318,7 +1318,8 @@ async function mockLoopEng(
     digestHistory?: unknown[];
   },
 ) {
-  await page.context().route('**/loop-eng/**', async (route) => {
+  // Page fixtures take precedence over the default page-level helper block.
+  await page.route('**/loop-eng/**', async (route) => {
     const path = new URL(route.request().url()).pathname;
     const payloadByPath: Record<string, unknown> = {
       '/loop-eng/summary': data.summary ?? { counts_by_status: {}, open_per_loop: {}, total: data.proposals?.length ?? 0 },
