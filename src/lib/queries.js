@@ -33,7 +33,6 @@ async function fetchJson(url, init) {
 }
 
 async function resolveLocalSyncBase(force = false) {
-  if (!IS_PROD) return null;
   if (!force && LOCAL_SYNC_BASE) return LOCAL_SYNC_BASE;
   if (!force && LOCAL_SYNC_PROBE) return LOCAL_SYNC_PROBE;
 
@@ -144,9 +143,9 @@ export async function fetchCostSummary() {
 // ─── Sync trigger / status ────────────────────────────────────────────────────
 
 export async function triggerSync() {
-  const url = !IS_PROD
-    ? '/api/sync'
-    : await resolveLocalSyncBase(true);
+  const status = await getSyncStatus();
+  const base = status.mode === 'dev-sync' ? null : await resolveLocalSyncBase(true);
+  const url = status.mode === 'dev-sync' ? '/api/sync' : base && `${base}/sync`;
 
   if (!url) {
     return {
@@ -156,9 +155,9 @@ export async function triggerSync() {
   }
 
   try {
-    const r = await fetch(IS_PROD ? `${url}/sync` : url, {
+    const r = await fetch(url, {
       method: 'POST',
-      ...(IS_PROD ? { headers: LOCAL_SYNC_HEADERS, mode: 'cors' } : {}),
+      ...(base ? { headers: LOCAL_SYNC_HEADERS, mode: 'cors' } : {}),
     });
     const result = await r.json();
     if (result.ok) invalidateRealSessions();
@@ -171,23 +170,23 @@ export async function triggerSync() {
 }
 
 export async function getSyncStatus() {
-  if (!IS_PROD) {
-    const result = await fetchJson('/api/sync/status');
-    return result ? { ...result, mode: 'dev-sync' } : { ok: false, mode: 'dev-sync' };
-  }
-
   const base = await resolveLocalSyncBase();
-  if (!base) return { ok: false, mode: 'refresh-only', error: 'Local sync helper unavailable' };
-
-  const result = await fetchJson(withCacheBust(`${base}/sync/status`), {
+  const result = base && await fetchJson(withCacheBust(`${base}/sync/status`), {
     headers: LOCAL_SYNC_HEADERS,
     mode: 'cors',
   });
-  if (!result) {
-    LOCAL_SYNC_BASE = null;
-    return { ok: false, mode: 'refresh-only', error: 'Local sync helper unavailable' };
+  if (result) return { ...result, mode: 'local-sync' };
+  LOCAL_SYNC_BASE = null;
+  if (!IS_PROD) {
+    const dev = await fetchJson('/api/sync/status');
+    if (dev?.state) return { ...dev, mode: 'dev-sync' };
   }
-  return { ...result, mode: 'local-sync' };
+  return { ok: false, mode: 'refresh-only', error: 'Local sync is disconnected. Open the local dashboard for private history.' };
+}
+
+export function isDemoData(sessions = [], summary = null) {
+  return summary?.source === 'synthetic-demo'
+    || (sessions.length > 0 && sessions.every(session => session.is_demo || /^demo-session-\d+$/.test(session.session_id)));
 }
 
 // ─── IST helpers ─────────────────────────────────────────────────────────────
@@ -266,6 +265,7 @@ function generateDemoData() {
       + (cacheRead / 1e6) * (isOpus ? 1.5 : 0.3);
 
     sessions.push({
+      is_demo: true,
       session_id: `sess-${i.toString().padStart(3, '0')}`,
       project: projects[Math.floor(Math.random() * projects.length)],
       model,
@@ -317,9 +317,8 @@ export async function fetchSessionPage(options = {}) {
     if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
   }
   const path = `/session-history/sessions?${params.toString()}`;
-  const data = IS_PROD
-    ? await fetchLocalJson(path)
-    : await fetchJson(withCacheBust(`/api${path}`));
+  const data = await fetchLocalJson(path)
+    || (!IS_PROD ? await fetchJson(withCacheBust(`/api${path}`)) : null);
   if (!data || !Array.isArray(data.items)) return null;
   return {
     ...data,

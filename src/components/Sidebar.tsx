@@ -23,7 +23,7 @@ function relativeTime(ms: number | null): string {
 
 const SYNC_LABEL: Record<string, string> = {
   running: 'Working…',
-  succeeded: 'Up to date',
+  succeeded: 'Last sync succeeded',
   partial: 'Synced with a warning',
   failed: 'Sync needs attention',
 };

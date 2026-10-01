@@ -1,5 +1,6 @@
 import { AlertCircle, Check, Clock3, LoaderCircle, Minus, RotateCw, X } from 'lucide-react';
 import './SyncActivityDrawer.css';
+import { sourceMeta } from '../lib/sources';
 
 const PHASE_LABELS = {
   preflight: 'Prepare local run',
@@ -29,10 +30,11 @@ function PhaseIcon({ status }) {
 export default function SyncActivityDrawer({ open, status, onClose, onRetry, retrying }) {
   if (!open) return null;
   const state = status?.state || 'idle';
+  const disconnected = !status || status.mode === 'refresh-only';
   const artifact = status?.artifact || {};
   const issue = status?.failure || status?.warning;
-  const stateLabel = state === 'running' ? 'Sync in progress'
-    : state === 'succeeded' ? 'Healthy'
+  const stateLabel = disconnected ? 'Local sync disconnected' : state === 'running' ? 'Sync in progress'
+    : state === 'succeeded' ? 'Last sync succeeded'
       : state === 'partial' ? 'Completed with warning'
         : state === 'failed' ? 'Needs attention'
           : 'Ready';
@@ -53,7 +55,7 @@ export default function SyncActivityDrawer({ open, status, onClose, onRetry, ret
         <span className="sync-activity__state-dot" />
         <div>
           <strong>{stateLabel}</strong>
-          <span>{state === 'running' ? PHASE_LABELS[status?.phase] || 'Working…' : `Data ${relativeTime(artifact.mtime)}`}</span>
+          <span>{disconnected ? 'No local collection status is available.' : state === 'running' ? PHASE_LABELS[status?.phase] || 'Working…' : `Data ${relativeTime(artifact.mtime)}`}</span>
         </div>
       </div>
 
@@ -83,11 +85,19 @@ export default function SyncActivityDrawer({ open, status, onClose, onRetry, ret
         <div><span>Last run</span><strong>{status?.completed_at ? relativeTime(Date.parse(status.completed_at)) : '—'}</strong></div>
       </div>
 
+      {artifact.source_health && (
+        <div className="sync-activity__facts">
+          {Object.entries(artifact.source_health).map(([source, health]) => (
+            <div key={source}><span>{sourceMeta(source).label}</span><strong>{health.state === 'collected' ? `${health.sessions} collected` : health.state.replaceAll('-', ' ')}</strong></div>
+          ))}
+        </div>
+      )}
       <footer className="sync-activity__footer">
+        {disconnected && <p>Reloading does not collect local sessions.</p>}
         <span>Run details stay local and contain metadata only.</span>
         <button type="button" onClick={onRetry} disabled={retrying || state === 'running'}>
           <RotateCw size={13} />
-          {state === 'failed' ? 'Retry' : 'Sync now'}
+          {disconnected ? 'Reload data' : state === 'failed' ? 'Retry' : 'Sync now'}
         </button>
       </footer>
     </section>

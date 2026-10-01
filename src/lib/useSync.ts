@@ -39,9 +39,14 @@ export function useSync(onReload: () => void) {
       setStatus(next);
       setMode(modeFor(next));
     });
-    // Re-render on a timer so the "3m ago" label stays truthful without
-    // hitting the endpoint again.
-    const tick = setInterval(() => setTick((n) => n + 1), STATUS_TICK_MS);
+    const tick = setInterval(() => {
+      setTick((n) => n + 1);
+      void getSyncStatus().then(next => {
+        if (!mounted) return;
+        setStatus(next);
+        setMode(modeFor(next));
+      });
+    }, STATUS_TICK_MS);
     return () => { mounted = false; clearInterval(tick); };
   }, []);
 
@@ -63,7 +68,7 @@ export function useSync(onReload: () => void) {
     setRequesting(true);
 
     let action = mode;
-    if (action === 'refresh' && IS_PROD) {
+    if (action === 'refresh') {
       // The helper may have come online since the page loaded; re-check before
       // downgrading to a plain reload.
       const latest = await getSyncStatus();
