@@ -312,7 +312,10 @@ export function getSyncRun(runId, { env = process.env, runtime = runtimeDir(env)
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const repoRoot = join(import.meta.dirname, '..');
   loadEnv(repoRoot);
-  const result = await runSync({ repoRoot, trigger: 'scheduled', refreshLimits: !process.argv.includes('--no-limits') });
+  const result = await runSync({
+    repoRoot, trigger: 'scheduled',
+    refreshLimits: process.env.MEOW_REFRESH_LIMITS !== '0' && !process.argv.includes('--no-limits'),
+  });
   console.log(JSON.stringify({ state: result.state, completed_at: result.completed_at, source_health: result.artifact?.source_health }));
   if (result.state === 'failed') process.exitCode = 1;
 }
