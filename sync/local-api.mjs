@@ -68,7 +68,8 @@ const PORT = Number(process.env.MEOW_LOCAL_API_PORT || process.env.MEOW_SYNC_POR
 const LOCAL_ACCESS_HEADER = 'x-meow-ops-local';
 const LOOP_OPS_DIR = resolve(process.env.MEOW_LOOP_OPS_DIR || join(ROOT, 'public', 'data', 'loop-ops'));
 const SUPERADMIN_USAGE_FILE = join(ROOT, 'public', 'data', 'superadmin-usage.json');
-const SESSIONS_FILE = process.env.MEOW_SESSIONS_FILE || join(ROOT, 'public', 'data', 'sessions.json');
+const DATA_DIR = process.env.MEOW_DATA_DIR || join(ROOT, 'public', 'data');
+const SESSIONS_FILE = process.env.MEOW_SESSIONS_FILE || join(DATA_DIR, 'sessions.json');
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://meow-ops.vercel.app',
   'http://localhost:5173',
@@ -385,7 +386,7 @@ const server = createServer(async (req, res) => {
   // Serve local files directly so the browser gets instant fresh data.
   if (req.method === 'GET' && (path === '/data/sessions.json' || path === '/data/cost-summary.json')) {
     const filename = path === '/data/sessions.json' ? 'sessions.json' : 'cost-summary.json';
-    const filePath = join(ROOT, 'public', 'data', filename);
+    const filePath = join(DATA_DIR, filename);
     try {
       const data = readFileSync(filePath, 'utf8');
       res.end(data);

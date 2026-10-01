@@ -61,7 +61,7 @@ const CURSOR_PROJECTS_DIR = process.env.CURSOR_PROJECTS_DIR || DEFAULT_CURSOR_PR
 const AIDER_PROJECT_DIRS = process.env.AIDER_PROJECTS
   ? process.env.AIDER_PROJECTS.split(':').filter(Boolean)
   : [];
-const OUTPUT_DIR = join(import.meta.dirname, '..', 'public', 'data');
+const OUTPUT_DIR = process.env.MEOW_DATA_DIR || join(import.meta.dirname, '..', 'public', 'data');
 const OUTPUT_FILE = join(OUTPUT_DIR, 'sessions.json');
 // Lightweight compatibility preview only. Full retention lives in the uncapped
 // local archive and browser detail views query it in bounded pages.
@@ -72,14 +72,9 @@ const SESSION_PREVIEW_LIMIT = parseInt(
 
 console.log('🐱 Meow Operations — Local Export\n');
 
-if (!existsSync(CLAUDE_DIR)) {
-  console.error(`Claude projects directory not found: ${CLAUDE_DIR}`);
-  process.exit(1);
-}
-
 if (!existsSync(OUTPUT_DIR)) mkdirSync(OUTPUT_DIR, { recursive: true });
 
-const projectDirs = readdirSync(CLAUDE_DIR).filter((d) => {
+const projectDirs = (existsSync(CLAUDE_DIR) ? readdirSync(CLAUDE_DIR) : []).filter((d) => {
   const full = join(CLAUDE_DIR, d);
   try {
     return statSync(full).isDirectory() && !d.startsWith('.');
@@ -194,7 +189,9 @@ if (existsSync(CODEX_DIR)) {
 // Merge Cursor sessions from local agent transcripts. Model/token/cost stay
 // unavailable unless the operator opts into the official Admin API enricher.
 let cursorUsageReport = emptyCursorUsageReport({ status: 'skipped' });
-if (CURSOR_PROJECTS_DIR && existsSync(CURSOR_PROJECTS_DIR)) {
+if (process.env.MEOW_SKIP_CURSOR === '1') {
+  console.log('Cursor collection excluded by operator configuration');
+} else if (CURSOR_PROJECTS_DIR && existsSync(CURSOR_PROJECTS_DIR)) {
   const cursorSessions = scanCursorSessions(CURSOR_PROJECTS_DIR);
   if (cursorSessions.length > 0) {
     console.log(`Found ${cursorSessions.length} Cursor session(s) (local transcripts; usage not exposed on disk)`);
@@ -266,6 +263,19 @@ for (const s of allSessions) {
   if (!prev || (s.message_count || 0) > (prev.message_count || 0)) byId.set(s.session_id, s);
 }
 const allUnique = [...byId.values()];
+const sourceHealth = Object.fromEntries([
+  ['claude', existsSync(CLAUDE_DIR) ? 'available' : 'not-found'],
+  ['codex', existsSync(CODEX_DIR) ? 'available' : 'not-found'],
+  ['hermes', existsSync(HERMES_STATE_DB) ? 'available' : 'not-found'],
+  ['antigravity', ANTIGRAVITY_DIR && existsSync(ANTIGRAVITY_DIR) ? 'available' : 'not-found'],
+  ['aider', AIDER_PROJECT_DIRS.length ? 'available' : 'not-configured'],
+  ['cursor', process.env.MEOW_SKIP_CURSOR === '1' ? 'excluded'
+    : CURSOR_PROJECTS_DIR && existsSync(CURSOR_PROJECTS_DIR) ? 'available' : 'not-found'],
+].map(([source, state]) => {
+  const rows = allUnique.filter((session) => session.source === source);
+  const latest = rows.map((session) => session.ended_at || session.started_at).filter(Boolean).sort().at(-1) || null;
+  return [source, { state: state === 'available' ? (rows.length ? 'collected' : 'no-readable-sessions') : state, sessions: rows.length, latest }];
+}));
 const dupCount = allSessions.length - allUnique.length;
 console.log(`Total unique session entries: ${allUnique.length}${dupCount > 0 ? ` (deduped ${dupCount})` : ''}`);
 
@@ -440,6 +450,7 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
   }));
 
   const summary = {
+    sourceHealth,
     exportedAt:    now.toISOString(),
     today:         todayBucket,
     thisWeek:      bucket(completeSessions, thisWeekStart, now),

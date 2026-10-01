@@ -6,8 +6,10 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { loadEnv } from './load-env.mjs';
 
-const DEFAULT_TIMEOUT_MS = 90_000;
+const DEFAULT_TIMEOUT_MS = 300_000;
 const PHASES = ['preflight', 'export_sessions', 'verify_artifacts', 'refresh_limits'];
 let activeRun = null;
 
@@ -34,8 +36,9 @@ function atomicWrite(path, value) {
   renameSync(temp, path);
 }
 
-function artifactSnapshot(repoRoot) {
-  const sessionsPath = join(repoRoot, 'public', 'data', 'sessions.json');
+function artifactSnapshot(repoRoot, env = process.env) {
+  const dataDir = env.MEOW_DATA_DIR || join(repoRoot, 'public', 'data');
+  const sessionsPath = join(dataDir, 'sessions.json');
   try {
     const stat = statSync(sessionsPath);
     const sessions = JSON.parse(readFileSync(sessionsPath, 'utf8'));
@@ -52,6 +55,7 @@ function artifactSnapshot(repoRoot) {
       size: stat.size,
       sessions: Array.isArray(sessions) ? sessions.length : 0,
       source_counts,
+      source_health: safeReadJson(join(dataDir, 'cost-summary.json'))?.sourceHealth || {},
     };
   } catch {
     return { available: false, mtime: null, size: null, sessions: 0, source_counts: {} };
@@ -163,7 +167,7 @@ async function execute(snapshot, options) {
     env = process.env,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     limitsTimeoutMs = 15_000,
-    refreshLimits = true,
+    refreshLimits = env.MEOW_REFRESH_LIMITS !== '0',
     commandRunner = runCommand,
     runtime = runtimeDir(env),
   } = options;
@@ -189,7 +193,7 @@ async function execute(snapshot, options) {
     }
 
     setPhase(snapshot, 'verify_artifacts', runtime);
-    const artifact = artifactSnapshot(repoRoot);
+    const artifact = artifactSnapshot(repoRoot, env);
     if (!artifact.available) {
       return finish(snapshot, 'failed', runtime, {
         artifact,
@@ -266,7 +270,7 @@ export function startSyncRun(options) {
     updated_at: now,
     completed_at: null,
     phases: phaseRows('preflight'),
-    artifact: artifactSnapshot(options.repoRoot),
+    artifact: artifactSnapshot(options.repoRoot, env),
     failure: null,
     warning: null,
   };
@@ -284,7 +288,7 @@ export async function runSync(options) {
 
 export function getSyncStatus({ repoRoot, env = process.env, runtime = runtimeDir(env) }) {
   const current = safeReadJson(paths(runtime).current);
-  const artifact = artifactSnapshot(repoRoot);
+  const artifact = artifactSnapshot(repoRoot, env);
   if (!current) {
     return {
       ok: artifact.available,
@@ -303,4 +307,12 @@ export function getSyncStatus({ repoRoot, env = process.env, runtime = runtimeDi
 export function getSyncRun(runId, { env = process.env, runtime = runtimeDir(env) } = {}) {
   if (!/^sync_[A-Za-z0-9_-]+$/.test(String(runId || ''))) return null;
   return safeReadJson(join(paths(runtime).runs, `${runId}.json`));
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const repoRoot = join(import.meta.dirname, '..');
+  loadEnv(repoRoot);
+  const result = await runSync({ repoRoot, trigger: 'scheduled', refreshLimits: !process.argv.includes('--no-limits') });
+  console.log(JSON.stringify({ state: result.state, completed_at: result.completed_at, source_health: result.artifact?.source_health }));
+  if (result.state === 'failed') process.exitCode = 1;
 }

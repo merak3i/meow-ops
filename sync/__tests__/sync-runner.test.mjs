@@ -17,6 +17,30 @@ function fixture() {
   return { root, runtime, repoRoot };
 }
 
+test('sync runner verifies the configured private data directory and source coverage', async () => {
+  const fx = fixture();
+  const dataDir = join(fx.root, 'private-data');
+  mkdirSync(dataDir);
+  const sourceHealth = { codex: { state: 'collected', sessions: 1 }, cursor: { state: 'excluded', sessions: 0 } };
+  try {
+    const env = { ...process.env, MEOW_DATA_DIR: dataDir };
+    const result = await runSync({
+      repoRoot: fx.repoRoot, runtime: fx.runtime, env, refreshLimits: false,
+      commandRunner: async () => {
+        writeFileSync(join(dataDir, 'sessions.json'), JSON.stringify([{ session_id: 'one', source: 'codex' }]));
+        writeFileSync(join(dataDir, 'cost-summary.json'), JSON.stringify({ sourceHealth }));
+        return { ok: true, code: 0 };
+      },
+    });
+    assert.equal(result.state, 'succeeded');
+    assert.equal(result.artifact.sessions, 1);
+    assert.deepEqual(result.artifact.source_health, sourceHealth);
+    assert.equal(getSyncStatus({ repoRoot: fx.repoRoot, runtime: fx.runtime, env }).artifact.sessions, 1);
+  } finally {
+    rmSync(fx.root, { recursive: true, force: true });
+  }
+});
+
 test('sync runner records observable phases and artifact metadata', async () => {
   const fx = fixture();
   try {
