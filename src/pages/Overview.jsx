@@ -10,6 +10,7 @@ import {
   computeOverviewStats,
   getProjectBreakdown,
   getToolBreakdownFromSessions,
+  isDemoData,
 } from '../lib/queries';
 
 // Home — one screen that answers "what happened, and what did it cost".
@@ -33,7 +34,7 @@ function pct(part, whole) {
 
 // ─── Where the tokens went, by source ────────────────────────────────────────
 
-function SourceRows({ sessions, totalTokens }) {
+function SourceRows({ sessions, totalTokens, range, completeness }) {
   const rows = useMemo(() => {
     const acc = new Map();
     for (const session of sessions) {
@@ -54,6 +55,7 @@ function SourceRows({ sessions, totalTokens }) {
     <section className="mo-section">
       <div className="mo-section__head">
         <Eyebrow>By source</Eyebrow>
+        <Scope range={range} completeness={completeness} />
       </div>
       <Card>
         <div style={{ display: 'grid', gap: 'var(--sp-3)' }}>
@@ -333,11 +335,12 @@ export default function Overview({
   // Rollup-backed figures cover every session ever parsed. Anything computed
   // from the in-memory array is capped at the compatibility preview.
   const fromArchive = source === 'both'
+    && Boolean(costSummary?.archive?.appendOnly)
     && (dateRange === 'all' ? Boolean(costSummary?.allTime) : Boolean(dailyData?.length));
 
   const range = rangeLabel(dateRange);
   const sourceScope = source === 'both' ? 'All sources' : sourceMeta(source).label;
-  const completeness = fromArchive ? 'archive' : 'preview';
+  const completeness = isDemoData(allSessions, costSummary) ? 'demo' : fromArchive ? 'archive' : 'preview';
   const scope = <Scope range={range} source={sourceScope} completeness={completeness} />;
 
   const ghostRate = pct(stats.ghostCount ?? 0, stats.periodSessions);
@@ -394,7 +397,7 @@ export default function Overview({
         />
       </div>
 
-      <SourceRows sessions={sessions} totalTokens={stats.periodTokens} />
+      <SourceRows sessions={sessions} totalTokens={stats.periodTokens} range={range} completeness={completeness === 'demo' ? 'demo' : 'preview'} />
 
       <div className="mo-grid mo-grid--2" style={{ marginBottom: 'var(--sp-5)' }}>
         <DailyChart data={chartData} title={`Tokens per day — ${range.toLowerCase()}`} />

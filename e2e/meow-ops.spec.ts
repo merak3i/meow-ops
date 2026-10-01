@@ -151,8 +151,30 @@ async function openTab(page: import('@playwright/test').Page, label: string) {
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 test.beforeEach(async ({ page }) => {
+  await page.route(LOCAL_HELPER_ROUTE, route => route.abort());
+  await page.route('http://localhost:7337/**', route => route.abort());
   await page.goto('/');
   await waitForApp(page);
+});
+
+test('disconnected sample data never claims a healthy sync or a complete archive', async ({ page }) => {
+  await page.route('**/data/sessions.json*', route => route.fulfill({ json: [{
+    session_id: 'demo-session-0001', project: 'Sample Archive A', source: 'codex',
+    started_at: new Date().toISOString(), ended_at: new Date().toISOString(),
+    total_tokens: 100, duration_seconds: 60,
+  }] }));
+  await page.route('**/data/cost-summary.json*', route => route.fulfill({ json: {
+    source: 'synthetic-demo', allTime: { sessions: 1, tokens: 100 },
+    daily_summary: [{ date: new Date().toISOString().slice(0, 10), session_count: 1, total_tokens: 100 }],
+  } }));
+  await page.reload();
+  await expect(page.getByText('Sample data', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('complete archive', { exact: false })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Reload data', exact: true }).click();
+  const activity = page.getByRole('dialog', { name: 'Sync activity' });
+  await expect(activity.getByText('Local sync disconnected', { exact: true })).toBeVisible();
+  await expect(activity.getByRole('button', { name: 'Reload data', exact: true })).toBeVisible();
+  await expect(activity.getByText('Ready', { exact: true })).toHaveCount(0);
 });
 
 // ── 1. App shell ──────────────────────────────────────────────────────────────

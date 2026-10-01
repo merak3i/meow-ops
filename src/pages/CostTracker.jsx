@@ -7,7 +7,7 @@ import CursorRequestUsage from '../components/CursorRequestUsage';
 import { Card, Eyebrow, HelpTip, Scope, StatTile } from '../components/ui';
 import { formatCost, formatTokens } from '../lib/format';
 import { sourceMeta } from '../lib/sources';
-import { computeSpendBreakdown } from '../lib/queries';
+import { computeSpendBreakdown, isDemoData } from '../lib/queries';
 
 // Cost — the one place fixed-period spend lives.
 //
@@ -160,7 +160,7 @@ function UnattributedUsage({ cursor, hermes }) {
 }
 
 export default function CostTracker({ dailyData = [], modelData = [], stats, costSummary, allSessions = [], dateRange = 30 }) {
-  const fromArchive = Boolean(costSummary?.allTime);
+  const fromArchive = !isDemoData(allSessions, costSummary) && Boolean(costSummary?.archive?.appendOnly);
   const totalCost = costSummary?.allTime?.cost ?? stats?.totalCost ?? 0;
   const totalSessions = costSummary?.allTime?.sessions ?? stats?.totalSessions ?? 0;
 
@@ -219,7 +219,7 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
 
   const rangeLabel = dateRange === 'all' ? 'All time' : dateRange === '1h' ? 'Last hour'
     : dateRange === '24h' ? 'Last 24 hours' : `Last ${dateRange} days`;
-  const completeness = fromArchive ? 'archive' : 'preview';
+  const completeness = isDemoData(allSessions, costSummary) ? 'demo' : fromArchive ? 'archive' : 'preview';
 
   return (
     <>
@@ -327,7 +327,7 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
         <Card>
           <div className="mo-section__head">
             <Eyebrow>Cumulative</Eyebrow>
-            <Scope range="All time" completeness={costSummary?.daily_summary ? 'archive' : 'preview'} />
+            <Scope range="All time" completeness={isDemoData(allSessions, costSummary) ? 'demo' : costSummary?.archive?.appendOnly ? 'archive' : 'preview'} />
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={cumulative}>

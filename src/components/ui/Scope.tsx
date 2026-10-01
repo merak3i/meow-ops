@@ -8,7 +8,7 @@ import { HelpTip } from './HelpTip';
 // above six spend cards that silently ignored the date filter and read all-time
 // rollups. Both were correct; neither said so.
 
-export type ScopeCompleteness = 'archive' | 'preview' | 'unknown';
+export type ScopeCompleteness = 'archive' | 'preview' | 'demo' | 'unknown';
 
 export interface ScopeProps {
   /** Human range label, e.g. "30 days", "All time", "This month". */
@@ -23,6 +23,7 @@ export interface ScopeProps {
 const COMPLETENESS_LABEL: Record<ScopeCompleteness, string | null> = {
   archive: 'complete archive',
   preview: 'newest 1,000 only',
+  demo: 'sample data',
   unknown: null,
 };
 
@@ -46,7 +47,7 @@ export function Scope({ range, source, completeness = 'unknown', ignoresDateFilt
         <>
           {parts.length > 0 && <span className="mo-scope__dot"> · </span>}
           {completenessLabel}
-          <HelpTip term={completeness === 'preview' ? 'preview' : 'archive'} />
+          {completeness !== 'demo' && <HelpTip term={completeness === 'preview' ? 'preview' : 'archive'} />}
         </>
       )}
       {ignoresDateFilter && (

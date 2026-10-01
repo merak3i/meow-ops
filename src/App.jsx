@@ -22,6 +22,7 @@ import {
   getModelBreakdown,
   invalidateRealSessions,
   hasNoData,
+  isDemoData,
 } from './lib/queries';
 
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
@@ -309,10 +310,14 @@ export default function App() {
           ariaLabel={`${surface.label} views`}
         />
       )}
+      {isDemoData(allSessions, costSummary) && (
+        <Notice action={<a className="mo-btn" href="http://127.0.0.1:4273/#/today/summary">Open local dashboard</a>}>
+          <strong>Sample data</strong>. These figures are examples, not your local sessions.
+        </Notice>
+      )}
       {chrome.needsHelper && !sync.helperOnline && (
         <Notice command="node sync/local-api.mjs">
-          This view reads from the local helper, which is not running. Start it in a terminal at the
-          repo root and this page fills in.
+          This view cannot connect to the local helper. Open the local dashboard and check the helper.
         </Notice>
       )}
     </>
