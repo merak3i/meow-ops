@@ -10,11 +10,9 @@
 //             GREP_SEARCH | LIST_DIRECTORY | SEARCH_WEB | CODE_ACTION | ...
 //     tool_calls: [{ name: "view_file" | "run_command" | ..., args: { AbsolutePath, ... } }]
 //
-// IMPORTANT — what Antigravity does NOT expose locally:
-//   * token counts (input/output/total) — not written to any plaintext file
-//   * the model used — only an opaque enum (MODEL_PLACEHOLDER_M16) with no
-//     local name mapping; the conversation store (conversations/*.pb) is encrypted
-//   * cost — derived from the two above, so also unavailable
+// SQLite conversation stores also contain step metadata. Recover missing
+// JSONL steps from conversations/<uuid>.db through a read-only query.
+// Token/model/cost and binary .pb payloads are not decoded by this adapter.
 //
 // We therefore record real TIME, TOOLS, PROJECT, and step counts, and mark
 // usage_available=false so the dashboard shows "not exposed by Antigravity"
@@ -23,6 +21,7 @@
 import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { createSession, makeSnippet, projectFromCwd } from './session-utils.mjs';
+import { readAntigravityDatabase } from './antigravity-database.mjs';
 
 export const DEFAULT_ANTIGRAVITY_DIR = process.env.HOME
   ? join(process.env.HOME, '.gemini', 'antigravity')
@@ -66,14 +65,46 @@ function stripUserRequest(text) {
     .replace(/<[^>]+>/g, ' ');
 }
 
-export function parseAntigravityTranscript(filePath, uuid) {
+const STEP_TOOLS = {
+  CODE_ACTION: 'code_action', GREP_SEARCH: 'grep_search', VIEW_FILE: 'view_file',
+  LIST_DIRECTORY: 'list_directory', RUN_COMMAND: 'run_command',
+  READ_URL_CONTENT: 'view_web_document', SEARCH_WEB: 'search_web',
+};
+
+export function parseAntigravityTranscript(filePath, uuid, { databasePath } = {}) {
   let content;
   try {
     content = readFileSync(filePath, 'utf8');
   } catch {
-    return null;
+    content = '';
   }
   const lines = content.split('\n').filter(Boolean);
+  const parsed = [];
+  let malformed = 0;
+  for (const line of lines) {
+    try {
+      const row = JSON.parse(line);
+      if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('Invalid step');
+      parsed.push(row);
+    } catch { malformed++; }
+  }
+  const database = readAntigravityDatabase(databasePath);
+  const indexed = new Map(parsed.filter(row => Number.isInteger(row.step_index)).map(row => [row.step_index, row]));
+  // Some logs append a status update for an existing step; count that step once.
+  const rows = [...indexed.values(), ...parsed.filter(row => !Number.isInteger(row.step_index))];
+  const conflicts = database.steps.filter(step => {
+    const existing = indexed.get(step.step_index);
+    return existing && (Math.abs(Date.parse(existing.created_at) - Date.parse(step.created_at)) >= 1000
+      || (step.type !== 'UNKNOWN_STEP' && existing.type !== step.type));
+  }).length;
+  let recovered = 0;
+  if (!conflicts) {
+    for (const step of database.steps) {
+      if (indexed.has(step.step_index)) continue;
+      rows.push(step);
+      recovered++;
+    }
+  }
 
   const session = createSession({
     session_id: `antigravity-${uuid}`,
@@ -85,16 +116,17 @@ export function parseAntigravityTranscript(filePath, uuid) {
     usage_available: false,
     pricing_source: 'unavailable',
     estimated_cost_usd: 0,
-    raw_ref: filePath,
+    raw_ref: existsSync(filePath) ? filePath : databasePath,
+    sync_coverage: {
+      database_status: conflicts ? 'unsupported' : database.status,
+      database_steps: database.steps.length, recovered_steps: recovered,
+      unknown_steps: database.steps.filter(step => step.type === 'UNKNOWN_STEP').length,
+    },
   });
 
   const cwdCounts = new Map();
-  let malformed = 0;
 
-  for (const line of lines) {
-    let e;
-    try { e = JSON.parse(line); } catch { malformed++; continue; }
-
+  for (const e of rows) {
     const ts = e.created_at;
     if (ts) {
       if (!session.started_at || ts < session.started_at) session.started_at = ts;
@@ -128,6 +160,9 @@ export function parseAntigravityTranscript(filePath, uuid) {
           if (m) cwdCounts.set(m[1], (cwdCounts.get(m[1]) || 0) + 1);
         }
       }
+    } else if (STEP_TOOLS[e.type]) {
+      const name = normalizeTool(STEP_TOOLS[e.type]);
+      session.tools[name] = (session.tools[name] || 0) + 1;
     }
   }
 
@@ -178,23 +213,44 @@ function classifyAntigravity(tools) {
 export function scanAntigravitySessions(antigravityDir = DEFAULT_ANTIGRAVITY_DIR) {
   if (!antigravityDir) return [];
   const brainDir = join(antigravityDir, 'brain');
-  if (!existsSync(brainDir)) return [];
+  const conversationDir = join(antigravityDir, 'conversations');
 
   const sessions = [];
-  let uuids;
-  try { uuids = readdirSync(brainDir); } catch { return []; }
+  const uuids = new Set();
+  try { for (const uuid of readdirSync(brainDir)) uuids.add(uuid); } catch { /* Store may contain only databases. */ }
+  try {
+    for (const file of readdirSync(conversationDir)) {
+      if (file.endsWith('.db')) uuids.add(file.slice(0, -3));
+    }
+  } catch { /* Older stores contain only brain logs. */ }
 
   for (const uuid of uuids) {
     const transcript = join(brainDir, uuid, '.system_generated', 'logs', 'transcript.jsonl');
-    let st;
-    try { st = statSync(transcript); } catch { continue; }
-    if (!st.isFile()) continue;
+    const databasePath = join(conversationDir, `${uuid}.db`);
+    if (!existsSync(databasePath)) {
+      try { if (!statSync(transcript).isFile()) continue; } catch { continue; }
+    }
     try {
-      const s = parseAntigravityTranscript(transcript, uuid);
+      const s = parseAntigravityTranscript(transcript, uuid, { databasePath });
       if (s) sessions.push(s);
     } catch {
       // Skip unreadable / malformed transcripts silently.
     }
   }
   return sessions;
+}
+
+export function antigravityCoverage(root, sessions) {
+  let files = [];
+  try { files = readdirSync(join(root, 'conversations')).filter(file => /\.(db|pb)$/.test(file)); } catch { /* Brain-only stores are supported. */ }
+  const ids = new Set(sessions.map(session => session.session_id.slice('antigravity-'.length)));
+  const coverage = sessions.map(session => session.sync_coverage).filter(Boolean);
+  return {
+    conversation_stores: files.length,
+    unreadable_stores: files.filter(file => !ids.has(file.replace(/\.(db|pb)$/, ''))).length,
+    database_sessions: coverage.filter(value => value.database_status === 'read').length,
+    unreadable_databases: coverage.filter(value => ['unsupported', 'unreadable'].includes(value.database_status)).length,
+    recovered_steps: coverage.reduce((total, value) => total + value.recovered_steps, 0),
+    unknown_steps: coverage.reduce((total, value) => total + value.unknown_steps, 0),
+  };
 }

@@ -10,7 +10,7 @@ import { scanCodexSessions }  from './parse-codex.mjs';
 import { scanCursorSessions, DEFAULT_CURSOR_PROJECTS_DIR } from './parse-cursor.mjs';
 import { enrichCursorSessions, emptyCursorUsageReport } from './cursor-admin-usage.mjs';
 import { scanAiderProjects }  from './parse-aider.mjs';
-import { scanAntigravitySessions, DEFAULT_ANTIGRAVITY_DIR } from './parse-antigravity.mjs';
+import { scanAntigravitySessions, antigravityCoverage, DEFAULT_ANTIGRAVITY_DIR } from './parse-antigravity.mjs';
 import { scanHermesMessageEvidence, scanHermesModelUsage, scanHermesSessions, DEFAULT_HERMES_DB } from './parse-hermes.mjs';
 import { readSessionHistory, updateSessionHistory } from './session-history.mjs';
 import { buildSessionRollups } from './session-rollups.mjs';
@@ -274,7 +274,12 @@ const sourceHealth = Object.fromEntries([
 ].map(([source, state]) => {
   const rows = allUnique.filter((session) => session.source === source);
   const latest = rows.map((session) => session.ended_at || session.started_at).filter(Boolean).sort().at(-1) || null;
-  return [source, { state: state === 'available' ? (rows.length ? 'collected' : 'no-readable-sessions') : state, sessions: rows.length, latest }];
+  const coverage = source === 'antigravity' ? antigravityCoverage(ANTIGRAVITY_DIR, rows) : null;
+  const gaps = coverage && (coverage.unreadable_stores || coverage.unreadable_databases || coverage.unknown_steps);
+  return [source, {
+    state: state === 'available' ? (gaps ? 'collected-with-gaps' : rows.length ? 'collected' : 'no-readable-sessions') : state,
+    sessions: rows.length, latest, ...(coverage ? { coverage } : {}),
+  }];
 }));
 const dupCount = allSessions.length - allUnique.length;
 console.log(`Total unique session entries: ${allUnique.length}${dupCount > 0 ? ` (deduped ${dupCount})` : ''}`);
