@@ -1,15 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises';
+import { copyFile, cp, mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { collectPublicAssets } from '../build-public-assets.mjs';
+import { loadConfigFromFile } from 'vite';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const demoFileNames = ['demo-sessions.json', 'demo-cost-summary.json', 'demo-superadmin-usage.json'];
+
+test('Vite config loads with only the sync modules allowed into Vercel', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'meow-vercel-config-'));
+  try {
+    const ignore = await readFile(join(ROOT, '.vercelignore'), 'utf8');
+    const modules = ignore.split(/\r?\n/).filter(line => /^!sync\/[\w-]+\.mjs$/.test(line));
+    await mkdir(join(root, 'sync'));
+    for (const entry of modules) {
+      const path = entry.slice(1);
+      await copyFile(join(ROOT, path), join(root, path));
+    }
+    await cp(join(ROOT, 'src/pages/loop-ops'), join(root, 'src/pages/loop-ops'), { recursive: true });
+    await copyFile(join(ROOT, 'vite.config.js'), join(root, 'vite.config.js'));
+    await copyFile(join(ROOT, 'package.json'), join(root, 'package.json'));
+    await symlink(join(ROOT, 'node_modules'), join(root, 'node_modules'), 'dir');
+    const result = await loadConfigFromFile({ command: 'build', mode: 'production' }, join(root, 'vite.config.js'), root);
+    assert.ok(result?.config, 'the packaged build config must resolve its dependencies');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 async function collectTestAssets(root) {
   const fixtureHashes = {};
