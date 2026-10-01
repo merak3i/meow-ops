@@ -80,8 +80,8 @@ export default function SyncActivityDrawer({ open, status, onClose, onRetry, ret
       )}
 
       <div className="sync-activity__facts">
-        <div><span>Sessions</span><strong>{artifact.sessions ?? '—'}</strong></div>
-        <div><span>Sources</span><strong>{Object.keys(artifact.source_counts || {}).length || '—'}</strong></div>
+        <div><span>Preview sessions</span><strong>{artifact.sessions ?? '—'}</strong></div>
+        <div><span>Preview sources</span><strong>{Object.keys(artifact.source_counts || {}).length || '—'}</strong></div>
         <div><span>Last run</span><strong>{status?.completed_at ? relativeTime(Date.parse(status.completed_at)) : '—'}</strong></div>
       </div>
 

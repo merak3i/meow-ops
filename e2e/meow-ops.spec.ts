@@ -191,6 +191,7 @@ test('source collection status stays readable on a narrow screen', async ({ page
   });
   await page.reload();
   await page.locator('.sidebar-sync-button').click();
+  await expect(page.getByText('Preview sessions', { exact: true })).toBeVisible();
   const facts = page.locator('.sync-activity__facts').last();
   await expect(facts.getByText('not configured', { exact: true })).toBeVisible();
   expect(await facts.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
