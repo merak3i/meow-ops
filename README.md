@@ -351,14 +351,17 @@ The browser bundle uses `VITE_LOCAL_SYNC_URL` at build time and defaults to `htt
 Open Terminal in the cloned `meow-ops` folder. Run the collector and helper with the same data directory and source settings:
 
 ```bash
+umask 077
 export MEOW_DATA_DIR="$HOME/.meow-ops/data"
 export MEOW_SKIP_CURSOR=1
 export MEOW_REFRESH_LIMITS=0
+mkdir -p "$MEOW_DATA_DIR"
+chmod 700 "$MEOW_DATA_DIR"
 node sync/export-local.mjs
 node sync/local-api.mjs
 ```
 
-The helper stays running in that Terminal. In a second Terminal, open the same clone and start the built dashboard:
+The folder permissions limit access to your local user; `umask 077` also restricts newly created files. The helper stays running in that Terminal. In a second Terminal, open the same clone and start the built dashboard:
 
 ```bash
 npm run build
@@ -379,7 +382,7 @@ Open [the local dashboard](http://127.0.0.1:4273/#/today/summary), then use **Sy
 
 The sync drawer reports each source as collected, excluded, unavailable or collected with gaps. Aider requires configured `AIDER_PROJECTS`; a missing harness is not represented by invented sessions. Antigravity reports recovered database steps and unreadable or unknown coverage. Full archive totals and the newest-session source breakdown label their different scopes.
 
-For an operator-managed five-minute macOS refresh, a LaunchAgent can run `node sync/sync-runner.mjs --no-limits` with `StartInterval=300` and the same environment settings. The repaired local installation uses `com.meowops.harness-sync`; this job is separate from the daily operator installed by `npm run agents:install`. A successful job normally shows `not running` between scheduled runs, with exit code `0`; its run count should increase. Automatic collection requires the Mac to be awake and the user logged in.
+For an operator-managed five-minute macOS refresh, a LaunchAgent can run `node sync/sync-runner.mjs --no-limits` with `StartInterval=300`, `Umask=63` (decimal for `077`), and the same environment settings. The repaired local installation uses `com.meowops.harness-sync`; this job is separate from the daily operator installed by `npm run agents:install`. A successful job normally shows `not running` between scheduled runs, with exit code `0`; its run count should increase. Automatic collection requires the Mac to be awake and the user logged in.
 
 The hosted site remains a sample-data shell under the current privacy boundary. Adding its origin to `MEOW_DASHBOARD_ORIGIN` does not grant access to private history or sync routes. Session counts, token estimates and elapsed thread duration do not by themselves verify a vendor invoice or active working time.
 
