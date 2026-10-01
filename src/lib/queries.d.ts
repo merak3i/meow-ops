@@ -23,7 +23,13 @@ export type SyncStatus = {
     size?: number | null;
     sessions?: number;
     source_counts?: Record<string, number>;
-    source_health?: Record<string, { state: string; sessions: number; latest?: string | null }>;
+    source_health?: Record<string, {
+      state: string; sessions: number; latest?: string | null;
+      coverage?: {
+        recovered_steps: number; conversation_stores: number; unreadable_stores: number;
+        database_sessions: number; unreadable_databases: number; unknown_steps: number;
+      };
+    }>;
   };
   failure?: { stage?: string; code?: string; summary?: string; retryable?: boolean } | null;
   warning?: { stage?: string; code?: string; summary?: string } | null;

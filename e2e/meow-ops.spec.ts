@@ -181,7 +181,7 @@ test('source collection status stays readable on a narrow screen', async ({ page
   await page.setViewportSize({ width: 375, height: 812 });
   const status = { ok: true, state: 'succeeded', artifact: { source_health: {
     claude: { state: 'collected', sessions: 948 }, codex: { state: 'collected', sessions: 157 },
-    hermes: { state: 'collected', sessions: 53 }, antigravity: { state: 'no-readable-sessions', sessions: 0 },
+    hermes: { state: 'collected', sessions: 53 }, antigravity: { state: 'collected', sessions: 50, coverage: { recovered_steps: 539 } },
     aider: { state: 'not-configured', sessions: 0 }, cursor: { state: 'excluded', sessions: 0 },
   } } };
   await page.route(LOCAL_HELPER_ROUTE, route => {
@@ -193,6 +193,7 @@ test('source collection status stays readable on a narrow screen', async ({ page
   await page.locator('.sidebar-sync-button').click();
   await expect(page.getByText('Preview sessions', { exact: true })).toBeVisible();
   const facts = page.locator('.sync-activity__facts').last();
+  await expect(facts.getByText('539 steps recovered', { exact: true })).toBeVisible();
   await expect(facts.getByText('not configured', { exact: true })).toBeVisible();
   expect(await facts.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   expect(await facts.locator('div').evaluateAll(cells => (

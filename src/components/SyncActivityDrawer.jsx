@@ -88,7 +88,11 @@ export default function SyncActivityDrawer({ open, status, onClose, onRetry, ret
       {artifact.source_health && (
         <div className="sync-activity__facts">
           {Object.entries(artifact.source_health).map(([source, health]) => (
-            <div key={source}><span>{sourceMeta(source).label}</span><strong>{health.state === 'collected' ? `${health.sessions} collected` : health.state.replaceAll('-', ' ')}</strong></div>
+            <div key={source}>
+              <span>{sourceMeta(source).label}</span>
+              <strong>{health.state === 'collected' ? `${health.sessions} collected` : health.state.replaceAll('-', ' ')}</strong>
+              {health.coverage?.recovered_steps > 0 && <span>{health.coverage.recovered_steps} steps recovered</span>}
+            </div>
           ))}
         </div>
       )}
