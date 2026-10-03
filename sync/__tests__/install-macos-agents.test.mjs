@@ -65,3 +65,14 @@ test('reinstall migrates private locations from old service overrides without lo
     assert.equal(readFileSync(again.configFile, 'utf8'), config);
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
+
+test('reinstall accepts a valid service plist without optional environment overrides', () => {
+  const home = mkdtempSync(join(tmpdir(), 'meow-install-no-env-'));
+  try {
+    const first = install({ home, repoRoot: '/fixture/repo' });
+    writeFileSync(first.jobs[0].path, '<?xml version="1.0"?><plist version="1.0"><dict><key>Label</key><string>com.meowops.sanctum-helper</string></dict></plist>');
+    const second = install({ home, repoRoot: '/fixture/new-repo' });
+    assert.equal(second.activated, false);
+    assert.ok(existsSync(second.jobs[0].path));
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});

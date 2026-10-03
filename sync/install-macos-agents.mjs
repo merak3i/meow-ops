@@ -19,8 +19,11 @@ function installedOverrides(jobs, agents, configured) {
     let plist;
     try { plist = readFileSync(file, 'utf8'); }
     catch { throw new Error('An installed Meow Ops service could not be inspected; preserve it before reinstalling.'); }
+    if (!plist.includes('<plist') || !plist.includes('</plist>')) {
+      throw new Error('An installed Meow Ops service could not be inspected; preserve it before reinstalling.');
+    }
     const environment = plist.match(/<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/)?.[1];
-    if (environment === undefined) throw new Error('An installed Meow Ops service could not be inspected; preserve it before reinstalling.');
+    if (environment === undefined) continue;
     for (const key of MIGRATED_KEYS) {
       const keyPattern = new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`);
       const match = environment.match(keyPattern);
