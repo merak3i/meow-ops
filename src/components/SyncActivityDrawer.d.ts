@@ -7,4 +7,5 @@ export default function SyncActivityDrawer(props: {
   retrying?: boolean;
   onClose: () => void;
   onRetry: () => void;
+  onOpenStorage: () => void;
 }): ReactElement | null;

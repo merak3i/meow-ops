@@ -30,7 +30,7 @@ const SYNC_LABEL: Record<string, string> = {
 
 export interface SidebarProps {
   activeSurface: string;
-  onNavigate: (surface: string) => void;
+  onNavigate: (surface: string, tab?: string | null) => void;
   onOpenPalette: () => void;
   sync: SyncController;
   theme: Theme;
@@ -197,6 +197,7 @@ export default function Sidebar({
         retrying={sync.requesting}
         onClose={() => setDrawerOpen(false)}
         onRetry={() => { void sync.run(); }}
+        onOpenStorage={() => { onNavigate('today', 'storage'); setDrawerOpen(false); }}
       />
     </>
   );

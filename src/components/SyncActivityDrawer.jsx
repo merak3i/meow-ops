@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { AlertCircle, Check, Clock3, LoaderCircle, Minus, RotateCw, X } from 'lucide-react';
 import './SyncActivityDrawer.css';
 import { sourceMeta } from '../lib/sources';
+import { fetchStorageSnapshot, formatStorageBytes, isLocalStorageSurface } from '../lib/storage-api';
 
 const PHASE_LABELS = {
   preflight: 'Prepare local run',
@@ -27,7 +29,25 @@ function PhaseIcon({ status }) {
   return <Clock3 size={13} />;
 }
 
-export default function SyncActivityDrawer({ open, status, onClose, onRetry, retrying }) {
+export default function SyncActivityDrawer({ open, status, onClose, onRetry, onOpenStorage, retrying }) {
+  const [storage, setStorage] = useState(null);
+  const [storageUnavailable, setStorageUnavailable] = useState(false);
+  const localStorageSurface = isLocalStorageSurface();
+
+  useEffect(() => {
+    if (!open || !localStorageSurface) return undefined;
+    const controller = new AbortController();
+    void fetchStorageSnapshot(controller.signal)
+      .then(result => {
+        if (!controller.signal.aborted) {
+          setStorage(result);
+          setStorageUnavailable(false);
+        }
+      })
+      .catch(() => { if (!controller.signal.aborted) setStorageUnavailable(true); });
+    return () => controller.abort();
+  }, [open, localStorageSurface]);
+
   if (!open) return null;
   const state = status?.state || 'idle';
   const disconnected = !status || status.mode === 'refresh-only';
@@ -95,6 +115,18 @@ export default function SyncActivityDrawer({ open, status, onClose, onRetry, ret
             </div>
           ))}
         </div>
+      )}
+      {localStorageSurface && (
+        <section className="sync-activity__storage" aria-label="Local storage summary">
+          <div>
+            <strong>Local storage</strong>
+            <span>{storage?.snapshot
+              ? `${formatStorageBytes(storage.snapshot.totals.logicalBytes)} observed · ${storage.snapshot.coverage.completeRoots}/${storage.snapshot.coverage.registeredRoots} locations measured${storage.snapshot.coverage.missingRoots ? ` · ${storage.snapshot.coverage.missingRoots} missing` : ''}`
+              : storageUnavailable ? 'Measurement unavailable' : 'Storage has not been measured.'}</span>
+            {storage?.snapshot && <small>Measured {new Date(storage.snapshot.generatedAt).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Kolkata' })} IST</small>}
+          </div>
+          <button type="button" onClick={onOpenStorage}>View storage</button>
+        </section>
       )}
       <footer className="sync-activity__footer">
         {disconnected && <p>Reloading does not collect local sessions.</p>}

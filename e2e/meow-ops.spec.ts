@@ -184,9 +184,17 @@ test('source collection status stays readable on a narrow screen', async ({ page
     hermes: { state: 'collected', sessions: 53 }, antigravity: { state: 'collected', sessions: 50, coverage: { recovered_steps: 539 } },
     aider: { state: 'not-configured', sessions: 0 }, cursor: { state: 'excluded', sessions: 0 },
   } } };
+  const storage = { ok: true, snapshot: {
+    schemaVersion: 1, scope: 'local-metadata-only', generatedAt: '2026-10-03T08:00:00Z', previousGeneratedAt: null,
+    measurement: 'Filesystem metadata', totals: { fileCount: 1, logicalBytes: 2048, allocatedBytes: 4096, allocatedFileCount: 1 },
+    growth: { status: 'unavailable', logicalBytes: null, allocatedBytes: null, fileCount: null },
+    coverage: { status: 'partial', registeredRoots: 2, completeRoots: 1, missingRoots: 1, partialRoots: 0, errorCount: 0, errorsTruncated: false },
+    categories: [], modelBuckets: [], roots: [], errors: [],
+  }, refreshing: false };
   await page.route(LOCAL_HELPER_ROUTE, route => {
     const path = new URL(route.request().url()).pathname;
-    return path === '/sync/status' ? route.fulfill({ json: status })
+    return path === '/storage' ? route.fulfill({ json: storage })
+      : path === '/sync/status' ? route.fulfill({ json: status })
       : path === '/sync' ? route.fulfill({ json: { ok: true, status } }) : route.abort();
   });
   await page.reload();
@@ -199,6 +207,11 @@ test('source collection status stays readable on a narrow screen', async ({ page
   expect(await facts.locator('div').evaluateAll(cells => (
     cells.every(cell => cell.scrollWidth <= cell.clientWidth)
   ))).toBe(true);
+  const storageSummary = page.getByRole('region', { name: 'Local storage summary' });
+  await expect(storageSummary).toContainText('2 KiB observed');
+  await expect(storageSummary).toContainText('1/2 locations measured · 1 missing');
+  await storageSummary.getByRole('button', { name: 'View storage' }).click();
+  await expect(page).toHaveURL(/#\/today\/storage$/);
 });
 
 // ── 1. App shell ──────────────────────────────────────────────────────────────

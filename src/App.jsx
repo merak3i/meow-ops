@@ -183,7 +183,7 @@ export default function App() {
 
   const openPalette  = useCallback(() => setPaletteOpen(true), []);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
-  const goToSurface  = useCallback((surface) => navigate(surface), [navigate]);
+  const goToSurface  = useCallback((surface, tab) => navigate(surface, tab), [navigate]);
 
   useShortcuts({ onOpenPalette: openPalette, onNavigate: goToSurface, paletteOpen });
 
