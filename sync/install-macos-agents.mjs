@@ -17,11 +17,15 @@ function installedOverrides(jobs, agents, configured) {
     const file = join(agents, job.name);
     if (!existsSync(file)) continue;
     let plist;
-    try { plist = JSON.parse(execFileSync('/usr/bin/plutil', ['-convert', 'json', '-o', '-', file], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] })); }
+    try { plist = readFileSync(file, 'utf8'); }
     catch { throw new Error('An installed Meow Ops service could not be inspected; preserve it before reinstalling.'); }
+    const environment = plist.match(/<key>EnvironmentVariables<\/key>\s*<dict>([\s\S]*?)<\/dict>/)?.[1];
+    if (environment === undefined) throw new Error('An installed Meow Ops service could not be inspected; preserve it before reinstalling.');
     for (const key of MIGRATED_KEYS) {
-      const value = plist.EnvironmentVariables?.[key];
-      if (configured[key] !== undefined || typeof value !== 'string') continue;
+      const keyPattern = new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`);
+      const match = environment.match(keyPattern);
+      if (configured[key] !== undefined || !match) continue;
+      const value = match[1].replaceAll('&quot;', '"').replaceAll('&gt;', '>').replaceAll('&lt;', '<').replaceAll('&amp;', '&');
       if (inherited[key] !== undefined && inherited[key] !== value) throw new Error(`Installed services disagree about ${key}; set it in the shared config before reinstalling.`);
       inherited[key] = value;
     }
