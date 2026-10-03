@@ -9,6 +9,18 @@ export function fetchLoopComparisons(): Promise<Comparison[]>;
 export function fetchLoopSimulations(): Promise<Simulation[]>;
 export function fetchLoopOutcomes(): Promise<Outcome[]>;
 export function fetchLoopSummary(): Promise<LoopSummary>;
+export function fetchLoopReviewData(): Promise<{
+  ok: true;
+  proposals: Proposal[];
+  decisions: Decision[];
+  runs: LoopRun[];
+  comparisons: Comparison[];
+  simulations: Simulation[];
+  outcomes: Outcome[];
+  summary: LoopSummary;
+  digest: DigestData | null;
+  digestHistory: DigestData[];
+} | { ok: false; error: string }>;
 export interface DigestData {
   generated_at: string;
   period: { since: string; until: string };

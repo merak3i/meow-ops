@@ -42,6 +42,17 @@ function count(value) {
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 }
 
+function amount(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function addAmount(total, value) {
+  const next = amount(value);
+  return next === null ? total : (total ?? 0) + next;
+}
+
 function normalizeTool(name) {
   const raw = String(name || '').trim();
   return TOOL_MAP[raw.toLowerCase()] || raw || null;
@@ -78,25 +89,22 @@ export function parseHermesRows(sessionRows = [], toolRows = [], messageRows = [
     const output = count(row.output_tokens);
     const cacheRead = count(row.cache_read_tokens);
     const cacheWrite = count(row.cache_write_tokens);
-    const hasUsage = row.model != null
-      || row.input_tokens != null
+    const hasUsage = row.input_tokens != null
       || row.output_tokens != null
-      || row.estimated_cost_usd != null
-      || row.actual_cost_usd != null;
+      || row.cache_read_tokens != null
+      || row.cache_write_tokens != null;
     const model = row.model ? String(row.model) : null;
-    const priced = model && (input + output + cacheRead + cacheWrite > 0)
+    const priced = model && hasUsage
       ? calculateCostDetailed(model, input, output, cacheWrite, cacheRead)
-      : { cost: 0, pricingSource: hasUsage ? 'none' : 'unavailable' };
+      : { cost: null, pricingSource: 'unavailable' };
     const startedAt = iso(row.started_at);
     const endedAt = iso(row.ended_at) || startedAt;
     const roles = rolesBySession.get(row.id) || {};
     const root = row.git_repo_root || row.cwd || null;
     const title = makeSnippet(row.title || row.display_name || '');
-    const actualCost = Number(row.actual_cost_usd);
-    const estimatedCost = Number(row.estimated_cost_usd);
-    const cost = Number.isFinite(actualCost)
-      ? actualCost
-      : Number.isFinite(estimatedCost) ? estimatedCost : priced.cost;
+    const actualCost = amount(row.actual_cost_usd);
+    const reportedEstimate = amount(row.estimated_cost_usd);
+    const estimatedCost = reportedEstimate ?? priced.cost;
 
     return createSession({
       session_id: String(row.id),
@@ -114,14 +122,17 @@ export function parseHermesRows(sessionRows = [], toolRows = [], messageRows = [
       message_count: count(row.message_count),
       user_message_count: count(roles.user),
       assistant_message_count: count(roles.assistant),
-      input_tokens: input,
-      output_tokens: output,
-      cache_creation_tokens: cacheWrite,
-      cache_read_tokens: cacheRead,
-      total_tokens: input + output + cacheRead + cacheWrite,
-      estimated_cost_usd: Number.isFinite(cost) ? cost : 0,
+      input_tokens: amount(row.input_tokens),
+      output_tokens: amount(row.output_tokens),
+      cache_creation_tokens: amount(row.cache_write_tokens),
+      cache_read_tokens: amount(row.cache_read_tokens),
+      total_tokens: hasUsage ? input + output + cacheRead + cacheWrite : null,
+      estimated_cost_usd: estimatedCost,
+      observed_cost_usd: actualCost,
+      cost_available: actualCost !== null || estimatedCost !== null,
+      cost_kind: actualCost !== null ? 'observed' : estimatedCost !== null ? 'estimated' : 'unavailable',
       usage_available: hasUsage,
-      pricing_source: row.cost_source || priced.pricingSource,
+      pricing_source: reportedEstimate !== null ? 'hermes-reported-estimate' : priced.pricingSource,
       tools: toolsBySession.get(row.id) || {},
       session_title: title || null,
       first_user_message: null,
@@ -157,8 +168,8 @@ export function parseHermesModelUsageRows(rows = []) {
       cache_read_tokens: 0,
       cache_write_tokens: 0,
       total_tokens: 0,
-      estimated_cost_usd: 0,
-      actual_cost_usd: 0,
+      estimated_cost_usd: null,
+      actual_cost_usd: null,
     };
     if (row.session_id) {
       current.sessions.add(String(row.session_id));
@@ -171,8 +182,8 @@ export function parseHermesModelUsageRows(rows = []) {
     current.cache_write_tokens += count(row.cache_write_tokens);
     current.total_tokens = current.input_tokens + current.output_tokens
       + current.cache_read_tokens + current.cache_write_tokens;
-    current.estimated_cost_usd += Number(row.estimated_cost_usd) || 0;
-    current.actual_cost_usd += Number(row.actual_cost_usd) || 0;
+    current.estimated_cost_usd = addAmount(current.estimated_cost_usd, row.estimated_cost_usd);
+    current.actual_cost_usd = addAmount(current.actual_cost_usd, row.actual_cost_usd);
     byKey.set(key, current);
   }
 
@@ -192,8 +203,8 @@ export function parseHermesModelUsageRows(rows = []) {
       cache_read_tokens: totals.cache_read_tokens + row.cache_read_tokens,
       cache_write_tokens: totals.cache_write_tokens + row.cache_write_tokens,
       total_tokens: totals.total_tokens + row.total_tokens,
-      estimated_cost_usd: totals.estimated_cost_usd + row.estimated_cost_usd,
-      actual_cost_usd: totals.actual_cost_usd + row.actual_cost_usd,
+      estimated_cost_usd: addAmount(totals.estimated_cost_usd, row.estimated_cost_usd),
+      actual_cost_usd: addAmount(totals.actual_cost_usd, row.actual_cost_usd),
     }), {
       api_calls: 0,
       input_tokens: 0,
@@ -201,8 +212,8 @@ export function parseHermesModelUsageRows(rows = []) {
       cache_read_tokens: 0,
       cache_write_tokens: 0,
       total_tokens: 0,
-      estimated_cost_usd: 0,
-      actual_cost_usd: 0,
+      estimated_cost_usd: null,
+      actual_cost_usd: null,
     }),
     by_model: byModel,
   };

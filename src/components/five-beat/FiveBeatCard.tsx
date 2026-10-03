@@ -120,7 +120,7 @@ function diffText(diff: Proposal['diff']) {
 
 function simulationStatus(proposal: Proposal, simulation: Simulation | null) {
   if (simulation) return simulation.pass ? 'passed' : 'failed';
-  if (proposal.simulation_id) return 'passed';
+  if (proposal.simulation_id) return 'result unavailable';
   return 'not-required';
 }
 

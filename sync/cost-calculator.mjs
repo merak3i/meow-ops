@@ -1,4 +1,4 @@
-// Current pricing (as of April 2026), per 1M tokens
+// Historical estimate table (April 2026), per 1M tokens. Not observed charges.
 const PRICING = {
   // Claude models
   'claude-opus-4-6':          { input: 15,   output: 75,   cacheCreate: 18.75, cacheRead: 1.5   },
@@ -64,90 +64,13 @@ const PRICING = {
   'sonar':                    { input: 1.0,  output: 1.0,  cacheCreate: 0,     cacheRead: 0     },
 };
 
-const DEFAULT_CLAUDE_PRICING = { input: 3, output: 15, cacheCreate: 3.75, cacheRead: 0.3 };
-const DEFAULT_PRICING = DEFAULT_CLAUDE_PRICING;
-
-// Map a model string to a pricing row and HOW we matched it.
-//   source 'exact'   — table key hit directly
-//   source 'family'  — fuzzy substring match within a known family
-//   source 'default' — no model string supplied
-//   source 'unknown' — model supplied but unrecognized; priced with the
-//                      Claude default as a rough estimate and FLAGGED so the
-//                      UI can mark it "estimated" instead of presenting a
-//                      confident wrong number.
+// Only exact table keys have a price. A family name, future version or mixed
+// session is insufficient evidence to select another model's rate.
 export function resolvePricing(model) {
-  if (!model) return { pricing: DEFAULT_PRICING, source: 'default', key: null };
-  if (PRICING[model]) return { pricing: PRICING[model], source: 'exact', key: model };
-
-  const fam = (key) => ({ pricing: PRICING[key], source: 'family', key });
-
-  // Claude
-  if (model.includes('opus'))   return fam('claude-opus-4-6');
-  if (model.includes('haiku'))  return fam('claude-haiku-4-5-20251001');
-  if (model.includes('sonnet')) return fam('claude-sonnet-4-6');
-
-  // OpenAI
-  if (model.includes('gpt-4o-mini'))                        return fam('gpt-4o-mini');
-  if (model.includes('gpt-4o') || model.includes('gpt-5')) return fam('gpt-4o');
-  if (model.startsWith('o3'))                               return fam('o3');
-  if (model.startsWith('o4'))                               return fam('o4-mini');
-
-  // Gemini — most-specific first; no bare `flash` catch-all (it used to
-  // swallow gemini-1.5-flash and any future *-flash from any vendor).
-  if (model.includes('gemini-3-pro'))     return fam('gemini-3-pro');
-  if (model.includes('gemini-3'))         return fam('gemini-3-flash');
-  if (model.includes('gemini-2.5-flash')) return fam('gemini-2.5-flash');
-  if (model.includes('gemini-2.5'))       return fam('gemini-2.5-pro');
-  if (model.includes('gemini-2.0'))       return fam('gemini-2.0-flash');
-  if (model.includes('gemini-1.5-flash')) return fam('gemini-1.5-flash');
-  if (model.includes('gemini-1.5'))       return fam('gemini-1.5-pro');
-  if (model.includes('gemini'))           return fam('gemini-2.5-pro');
-
-  // Mistral
-  if (model.includes('mistral-large') || model.includes('mistral-medium')) return fam('mistral-large');
-  if (model.includes('mistral'))                            return fam('mistral-small');
-
-  // Llama / local
-  if (model.includes('llama') || model.includes('ollama'))  return fam('llama-3.3-70b');
-
-  // DeepSeek
-  if (model.includes('deepseek-r1'))                        return fam('deepseek-r1');
-  if (model.includes('deepseek'))                           return fam('deepseek-v3');
-
-  // Qwen / Alibaba
-  if (model.includes('qwen-max') || model.includes('qwq'))  return fam('qwen-max');
-  if (model.includes('qwen-turbo'))                         return fam('qwen-turbo');
-  if (model.includes('qwen'))                               return fam('qwen-plus');
-
-  // Moonshot / Kimi
-  if (model.includes('kimi') || model.includes('moonshot')) return fam('kimi-k2');
-
-  // Zhipu GLM
-  if (model.includes('glm-4-flash'))                        return fam('glm-4-flash');
-  if (model.includes('glm'))                                return fam('glm-4');
-
-  // ByteDance Doubao
-  if (model.includes('doubao'))                             return fam('doubao-pro');
-
-  // xAI Grok
-  if (model.includes('grok-3-mini'))                        return fam('grok-3-mini');
-  if (model.includes('grok-3'))                             return fam('grok-3');
-  if (model.includes('grok'))                               return fam('grok-2');
-
-  // Cohere Command R
-  if (model.includes('command-r-plus') || model.includes('command-r+')) return fam('command-r-plus');
-  if (model.includes('command-r'))                          return fam('command-r');
-
-  // Amazon Nova
-  if (model.includes('nova-pro'))                           return fam('amazon-nova-pro');
-  if (model.includes('nova-lite'))                          return fam('amazon-nova-lite');
-  if (model.includes('nova'))                               return fam('amazon-nova-micro');
-
-  // Perplexity Sonar
-  if (model.includes('sonar-pro'))                          return fam('sonar-pro');
-  if (model.includes('sonar'))                              return fam('sonar');
-
-  return { pricing: DEFAULT_PRICING, source: 'unknown', key: null };
+  if (typeof model === 'string' && Object.hasOwn(PRICING, model)) {
+    return { pricing: PRICING[model], source: 'exact', key: model };
+  }
+  return { pricing: null, source: model ? 'unknown' : 'unavailable', key: null };
 }
 
 // Clamp a token count to a finite, non-negative number. A malformed log line
@@ -157,11 +80,10 @@ function safeTokens(n) {
   return Number.isFinite(v) && v > 0 ? v : 0;
 }
 
-// Returns true when the model string maps to a real pricing row (exact or
-// family). Callers use this to flag "estimated/unknown price" sessions.
+// Returns true only when the exact model has a historical estimate row.
 export function isKnownModel(model) {
   const { source } = resolvePricing(model);
-  return source === 'exact' || source === 'family';
+  return source === 'exact';
 }
 
 // Detailed variant: cost plus how the price was resolved. Prefer this in the
@@ -169,6 +91,7 @@ export function isKnownModel(model) {
 // priced at Claude rates.
 export function calculateCostDetailed(model, inputTokens, outputTokens, cacheCreation = 0, cacheRead = 0) {
   const { pricing, source } = resolvePricing(model);
+  if (!pricing) return { cost: null, pricingSource: source };
   const i = safeTokens(inputTokens);
   const o = safeTokens(outputTokens);
   const cc = safeTokens(cacheCreation);

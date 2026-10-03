@@ -1,13 +1,14 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
-  closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync,
-  unlinkSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadEnv } from './load-env.mjs';
+import { acquireProcessLock } from './process-lock.mjs';
+import { readSnapshot } from './snapshot-generation.mjs';
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const PHASES = ['preflight', 'export_sessions', 'verify_artifacts', 'refresh_limits'];
@@ -40,8 +41,10 @@ function artifactSnapshot(repoRoot, env = process.env) {
   const dataDir = env.MEOW_DATA_DIR || join(repoRoot, 'public', 'data');
   const sessionsPath = join(dataDir, 'sessions.json');
   try {
-    const stat = statSync(sessionsPath);
-    const sessions = JSON.parse(readFileSync(sessionsPath, 'utf8'));
+    const bundle = readSnapshot(dataDir);
+    const stat = statSync(bundle ? join(dataDir, 'generations', `${bundle.generation.id}.json`) : sessionsPath);
+    const sessions = bundle?.sessions || JSON.parse(readFileSync(sessionsPath, 'utf8'));
+    if (!Array.isArray(sessions)) throw new Error('Invalid session artifact.');
     const source_counts = {};
     if (Array.isArray(sessions)) {
       for (const session of sessions) {
@@ -55,7 +58,9 @@ function artifactSnapshot(repoRoot, env = process.env) {
       size: stat.size,
       sessions: Array.isArray(sessions) ? sessions.length : 0,
       source_counts,
-      source_health: safeReadJson(join(dataDir, 'cost-summary.json'))?.sourceHealth || {},
+      generation: bundle?.generation.id || null,
+      last_good: bundle?.lastGood || false,
+      source_health: (bundle?.summary || safeReadJson(join(dataDir, 'cost-summary.json')))?.sourceHealth || {},
     };
   } catch {
     return { available: false, mtime: null, size: null, sessions: 0, source_counts: {} };
@@ -113,51 +118,31 @@ function finish(snapshot, state, dir, extra = {}) {
   return snapshot;
 }
 
-function runCommand({ command, args, cwd, env, timeoutMs = DEFAULT_TIMEOUT_MS }) {
+function runCommand({ command, args, cwd, env, timeoutMs = DEFAULT_TIMEOUT_MS, killGraceMs = 1500 }) {
   return new Promise((resolve) => {
     const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
-    let stderr = '';
-    child.stderr.on('data', (chunk) => {
-      stderr = `${stderr}${chunk}`.slice(-600);
-      process.stderr.write(chunk);
-    });
-    child.stdout.on('data', (chunk) => process.stdout.write(chunk));
+    // Drain child output without relaying transcript/provider errors into the
+    // helper's logs. The persisted stage and exit code are the safe diagnostic.
+    child.stderr.resume();
+    child.stdout.resume();
     let timedOut = false;
+    let killTimer;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');
+      killTimer = setTimeout(() => child.kill('SIGKILL'), killGraceMs);
     }, timeoutMs);
-    child.on('error', (error) => {
+    child.on('error', () => {
       clearTimeout(timer);
-      resolve({ ok: false, code: null, timedOut: false, error: error.message });
+      clearTimeout(killTimer);
+      resolve({ ok: false, code: null, timedOut: false });
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      resolve({ ok: code === 0 && !timedOut, code, timedOut, stderr });
+      clearTimeout(killTimer);
+      resolve({ ok: code === 0 && !timedOut, code, timedOut });
     });
   });
-}
-
-function acquireLock(dir, staleAfterMs) {
-  const target = paths(dir);
-  mkdirSync(dir, { recursive: true });
-  try {
-    const fd = openSync(target.lock, 'wx', 0o600);
-    writeFileSync(fd, `${process.pid}\n`);
-    closeSync(fd);
-    return true;
-  } catch (error) {
-    if (error?.code !== 'EEXIST') throw error;
-    const current = safeReadJson(target.current);
-    const age = Date.now() - Date.parse(current?.updated_at || current?.started_at || '');
-    if (current?.state === 'running' && Number.isFinite(age) && age < staleAfterMs) return false;
-    try { unlinkSync(target.lock); } catch {}
-    return acquireLock(dir, staleAfterMs);
-  }
-}
-
-function releaseLock(dir) {
-  try { unlinkSync(paths(dir).lock); } catch {}
 }
 
 async function execute(snapshot, options) {
@@ -166,6 +151,7 @@ async function execute(snapshot, options) {
     node = process.execPath,
     env = process.env,
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    killGraceMs = 1500,
     limitsTimeoutMs = 15_000,
     refreshLimits = env.MEOW_REFRESH_LIMITS !== '0',
     commandRunner = runCommand,
@@ -178,8 +164,9 @@ async function execute(snapshot, options) {
       command: node,
       args: [join(repoRoot, 'sync', 'export-local.mjs')],
       cwd: repoRoot,
-      env,
+      env: { ...env, MEOW_SYNC_LOCK_TOKEN: options.lock.token },
       timeoutMs,
+      killGraceMs,
     });
     if (!exported.ok) {
       return finish(snapshot, 'failed', runtime, {
@@ -194,13 +181,15 @@ async function execute(snapshot, options) {
 
     setPhase(snapshot, 'verify_artifacts', runtime);
     const artifact = artifactSnapshot(repoRoot, env);
-    if (!artifact.available) {
+    if (!artifact.available || artifact.last_good
+      || (artifact.generation ? artifact.generation === snapshot.artifact.generation
+        : artifact.mtime === snapshot.artifact.mtime)) {
       return finish(snapshot, 'failed', runtime, {
         artifact,
         failure: {
           stage: 'verify_artifacts',
-          code: 'missing_sessions_artifact',
-          summary: 'The exporter finished but sessions.json was not written.',
+          code: 'invalid_or_unchanged_snapshot',
+          summary: 'The exporter did not publish a fresh, valid snapshot. The last good data is retained.',
           retryable: true,
         },
       });
@@ -219,6 +208,7 @@ async function execute(snapshot, options) {
       cwd: repoRoot,
       env,
       timeoutMs: limitsTimeoutMs,
+      killGraceMs,
     });
     if (!limits.ok) {
       return finish(snapshot, 'partial', runtime, {
@@ -232,18 +222,17 @@ async function execute(snapshot, options) {
       });
     }
     return finish(snapshot, 'succeeded', runtime, { mtime: artifact.mtime, size: artifact.size });
-  } catch (error) {
+  } catch {
     return finish(snapshot, 'failed', runtime, {
       failure: {
         stage: snapshot.phase,
         code: 'runner_error',
-        summary: error instanceof Error ? error.message.slice(0, 240) : 'Unexpected sync runner error.',
+        summary: 'Local sync failed unexpectedly. Check the reported stage and retry; private error text was not recorded.',
         retryable: true,
       },
     });
   } finally {
-    releaseLock(runtime);
-    activeRun = null;
+    options.lock.release();
   }
 }
 
@@ -253,7 +242,8 @@ export function startSyncRun(options) {
   if (activeRun) {
     return { accepted: false, busy: true, run_id: activeRun.run_id, snapshot: activeRun.snapshot, done: activeRun.done };
   }
-  if (!acquireLock(runtime, (options.timeoutMs || DEFAULT_TIMEOUT_MS) * 2)) {
+  const lock = acquireProcessLock(paths(runtime).lock);
+  if (!lock) {
     const snapshot = getSyncStatus({ repoRoot: options.repoRoot, env, runtime });
     return { accepted: false, busy: true, run_id: snapshot.run_id, snapshot, done: null };
   }
@@ -274,9 +264,17 @@ export function startSyncRun(options) {
     failure: null,
     warning: null,
   };
-  persist(snapshot, runtime);
-  const done = execute(snapshot, { ...options, env, runtime });
-  activeRun = { run_id, snapshot, done };
+  try { persist(snapshot, runtime); }
+  catch {
+    lock.release();
+    throw Object.assign(new Error('Could not save local sync status. Check the runtime directory and retry.'), { code: 'sync_status_write_failed' });
+  }
+  const entry = { run_id, snapshot, done: null };
+  activeRun = entry;
+  const done = execute(snapshot, { ...options, env, runtime, lock }).finally(() => {
+    if (activeRun === entry) activeRun = null;
+  });
+  entry.done = done;
   return { accepted: true, busy: false, run_id, snapshot, done };
 }
 

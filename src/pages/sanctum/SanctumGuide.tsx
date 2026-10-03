@@ -15,7 +15,41 @@ interface GuideAnswer {
   unknowns: string[];
   evidence: { store: string; record_id: string; project: string; fields: Record<string, string | number | boolean | null> }[];
   capabilities: { id: string; status: string; source: string | null; fields: string[] }[];
-  explanation?: { status: string; model?: string; answer?: string; citations?: string[] };
+  explanation?: {
+    status: string;
+    model?: string;
+    answer?: string;
+    citations?: string[];
+    verification?: string;
+    selectedEvidence?: { id: string; timestamp: string; type: string; tool_name: string; evidence_kind: string; excerpt: string; excerpt_truncated: boolean }[];
+  };
+}
+
+type VerifiedGuideEvidenceSelection = NonNullable<GuideAnswer['explanation']> & {
+  status: 'ok';
+  model: 'qwen3:4b';
+  verification: 'deterministic-record-selection';
+  answer: string;
+  citations: string[];
+  selectedEvidence: NonNullable<NonNullable<GuideAnswer['explanation']>['selectedEvidence']>;
+};
+
+function hasVerifiedLocalSelection(explanation: GuideAnswer['explanation']): explanation is VerifiedGuideEvidenceSelection {
+  return explanation?.status === 'ok'
+    && explanation.model === 'qwen3:4b'
+    && explanation.verification === 'deterministic-record-selection'
+    && typeof explanation.answer === 'string'
+    && explanation.answer.length > 0
+    && Array.isArray(explanation.citations)
+    && Array.isArray(explanation.selectedEvidence)
+    && explanation.selectedEvidence.length > 0
+    && explanation.selectedEvidence.length <= 4
+    && explanation.selectedEvidence.every((item) => (
+      typeof item.id === 'string'
+      && explanation.citations?.includes(item.id) === true
+      && typeof item.excerpt === 'string'
+      && item.excerpt.length > 0
+    ));
 }
 
 export function SanctumGuide({ session }: { session: Session | null }) {
@@ -96,7 +130,8 @@ export function SanctumGuide({ session }: { session: Session | null }) {
     if ((!useVoicebox && !voice) || !answer) return;
     stop();
     const id = sequence.current;
-    const text = answer.explanation?.status === 'ok' ? `Local model interpretation. ${answer.explanation.answer}` : answer.answer;
+    const text = hasVerifiedLocalSelection(answer.explanation)
+      ? `Local model highlight. ${answer.explanation.answer}` : answer.answer;
     if (useVoicebox && text.length > 1500) { setStatus('This answer is too long for the Voicebox sample. Choose the system voice to read it in full.'); return; }
     const adapter = useVoicebox ? voicebox.current : localGuideVoice;
     if (!adapter) return;
@@ -111,13 +146,13 @@ export function SanctumGuide({ session }: { session: Session | null }) {
     <button className="guide-open" onClick={() => { void openGuide(); }}>Ask the guide</button>
     <dialog ref={dialog} className="sanctum-guide" aria-labelledby="guide-title" onClose={() => { stop(); setOpen(false); }} onCancel={stop} onKeyDown={(event) => event.stopPropagation()} onKeyUp={(event) => event.stopPropagation()}>
       <header><div><small>SANCTUM · READ-ONLY PROTOTYPE</small><h2 id="guide-title">Sanctum archive guide</h2></div><button onClick={() => dialog.current?.close()} aria-label="Close guide">Close</button></header>
-      <p className="guide-intro">A quiet place to understand your agent’s work. The lifelike character is in development; this prototype reads session metrics, shows linked local evidence and explains concepts.</p>
+      <p className="guide-intro">A quiet place to understand your agent’s work. Character redesign is deferred; this prototype uses the existing character. It reads session metrics, shows linked local evidence and explains concepts.</p>
       {open && <GuideCharacter playback={playback} motion={status === 'Speaking' ? 'explaining_gesture' : ['Reading local records…', 'Preparing local speech…'].includes(status) ? 'listening' : 'idle'} />}
       <p>{session ? <>Selected session: <strong>{session.project}</strong><br /><code>{session.session_id}</code></> : 'Select a session character in the archive to ask about its work. Concept explanations work without a selection.'}</p>
       <form onSubmit={(event) => { event.preventDefault(); void ask(); }}>
         <label htmlFor="guide-question">Your question</label>
         <textarea id="guide-question" value={question} maxLength={500} required onChange={(event) => setQuestion(event.target.value)} />
-        <label><input type="checkbox" checked={explain} onChange={(event) => { stop(); setExplain(event.target.checked); }} />Explain linked evidence with local Qwen3 4B. Selected redacted excerpts stay on this computer.</label>
+        <label><input type="checkbox" checked={explain} onChange={(event) => { stop(); setExplain(event.target.checked); }} />Highlight relevant linked evidence with local Qwen3 4B. It can select records, but it cannot write the answer; redacted excerpts stay on this computer.</label>
         <div className="guide-actions"><button type="submit">Ask</button><button type="button" onClick={stop}>Stop</button><button type="button" onClick={() => setQuestion('Explain context windows')}>Explain context windows</button></div>
       </form>
       <p role="status">{status}</p>
@@ -125,8 +160,9 @@ export function SanctumGuide({ session }: { session: Session | null }) {
         <small>{answer.kind === 'explanation' ? 'GENERAL EXPLANATION' : answer.kind === 'observed-metrics' ? 'IMPORTED SESSION METRICS' : answer.kind === 'observed-events' ? 'IMPORTED EVENT EVIDENCE' : 'CAPABILITY LIMIT'}</small>
         {answer.kind === 'observed-events' && <ol>{answer.evidence.map((item) => <li key={item.record_id}><p><strong>{String(item.fields.event_type)}</strong> · {String(item.fields.timestamp)}</p><blockquote>{String(item.fields.excerpt)}</blockquote><code>{item.record_id}</code></li>)}</ol>}
         <p className="guide-answer">{answer.answer}</p>
-        {answer.explanation?.status === 'ok' && <section aria-label="Local model interpretation"><small>LOCAL MODEL INTERPRETATION · CHECK AGAINST THE RECORDS</small><p>{answer.explanation.answer}</p><p>Model: {answer.explanation.model}. Cited records: {answer.explanation.citations?.join(', ')}</p></section>}
-        {answer.explanation && answer.explanation.status !== 'ok' && <p>{answer.explanation.status === 'busy' ? 'The local guide is already preparing another explanation. Try again when it finishes.' : `The local model explanation is unavailable (${answer.explanation.status}).`} The original evidence remains available below.</p>}
+        {hasVerifiedLocalSelection(answer.explanation) && <section aria-label="Local model evidence selection"><small>LOCAL MODEL HIGHLIGHT · ORIGINAL WORDING PRESERVED</small><p>{answer.explanation.answer}</p><p>Model: {answer.explanation.model}. Highlighted record IDs: {answer.explanation.citations?.join(', ')}</p><ol>{answer.explanation.selectedEvidence?.map(item => <li key={item.id}><p><strong>{item.tool_name || item.type}</strong> · {item.timestamp}</p><blockquote>{item.excerpt}</blockquote><code>{item.id}</code></li>)}</ol></section>}
+        {answer.explanation?.status === 'abstained' && <section aria-label="Local model abstention"><small>LOCAL MODEL HELD BACK</small><p>The local model did not select a relevant excerpt. The imported evidence remains visible below.</p></section>}
+        {answer.explanation && !hasVerifiedLocalSelection(answer.explanation) && answer.explanation.status !== 'abstained' && <p>{answer.explanation.status === 'busy' ? 'The local guide is already selecting records. Try again when it finishes.' : 'The local model evidence selection is unavailable or came from an older helper version.'} The original evidence remains available below.</p>}
         {answer.unknowns.length > 0 && <ul>{answer.unknowns.map((item) => <li key={item}>{item}</li>)}</ul>}
         <label><input type="checkbox" checked={useVoicebox} disabled={!voiceboxAvailable} onChange={(event) => { stop(); setUseVoicebox(event.target.checked); }} />Use local Voicebox · George synthetic preset{!voiceboxAvailable ? ' (unavailable)' : ''}</label>
         {useVoicebox && <p>Voicebox stores the spoken answer and generated audio in its local history on this Mac. No voice is cloned. Sample limit: 1,500 characters.</p>}

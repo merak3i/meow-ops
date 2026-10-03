@@ -1609,7 +1609,7 @@ function SessionChampionNode({ pn, maxCost, maxTokens, selected, onClick, onPosU
           userSelect: 'none',
           opacity: 0.85,
           textAlign: 'center',
-        }} data-session-tag="true" data-session-selected={selected ? 'true' : undefined}
+        }} className="sanctum-session-tag" data-session-tag="true" data-session-selected={selected ? 'true' : undefined}
           data-roster-role={rosterArtSpec && rosterArtReady ? catType : undefined}>
           {showRosterModel && modelReady ? `${c.label} · 3D study` : `#${ident.hashShort}`}
         </div>

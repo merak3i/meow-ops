@@ -218,11 +218,9 @@ test('Loop Ops settles past the loading state under dev React (StrictMode livene
 
 test('refresh advances the imported-mtime chip with the service worker active', async ({ page }) => {
   test.skip(!SPEC_PRESENT || !WORKBOOK_PRESENT,
-    'needs the local-only spec fixture and a Loop Ops workbook');
+    'requires an imported local spec and source workbook; this is a manual local-data gate');
   test.setTimeout(90_000);
 
-  // First load installs the service worker; the reload hands it control of
-  // all fetches — the state in which un-busted API URLs serve stale cache.
   await page.goto('/#/loop-ops');
   await expect(page.locator('[data-testid="loop-source-strip"]')).toBeVisible({ timeout: 15_000 });
   await page.evaluate(() => navigator.serviceWorker?.ready.then(() => undefined));
@@ -235,7 +233,6 @@ test('refresh advances the imported-mtime chip with the service worker active', 
   const before = await mtimeChip();
 
   await page.getByRole('button', { name: 'Refresh spec' }).click();
-  // The importer takes seconds; poll the chip rather than fixed-sleeping.
   await expect(async () => {
     expect(await mtimeChip()).not.toBe(before);
   }).toPass({ timeout: 60_000, intervals: [2_000] });

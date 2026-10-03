@@ -5,7 +5,8 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { getSyncRun, getSyncStatus, runSync } from '../sync-runner.mjs';
+import { getSyncRun, getSyncStatus, runSync, startSyncRun } from '../sync-runner.mjs';
+import { publishSnapshot } from '../snapshot-generation.mjs';
 
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'meow-sync-runner-'));
@@ -29,7 +30,10 @@ test('standalone CLI honors the environment opt-out and the no-limits flag', () 
     try {
       copyFileSync(new URL('../sync-runner.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'sync-runner.mjs'));
       copyFileSync(new URL('../load-env.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'load-env.mjs'));
-      writeFileSync(join(fx.repoRoot, 'public', 'data', 'sessions.json'), '[]');
+      copyFileSync(new URL('../snapshot-generation.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'snapshot-generation.mjs'));
+      copyFileSync(new URL('../process-lock.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'process-lock.mjs'));
+      writeFileSync(join(fx.repoRoot, 'sync', 'export-local.mjs'),
+        `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(join(fx.repoRoot, 'public', 'data', 'sessions.json'))}, '[]');`);
       writeFileSync(join(fx.repoRoot, 'sync', 'fetch-claude-limits.mjs'),
         `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'called');`);
       execFileSync(process.execPath, [realpathSync(join(fx.repoRoot, 'sync', 'sync-runner.mjs')), ...args], {
@@ -125,6 +129,19 @@ test('sync runner preserves a persistent, sanitized export failure', async () =>
   }
 });
 
+test('successful process exit cannot validate a stale or non-array export', async () => {
+  for (const artifact of ['[]', '{}']) {
+    const fx = fixture();
+    try {
+      writeFileSync(join(fx.repoRoot, 'public', 'data', 'sessions.json'), artifact);
+      const result = await runSync({ repoRoot: fx.repoRoot, runtime: fx.runtime, refreshLimits: false,
+        commandRunner: async () => ({ ok: true, code: 0 }) });
+      assert.equal(result.state, 'failed');
+      assert.equal(result.failure.stage, 'verify_artifacts');
+    } finally { rmSync(fx.root, { recursive: true, force: true }); }
+  }
+});
+
 test('sync runner reports partial success when optional limits refresh fails', async () => {
   const fx = fixture();
   try {
@@ -146,4 +163,55 @@ test('sync runner reports partial success when optional limits refresh fails', a
   } finally {
     rmSync(fx.root, { recursive: true, force: true });
   }
+});
+
+test('failed initial status persistence releases ownership so a repaired retry can run', async () => {
+  const fx = fixture();
+  try {
+    mkdirSync(fx.runtime);
+    writeFileSync(join(fx.runtime, 'sync-runs'), 'block directory creation');
+    assert.throws(() => startSyncRun({ ...fx }), /status|EEXIST/);
+    rmSync(join(fx.runtime, 'sync-runs'));
+    let executed = false;
+    await runSync({ ...fx, commandRunner: async () => { executed = true; return { ok: false, code: 1 }; } });
+    assert.equal(executed, true);
+  } finally { rmSync(fx.root, { recursive: true, force: true }); }
+});
+
+test('validated immutable generations do not depend on legacy preview files', async () => {
+  const fx = fixture();
+  const dataDir = join(fx.root, 'private-data');
+  const bundle = { sessions: [{ source: 'codex', session_id: 'one' }], summary: { archive: { total: 1 }, allTime: { sessions: 1 } } };
+  try {
+    publishSnapshot(dataDir, bundle);
+    const env = { MEOW_DATA_DIR: dataDir };
+    assert.equal(getSyncStatus({ ...fx, env }).artifact.available, true);
+    const result = await runSync({ ...fx, env, refreshLimits: false,
+      commandRunner: async () => { publishSnapshot(dataDir, bundle); return { ok: true, code: 0 }; } });
+    assert.equal(result.state, 'succeeded');
+  } finally { rmSync(fx.root, { recursive: true, force: true }); }
+});
+
+test('thrown command errors cannot put private text into run status', async () => {
+  const fx = fixture();
+  try {
+    const result = await runSync({ ...fx, commandRunner: async () => { throw new Error('private transcript sentinel'); } });
+    assert.equal(result.state, 'failed');
+    assert.doesNotMatch(JSON.stringify(result), /private transcript sentinel/);
+    assert.doesNotMatch(readFileSync(join(fx.runtime, 'sync-current.json'), 'utf8'), /private transcript sentinel/);
+  } finally { rmSync(fx.root, { recursive: true, force: true }); }
+});
+
+test('timeouts escalate when a child ignores termination and release ownership after exit', async () => {
+  const fx = fixture();
+  try {
+    writeFileSync(join(fx.repoRoot, 'sync', 'export-local.mjs'), 'trap "" TERM\nexec /bin/sleep 4\n');
+    const started = Date.now();
+    const result = await runSync({ ...fx, node: '/bin/sh', timeoutMs: 400, killGraceMs: 100, refreshLimits: false });
+    assert.equal(result.failure.code, 'timeout');
+    assert.ok(Date.now() - started < 3000, 'timeout must not wait for an unresponsive child to finish naturally');
+    let executed = false;
+    await runSync({ ...fx, commandRunner: async () => { executed = true; return { ok: false, code: 1 }; } });
+    assert.equal(executed, true);
+  } finally { rmSync(fx.root, { recursive: true, force: true }); }
 });

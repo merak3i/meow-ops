@@ -10,6 +10,7 @@ export interface PracticeConcept {
   source: string;
   projects: string[];
   sessionCount: number;
+  evidence: Array<{ source: string; sessionId: string; project: string }>;
 }
 
 interface HitContext {
@@ -72,104 +73,111 @@ function sourceLine(ctx: HitContext): string {
 const RULES: readonly Rule[] = [
   {
     id: 'stack-tracing',
-    name: 'Stack tracing',
+    name: 'Code investigation activity',
     match: (session, tools, total) =>
       session.cat_type === 'detective' || ratio(tools, total, ['Read', 'Grep', 'Glob']) > 0.45,
     technical: (ctx) =>
-      `You followed a failure through the call stack by reading and searching instead of guessing. That is stack tracing: start at the symptom, walk frames and call sites, then change the frame that actually throws. Read, Grep, and Glob were the instruments in ${projectLabel(ctx.projects)}.`,
+      `Read, Grep, and Glob made up a large share of recorded tool calls across ${ctx.count} session(s) in ${projectLabel(ctx.projects)}. The logs show investigation activity, not whether a cause was found.`,
     layman: (ctx) =>
-      `You jumped between files in ${projectLabel(ctx.projects)} to chase one bug.`,
+      `The session metadata shows repeated reading and searching in ${projectLabel(ctx.projects)}.`,
   },
   {
     id: 'idempotent-retries',
-    name: 'Idempotent retries',
+    name: 'Retry-related work',
     match: (session) =>
       /retry|retries|timeout|fetch helper|same bug|same error/.test(textOf(session)),
     technical: (ctx) =>
-      `You were mutating a request path until a failed call could be safely repeated without double-applying side effects. That is idempotency on a retry loop: the second run must leave the same durable state as the first success. The rewrite loop showed up in ${projectLabel(ctx.projects)}.`,
+      `Retry or timeout wording appeared in ${ctx.count} session(s) in ${projectLabel(ctx.projects)}. The wording does not establish that a retry was safe or successful.`,
     layman: (ctx) =>
-      `You kept rewriting the same helper in ${projectLabel(ctx.projects)} until a refresh stopped making a mess.`,
+      `The session labels mention retries or timeouts in ${projectLabel(ctx.projects)}.`,
   },
   {
     id: 'shell-debugging',
-    name: 'Shell debugging',
+    name: 'Terminal-heavy sessions',
     match: (_session, tools, total) => ratio(tools, total, ['Bash']) > 0.35,
     technical: (ctx) =>
-      `You treated the terminal as the debugger: reproduce, inspect stdout and exit codes, change one assumption, run again. That is shell debugging, not IDE-stepping. Bash led the tool mix in ${projectLabel(ctx.projects)}.`,
+      `Bash accounted for a large share of recorded tool calls in ${ctx.count} session(s) in ${projectLabel(ctx.projects)}. This indicates terminal activity, not a verified diagnosis.`,
     layman: (ctx) =>
-      `You ran command after command in ${projectLabel(ctx.projects)} until the error went away.`,
+      `The logs record frequent terminal-tool use in ${projectLabel(ctx.projects)}.`,
   },
   {
     id: 'refactoring',
-    name: 'Refactoring',
+    name: 'Code editing sessions',
     match: (session, tools, total) =>
       ratio(tools, total, ['Edit', 'Write']) > 0.4 && (session.duration_seconds || 0) > 15 * 60,
     technical: (ctx) =>
-      `You changed structure without intending to change behavior. That is refactoring: extract, rename, and move while tests or a manual check keep the contract. Long Edit and Write sessions in ${projectLabel(ctx.projects)} were the signal.`,
+      `Edit and Write tools appeared frequently in sessions lasting over 15 minutes in ${projectLabel(ctx.projects)}. The metadata cannot tell whether the work was a refactor or whether behavior stayed the same.`,
     layman: (ctx) =>
-      `You spent a long stretch editing code that already existed in ${projectLabel(ctx.projects)}, not starting a new file from zero.`,
+      `The logs show extended editing activity in ${projectLabel(ctx.projects)}.`,
   },
   {
     id: 'code-search',
-    name: 'Code search',
+    name: 'Code search activity',
     match: (_session, tools, total) => ratio(tools, total, ['Grep', 'Glob']) > 0.25,
     technical: (ctx) =>
-      `You located a symbol or path before you edited it. That is code search: Grep and Glob as the index, then a narrow Read. ${projectLabel(ctx.projects)} showed that order.`,
+      `Grep and Glob made up a notable share of recorded tool calls across ${ctx.count} session(s) in ${projectLabel(ctx.projects)}. The log does not establish the order or result of the search.`,
     layman: (ctx) =>
-      `You searched the tree in ${projectLabel(ctx.projects)} before changing anything.`,
+      `The metadata records repeated code-search activity in ${projectLabel(ctx.projects)}.`,
   },
   {
     id: 'multi-agent',
-    name: 'Multi-agent orchestration',
+    name: 'Agent coordination activity',
     match: (session) => Boolean(session.is_subagent || (session.agent_depth && session.agent_depth > 0)),
     technical: (ctx) =>
-      `You split one job across parent and child agents with separate tool loops. That is multi-agent orchestration: a coordinator, scoped workers, and a merge of their results. The session tree in ${projectLabel(ctx.projects)} is the evidence.`,
+      `Parent and child-agent metadata appears in ${ctx.count} session(s) in ${projectLabel(ctx.projects)}. It does not establish that the child work was reviewed or merged.`,
     layman: (ctx) =>
-      `You had more than one agent running pieces of the same job in ${projectLabel(ctx.projects)}.`,
+      `The session tree records work associated with child agents in ${projectLabel(ctx.projects)}.`,
   },
   {
     id: 'abandoned-starts',
-    name: 'Abandoned starts',
+    name: 'Sessions without output',
     match: (session) => Boolean(session.is_ghost),
     technical: (ctx) =>
-      `You paid context setup and then produced no assistant output. That is an abandoned start, sometimes called a ghost session: tokens spent on launch, nothing shipped. ${projectLabel(ctx.projects)} has ${ctx.count} of them in this range.`,
+      `${ctx.count} session(s) in ${projectLabel(ctx.projects)} are marked as having no assistant output. That can mean a cancelled start, missing collection, or work that continued elsewhere.`,
     layman: (ctx) =>
-      `You opened a session in ${projectLabel(ctx.projects)} and left before anything came back.`,
+      `Some sessions in ${projectLabel(ctx.projects)} have no recorded assistant output.`,
   },
   {
     id: 'prompt-iteration',
-    name: 'Prompt iteration',
+    name: 'Long back-and-forth sessions',
     match: (session) => (session.user_message_count || 0) >= 8,
     technical: (ctx) =>
-      `You refined the same request across many user turns instead of one-shotting it. That is prompt iteration: each turn adds constraint, evidence, or a correction. ${projectLabel(ctx.projects)} had sessions with eight or more user messages.`,
+      `${ctx.count} session(s) in ${projectLabel(ctx.projects)} contain at least eight user messages. The count does not show whether the request changed or repeated.`,
     layman: (ctx) =>
-      `You kept talking the agent through the same problem in ${projectLabel(ctx.projects)} instead of starting over.`,
+      `Some sessions in ${projectLabel(ctx.projects)} contain many user turns.`,
   },
   {
     id: 'test-repair',
-    name: 'Test-driven repair',
+    name: 'Test-related session labels',
     match: (session, tools, total) => {
       const text = textOf(session);
       return /test|spec|failing|assert/.test(text) || (ratio(tools, total, ['Bash']) > 0.2 && /fix|fail/.test(text));
     },
     technical: (ctx) =>
-      `You used a failing check as the specification, then changed code until the check passed. That is test-driven repair: red, change, green. Titles or Bash loops in ${projectLabel(ctx.projects)} pointed at tests.`,
+      `The session title or first request refers to tests, failures, or assertions in ${ctx.count} session(s) in ${projectLabel(ctx.projects)}. The session metadata cannot establish whether any test ran or passed.`,
     layman: (ctx) =>
-      `You treated a failing test as the compass in ${projectLabel(ctx.projects)}.`,
+      `The recorded labels suggest test-related work in ${projectLabel(ctx.projects)}.`,
   },
   {
     id: 'planning',
-    name: 'Plan then code',
+    name: 'Planning-tool activity',
     match: (_session, tools, total) => ratio(tools, total, ['Agent', 'EnterPlanMode', 'Task']) > 0.15,
     technical: (ctx) =>
-      `You separated planning from mutation. That is plan-then-code: enumerate the change, then edit. Agent, Task, or plan-mode tools in ${projectLabel(ctx.projects)} marked the split.`,
+      `Agent, Task, or plan-mode tools appeared in ${ctx.count} session(s) in ${projectLabel(ctx.projects)}. Tool presence does not prove a plan was followed.`,
     layman: (ctx) =>
-      `You sketched the work before editing files in ${projectLabel(ctx.projects)}.`,
+      `The session logs record planning-related tool activity in ${projectLabel(ctx.projects)}.`,
   },
 ];
 
 export function inferPractice(sessions: Session[]): PracticeConcept[] {
-  const live = sessions.filter((session) => !session.is_subagent);
+  const seen = new Set<string>();
+  const live = sessions.filter((session) => {
+    if (session.is_subagent || session.is_sidechain || (session.agent_depth || 0) > 0) return false;
+    const key = JSON.stringify([session.source || 'claude', session.session_id]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   const concepts: PracticeConcept[] = [];
 
   for (const rule of RULES) {
@@ -191,6 +199,11 @@ export function inferPractice(sessions: Session[]): PracticeConcept[] {
       source: sourceLine(ctx),
       projects: ctx.projects,
       sessionCount: ctx.count,
+      evidence: hits.slice(0, 6).map((session) => ({
+        source: session.source || 'claude',
+        sessionId: session.session_id,
+        project: session.project || 'unknown',
+      })),
     });
   }
 

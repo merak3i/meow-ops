@@ -17,11 +17,12 @@
 //
 // Optional official usage enrichment is in cursor-admin-usage.mjs.
 
-import { existsSync, readdirSync, statSync, readFileSync } from 'fs';
 import { basename, dirname, join } from 'path';
 import { homedir } from 'os';
 import { classifyCatType, decodeProjectPath } from './parse-session.mjs';
-import { createSession, makeSnippet, projectFromCwd } from './session-utils.mjs';
+import { createSession, makeSnippet, projectFromCwd, snippetsDisabled } from './session-utils.mjs';
+import { readJsonlWithCheckpoint } from './incremental-jsonl.mjs';
+import { readSourceDirectory, statSourcePath } from './source-discovery.mjs';
 
 export const DEFAULT_CURSOR_PROJECTS_DIR = process.env.HOME || homedir()
   ? join(process.env.HOME || homedir(), '.cursor', 'projects')
@@ -132,101 +133,87 @@ function projectFromSlug(slug) {
   return fromPath || decoded || slug || 'cursor';
 }
 
-export function parseCursorTranscript(filePath, options = {}) {
-  let content;
-  try {
-    content = readFileSync(filePath, 'utf8');
-  } catch {
-    return null;
-  }
-
-  const lines = content.split('\n').filter(Boolean);
+function createCursorState(filePath, options) {
   const composerId = options.composerId || localIdFromName(basename(filePath));
-  if (!composerId) return null;
-
+  if (!composerId) return { session: null, parsed: 0, fallbackIso: null };
   const parentComposerId = options.parentComposerId || null;
-  const projectSlug = options.projectSlug || null;
-  const stat = options.stat || null;
-  const fallbackIso = stat?.mtime ? stat.mtime.toISOString() : null;
   const isSubagent = Boolean(parentComposerId) || options.isSubagent === true;
+  return {
+    parsed: 0,
+    fallbackIso: options.stat?.mtime ? options.stat.mtime.toISOString() : null,
+    session: createSession({
+      session_id: `cursor-${composerId}`,
+      source: 'cursor',
+      project: projectFromSlug(options.projectSlug || null),
+      model: null,
+      entrypoint: isSubagent ? 'subagent' : 'cursor',
+      usage_available: false,
+      pricing_source: 'unavailable',
+      estimated_cost_usd: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_creation_tokens: 0,
+      cache_read_tokens: 0,
+      total_tokens: 0,
+      composer_id: composerId,
+      conversation_id: null,
+      cloud_agent_id: composerId.startsWith('bc-') ? composerId : null,
+      parent_session_id: parentComposerId ? `cursor-${parentComposerId}` : null,
+      is_subagent: isSubagent,
+      agent_depth: isSubagent ? 1 : 0,
+      raw_ref: filePath,
+    }),
+  };
+}
 
-  const session = createSession({
-    session_id: `cursor-${composerId}`,
-    source: 'cursor',
-    project: projectFromSlug(projectSlug),
-    model: null,
-    entrypoint: isSubagent ? 'subagent' : 'cursor',
-    usage_available: false,
-    pricing_source: 'unavailable',
-    estimated_cost_usd: 0,
-    input_tokens: 0,
-    output_tokens: 0,
-    cache_creation_tokens: 0,
-    cache_read_tokens: 0,
-    total_tokens: 0,
-    composer_id: composerId,
-    conversation_id: null,
-    cloud_agent_id: composerId.startsWith('bc-') ? composerId : null,
-    parent_session_id: parentComposerId ? `cursor-${parentComposerId}` : null,
-    is_subagent: isSubagent,
-    agent_depth: isSubagent ? 1 : 0,
-    raw_ref: filePath,
-  });
-
-  let parsed = 0;
-  for (const line of lines) {
-    let entry;
-    try {
-      entry = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (!entry || typeof entry !== 'object') continue;
-    parsed += 1;
-
-    const ts = entryTimestamp(entry);
-    if (ts) {
-      if (!session.started_at || ts < session.started_at) session.started_at = ts;
-      if (!session.ended_at || ts > session.ended_at) session.ended_at = ts;
-    }
-
-    if (typeof entry.cwd === 'string' && entry.cwd && !session.cwd) session.cwd = entry.cwd;
-    if (typeof entry.conversationId === 'string' && entry.conversationId && !session.conversation_id) {
-      session.conversation_id = entry.conversationId;
-    }
-    if (typeof entry.conversation_id === 'string' && entry.conversation_id && !session.conversation_id) {
-      session.conversation_id = entry.conversation_id;
-    }
-    if (typeof entry.cloudAgentId === 'string' && entry.cloudAgentId && !session.cloud_agent_id) {
-      session.cloud_agent_id = entry.cloudAgentId;
-    }
-
-    const role = entryRole(entry);
-    const blocks = contentBlocks(entry);
-    if (role === 'user') {
-      session.user_message_count += 1;
-      session.message_count += 1;
-      if (!session.first_user_message) {
-        const text = blocks.map(blockText).filter(Boolean).join(' ')
-          || (typeof entry.text === 'string' ? entry.text : '');
-        const snip = makeSnippet(text);
-        if (snip) {
-          session.first_user_message = snip;
-          session.session_title = snip;
-        }
-      }
-    } else if (role === 'assistant') {
-      session.assistant_message_count += 1;
-      session.message_count += 1;
-    }
-
-    for (const name of collectToolNames(entry, blocks)) {
-      session.tools[name] = (session.tools[name] || 0) + 1;
-    }
+function consumeCursorEntry(state, entry) {
+  if (!state.session) return;
+  state.parsed += 1;
+  const { session } = state;
+  const ts = entryTimestamp(entry);
+  if (ts) {
+    if (!session.started_at || ts < session.started_at) session.started_at = ts;
+    if (!session.ended_at || ts > session.ended_at) session.ended_at = ts;
   }
 
-  if (parsed === 0) return null;
+  if (typeof entry.cwd === 'string' && entry.cwd && !session.cwd) session.cwd = entry.cwd;
+  if (typeof entry.conversationId === 'string' && entry.conversationId && !session.conversation_id) {
+    session.conversation_id = entry.conversationId;
+  }
+  if (typeof entry.conversation_id === 'string' && entry.conversation_id && !session.conversation_id) {
+    session.conversation_id = entry.conversation_id;
+  }
+  if (typeof entry.cloudAgentId === 'string' && entry.cloudAgentId && !session.cloud_agent_id) {
+    session.cloud_agent_id = entry.cloudAgentId;
+  }
 
+  const role = entryRole(entry);
+  const blocks = contentBlocks(entry);
+  if (role === 'user') {
+    session.user_message_count += 1;
+    session.message_count += 1;
+    if (!session.first_user_message) {
+      const text = blocks.map(blockText).filter(Boolean).join(' ')
+        || (typeof entry.text === 'string' ? entry.text : '');
+      const snippet = makeSnippet(text);
+      if (snippet) {
+        session.first_user_message = snippet;
+        session.session_title = snippet;
+      }
+    }
+  } else if (role === 'assistant') {
+    session.assistant_message_count += 1;
+    session.message_count += 1;
+  }
+
+  for (const name of collectToolNames(entry, blocks)) {
+    session.tools[name] = (session.tools[name] || 0) + 1;
+  }
+}
+
+function finishCursorState(state, fallbackIso = state.fallbackIso) {
+  if (!state.session || state.parsed === 0) return null;
+  const session = structuredClone(state.session);
   if (!session.started_at && fallbackIso) {
     session.started_at = fallbackIso;
     session.ended_at = fallbackIso;
@@ -237,58 +224,54 @@ export function parseCursorTranscript(filePath, options = {}) {
       (new Date(session.ended_at).getTime() - new Date(session.started_at).getTime()) / 1000,
     ));
   }
-
   if (session.cwd) {
     const refined = projectFromCwd(session.cwd);
     if (refined) session.project = refined;
   }
-
   session.cat_type = classifyCatType(session.tools);
-  if (session.cat_type === 'ghost' && Object.keys(session.tools).length > 0) {
-    session.cat_type = 'architect';
-  }
+  if (session.cat_type === 'ghost' && Object.keys(session.tools).length > 0) session.cat_type = 'architect';
   session.is_ghost = session.message_count < 2;
-
   return session;
 }
 
-function listDir(dir) {
+export function parseCursorTranscript(filePath, options = {}) {
+  const composerId = options.composerId || localIdFromName(basename(filePath));
+  if (!composerId) return null;
   try {
-    return readdirSync(dir);
+    return readJsonlWithCheckpoint(filePath, {
+      ...options,
+      version: `cursor-v1:${JSON.stringify([composerId, options.parentComposerId || null, options.projectSlug || null, Boolean(options.isSubagent), snippetsDisabled()])}`,
+      createState: () => createCursorState(filePath, { ...options, composerId }),
+      reduceEntry: consumeCursorEntry,
+      finish: state => finishCursorState(state, options.stat?.mtime?.toISOString()),
+    });
   } catch {
-    return [];
-  }
-}
-
-function safeStat(path) {
-  try {
-    return statSync(path);
-  } catch {
+    // The checkpoint reader has already reported a sanitized failure stage.
     return null;
   }
 }
 
-export function resolveCursorTranscriptDirs(rootDir) {
-  if (!rootDir || !existsSync(rootDir)) return [];
+export function resolveCursorTranscriptDirs(rootDir, options = {}) {
+  if (!rootDir) return [];
   const found = [];
-  const rootStat = safeStat(rootDir);
+  const rootStat = statSourcePath(rootDir, { ...options, optional: true });
   if (!rootStat?.isDirectory()) return [];
 
   if (basename(rootDir) === 'agent-transcripts') found.push(rootDir);
 
   const direct = join(rootDir, 'agent-transcripts');
-  if (existsSync(direct) && safeStat(direct)?.isDirectory()) found.push(direct);
+  if (statSourcePath(direct, { ...options, optional: true })?.isDirectory()) found.push(direct);
 
-  for (const entry of listDir(rootDir)) {
+  for (const entry of readSourceDirectory(rootDir, options)) {
     const full = join(rootDir, entry);
-    const stat = safeStat(full);
+    const stat = statSourcePath(full, options);
     if (!stat?.isDirectory()) continue;
     if (entry === 'agent-transcripts') {
       found.push(full);
       continue;
     }
     const nested = join(full, 'agent-transcripts');
-    if (existsSync(nested) && safeStat(nested)?.isDirectory()) found.push(nested);
+    if (statSourcePath(nested, { ...options, optional: true })?.isDirectory()) found.push(nested);
   }
 
   return [...new Set(found)];
@@ -299,13 +282,13 @@ function projectSlugFromTranscriptsDir(transcriptsDir) {
   return parent && parent !== '.' ? parent : 'cursor';
 }
 
-export function listCursorTranscriptFiles(transcriptsDir) {
+export function listCursorTranscriptFiles(transcriptsDir, options = {}) {
   const files = [];
-  if (!transcriptsDir || !existsSync(transcriptsDir)) return files;
+  if (!transcriptsDir) return files;
 
-  for (const entry of listDir(transcriptsDir)) {
+  for (const entry of readSourceDirectory(transcriptsDir, options)) {
     const full = join(transcriptsDir, entry);
-    const stat = safeStat(full);
+    const stat = statSourcePath(full, options);
     if (!stat) continue;
 
     if (stat.isFile() && entry.endsWith('.jsonl')) {
@@ -322,7 +305,7 @@ export function listCursorTranscriptFiles(transcriptsDir) {
 
     const composerId = entry;
     const nestedFile = join(full, `${composerId}.jsonl`);
-    const nestedStat = safeStat(nestedFile);
+    const nestedStat = statSourcePath(nestedFile, { ...options, optional: true });
     if (nestedStat?.isFile()) {
       files.push({
         filePath: nestedFile,
@@ -331,10 +314,10 @@ export function listCursorTranscriptFiles(transcriptsDir) {
         stat: nestedStat,
       });
     } else {
-      for (const child of listDir(full)) {
+      for (const child of readSourceDirectory(full, options)) {
         if (!child.endsWith('.jsonl')) continue;
         const childPath = join(full, child);
-        const childStat = safeStat(childPath);
+        const childStat = statSourcePath(childPath, options);
         if (!childStat?.isFile()) continue;
         files.push({
           filePath: childPath,
@@ -346,11 +329,11 @@ export function listCursorTranscriptFiles(transcriptsDir) {
     }
 
     const subDir = join(full, 'subagents');
-    if (!existsSync(subDir) || !safeStat(subDir)?.isDirectory()) continue;
-    for (const sub of listDir(subDir)) {
+    if (!statSourcePath(subDir, { ...options, optional: true })?.isDirectory()) continue;
+    for (const sub of readSourceDirectory(subDir, options)) {
       if (!sub.endsWith('.jsonl')) continue;
       const subPath = join(subDir, sub);
-      const subStat = safeStat(subPath);
+      const subStat = statSourcePath(subPath, options);
       if (!subStat?.isFile()) continue;
       files.push({
         filePath: subPath,
@@ -364,20 +347,21 @@ export function listCursorTranscriptFiles(transcriptsDir) {
   return files.filter((row) => row.composerId);
 }
 
-export function scanCursorSessions(rootDir = DEFAULT_CURSOR_PROJECTS_DIR) {
-  if (!rootDir || !existsSync(rootDir)) return [];
+export function scanCursorSessions(rootDir = DEFAULT_CURSOR_PROJECTS_DIR, options = {}) {
+  if (!rootDir) return [];
 
   const sessions = [];
   const seen = new Set();
-  const transcriptDirs = resolveCursorTranscriptDirs(rootDir);
+  const transcriptDirs = resolveCursorTranscriptDirs(rootDir, options);
 
   for (const transcriptsDir of transcriptDirs) {
     const projectSlug = projectSlugFromTranscriptsDir(transcriptsDir);
-    for (const file of listCursorTranscriptFiles(transcriptsDir)) {
+    for (const file of listCursorTranscriptFiles(transcriptsDir, options)) {
       const key = `${file.parentComposerId || ''}::${file.composerId}`;
       if (seen.has(key)) continue;
       try {
         const session = parseCursorTranscript(file.filePath, {
+          ...options,
           composerId: file.composerId,
           parentComposerId: file.parentComposerId,
           projectSlug,

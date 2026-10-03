@@ -2,7 +2,7 @@
 
 ## Active priority
 
-Ship the inbox cut: one mission, five surfaces, timer as chrome, Companion gone, Learn usable.
+Owner-approved repair goal (2026-10-03): Phases 1, 2, 3, 4 and 6 only. Deliver reliable local sync, reconciled history and numbers, Storage under Today, and grounded weekly insights and guide answers. Cursor and Grok Bot integration comes last at zero additional spend. Owner clarified the account is Team Ultra and confirmed there is no Admin API key option. Use local collection and eligible exports; account and per-bot billing remain unavailable without official evidence. Phase 5 character and speech production is excluded from this goal. Hosted builds remain a labelled demo. Keep the five surfaces and timer as chrome.
 
 ## Delivery sequence
 
@@ -15,6 +15,8 @@ Ship the inbox cut: one mission, five surfaces, timer as chrome, Companion gone,
 ## Open decisions
 
 - Owner confirmed: keep Sanctum, kill Companion, keep Learn and simplify it, timer is chrome not a page.
+- Owner's long-term character direction is Krishna, superseding Archive Warden. The owner subsequently excluded Phase 5 from the current goal. Keep the existing character; no character production, Blender decision or audio audition is required for this repair delivery.
+- Local launch target: 2026-10-10 Asia/Kolkata. Implementation agent owns fixes and evidence; independent reviewer owns verification; Vismay owns external release authorization. Fallback is reliable local capture, reconciled numbers, Storage and grounded text insights. Completion requires the applicable integration, privacy, runtime, rollback and 24-hour collection gates. Phase 5 is not a completion gate.
 
 ## Known limitations
 

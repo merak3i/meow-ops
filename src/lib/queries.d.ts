@@ -44,3 +44,14 @@ export const IS_PROD: boolean;
 export function triggerSync(): Promise<{ ok: boolean; status?: SyncStatus; error?: string }>;
 
 export function invalidateRealSessions(): void;
+
+export function fetchSessionWindow(from: string, to: string, filters?: {
+  project?: string;
+  source?: string;
+  model?: string;
+}): Promise<{
+  items: import('../types/session').Session[];
+  completeness: 'archive' | 'preview' | 'unavailable';
+  error: string | null;
+  archiveVersion?: string;
+}>;

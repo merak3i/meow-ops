@@ -133,7 +133,7 @@ test('session history is local-origin-only and still requires the local access h
 });
 
 test('hosted dashboards cannot fetch raw local session or cost summaries', async () => {
-  for (const path of ['/data/sessions.json', '/data/cost-summary.json']) {
+  for (const path of ['/data/sessions.json', '/data/cost-summary.json', '/data/snapshot.json', '/storage']) {
     const response = await fetch(`${BASE}${path}`, {
       headers: { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1' },
     });
@@ -146,6 +146,8 @@ test('hosted dashboards cannot read or trigger local operational APIs', async ()
   const requests = [
     ['/sync/status', 'GET'],
     ['/sync', 'POST'],
+    ['/storage/refresh', 'POST'],
+    ['/storage/open-folder', 'POST'],
     ['/sync/runs/example', 'GET'],
     ['/loop-eng/summary', 'GET'],
     ['/loop-eng/decisions', 'GET'],

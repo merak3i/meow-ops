@@ -11,11 +11,11 @@
 //   { type: "response_item", ... }
 //   { type: "turn_context",  ... }
 
-import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
-import { StringDecoder } from 'string_decoder';
 import { calculateCostDetailed } from './cost-calculator.mjs';
 import { createSession, makeSnippet, snippetize, snippetsDisabled } from './session-utils.mjs';
+import { readJsonlWithCheckpoint } from './incremental-jsonl.mjs';
 
 function extractTextDeep(value, depth = 0) {
   if (!value || depth > 4) return '';
@@ -34,12 +34,17 @@ function extractTextDeep(value, depth = 0) {
   return '';
 }
 
-function loadSessionIndex(codexDir) {
+function loadSessionIndex(codexDir, onCoverage) {
   const indexPath = join(codexDir, '..', 'session_index.jsonl');
   const out = new Map();
   if (!existsSync(indexPath)) return out;
 
-  const lines = readFileSync(indexPath, 'utf8').split('\n').filter(Boolean);
+  let lines;
+  try { lines = readFileSync(indexPath, 'utf8').split('\n').filter(Boolean); }
+  catch {
+    onCoverage?.({ mode: 'failed', stage: 'session-index', bytesRead: 0, parsedBytes: 0 });
+    return out;
+  }
   for (const line of lines) {
     try {
       const row = JSON.parse(line);
@@ -52,20 +57,27 @@ function loadSessionIndex(codexDir) {
 }
 
 // Walk the year/month/day directory tree under codexDir, yield all rollout JSONL paths.
-function* walkCodexFiles(dir) {
+function* walkCodexFiles(dir, onCoverage) {
   if (!existsSync(dir)) return;
-  for (const year of readdirSync(dir)) {
-    const yearPath = join(dir, year);
-    if (!statSync(yearPath).isDirectory() || !/^\d{4}$/.test(year)) continue;
-    for (const month of readdirSync(yearPath)) {
-      const monthPath = join(yearPath, month);
-      if (!statSync(monthPath).isDirectory()) continue;
-      for (const day of readdirSync(monthPath)) {
-        const dayPath = join(monthPath, day);
-        if (!statSync(dayPath).isDirectory()) continue;
-        for (const file of readdirSync(dayPath)) {
-          if (file.endsWith('.jsonl') && file.startsWith('rollout-')) {
-            yield join(dayPath, file);
+  const list = path => {
+    try { return readdirSync(path, { withFileTypes: true }); }
+    catch {
+      onCoverage?.({ mode: 'failed', stage: 'discovery', bytesRead: 0, parsedBytes: 0 });
+      return [];
+    }
+  };
+  for (const year of list(dir)) {
+    const yearPath = join(dir, year.name);
+    if (!year.isDirectory() || !/^\d{4}$/.test(year.name)) continue;
+    for (const month of list(yearPath)) {
+      const monthPath = join(yearPath, month.name);
+      if (!month.isDirectory()) continue;
+      for (const day of list(monthPath)) {
+        const dayPath = join(monthPath, day.name);
+        if (!day.isDirectory()) continue;
+        for (const file of list(dayPath)) {
+          if (file.isFile() && file.name.endsWith('.jsonl') && file.name.startsWith('rollout-')) {
+            yield join(dayPath, file.name);
           }
         }
       }
@@ -106,7 +118,7 @@ function toolNameFromResponseItem(payload) {
   return null;
 }
 
-export function parseCodexFile(filePath) {
+function createCodexState(filePath) {
   const session = createSession({
     project: 'codex',
     source: 'codex',
@@ -117,15 +129,14 @@ export function parseCodexFile(filePath) {
   });
 
   // Last non-null token_count info wins (cumulative totals at turn end).
-  let lastTokenUsage = null;
-  const seenToolCalls = new Set();
-  let responseUserMessages = 0;
-  let responseAssistantMessages = 0;
-  const observedModels = new Set();
+  return {
+    session, lastTokenUsage: null, seenToolCalls: new Set(),
+    responseUserMessages: 0, responseAssistantMessages: 0, observedModels: new Set(),
+  };
+}
 
-  for (const line of readJsonlLines(filePath)) {
-    let entry;
-    try { entry = JSON.parse(line); } catch { continue; }
+function consumeCodexEntry(state, entry) {
+    const { session, seenToolCalls, observedModels } = state;
 
     const ts = entry.timestamp;
     if (entry.type === 'turn_context' && typeof entry.payload?.model === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,149}$/.test(entry.payload.model)) {
@@ -159,30 +170,33 @@ export function parseCodexFile(filePath) {
         session.message_count++;
       }
       if (p.type === 'token_count' && p.info?.total_token_usage) {
-        lastTokenUsage = p.info.total_token_usage;
+        state.lastTokenUsage = p.info.total_token_usage;
       }
     }
 
     if (entry.type === 'response_item') {
       const p = entry.payload || {};
       if (p.type === 'message' && ['user', 'assistant'].includes(p.role)) {
-        if (p.role === 'user') responseUserMessages++;
-        else responseAssistantMessages++;
+        if (p.role === 'user') state.responseUserMessages++;
+        else state.responseAssistantMessages++;
       }
       const toolName = toolNameFromResponseItem(p);
-      if (!toolName) continue;
+      if (!toolName) return;
 
       // `call_id` is stable across call + output records and lets us avoid
       // double-counting when streams include retries/replays.
       const callId = typeof p.call_id === 'string' && p.call_id ? p.call_id : null;
       if (callId) {
-        if (seenToolCalls.has(callId)) continue;
+        if (seenToolCalls.has(callId)) return;
         seenToolCalls.add(callId);
       }
       session.tools[toolName] = (session.tools[toolName] || 0) + 1;
     }
-  }
+}
 
+function finishCodexState(state) {
+  const session = structuredClone(state.session);
+  const { lastTokenUsage, responseUserMessages, responseAssistantMessages, observedModels } = state;
   if (!session.started_at) return null;
 
   // New Desktop logs store message records without legacy message events.
@@ -237,32 +251,27 @@ export function parseCodexFile(filePath) {
   return session;
 }
 
-function* readJsonlLines(filePath) {
-  const fd = openSync(filePath, 'r');
-  const buffer = Buffer.allocUnsafe(1 << 20);
-  const decoder = new StringDecoder('utf8');
-  let pending = '';
-
-  try {
-    let bytesRead;
-    while ((bytesRead = readSync(fd, buffer, 0, buffer.length, null)) > 0) {
-      const chunks = (pending + decoder.write(buffer.subarray(0, bytesRead))).split('\n');
-      pending = chunks.pop() ?? '';
-      for (const line of chunks) if (line) yield line;
-    }
-    pending += decoder.end();
-    if (pending) yield pending;
-  } finally {
-    closeSync(fd);
-  }
+export function parseCodexFile(filePath, options = {}) {
+  return readJsonlWithCheckpoint(filePath, {
+    ...options,
+    version: `codex-v2:snippets-${snippetsDisabled() ? 'off' : 'on'}`,
+    createState: () => createCodexState(filePath),
+    reduceEntry: consumeCodexEntry,
+    finish: finishCodexState,
+    hydrate: value => {
+      if (!value?.session || !Array.isArray(value.seenToolCalls) || !Array.isArray(value.observedModels)) throw new Error('Invalid checkpoint state.');
+      return { ...value, seenToolCalls: new Set(value.seenToolCalls), observedModels: new Set(value.observedModels) };
+    },
+    dehydrate: value => ({ ...value, seenToolCalls: [...value.seenToolCalls], observedModels: [...value.observedModels] }),
+  });
 }
 
-export function scanCodexSessions(codexDir) {
+export function scanCodexSessions(codexDir, options = {}) {
   const sessions = [];
-  const titleById = loadSessionIndex(codexDir);
-  for (const filePath of walkCodexFiles(codexDir)) {
+  const titleById = loadSessionIndex(codexDir, options.onCoverage);
+  for (const filePath of walkCodexFiles(codexDir, options.onCoverage)) {
     try {
-      const s = parseCodexFile(filePath);
+      const s = parseCodexFile(filePath, options);
       if (!s) continue;
       // Use rollout UUID from filename for a stable, unique session_id.
       const uuidMatch = filePath.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/);
@@ -276,7 +285,7 @@ export function scanCodexSessions(codexDir) {
       }
       sessions.push(s);
     } catch {
-      // Skip unreadable files silently.
+      // The parser reports a sanitized stage through onCoverage before throwing.
     }
   }
   return sessions;

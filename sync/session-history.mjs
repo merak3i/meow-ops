@@ -5,16 +5,33 @@
 // and never used as the retention boundary.
 
 import {
-  appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync,
-  realpathSync, statSync, writeFileSync,
+  chmodSync, closeSync, existsSync, fstatSync, ftruncateSync, fsyncSync, mkdirSync, openSync, readFileSync,
+  readSync, renameSync, realpathSync, statSync, writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { createHash } from 'node:crypto';
 
 const FORBIDDEN_KEYS = new Set(['cwd', 'raw_ref', 'session_title', 'first_user_message']);
 const DEFAULT_PAGE_SIZE = 100;
 const MAX_PAGE_SIZE = 500;
 const DEFAULT_WARNING_THRESHOLD = 100_000;
+const INDEX_SCHEMA_VERSION = 2;
+const MAX_RECOVERY_TAIL_BYTES = 64 * 1024 * 1024;
+
+function syncDirectory(path) {
+  const fd = openSync(path, 'r');
+  try { fsyncSync(fd); } finally { closeSync(fd); }
+}
+
+function writeDurable(path, content, flag = 'w') {
+  const fd = openSync(path, flag, 0o600);
+  try { writeFileSync(fd, content); fsyncSync(fd); } finally { closeSync(fd); }
+}
+
+function sessionIdentity(session) {
+  return JSON.stringify([session.source || 'claude', session.session_id]);
+}
 
 export function assertHistoryOutsideWorktree(dir) {
   let current = resolve(dir);
@@ -57,50 +74,79 @@ function sanitizeValue(value, path = '') {
 
 function readIndex(dir) {
   const file = join(dir, 'current.json');
+  let index;
   if (existsSync(file)) {
     try {
       const parsed = JSON.parse(readFileSync(file, 'utf8'));
-      if (Array.isArray(parsed?.sessions)) {
-        const logFile = join(dir, 'sessions.jsonl');
-        const logBytes = Number.isInteger(parsed.logBytes) && parsed.logBytes >= 0
-          ? parsed.logBytes
-          : (existsSync(logFile) ? statSync(logFile).size : 0);
-        return {
+      if (Array.isArray(parsed?.sessions)
+        && Number.isInteger(parsed.logBytes) && parsed.logBytes >= 0) {
+        index = {
           ...parsed,
-          logBytes,
           sessions: parsed.sessions.map((session) => sanitizeValue(session)),
         };
       }
     } catch { /* recover from the append-only log below */ }
   }
-  return readLogIndex(dir);
+  if (!index) return readLogIndex(dir);
+
+  const logFile = join(dir, 'sessions.jsonl');
+  const actualBytes = existsSync(logFile) ? statSync(logFile).size : 0;
+  if (actualBytes < index.logBytes) {
+    throw new Error('[session-history] append-only log is shorter than its committed index; restore the archive before syncing.');
+  }
+  // Version 1 keyed sessions by ID alone and could collapse two harnesses that
+  // used the same ID. The retained revision log can reconstruct both safely.
+  if (index.schemaVersion !== INDEX_SCHEMA_VERSION) return readLogIndex(dir);
+  if (actualBytes === index.logBytes) return { ...index, incompleteTailBytes: 0 };
+  // A completed append survives a crash before current.json is published.
+  // Replay only the unindexed tail; reads never rewrite either archive file.
+  return readLogIndex(dir, null, index);
 }
 
-function readLogIndex(dir, maxBytes = null) {
+function readLogIndex(dir, maxBytes = null, seed = null) {
   const logFile = join(dir, 'sessions.jsonl');
   if (!existsSync(logFile)) {
-    return { schemaVersion: 1, updatedAt: null, logBytes: 0, sessions: [] };
+    if (maxBytes > 0) throw new Error('[session-history] committed snapshot log is missing.');
+    return { schemaVersion: INDEX_SCHEMA_VERSION, updatedAt: null, logBytes: 0, incompleteTailBytes: 0, sessions: [] };
   }
-  const buffer = readFileSync(logFile);
-  const logBytes = Number.isInteger(maxBytes) && maxBytes >= 0
-    ? Math.min(maxBytes, buffer.length)
-    : buffer.length;
-  const byId = new Map();
-  let updatedAt = null;
-  for (const line of buffer.subarray(0, logBytes).toString('utf8').split('\n').filter(Boolean)) {
+  const size = statSync(logFile).size;
+  if (maxBytes > size) throw new Error('[session-history] append-only log is shorter than the requested snapshot.');
+  const end = Number.isInteger(maxBytes) && maxBytes >= 0 ? maxBytes : size;
+  const start = seed?.logBytes || 0;
+  const buffer = Buffer.alloc(end - start);
+  const fd = openSync(logFile, 'r');
+  try {
+    let offset = 0;
+    while (offset < buffer.length) {
+      const read = readSync(fd, buffer, offset, buffer.length - offset, start + offset);
+      if (!read) throw new Error('[session-history] append-only log changed during recovery; retry the read.');
+      offset += read;
+    }
+  } finally {
+    closeSync(fd);
+  }
+  // Our writer commits newline-terminated revisions. Leave a torn final append
+  // untouched and readable as the last good snapshot; never join new JSON to it.
+  const committedBytes = buffer.lastIndexOf(0x0a) + 1;
+  const logBytes = start + committedBytes;
+  const byId = new Map((seed?.sessions || []).map(session => [sessionIdentity(session), session]));
+  let updatedAt = seed?.updatedAt || null;
+  for (const line of buffer.subarray(0, committedBytes).toString('utf8').split('\n').filter(Boolean)) {
     let revision;
     try { revision = JSON.parse(line); } catch {
-      throw new Error(`[session-history] append-only log contains an invalid revision: ${logFile}`);
+      throw new Error('[session-history] append-only log contains an invalid revision; restore the archive before syncing.');
     }
-    if (revision?.session?.session_id) {
-      byId.set(revision.session.session_id, sanitizeValue(revision.session));
-      updatedAt = revision.archived_at || updatedAt;
+    if (typeof revision?.session?.session_id !== 'string' || !revision.session.session_id) {
+      throw new Error('[session-history] append-only log contains an invalid revision identity.');
     }
+    byId.set(sessionIdentity(revision.session), sanitizeValue(revision.session));
+    updatedAt = revision.archived_at || updatedAt;
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: INDEX_SCHEMA_VERSION,
     updatedAt,
     logBytes,
+    incompleteTailBytes: end - logBytes,
     sessions: sortedSessions(byId.values()),
   };
 }
@@ -112,7 +158,13 @@ function activityTime(session) {
 
 function sortedSessions(sessions) {
   return [...sessions].sort((a, b) => activityTime(b) - activityTime(a)
-    || String(a.session_id).localeCompare(String(b.session_id)));
+    || String(a.session_id).localeCompare(String(b.session_id))
+    || String(a.source || 'claude').localeCompare(String(b.source || 'claude')));
+}
+
+function archiveVersionFor(index, sessions = sortedSessions(index.sessions)) {
+  return createHash('sha256').update(String(index.logBytes))
+    .update('\0').update(JSON.stringify(sessions)).digest('hex');
 }
 
 function warningThreshold(value) {
@@ -124,37 +176,49 @@ export function updateSessionHistory(sessions, options = {}) {
   const dir = resolveSessionHistoryDir(options.dir);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const updatedAt = options.updatedAt || new Date().toISOString();
+  const recovery = options.recoverIncompleteTail === true ? recoverIncompleteSessionHistory({ dir }) : null;
   const prior = readIndex(dir);
-  const byId = new Map(prior.sessions.map((session) => [session.session_id, session]));
+  if (prior.incompleteTailBytes) {
+    throw new Error('[session-history] incomplete append detected; preserve and recover the archive tail before syncing.');
+  }
+  const byId = new Map(prior.sessions.map((session) => [sessionIdentity(session), session]));
   const revisions = [];
 
   for (const raw of sessions) {
     if (!raw || typeof raw.session_id !== 'string' || !raw.session_id) continue;
     const session = sanitizeValue(raw);
-    const existing = byId.get(session.session_id);
+    const identity = sessionIdentity(session);
+    const existing = byId.get(identity);
     if (!existing || JSON.stringify(existing) !== JSON.stringify(session)) {
       revisions.push({ archived_at: updatedAt, session });
-      byId.set(session.session_id, session);
+      byId.set(identity, session);
     }
   }
 
   const logFile = join(dir, 'sessions.jsonl');
   if (revisions.length > 0) {
-    appendFileSync(logFile, `${revisions.map((row) => JSON.stringify(row)).join('\n')}\n`, { encoding: 'utf8', mode: 0o600 });
+    const existed = existsSync(logFile);
+    const fd = openSync(logFile, 'a', 0o600);
+    try {
+      writeFileSync(fd, `${revisions.map((row) => JSON.stringify(row)).join('\n')}\n`, 'utf8');
+      fsyncSync(fd);
+    } finally { closeSync(fd); }
+    if (!existed) syncDirectory(dir);
     chmodSync(logFile, 0o600);
   }
 
   const currentFile = join(dir, 'current.json');
   const tempFile = join(dir, `.current-${process.pid}-${Date.now()}.json`);
   const current = {
-    schemaVersion: 1,
+    schemaVersion: INDEX_SCHEMA_VERSION,
     updatedAt,
     logBytes: existsSync(logFile) ? statSync(logFile).size : 0,
     sessions: sortedSessions(byId.values()),
   };
-  writeFileSync(tempFile, JSON.stringify(current), { encoding: 'utf8', mode: 0o600 });
+  writeDurable(tempFile, JSON.stringify(current), 'wx');
   renameSync(tempFile, currentFile);
   chmodSync(currentFile, 0o600);
+  syncDirectory(dir);
 
   const threshold = warningThreshold(options.warningThreshold);
   return {
@@ -162,8 +226,54 @@ export function updateSessionHistory(sessions, options = {}) {
     total: current.sessions.length,
     warningThreshold: threshold,
     thresholdExceeded: current.sessions.length > threshold,
+    recoveredTailBytes: recovery?.bytes || 0,
     dir,
   };
+}
+
+/** Preserve a torn tail before removing it from the append position. Source harness logs stay read-only. */
+export function recoverIncompleteSessionHistory(options = {}) {
+  const dir = resolveSessionHistoryDir(options.dir);
+  const prior = readIndex(dir);
+  if (!prior.incompleteTailBytes) return { recovered: false, bytes: 0, recoveryFile: null };
+  const recoveryLimit = Number.isSafeInteger(options.maxBytes) && options.maxBytes > 0
+    ? Math.min(options.maxBytes, MAX_RECOVERY_TAIL_BYTES) : MAX_RECOVERY_TAIL_BYTES;
+  if (prior.incompleteTailBytes > recoveryLimit) {
+    throw new Error('[session-history] incomplete tail exceeds the automatic recovery limit; preserve it and inspect the archive manually.');
+  }
+  const logFile = join(dir, 'sessions.jsonl');
+  const before = statSync(logFile);
+  if (before.nlink > 1) throw new Error('[session-history] linked archive log cannot be repaired automatically.');
+  const bytes = Buffer.alloc(prior.incompleteTailBytes);
+  const fd = openSync(logFile, 'r+');
+  try {
+    const current = fstatSync(fd);
+    if (current.ino !== before.ino || current.dev !== before.dev || current.size !== before.size) {
+      throw new Error('[session-history] archive changed during tail recovery; retry after sync stops.');
+    }
+    let offset = 0;
+    while (offset < bytes.length) {
+      const read = readSync(fd, bytes, offset, bytes.length - offset, prior.logBytes + offset);
+      if (!read) throw new Error('[session-history] archive tail changed during recovery.');
+      offset += read;
+    }
+    const recoveryDir = join(dir, 'recovery');
+    mkdirSync(recoveryDir, { recursive: true, mode: 0o700 });
+    const digest = createHash('sha256').update(bytes).digest('hex');
+    const recoveryFile = join(recoveryDir, `${digest}.partial`);
+    if (existsSync(recoveryFile)) {
+      if (!readFileSync(recoveryFile).equals(bytes)) throw new Error('[session-history] recovery digest collision; archive unchanged.');
+    } else writeDurable(recoveryFile, bytes, 'wx');
+    syncDirectory(recoveryDir);
+    const latest = fstatSync(fd);
+    if (latest.ino !== before.ino || latest.size !== before.size || latest.mtimeMs !== before.mtimeMs) {
+      throw new Error('[session-history] archive changed before recovery; retry after sync stops.');
+    }
+    ftruncateSync(fd, prior.logBytes);
+    fsyncSync(fd);
+    syncDirectory(dir);
+    return { recovered: true, bytes: bytes.length, recoveryFile };
+  } finally { closeSync(fd); }
 }
 
 export function readSessionHistory(options = {}) {
@@ -173,13 +283,20 @@ export function readSessionHistory(options = {}) {
 
 export function readSessionHistorySnapshot(options = {}) {
   const index = readIndex(resolveSessionHistoryDir(options.dir));
-  return { updatedAt: index.updatedAt, sessions: index.sessions };
+  return {
+    updatedAt: index.updatedAt,
+    sessions: index.sessions,
+    archiveVersion: archiveVersionFor(index),
+    snapshotBytes: index.logBytes,
+    incompleteTailBytes: index.incompleteTailBytes || 0,
+  };
 }
 
 function encodeCursor(session, snapshotBytes) {
   return Buffer.from(JSON.stringify({
     activity: activityTime(session),
     sessionId: String(session.session_id),
+    source: String(session.source || 'claude'),
     snapshotBytes,
   }), 'utf8').toString('base64url');
 }
@@ -195,6 +312,7 @@ function decodeCursor(cursor) {
     return {
       activity: value.activity,
       sessionId: value.sessionId,
+      source: typeof value.source === 'string' ? value.source : null,
       snapshotBytes: value.snapshotBytes,
     };
   } catch {
@@ -223,8 +341,27 @@ function activityDay(session) {
 export function querySessionHistory(options = {}) {
   const dir = resolveSessionHistoryDir(options.dir);
   const cursor = decodeCursor(options.cursor);
-  const index = cursor ? readLogIndex(dir, cursor.snapshotBytes) : readIndex(dir);
+  if (options.cursor && !cursor) {
+    throw Object.assign(new Error('Invalid session cursor; restart from the first page.'), { code: 'invalid_session_cursor' });
+  }
+  const hasSnapshotBytes = options.snapshotBytes !== undefined && options.snapshotBytes !== null && options.snapshotBytes !== '';
+  const snapshotBytes = hasSnapshotBytes ? Number(options.snapshotBytes) : null;
+  if (hasSnapshotBytes && (!Number.isSafeInteger(snapshotBytes) || snapshotBytes < 0 || !options.expectedVersion)) {
+    throw Object.assign(new Error('A published archive boundary and version are required.'), { code: 'invalid_archive_snapshot' });
+  }
+  if (cursor && hasSnapshotBytes && cursor.snapshotBytes !== snapshotBytes) {
+    throw Object.assign(new Error('The cursor belongs to another archive snapshot.'), { code: 'stale_archive_snapshot' });
+  }
+  const boundary = cursor?.snapshotBytes ?? snapshotBytes;
+  // Damage in an unpublished append must not affect the published prefix.
+  const index = boundary === null ? readIndex(dir) : readLogIndex(dir, boundary);
   const all = sortedSessions(index.sessions);
+  // The index's updatedAt can advance on a no-change sync. Bind the version to
+  // committed contents so current and historical cursor reads agree instead.
+  const archiveVersion = archiveVersionFor(index, all);
+  if (options.expectedVersion && options.expectedVersion !== archiveVersion) {
+    throw Object.assign(new Error('Session archive changed; restart from the first page.'), { code: 'stale_archive_snapshot' });
+  }
   const limitValue = Number.parseInt(options.limit ?? DEFAULT_PAGE_SIZE, 10);
   const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number.isFinite(limitValue) ? limitValue : DEFAULT_PAGE_SIZE));
   const from = dateBoundary(options.from);
@@ -243,14 +380,19 @@ export function querySessionHistory(options = {}) {
   });
   const eligible = cursor ? filtered.filter((session) => {
     const activity = activityTime(session);
+    const idOrder = String(session.session_id).localeCompare(cursor.sessionId);
     return activity < cursor.activity
-      || (activity === cursor.activity && String(session.session_id).localeCompare(cursor.sessionId) > 0);
+      || (activity === cursor.activity && (idOrder > 0
+        || (idOrder === 0 && cursor.source !== null
+          && String(session.source || 'claude').localeCompare(cursor.source) > 0)));
   }) : filtered;
   const items = eligible.slice(0, limit);
   const threshold = warningThreshold(options.warningThreshold);
   const unique = (key) => [...new Set(all.map((row) => row[key]).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b)));
 
   return {
+    archiveVersion,
+    snapshotBytes: index.logBytes,
     items,
     total: filtered.length,
     limit,
@@ -264,6 +406,7 @@ export function querySessionHistory(options = {}) {
     },
     archive: {
       total: all.length,
+      incompleteTailBytes: index.incompleteTailBytes || 0,
       warningThreshold: threshold,
       thresholdExceeded: all.length > threshold,
     },

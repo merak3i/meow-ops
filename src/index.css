@@ -707,6 +707,7 @@ code, .font-mono {
 }
 
 @media (max-width: 720px) {
+  .mo-tab { padding-inline: var(--sp-2); }
   :root,
   :root[data-theme="dark"],
   :root[data-theme="light"] {

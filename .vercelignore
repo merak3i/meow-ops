@@ -44,6 +44,8 @@ sync/*
 !sync/session-history.mjs
 !sync/sync-runner.mjs
 !sync/load-env.mjs
+!sync/snapshot-generation.mjs
+!sync/process-lock.mjs
 # Keep only the selected runtime guide export in the deployment package.
 src/pages/sanctum/assets/guide-originalized-v*-runtime.glb
 !src/pages/sanctum/assets/guide-originalized-v110-runtime.glb

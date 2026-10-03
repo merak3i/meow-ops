@@ -37,7 +37,7 @@ test('Hermes parser preserves unavailable usage instead of inventing it', () => 
 
   assert.equal(session.usage_available, false);
   assert.equal(session.model, null);
-  assert.equal(session.total_tokens, 0);
+  assert.equal(session.total_tokens, null);
   assert.equal(session.project, 'hermes');
 });
 

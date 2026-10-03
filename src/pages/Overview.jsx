@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Activity, ArrowRight, Clock, DollarSign, Zap } from 'lucide-react';
 import DailyChart from '../components/DailyChart';
 import ToolBreakdown from '../components/ToolBreakdown';
+import WeeklyInsights from '../components/WeeklyInsights';
 import { Button, Card, Eyebrow, HelpTip, Scope, StatTile, ToggleGroup } from '../components/ui';
 import { formatCost, formatDuration, formatTokens } from '../lib/format';
 import { sourceMeta, sourceOptions } from '../lib/sources';
@@ -39,10 +40,10 @@ function SourceRows({ sessions, totalTokens, range, completeness }) {
     const acc = new Map();
     for (const session of sessions) {
       const key = session.source || 'claude';
-      const row = acc.get(key) ?? { source: key, sessions: 0, tokens: 0, cost: 0, ghosts: 0 };
+      const row = acc.get(key) ?? { source: key, sessions: 0, tokens: 0, cost: null, ghosts: 0 };
       row.sessions += 1;
       row.tokens += session.total_tokens || 0;
-      row.cost += session.estimated_cost_usd || 0;
+      if (session.estimated_cost_usd != null) row.cost = (row.cost ?? 0) + session.estimated_cost_usd;
       if (session.is_ghost) row.ghosts += 1;
       acc.set(key, row);
     }
@@ -265,66 +266,31 @@ export default function Overview({
   dailyData,
   costSummary,
   dateRange = 30,
+  completeness: rangeCompleteness = 'preview',
   sourceStats,
   tokenBudget,
   onBudgetChange,
   onNavigate,
+  referenceAt,
+  refreshKey,
+  sourceCoverage,
+  weeklyEvidencePatterns,
+  sampleData,
 }) {
   const [source, setSource] = useState('both');
 
   const presentSources = useMemo(() => {
-    const seen = new Set(allSessions.map((session) => session.source || 'claude'));
+    const seen = new Set([...allSessions, ...rangeSessions].map((session) => session.source || 'claude'));
     return [...seen].sort();
-  }, [allSessions]);
+  }, [allSessions, rangeSessions]);
 
   const sessions = useMemo(
     () => (source === 'both' ? rangeSessions : rangeSessions.filter((s) => (s.source || 'claude') === source)),
     [rangeSessions, source],
   );
 
-  // All-time rollups only apply when nothing is filtered out; otherwise the
-  // in-memory range is the honest source.
-  const stats = useMemo(() => {
-    const local = computeOverviewStats(sessions, dateRange);
-    if (source !== 'both') return local;
-
-    if (typeof dateRange === 'number' && dailyData?.length) {
-      const complete = dailyData.reduce((acc, day) => {
-        acc.sessions += day.session_count || 0;
-        acc.tokens += day.total_tokens || 0;
-        acc.cost += day.estimated_cost_usd || 0;
-        acc.duration += day.total_duration_seconds || 0;
-        acc.ghosts += day.ghost_count || 0;
-        return acc;
-      }, { sessions: 0, tokens: 0, cost: 0, duration: 0, ghosts: 0 });
-      return {
-        ...local,
-        periodSessions: complete.sessions,
-        periodTokens: complete.tokens,
-        periodCost: complete.cost,
-        periodDuration: complete.duration,
-        ghostCount: complete.ghosts,
-        sessionsToday: costSummary?.today?.sessions ?? local.sessionsToday,
-        costToday: costSummary?.today?.cost ?? local.costToday,
-      };
-    }
-
-    if (dateRange === 'all' && costSummary?.allTime) {
-      const complete = costSummary.allTime;
-      return {
-        ...local,
-        periodSessions: complete.sessions || 0,
-        periodTokens: complete.tokens || 0,
-        periodCost: complete.cost || 0,
-        periodDuration: complete.duration_seconds || 0,
-        ghostCount: complete.ghost_count || 0,
-        sessionsToday: costSummary.today?.sessions ?? local.sessionsToday,
-        costToday: costSummary.today?.cost ?? local.costToday,
-      };
-    }
-
-    return local;
-  }, [sessions, dateRange, costSummary, source, dailyData]);
+  // Headline, source rows and projects all use the same exact-range evidence.
+  const stats = useMemo(() => computeOverviewStats(sessions), [sessions]);
 
   const chartData = useMemo(
     () => (source === 'both' ? dailyData : buildDailyFromSessions(sessions)),
@@ -332,15 +298,9 @@ export default function Overview({
   );
   const toolData = useMemo(() => getToolBreakdownFromSessions(sessions), [sessions]);
 
-  // Rollup-backed figures cover every session ever parsed. Anything computed
-  // from the in-memory array is capped at the compatibility preview.
-  const fromArchive = source === 'both'
-    && Boolean(costSummary?.archive?.appendOnly)
-    && (dateRange === 'all' ? Boolean(costSummary?.allTime) : Boolean(dailyData?.length));
-
   const range = rangeLabel(dateRange);
   const sourceScope = source === 'both' ? 'All sources' : sourceMeta(source).label;
-  const completeness = isDemoData(allSessions, costSummary) ? 'demo' : fromArchive ? 'archive' : 'preview';
+  const completeness = isDemoData(allSessions, costSummary) ? 'demo' : rangeCompleteness;
   const scope = <Scope range={range} source={sourceScope} completeness={completeness} />;
 
   const ghostRate = pct(stats.ghostCount ?? 0, stats.periodSessions);
@@ -375,16 +335,16 @@ export default function Overview({
           tone="var(--cyan)"
         />
         <StatTile
-          label="Cost"
+          label="Estimated cost"
           value={formatCost(stats.periodCost)}
           scope={scope}
-          sub={`${formatCost(stats.costToday)} today`}
+          sub={`${stats.costCoverage.estimated_cost_sessions}/${stats.periodSessions} sessions have estimates`}
           icon={DollarSign}
           tone="var(--green)"
           help="cost-estimate"
         />
         <StatTile
-          label="Time"
+          label="Session elapsed time"
           value={formatDuration(stats.periodDuration || 0)}
           scope={scope}
           sub={
@@ -397,12 +357,21 @@ export default function Overview({
         />
       </div>
 
-      <SourceRows sessions={sessions} totalTokens={stats.periodTokens} range={range} completeness={completeness === 'demo' ? 'demo' : 'preview'} />
+      <SourceRows sessions={sessions} totalTokens={stats.periodTokens} range={range} completeness={completeness} />
 
       <div className="mo-grid mo-grid--2" style={{ marginBottom: 'var(--sp-5)' }}>
         <DailyChart data={chartData} title={`Tokens per day — ${range.toLowerCase()}`} />
         <ToolBreakdown data={toolData} title="Tools your agents reached for" />
       </div>
+
+      <WeeklyInsights
+        sourceFilter={source === 'both' ? null : source}
+        referenceAt={referenceAt}
+        refreshKey={refreshKey}
+        sourceCoverage={sourceCoverage}
+        weeklyEvidencePatterns={weeklyEvidencePatterns}
+        sampleData={sampleData}
+      />
 
       <div className="mo-grid mo-grid--2">
         <TopProjects sessions={sessions} onNavigate={onNavigate} />

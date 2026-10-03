@@ -3,15 +3,7 @@ import type { CSSProperties } from 'react';
 import { ToggleGroup } from '@/components/ui/ToggleGroup';
 import { FiveBeatCard } from '@/components/five-beat/FiveBeatCard';
 import {
-  fetchLoopComparisons,
-  fetchLoopDecisions,
-  fetchLoopDigest,
-  fetchLoopDigestHistory,
-  fetchLoopOutcomes,
-  fetchLoopProposals,
-  fetchLoopRuns,
-  fetchLoopSimulations,
-  fetchLoopSummary,
+  fetchLoopReviewData,
   postLoopDecision,
   postLoopExecute,
   postLoopRunDigest,
@@ -370,39 +362,28 @@ export default function LoopReview() {
   const [busy, setBusy] = useState(false);
   const [digestBusy, setDigestBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [
-      nextProposals,
-      nextDecisions,
-      nextSummary,
-      nextRuns,
-      nextComparisons,
-      nextSimulations,
-      nextOutcomes,
-      nextDigest,
-      nextDigestHistory,
-    ] = await Promise.all([
-      fetchLoopProposals(),
-      fetchLoopDecisions(),
-      fetchLoopSummary(),
-      fetchLoopRuns(),
-      fetchLoopComparisons(),
-      fetchLoopSimulations(),
-      fetchLoopOutcomes(),
-      fetchLoopDigest(),
-      fetchLoopDigestHistory(),
-    ]);
-    setProposals(nextProposals);
-    setDecisions(nextDecisions);
-    setSummary(nextSummary);
-    setRuns(nextRuns);
-    setComparisons(nextComparisons);
-    setSimulations(nextSimulations);
-    setOutcomes(nextOutcomes);
-    setDigest(nextDigest);
-    setDigestHistory(nextDigestHistory);
+    const data = await fetchLoopReviewData();
+    if (!data.ok) {
+      setReadError(data.error);
+      setLoading(false);
+      return;
+    }
+    setReadError(null);
+    setProposals(data.proposals);
+    setDecisions(data.decisions);
+    setSummary(data.summary);
+    setRuns(data.runs);
+    setComparisons(data.comparisons);
+    setSimulations(data.simulations);
+    setOutcomes(data.outcomes);
+    setDigest(data.digest);
+    setDigestHistory(data.digestHistory);
+    setHasLoaded(true);
     setLoading(false);
   }, []);
 
@@ -576,13 +557,19 @@ export default function LoopReview() {
   return (
     <div style={styles.shell}>
       <header style={styles.header}>
-        <div style={styles.badgeRow}>
+        {hasLoaded && <div style={styles.badgeRow}>
           <span style={styles.badge}>{summary.total} proposals</span>
           <span style={styles.badge}>{summary.counts_by_status.pending_approval || 0} pending</span>
           <span style={styles.badge}>{Object.keys(summary.open_per_loop).length} open loops</span>
           <span style={styles.badge}>{runs.length} runs</span>
-        </div>
+        </div>}
       </header>
+      {readError && (
+        <div role="alert" style={styles.empty}>
+          <p>{readError} {hasLoaded ? 'The last loaded queue is shown. Decisions are paused until it refreshes.' : 'The queue is unavailable, not empty.'}</p>
+          <button type="button" onClick={() => void load()} disabled={loading} style={styles.item}>Retry review</button>
+        </div>
+      )}
 
       <div style={styles.controls}>
         <ToggleGroup value={view} onChange={(value: View) => setView(value)} options={VIEWS} ariaLabel="Review view" />
@@ -596,9 +583,9 @@ export default function LoopReview() {
         </div>
       )}
 
-      {loading ? (
+      {loading && !hasLoaded ? (
         <div style={styles.empty}>Loading review…</div>
-      ) : view === 'proposals' ? (
+      ) : readError && !hasLoaded ? null : view === 'proposals' ? (
         proposals.length === 0 ? (
           <div style={styles.empty}>No proposals yet — run npm run loop:propose</div>
         ) : (
@@ -646,7 +633,7 @@ export default function LoopReview() {
               latestDecision={selectedDecision}
               latestSimulation={selectedSimulation}
               outcome={selectedOutcome}
-              busy={busy}
+              busy={busy || loading || Boolean(readError)}
               error={error}
               onDecision={handleDecision}
               onExecute={selected ? (mode) => handleExecute(selected.proposal_id, mode) : undefined}

@@ -72,23 +72,35 @@ function baseProposal(overrides = {}) {
 
 function seedPendingProposal(overrides = {}) {
   const draft = appendRecord('proposal', baseProposal(overrides));
+  const simulation_id = newId('sim');
+  appendRecord('simulation', {
+    simulation_id,
+    proposal_id: draft.proposal_id,
+    ran_at: '2026-07-06T00:00:00.000Z',
+    mode: 'checklist',
+    results: [{ check: 'synthetic passing check', pass: true, note: 'fixture result' }],
+    pass: true,
+  });
   const simulated = appendRecord('proposal', {
     ...draft,
-    created_by: 'system:propose',
+    created_by: 'system:simulate',
+    simulation_id,
     status: 'simulated',
   });
   return appendRecord('proposal', {
     ...simulated,
-    created_by: 'system:propose',
+    created_by: 'system:simulate',
     status: 'pending_approval',
   });
 }
 
 function seedUnsimulatedPendingProposal(overrides = {}) {
   const draft = appendRecord('proposal', baseProposal(overrides));
+  const simulation_id = newId('sim');
   const simulated = appendRecord('proposal', {
     ...draft,
     created_by: 'owner',
+    simulation_id,
     status: 'simulated',
   });
   return appendRecord('proposal', {
@@ -276,7 +288,8 @@ test('GET /loop-eng endpoints return ledger-backed JSON shapes', async () => {
 
   const simulations = await getJson('/loop-eng/simulations');
   assert.equal(simulations.status, 200);
-  assert.deepEqual(simulations.body, []);
+  assert.equal(simulations.body.length, 2);
+  assert.ok(simulations.body.every((simulation) => simulation.pass === true));
 
   const outcomes = await getJson('/loop-eng/outcomes');
   assert.equal(outcomes.status, 200);
@@ -599,11 +612,34 @@ test('POST /loop-eng/decisions rejects approval on review_only proposals', async
   assert.match(res.body.error, /\[review_only\]/);
 });
 
-test('POST /loop-eng/decisions rejects approval without simulation unless system:propose advanced it', async () => {
+test('POST /loop-eng/decisions rejects approval without a passing linked simulation receipt', async () => {
   const res = await postDecision({
     proposal_id: unsimulatedPendingProposal.proposal_id,
     decision: 'approved',
     reason: 'missing simulation',
+    nonce: await nonce(),
+  });
+  assert.equal(res.status, 409);
+  assert.match(res.body.error, /\[simulation\]/);
+});
+
+test('POST /loop-eng/decisions rejects a linked failed simulation even when proposal status is pending', async () => {
+  const draft = appendRecord('proposal', baseProposal({ title: 'Failed simulation cannot approve' }));
+  const simulation_id = newId('sim');
+  appendRecord('simulation', {
+    simulation_id,
+    proposal_id: draft.proposal_id,
+    ran_at: '2026-07-06T00:00:00.000Z',
+    mode: 'checklist',
+    results: [{ check: 'synthetic failing check', pass: false, note: 'fixture result' }],
+    pass: false,
+  });
+  appendRecord('proposal', { ...draft, simulation_id, created_by: 'system:simulate', status: 'simulated' });
+  const failed = appendRecord('proposal', { ...draft, simulation_id, created_by: 'system:simulate', status: 'pending_approval' });
+  const res = await postDecision({
+    proposal_id: failed.proposal_id,
+    decision: 'approved',
+    reason: 'failed simulation must block',
     nonce: await nonce(),
   });
   assert.equal(res.status, 409);

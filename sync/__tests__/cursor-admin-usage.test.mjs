@@ -74,7 +74,9 @@ test('successful enrichment assigns only exact conversationId matches', async ()
   assert.equal(parent.cache_creation_tokens, 80);
   assert.equal(parent.cache_read_tokens, 30);
   assert.equal(parent.total_tokens, 936);
-  assert.equal(parent.estimated_cost_usd, 0.18);
+  assert.equal(parent.estimated_cost_usd, null);
+  assert.equal(parent.observed_cost_usd, 0.18);
+  assert.equal(parent.cost_kind, 'observed');
   assert.equal(parent.pricing_source, 'cursor-admin-api');
   assert.equal(sub.usage_available, false);
   assert.equal(sub.model, null);
@@ -273,7 +275,8 @@ test('billing aggregates preserve official cost and classification fields withou
   assert.equal(report.totals.events, 3);
   assert.equal(report.totals.charged_cents, 11.5);
   assert.equal(report.totals.charged_cents_events, 2);
-  assert.equal(report.totals.estimated_cost_usd, 0.115);
+  assert.equal(report.totals.estimated_cost_usd, null);
+  assert.equal(report.totals.observed_cost_usd, 0.115);
   assert.equal(report.totals.token_model_cost_cents, 12.7);
   assert.equal(report.totals.token_model_cost_events, 3);
   assert.equal(report.totals.cursor_token_fee_cents, 0.3);
@@ -368,5 +371,6 @@ test('mixed official models on one conversation do not pick a parent model', () 
   assert.equal(parent.usage_available, true);
   assert.equal(parent.model, null);
   assert.equal(parent.total_tokens, 8);
-  assert.equal(parent.estimated_cost_usd, 0.1);
+  assert.equal(parent.estimated_cost_usd, null);
+  assert.equal(parent.observed_cost_usd, 0.1);
 });

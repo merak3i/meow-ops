@@ -4,7 +4,6 @@ const NUMERIC_FIELDS = {
   output_tokens: 'output_tokens',
   cache_creation_tokens: 'cache_creation_tokens',
   cache_read_tokens: 'cache_read_tokens',
-  cost: 'estimated_cost_usd',
   duration_seconds: 'duration_seconds',
 };
 
@@ -17,7 +16,12 @@ function emptyBucket(key) {
     output_tokens: 0,
     cache_creation_tokens: 0,
     cache_read_tokens: 0,
-    cost: 0,
+    cost: null,
+    estimated_cost_usd: null,
+    observed_cost_usd: null,
+    estimated_cost_sessions: 0,
+    observed_cost_sessions: 0,
+    unavailable_cost_sessions: 0,
     duration_seconds: 0,
     ghost_count: 0,
     first_activity_at: null,
@@ -31,6 +35,21 @@ function add(bucket, session) {
   for (const [target, source] of Object.entries(NUMERIC_FIELDS)) {
     bucket[target] += Number(session[source]) || 0;
   }
+  const valid = (value) => value != null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0;
+  const estimated = valid(session.estimated_cost_usd)
+    && !['unknown', 'default', 'family', 'unavailable'].includes(session.pricing_source)
+    && session.cost_available !== false;
+  const observed = valid(session.observed_cost_usd);
+  if (estimated) {
+    bucket.estimated_cost_usd = (bucket.estimated_cost_usd ?? 0) + Number(session.estimated_cost_usd);
+    bucket.cost = bucket.estimated_cost_usd;
+    bucket.estimated_cost_sessions += 1;
+  }
+  if (observed) {
+    bucket.observed_cost_usd = (bucket.observed_cost_usd ?? 0) + Number(session.observed_cost_usd);
+    bucket.observed_cost_sessions += 1;
+  }
+  if (!estimated && !observed) bucket.unavailable_cost_sessions += 1;
   if (session.is_ghost) bucket.ghost_count += 1;
   if (session.project) bucket._projects.add(session.project);
   const activity = session.ended_at || session.started_at || null;

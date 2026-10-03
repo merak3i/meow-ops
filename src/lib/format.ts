@@ -1,10 +1,13 @@
-export function formatTokens(n: number): string {
+export function formatTokens(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return 'Unavailable';
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
   return String(n);
 }
 
-export function formatCost(usd: number): string {
+export function formatCost(usd: number | null | undefined): string {
+  if (usd == null || !Number.isFinite(usd) || usd < 0) return 'Unavailable';
+  if (usd === 0) return '$0.00';
   if (usd < 0.01) return '<$0.01';
   if (usd < 1) return '$' + usd.toFixed(2);
   return '$' + usd.toFixed(2);
@@ -18,28 +21,28 @@ export function formatDuration(seconds: number): string {
   return `${m}m`;
 }
 
-const IST = 'Asia/Kolkata';
+const OPERATOR_TIME_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 export function formatDate(iso: string): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-IN', {
-    timeZone: IST, month: 'short', day: 'numeric',
+    timeZone: OPERATOR_TIME_ZONE, month: 'short', day: 'numeric',
   });
 }
 
-// IST datetime — e.g. "9 Apr, 07:21 AM IST"
+// Operator-local datetime, with the timezone visible.
 export function formatDateTime(iso: string): string {
   if (!iso) return '—';
   const d = new Date(iso);
-  const ist = d.toLocaleString('en-IN', {
-    timeZone: IST,
+  return d.toLocaleString('en-IN', {
+    timeZone: OPERATOR_TIME_ZONE,
+    timeZoneName: 'short',
     day: 'numeric',
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
   });
-  return ist + ' IST';
 }
 
 // UTC datetime — e.g. "2026-04-09 01:49 UTC"
@@ -48,10 +51,10 @@ export function formatDateTimeUTC(iso: string): string {
   return new Date(iso).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
 }
 
-// IST date only for day grouping — "YYYY-MM-DD" in IST
+// Kept under its original export name for existing grouping callers.
 export function toISTDate(iso: string): string {
   if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-CA', { timeZone: IST });
+  return new Date(iso).toLocaleDateString('en-CA', { timeZone: OPERATOR_TIME_ZONE });
 }
 
 export function relativeTime(iso: string): string {

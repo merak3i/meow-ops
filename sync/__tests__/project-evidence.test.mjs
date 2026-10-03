@@ -11,6 +11,8 @@ import {
   queryAgentEvidence, rebuildEvidenceIndex, searchEvidenceIndex, sessionToAgentEvent,
 } from '../project-evidence.mjs';
 
+const fakeProviderKey = 'sk-' + 'abcdefghijklmnopqrstuvwxyz';
+
 function fixture(overrides = {}) {
   return {
     source: 'codex',
@@ -18,7 +20,7 @@ function fixture(overrides = {}) {
     session_id: 'session-1',
     timestamp: '2026-07-19T10:00:00.000Z',
     event_type: 'user_message',
-    content: 'Rotate credential sk-abcdefghijklmnopqrstuvwxyz before release.',
+    content: 'Rotate credential ' + fakeProviderKey + ' before release.',
     raw_ref: '/private/session.jsonl:12',
     sensitivity: 'private',
     ...overrides,
@@ -28,7 +30,7 @@ function fixture(overrides = {}) {
 test('evidence normalization redacts secrets and produces a stable content hash', () => {
   const first = normalizeAgentEvent(fixture());
   const second = normalizeAgentEvent(fixture());
-  assert.equal(first.content.includes('sk-abcdefghijklmnopqrstuvwxyz'), false);
+  assert.equal(first.content.includes(fakeProviderKey), false);
   assert.match(first.content, /\[redacted\]/);
   assert.equal(first.content_hash, second.content_hash);
   assert.match(first.event_id, /^evt_[a-f0-9]{24}$/);
@@ -70,7 +72,7 @@ test('append-only evidence partitions by project, source, and month and deduplic
 
     const partition = join(dir, 'events', 'meow-ops-4efe35ade3', 'codex', '2026-07.jsonl');
     const [stored] = readFileSync(partition, 'utf8').trim().split('\n').map(JSON.parse);
-    assert.equal(stored.content.includes('sk-abcdefghijklmnopqrstuvwxyz'), false);
+    assert.equal(stored.content.includes(fakeProviderKey), false);
     assert.equal(stored.raw_ref, '/private/session.jsonl:12');
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -281,14 +283,14 @@ test('raw text artifacts are preserved privately with redaction and a provenance
   const dir = mkdtempSync(join(tmpdir(), 'meow-raw-evidence-'));
   try {
     const raw = join(dir, 'source.jsonl');
-    writeFileSync(raw, 'owner correction with sk-abcdefghijklmnopqrstuvwxyz\n', 'utf8');
+    writeFileSync(raw, 'owner correction with ' + fakeProviderKey + '\n', 'utf8');
     const result = archiveRawTextArtifact({
       source: 'codex', project_id: 'meow-ops-4efe35ade3', session_id: 'raw-one',
       timestamp: '2026-07-19T10:00:00.000Z', raw_ref: raw,
     }, { dir: join(dir, 'vault') });
     assert.equal(result.archived, true);
     const stored = readFileSync(join(dir, 'vault', result.blob_ref), 'utf8');
-    assert.equal(stored.includes('sk-abcdefghijklmnopqrstuvwxyz'), false);
+    assert.equal(stored.includes(fakeProviderKey), false);
     assert.match(stored, /\[redacted\]/);
     const evidence = queryAgentEvidence({
       dir: join(dir, 'vault'), project_id: 'meow-ops-4efe35ade3', event_type: 'raw_artifact',

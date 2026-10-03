@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import SessionTable from '../components/SessionTable';
-import { Button, Scope } from '../components/ui';
-import { fetchSessionPage } from '../lib/queries';
+import { Button, Notice, Scope } from '../components/ui';
+import { fetchSessionPage, filterSessionScope, getSessionFilters, isDemoData } from '../lib/queries';
 
-const EMPTY_FACETS = { projects: [], sources: [], models: [] };
+const FIRST_PAGE = { cursor: null, stack: [], version: undefined };
 
 function SelectFilter({ label, value, options, onChange, allowAll = true }) {
   return (
@@ -25,49 +25,60 @@ function SelectFilter({ label, value, options, onChange, allowAll = true }) {
   );
 }
 
-export default function Sessions({ sessions: previewSessions = [] }) {
+export default function Sessions({ sessions: previewSessions = [], dateRange = 30, scopeNow, refreshKey = 0 }) {
   const [filters, setFilters] = useState({ from: '', to: '', project: '', source: '', model: '' });
   const [pageSize, setPageSize] = useState(100);
-  const [cursor, setCursor] = useState(null);
-  const [cursorStack, setCursorStack] = useState([]);
+  const [pagination, setPagination] = useState(FIRST_PAGE);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
+  const scope = useMemo(() => getSessionFilters(dateRange, scopeNow, filters), [dateRange, scopeNow, filters]);
+  const scopeKey = JSON.stringify({ scope, pageSize, refreshKey, retry });
+  const page = pagination.scopeKey === scopeKey ? pagination : FIRST_PAGE;
+  const { cursor, version, stack: cursorStack } = page;
 
   const updateFilter = (key, value) => {
     setLoading(true);
     setFilters((current) => ({ ...current, [key]: value }));
-    setCursor(null);
-    setCursorStack([]);
   };
 
   useEffect(() => {
     let cancelled = false;
-    fetchSessionPage({ ...filters, limit: pageSize, cursor }).then((data) => {
+    async function load() {
+      setLoading(true);
+      const data = scope.error ? null : await fetchSessionPage({ ...scope, limit: pageSize, cursor, expectedVersion: version });
       if (cancelled) return;
       setResult(data);
       setLoading(false);
-    });
+    }
+    void load();
     return () => { cancelled = true; };
-  }, [filters, pageSize, cursor]);
+  }, [scope, scopeKey, pageSize, cursor, version]);
 
   const usingArchive = result !== null;
-  const items = usingArchive ? result.items : previewSessions;
-  const facets = result?.facets || EMPTY_FACETS;
+  const items = usingArchive ? result.items : filterSessionScope(previewSessions, scope);
+  const facets = result?.facets || {
+    projects: [...new Set(previewSessions.map((row) => row.project).filter(Boolean))].sort(),
+    sources: [...new Set(previewSessions.map((row) => row.source || 'claude'))].sort(),
+    models: [...new Set(previewSessions.map((row) => row.model).filter(Boolean))].sort(),
+  };
   const archiveTotal = result?.archive?.total ?? previewSessions.length;
   const firstRow = cursorStack.length * pageSize + (items.length > 0 ? 1 : 0);
   const lastRow = cursorStack.length * pageSize + items.length;
   const countLabel = usingArchive
     ? `${result.total.toLocaleString()} matching · ${archiveTotal.toLocaleString()} total recorded`
-    : `${previewSessions.length.toLocaleString()} loaded`;
+    : `${items.length.toLocaleString()} matching in ${previewSessions.length.toLocaleString()} loaded`;
+  const rangeLabel = filters.from || filters.to ? `${filters.from || 'Beginning'} to ${filters.to || 'now'} (custom dates)`
+    : dateRange === 'all' ? 'All time' : dateRange === '1h' ? 'Last hour' : dateRange === '24h' ? 'Last 24 hours' : `Last ${dateRange} days`;
 
   const hasFilters = useMemo(() => Object.values(filters).some(Boolean), [filters]);
 
   return (
-    <div>
+    <div aria-busy={loading}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-3)', marginBottom: 'var(--sp-3)' }}>
         <Scope
-          range={usingArchive ? 'Every session ever parsed' : 'Newest sessions only'}
-          completeness={usingArchive ? 'archive' : 'preview'}
+          range={rangeLabel}
+          completeness={isDemoData(items) ? 'demo' : usingArchive ? 'archive' : 'preview'}
         />
         <span style={{ fontSize: 'var(--fs-ui)', color: 'var(--text-muted)' }}>{countLabel}</span>
       </div>
@@ -94,19 +105,25 @@ export default function Sessions({ sessions: previewSessions = [] }) {
           <SelectFilter label="Rows per page" value={String(pageSize)} options={['100', '250', '500']} allowAll={false} onChange={(value) => {
             setLoading(true);
             setPageSize(Number(value) || 100);
-            setCursor(null);
-            setCursorStack([]);
           }} />
           {hasFilters && (
             <Button
               variant="ghost"
-              onClick={() => { setLoading(true); setFilters({ from: '', to: '', project: '', source: '', model: '' }); setCursor(null); setCursorStack([]); }}
+              onClick={() => { setLoading(true); setFilters({ from: '', to: '', project: '', source: '', model: '' }); }}
             >
               Clear filters
             </Button>
           )}
         </div>
       </div>
+
+      {scope.error && <Notice>{scope.error}</Notice>}
+      {!loading && !usingArchive && !scope.error && !isDemoData(previewSessions) && (
+        <Notice action={<Button onClick={() => setRetry((value) => value + 1)}>Retry archive</Button>}>
+          Archive unavailable. Your filters still apply to the loaded preview.
+        </Notice>
+      )}
+      {loading && result && <p role="status">Updating session history…</p>}
 
       {loading && !result ? (
         <div className="card" style={{ padding: 32, color: 'var(--text-muted)', textAlign: 'center' }}>Loading session history…</div>
@@ -126,8 +143,7 @@ export default function Sessions({ sessions: previewSessions = [] }) {
                 setLoading(true);
                 const previous = [...cursorStack];
                 const target = previous.pop() ?? null;
-                setCursorStack(previous);
-                setCursor(target);
+                setPagination({ scopeKey, cursor: target, stack: previous, version: result.archiveVersion });
               }}
             >
               Previous
@@ -137,8 +153,7 @@ export default function Sessions({ sessions: previewSessions = [] }) {
               disabled={!result.nextCursor || loading}
               onClick={() => {
                 setLoading(true);
-                setCursorStack((current) => [...current, cursor]);
-                setCursor(result.nextCursor);
+                setPagination({ scopeKey, cursor: result.nextCursor, stack: [...cursorStack, cursor], version: result.archiveVersion });
               }}
             >
               Next

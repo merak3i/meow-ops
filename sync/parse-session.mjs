@@ -1,5 +1,6 @@
 import { calculateCostDetailed } from './cost-calculator.mjs';
-import { createSession, extractUserText, makeSnippet } from './session-utils.mjs';
+import { createSession, extractUserText, makeSnippet, snippetsDisabled } from './session-utils.mjs';
+import { readJsonlWithCheckpoint } from './incremental-jsonl.mjs';
 
 // First-message snippet extraction, project decoding, and session classification.
 // Snippet/default-session helpers live in session-utils.mjs (shared by every
@@ -64,23 +65,8 @@ export function decodeProjectPath(dirName) {
 }
 
 export function parseSessionLines(lines, projectDir) {
-  const sessions = {};
-
-  // Extract hierarchy fields from the FIRST parseable line.
-  // Claude Code subagent files always have parentUuid / agentId / slug on line 1.
-  let firstEntry = null;
-  for (const line of lines) {
-    try { firstEntry = JSON.parse(line); break; } catch { /* skip */ }
-  }
-  const parentSessionId = firstEntry?.parentUuid ?? null;
-  const agentId         = firstEntry?.agentId    ?? null;
-  const agentSlug       = firstEntry?.slug        ?? null;
-  const isSidechain     = firstEntry?.isSidechain ?? false;
-
-  // Count lines we could not parse so a truncated/corrupt file leaves a signal
-  // instead of silently shipping a partial session.
+  const state = createClaudeState(projectDir);
   let malformed = 0;
-
   for (const line of lines) {
     let entry;
     try {
@@ -89,23 +75,41 @@ export function parseSessionLines(lines, projectDir) {
       malformed++;
       continue;
     }
+    consumeClaudeEntry(state, entry);
+  }
+  if (malformed > 0) {
+    console.warn(`Claude parser skipped ${malformed} malformed JSONL line(s).`);
+  }
+  return finishClaudeState(state);
+}
 
-    if (!entry.sessionId) continue;
-    const sid = entry.sessionId;
+function createClaudeState(projectDir) {
+  return { projectDir, sessions: new Map(), hierarchy: null };
+}
 
-    if (!sessions[sid]) {
-      sessions[sid] = createSession({
-        session_id: sid,
-        source: 'claude',
-        project: decodeProjectPath(projectDir),
-        parent_session_id: parentSessionId,
-        agent_id:          agentId,
-        agent_slug:        agentSlug,
-        is_sidechain:      isSidechain,
-      });
+function consumeClaudeEntry(state, entry) {
+    if (!state.hierarchy) {
+      state.hierarchy = {
+        parent_session_id: entry?.parentUuid ?? null,
+        agent_id: entry?.agentId ?? null,
+        agent_slug: entry?.slug ?? null,
+        is_sidechain: entry?.isSidechain ?? false,
+      };
     }
 
-    const s = sessions[sid];
+    if (!entry?.sessionId) return;
+    const sid = entry.sessionId;
+
+    if (!state.sessions.has(sid)) {
+      state.sessions.set(sid, createSession({
+        session_id: sid,
+        source: 'claude',
+        project: decodeProjectPath(state.projectDir),
+        ...state.hierarchy,
+      }));
+    }
+
+    const s = state.sessions.get(sid);
     const ts = entry.timestamp;
 
     if (ts) {
@@ -156,10 +160,12 @@ export function parseSessionLines(lines, projectDir) {
         }
       }
     }
-  }
+}
 
+function finishClaudeState(state) {
+  const sessions = structuredClone([...state.sessions.values()]);
   // Post-process
-  for (const s of Object.values(sessions)) {
+  for (const s of sessions) {
     // Include cache tokens in the total — users pay for cache creation and
     // cache read, and cache_read can be enormous on long sessions. Excluding
     // them caused the "Tokens" stat card to dramatically understate reality.
@@ -185,9 +191,20 @@ export function parseSessionLines(lines, projectDir) {
     }
   }
 
-  if (malformed > 0) {
-    console.warn(`  ⚠ ${projectDir}: skipped ${malformed} malformed JSONL line(s)`);
-  }
+  return sessions.filter((s) => s.started_at);
+}
 
-  return Object.values(sessions).filter((s) => s.started_at);
+export function parseClaudeFile(filePath, projectDir, options = {}) {
+  return readJsonlWithCheckpoint(filePath, {
+    ...options,
+    version: `claude-v2:${process.env.HOME || ''}:${projectDir}:snippets-${snippetsDisabled() ? 'off' : 'on'}`,
+    createState: () => createClaudeState(projectDir),
+    reduceEntry: consumeClaudeEntry,
+    finish: finishClaudeState,
+    hydrate: value => {
+      if (!value || !Array.isArray(value.sessions)) throw new Error('Invalid checkpoint state.');
+      return { ...value, sessions: new Map(value.sessions) };
+    },
+    dehydrate: value => ({ ...value, sessions: [...value.sessions] }),
+  });
 }

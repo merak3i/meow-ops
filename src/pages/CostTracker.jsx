@@ -7,7 +7,7 @@ import CursorRequestUsage from '../components/CursorRequestUsage';
 import { Card, Eyebrow, HelpTip, Scope, StatTile } from '../components/ui';
 import { formatCost, formatTokens } from '../lib/format';
 import { sourceMeta } from '../lib/sources';
-import { computeSpendBreakdown, isDemoData } from '../lib/queries';
+import { computeSpendBreakdown, isDemoData, summarizeCosts } from '../lib/queries';
 
 // Cost — the one place fixed-period spend lives.
 //
@@ -15,8 +15,6 @@ import { computeSpendBreakdown, isDemoData } from '../lib/queries';
 // silently ignored the date filter sitting directly above them. They moved
 // here, where the page can say plainly which figures follow the filter and
 // which are calendar periods.
-
-const IST = 'Asia/Kolkata';
 
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -35,7 +33,7 @@ function ChartTooltip({ active, payload, label }) {
 const axis = { fill: 'var(--text-muted)', fontSize: 10 };
 
 function PeriodCard({ label, current, previous, sessions, tokens, highlight }) {
-  const delta = previous > 0 ? ((current - previous) / previous) * 100 : null;
+  const delta = current != null && previous > 0 ? ((current - previous) / previous) * 100 : null;
   const moved = delta !== null && Math.abs(delta) > 0.5;
   const up = moved && delta > 0;
 
@@ -64,8 +62,8 @@ function UnattributedUsage({ cursor, hermes }) {
   const cursorKinds = Array.isArray(cursor?.by_kind) ? cursor.by_kind : [];
   const cursorTotals = cursor?.totals;
   const hermesModels = Array.isArray(hermes?.by_model) ? hermes.by_model : [];
-  const hasCursorReport = cursor?.enabled === true && Number(cursorTotals?.events) > 0;
-  const hasCursor = cursor?.enabled === true && (cursorModels.length > 0 || hasCursorReport);
+  const hasCursorReport = Number(cursorTotals?.events) > 0;
+  const hasCursor = Boolean(cursor) && (cursorModels.length > 0 || hasCursorReport || cursor.status !== 'skipped');
   const hasHermes = hermes && hermes.status === 'ok' && hermesModels.length > 0;
   if (!hasCursor && !hasHermes) return null;
   const cursorPeriod = cursor?.period
@@ -80,16 +78,18 @@ function UnattributedUsage({ cursor, hermes }) {
       source: 'cursor',
       model: String(row.key ?? 'unknown'),
       tokens: Number(row.total_tokens) || 0,
-      cost: Number(row.estimated_cost_usd) || 0,
+      cost: row.estimated_cost_usd,
+      observed: row.observed_cost_usd,
     })),
     ...hermesModels.map((row) => ({
       key: `hermes:${row.key || `${row.provider || 'unknown'}:${row.model}:${row.billing_mode || ''}`}`,
       source: 'hermes',
       model: String(row.model ?? 'unknown'),
       tokens: Number(row.total_tokens) || 0,
-      cost: Number(row.estimated_cost_usd) || 0,
+      cost: row.estimated_cost_usd,
+      observed: row.actual_cost_usd,
     })),
-  ].sort((a, b) => b.cost - a.cost);
+  ].sort((a, b) => (b.observed ?? b.cost ?? 0) - (a.observed ?? a.cost ?? 0));
 
   return (
     <section className="mo-section">
@@ -98,6 +98,14 @@ function UnattributedUsage({ cursor, hermes }) {
         <Scope source="Cursor and Hermes account usage" />
       </div>
       <Card>
+        {hasCursor && (
+          <p role="status" style={{ fontSize: 'var(--fs-ui)', color: 'var(--text-secondary)', marginBottom: 'var(--sp-3)' }}>
+            Cursor analytics: {cursor.status === 'ok' ? 'latest verified response' : cursor.status === 'cached' ? 'using the verified hourly cache' : cursor.status === 'missing-credential' ? 'team Admin API key unavailable' : 'refresh unavailable'}.
+            {cursor.history?.freshness === 'retained' && ' Previously verified usage is retained; it does not establish current usage.'}
+            {cursor.history?.last_success_at && ` Last verified: ${new Date(cursor.history.last_success_at).toLocaleString()}.`}
+            {' '}Local transcripts do not establish account billing. Per-bot billing is unavailable without an official export that identifies the bot.
+          </p>
+        )}
         {hasCursorReport && (
           <div aria-label="Cursor Admin API billing summary" style={{ marginBottom: 'var(--sp-4)' }}>
             <p style={{ fontSize: 'var(--fs-ui)', color: 'var(--text-secondary)', marginBottom: 'var(--sp-2)', lineHeight: 1.6 }}>
@@ -129,8 +137,8 @@ function UnattributedUsage({ cursor, hermes }) {
           </div>
         )}
         <p style={{ fontSize: 'var(--fs-ui)', color: 'var(--text-muted)', marginBottom: 'var(--sp-3)', maxWidth: '68ch', lineHeight: 1.6 }}>
-          Only usage that could not be matched to a local session appears in the breakdown below.
-          These provider figures stay separate from project totals.
+          Cursor rows contain usage not matched to a local session. Hermes rows contain model usage reported by Hermes and can overlap its sessions.
+          These figures stay separate from project totals. Each row labels its estimate and observed charge independently.
         </p>
         <div role="region" aria-label="Provider usage breakdown" tabIndex={0} style={{ display: 'grid', gap: 'var(--sp-2)', overflowX: 'auto' }}>
           {rows.map((row) => (
@@ -138,8 +146,8 @@ function UnattributedUsage({ cursor, hermes }) {
               key={row.key}
               style={{
                 display: 'grid',
-                minWidth: 420,
-                gridTemplateColumns: 'minmax(90px, 120px) minmax(0, 1fr) 80px 72px',
+                minWidth: 570,
+                gridTemplateColumns: 'minmax(90px, 120px) minmax(0, 1fr) 80px 130px 130px',
                 gap: 'var(--sp-3)',
                 fontSize: 'var(--fs-ui)',
                 alignItems: 'center',
@@ -150,7 +158,8 @@ function UnattributedUsage({ cursor, hermes }) {
                 {row.model}
               </span>
               <span className="mo-num" style={{ textAlign: 'right' }}>{formatTokens(row.tokens)}</span>
-              <span className="mo-num" style={{ textAlign: 'right', color: 'var(--green)' }}>{formatCost(row.cost)}</span>
+              <span className="mo-num" style={{ textAlign: 'right', color: 'var(--green)' }}>Estimate: {formatCost(row.cost)}</span>
+              <span className="mo-num" style={{ textAlign: 'right' }}>Observed: {formatCost(row.observed)}</span>
             </div>
           ))}
         </div>
@@ -161,40 +170,36 @@ function UnattributedUsage({ cursor, hermes }) {
 
 export default function CostTracker({ dailyData = [], modelData = [], stats, costSummary, allSessions = [], dateRange = 30 }) {
   const fromArchive = !isDemoData(allSessions, costSummary) && Boolean(costSummary?.archive?.appendOnly);
-  const totalCost = costSummary?.allTime?.cost ?? stats?.totalCost ?? 0;
+  const coverage = costSummary?.allTime ?? summarizeCosts(allSessions);
+  const totalCost = costSummary?.allTime ? costSummary.allTime.cost : stats?.totalCost;
   const totalSessions = costSummary?.allTime?.sessions ?? stats?.totalSessions ?? 0;
 
   const cumulative = useMemo(() => {
     const source = costSummary?.daily_summary ?? dailyData;
-    return source.reduce((rows, day) => {
-      const previous = rows.length > 0 ? rows[rows.length - 1].cumulative : 0;
-      rows.push({ ...day, cumulative: previous + (day.estimated_cost_usd || 0) });
-      return rows;
-    }, []);
+    return source.reduce((state, day) => {
+      const knownTotal = day.estimated_cost_usd != null
+        ? (state.knownTotal ?? 0) + day.estimated_cost_usd
+        : state.knownTotal;
+      return {
+        knownTotal,
+        rows: [...state.rows, { ...day, cumulative: knownTotal }],
+      };
+    }, { knownTotal: null, rows: [] }).rows;
   }, [costSummary, dailyData]);
 
-  // Trailing 7 active days rather than the whole range: a 90-day filter should
-  // not drag the projection down with months you were not working.
+  // A projection needs estimates for every session in the sampled days.
   const projectedMonthly = useMemo(() => {
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: IST });
-    // eslint-disable-next-line react-hooks/purity -- Projection intentionally uses the current wall-clock date.
-    const weekAgo = new Date(Date.now() - 7 * 86400000).toLocaleDateString('en-CA', { timeZone: IST });
-    const recent = dailyData.filter((day) => day.date >= weekAgo && day.date <= today);
-    const active = recent.filter((day) => day.estimated_cost_usd > 0);
-    if (active.length === 0) {
-      const mean = dailyData.length
-        ? dailyData.reduce((sum, day) => sum + (day.estimated_cost_usd || 0), 0) / dailyData.length
-        : 0;
-      return mean * 30;
-    }
-    return (active.reduce((sum, day) => sum + (day.estimated_cost_usd || 0), 0) / active.length) * 30;
+    const active = dailyData.filter((day) => day.session_count > 0).slice(-7);
+    if (!active.length || active.some((day) => day.estimated_cost_sessions !== day.session_count)) return null;
+    return (active.reduce((sum, day) => sum + day.estimated_cost_usd, 0) / active.length) * 30;
   }, [dailyData]);
 
   const avgDaily = useMemo(() => {
-    const active = dailyData.filter((day) => day.estimated_cost_usd > 0);
+    const active = dailyData.filter((day) => day.session_count > 0);
+    if (active.some((day) => day.estimated_cost_sessions !== day.session_count)) return null;
     return active.length
       ? active.reduce((sum, day) => sum + (day.estimated_cost_usd || 0), 0) / active.length
-      : 0;
+      : null;
   }, [dailyData]);
 
   const spend = useMemo(() => {
@@ -223,15 +228,22 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
 
   return (
     <>
-      <div className="mo-grid mo-grid--3" style={{ marginBottom: 'var(--sp-5)' }}>
+      <div className="mo-grid mo-grid--4" style={{ marginBottom: 'var(--sp-5)' }}>
         <StatTile
-          label="Total spend"
+          label="Known estimates"
           value={formatCost(totalCost)}
           scope={<Scope range="All time" source="All sources" completeness={completeness} />}
-          sub={`${totalSessions.toLocaleString()} sessions`}
+          sub={coverage.estimated_cost_sessions != null ? `${coverage.estimated_cost_sessions}/${totalSessions} sessions have estimates` : 'Estimate coverage unavailable in this snapshot'}
           icon={DollarSign}
           tone="var(--green)"
           help="cost-estimate"
+        />
+        <StatTile
+          label="Observed charges"
+          value={formatCost(coverage.observed_cost_usd)}
+          scope={<Scope range="All time" source="Source-reported amounts" completeness={completeness} />}
+          sub={coverage.observed_cost_sessions != null ? `${coverage.observed_cost_sessions}/${totalSessions} sessions report charges` : 'Charge coverage unavailable in this snapshot'}
+          icon={DollarSign}
         />
         <StatTile
           label="Per active day"
@@ -243,10 +255,15 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
         <StatTile
           label="Projected month"
           value={formatCost(projectedMonthly)}
-          scope={<Scope range="Trailing 7 active days, times 30" />}
+          scope={<Scope range="Up to 7 active days in selected range, times 30" />}
           icon={CalendarRange}
         />
       </div>
+      <p role="note" style={{ marginBottom: 'var(--sp-5)', color: 'var(--text-muted)', fontSize: 'var(--fs-ui)' }}>
+        Estimates and observed charges may cover the same sessions; do not add them together.
+        {coverage.unavailable_cost_sessions != null && ` ${coverage.unavailable_cost_sessions} sessions have neither amount.`}
+        {' '}Missing amounts remain unavailable. Calendar periods and charts below show known estimates only.
+      </p>
 
       <section className="mo-section">
         <div className="mo-section__head">
@@ -256,7 +273,7 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
         <div className="mo-grid mo-grid--3" style={{ marginBottom: 'var(--sp-3)' }}>
           <PeriodCard
             label="Today"
-            current={spend.today?.cost ?? 0}
+            current={spend.today?.cost}
             previous={null}
             sessions={spend.today?.sessions}
             tokens={spend.today?.tokens}
@@ -264,14 +281,14 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
           />
           <PeriodCard
             label="This week"
-            current={spend.thisWeek?.cost ?? 0}
-            previous={spend.lastWeek?.cost ?? 0}
+            current={spend.thisWeek?.cost}
+            previous={spend.lastWeek?.cost}
             sessions={spend.thisWeek?.sessions}
             tokens={spend.thisWeek?.tokens}
           />
           <PeriodCard
             label="Last week"
-            current={spend.lastWeek?.cost ?? 0}
+            current={spend.lastWeek?.cost}
             previous={null}
             sessions={spend.lastWeek?.sessions}
             tokens={spend.lastWeek?.tokens}
@@ -280,22 +297,22 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
         <div className="mo-grid mo-grid--3">
           <PeriodCard
             label="This month"
-            current={spend.thisMonth?.cost ?? 0}
-            previous={spend.lastMonth?.cost ?? 0}
+            current={spend.thisMonth?.cost}
+            previous={spend.lastMonth?.cost}
             sessions={spend.thisMonth?.sessions}
             tokens={spend.thisMonth?.tokens}
           />
           <PeriodCard
             label="Last month"
-            current={spend.lastMonth?.cost ?? 0}
+            current={spend.lastMonth?.cost}
             previous={null}
             sessions={spend.lastMonth?.sessions}
             tokens={spend.lastMonth?.tokens}
           />
           <PeriodCard
             label={`${new Date().getFullYear()} so far`}
-            current={spend.thisYear?.cost ?? 0}
-            previous={spend.lastYear?.cost ?? 0}
+            current={spend.thisYear?.cost}
+            previous={spend.lastYear?.cost}
             sessions={spend.thisYear?.sessions}
             tokens={spend.thisYear?.tokens}
           />
@@ -305,7 +322,7 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
       <div className="mo-grid mo-grid--2" style={{ marginBottom: 'var(--sp-5)' }}>
         <Card>
           <div className="mo-section__head">
-            <Eyebrow>Cost per day</Eyebrow>
+            <Eyebrow>Known estimates per day</Eyebrow>
             <Scope range={rangeLabel} />
           </div>
           <ResponsiveContainer width="100%" height={220}>
@@ -319,14 +336,14 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
               <XAxis dataKey="date" tickFormatter={(d) => d.slice(5)} tick={axis} axisLine={false} tickLine={false} />
               <YAxis tickFormatter={(v) => `$${v.toFixed(2)}`} tick={axis} axisLine={false} tickLine={false} width={50} />
               <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="estimated_cost_usd" name="Cost" stroke="var(--green)" fill="url(#costGrad)" strokeWidth={1.5} />
+              <Area type="monotone" dataKey="estimated_cost_usd" name="Estimate" stroke="var(--green)" fill="url(#costGrad)" strokeWidth={1.5} />
             </AreaChart>
           </ResponsiveContainer>
         </Card>
 
         <Card>
           <div className="mo-section__head">
-            <Eyebrow>Cumulative</Eyebrow>
+            <Eyebrow>Cumulative known estimates</Eyebrow>
             <Scope range="All time" completeness={isDemoData(allSessions, costSummary) ? 'demo' : costSummary?.archive?.appendOnly ? 'archive' : 'preview'} />
           </div>
           <ResponsiveContainer width="100%" height={220}>
@@ -341,6 +358,7 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
       </div>
 
       <section className="mo-section">
+        <Scope range="Calendar estimate history" completeness={isDemoData(allSessions, costSummary) ? 'demo' : 'preview'} />
         <SpendChart spendData={spend} />
       </section>
 
@@ -354,7 +372,7 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-ui)' }}>
             <thead>
               <tr>
-                {['Model', 'Sessions', 'Tokens', 'Cost', 'Share'].map((heading, index) => (
+                {['Model', 'Sessions', 'Tokens', 'Estimate', 'Observed', 'Estimate share'].map((heading, index) => (
                   <th
                     key={heading}
                     className="mo-eyebrow"
@@ -372,8 +390,9 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
                   <td className="mo-num" style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--text-secondary)' }}>{row.sessions}</td>
                   <td className="mo-num" style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--text-secondary)' }}>{formatTokens(row.tokens)}</td>
                   <td className="mo-num" style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--green)' }}>{formatCost(row.cost)}</td>
+                  <td className="mo-num" style={{ padding: '9px 14px', textAlign: 'right' }}>{formatCost(row.observed_cost_usd)}</td>
                   <td className="mo-num" style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--text-muted)' }}>
-                    {totalCost > 0 ? ((row.cost / totalCost) * 100).toFixed(1) : '0.0'}%
+                    {row.cost != null && totalCost > 0 ? `${((row.cost / totalCost) * 100).toFixed(1)}%` : 'Unavailable'}
                   </td>
                 </tr>
               ))}
@@ -387,7 +406,7 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
       <CursorRequestUsage />
 
       <p style={{ fontSize: 'var(--fs-meta)', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
-        Session cost estimates use token counts and published prices. Provider reports and Cursor request counts are labeled separately.
+        Estimates use reported estimates or the historical local price table; current rates and invoices have not been verified. Unknown model prices remain unavailable. Provider reports and Cursor request counts are separate.
         <HelpTip term="cost-estimate" />
       </p>
     </>

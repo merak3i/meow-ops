@@ -19,7 +19,7 @@ function withCacheBust(url) {
 
 async function fetchJson(url, init) {
   try {
-    const response = await fetch(url, init);
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000), ...init });
     if (!response.ok) return null;
     return await response.json();
   } catch {
@@ -118,6 +118,23 @@ export async function fetchLoopOutcomes() {
 export async function fetchLoopSummary() {
   const data = await fetchLoopJson('/loop-eng/summary');
   return data && typeof data === 'object' ? data : EMPTY_SUMMARY;
+}
+
+// Review decisions require an honest read state. The legacy fetchers keep their
+// compatibility defaults for graph callers; the inbox never treats a failed read
+// as an empty queue or missing evidence as a successful check.
+export async function fetchLoopReviewData() {
+  const names = ['proposals', 'decisions', 'runs', 'comparisons', 'simulations', 'outcomes'];
+  const [arrays, summary, digest, digestHistory] = await Promise.all([
+    Promise.all(names.map((name) => fetchLoopJson(`/loop-eng/${name}`))),
+    fetchLoopJson('/loop-eng/summary'),
+    fetchLoopDigest(),
+    fetchLoopDigestHistory(),
+  ]);
+  const failed = names.filter((_, index) => !Array.isArray(arrays[index]));
+  if (!summary || typeof summary.total !== 'number' || !summary.counts_by_status || !summary.open_per_loop) failed.push('summary');
+  if (failed.length > 0) return { ok: false, error: `Could not load review ${failed.join(', ')}. Retry to check the current queue.` };
+  return { ok: true, ...Object.fromEntries(names.map((name, index) => [name, arrays[index]])), summary, digest, digestHistory };
 }
 
 export async function fetchLoopDigest() {

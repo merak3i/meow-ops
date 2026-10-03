@@ -76,3 +76,17 @@ test('loadEnv silently no-ops when .env is missing', () => {
     });
   });
 });
+
+test('shared owner config wins over checkout config; explicit environment wins over both', () => {
+  withTempRepo(repoRoot => {
+    const shared = join(repoRoot, 'owner.env');
+    writeFileSync(shared, 'MEOW_DATA_DIR=/private/owner\nMEOW_SKIP_CURSOR=1\n');
+    writeFileSync(join(repoRoot, '.env'), 'MEOW_DATA_DIR=/wrong/checkout\nMEOW_SKIP_CURSOR=0\nMEOW_TZ=UTC\n');
+    const env = { MEOW_SKIP_CURSOR: '0' };
+    assert.deepEqual(loadEnv(repoRoot, { env, configFile: shared }), { sharedLoaded: true, checkoutLoaded: true });
+    assert.deepEqual(env, { MEOW_DATA_DIR: '/private/owner', MEOW_SKIP_CURSOR: '0', MEOW_TZ: 'UTC' });
+    const isolated = {};
+    loadEnv(repoRoot, { env: isolated, configFile: '' });
+    assert.equal(isolated.MEOW_DATA_DIR, '/wrong/checkout');
+  });
+});

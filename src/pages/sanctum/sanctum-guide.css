@@ -8,7 +8,7 @@
   .sanctum-session-inspector {
     top: auto !important;
     right: auto !important;
-    bottom: 8px !important;
+    bottom: 12px !important;
     left: 8px !important;
     width: min(220px, calc(100% - 32px)) !important;
     min-width: 0 !important;
@@ -18,6 +18,7 @@
     box-sizing: border-box;
     overscroll-behavior: contain;
   }
+  .sanctum-session-tag { transform: translateY(-36px); }
   .sanctum-roster {
     position: relative !important;
     top: auto !important;

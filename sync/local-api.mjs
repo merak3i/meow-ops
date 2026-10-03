@@ -59,6 +59,8 @@ import { answerSanctumGuide } from './sanctum-guide.mjs';
 import { explainGuideEvidence } from './sanctum-local-model.mjs';
 import { getCursorRequestReport } from './cursor-request-report.mjs';
 import { generateGuideVoice, guideVoiceStatus } from './guide-voicebox.mjs';
+import { readSnapshot } from './snapshot-generation.mjs';
+import { createStorageService } from './storage-service.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -69,6 +71,7 @@ const LOCAL_ACCESS_HEADER = 'x-meow-ops-local';
 const LOOP_OPS_DIR = resolve(process.env.MEOW_LOOP_OPS_DIR || join(ROOT, 'public', 'data', 'loop-ops'));
 const SUPERADMIN_USAGE_FILE = join(ROOT, 'public', 'data', 'superadmin-usage.json');
 const DATA_DIR = process.env.MEOW_DATA_DIR || join(ROOT, 'public', 'data');
+const storage = createStorageService();
 const SESSIONS_FILE = process.env.MEOW_SESSIONS_FILE || join(DATA_DIR, 'sessions.json');
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://meow-ops.vercel.app',
@@ -115,6 +118,8 @@ function isLocalDashboardOrigin(origin) {
 
 function requiresLocalDashboard(path, method) {
   return path.startsWith('/session-history/')
+    || path === '/storage' || path.startsWith('/storage/')
+    || path === '/data/snapshot.json'
     || path === '/data/sessions.json'
     || path === '/data/cost-summary.json'
     || path.startsWith('/sync')
@@ -281,12 +286,14 @@ function proposalSummary() {
   return { counts_by_status, open_per_loop, total: proposals.length };
 }
 
-function simulationExemptProposal(proposal, proposalRecords = readLedger('proposal')) {
-  if (proposal.simulation_id) return true;
-  return proposalRecords.some((record) => (
-    record.proposal_id === proposal.proposal_id
-    && record.created_by === 'system:propose'
-    && ['simulated', 'pending_approval'].includes(record.status)
+function hasPassingSimulation(proposal, simulations = readLedger('simulation')) {
+  return typeof proposal.simulation_id === 'string' && simulations.some((simulation) => (
+    simulation.simulation_id === proposal.simulation_id
+    && simulation.proposal_id === proposal.proposal_id
+    && simulation.pass === true
+    && Array.isArray(simulation.results)
+    && simulation.results.length > 0
+    && simulation.results.every((result) => result?.pass === true)
   ));
 }
 
@@ -328,6 +335,8 @@ const server = createServer(async (req, res) => {
 
   const needsBrowserHeader =
     path.startsWith('/sync')
+    || path === '/storage' || path.startsWith('/storage/')
+    || path === '/data/snapshot.json'
     || path === '/data/sessions.json'
     || path === '/data/cost-summary.json'
     || path.startsWith('/session-history/')
@@ -339,6 +348,25 @@ const server = createServer(async (req, res) => {
     || path.startsWith('/companion/');
 
   if (needsBrowserHeader && !requireBrowserHeader(req, res)) return;
+
+  if (path === '/storage' && req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store');
+    sendJson(res, 200, storage.status());
+    return;
+  }
+  if (path === '/storage/refresh' && req.method === 'POST') {
+    void storage.refresh();
+    sendJson(res, 202, storage.status());
+    return;
+  }
+  if (path === '/storage/open-folder' && req.method === 'POST') {
+    try {
+      const body = await readJsonBody(req, 1000);
+      if (typeof body?.rootId !== 'string' || Object.keys(body).some(key => key !== 'rootId')) throw new Error('Invalid location.');
+      sendJson(res, 200, await storage.openFolder(body.rootId));
+    } catch { sendJson(res, 400, { ok: false, error: 'Only an existing, measured, registered storage folder can be opened.' }); }
+    return;
+  }
 
   if (path === '/loop-eng/eternal-stats' && req.method === 'GET') {
     res.setHeader('Cache-Control', 'no-store');
@@ -382,6 +410,15 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && path === '/data/snapshot.json') {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const snapshot = readSnapshot(DATA_DIR);
+      sendJson(res, snapshot ? 200 : 404, snapshot || { error: 'No generation published yet.' });
+    } catch { sendJson(res, 503, { error: 'Local snapshot validation failed. Previous data remains on disk.' }); }
+    return;
+  }
+
   // ── GET /data/sessions.json or /data/cost-summary.json ────────────────────
   // Serve local files directly so the browser gets instant fresh data.
   if (req.method === 'GET' && (path === '/data/sessions.json' || path === '/data/cost-summary.json')) {
@@ -409,10 +446,13 @@ const server = createServer(async (req, res) => {
         project: requestUrl.searchParams.get('project'),
         source: requestUrl.searchParams.get('source'),
         model: requestUrl.searchParams.get('model'),
+        expectedVersion: requestUrl.searchParams.get('expectedVersion'),
+        snapshotBytes: requestUrl.searchParams.get('snapshotBytes'),
       });
       sendJson(res, 200, result);
-    } catch {
-      sendJson(res, 500, { ok: false, error: 'Local session history is unavailable.' });
+    } catch (error) {
+      const stale = error?.code === 'stale_archive_snapshot';
+      sendJson(res, stale ? 409 : 500, { ok: false, code: stale ? error.code : 'archive_unavailable', error: stale ? 'Archive changed. Refresh this view.' : 'Local session history is unavailable.' });
     }
     return;
   }
@@ -731,7 +771,7 @@ const server = createServer(async (req, res) => {
             projectRoot: project.root,
             expectedChecksums: body.expected_checksums,
           })
-          : rollbackProjectAdapters(body.sync_id);
+          : rollbackProjectAdapters(body.sync_id, { expectedProjectRoot: project.root });
         sendJson(res, 200, { ok: true, result });
       } catch (err) {
         ruleError(res, 400, 'project-control', err instanceof Error ? err.message : String(err));
@@ -969,7 +1009,6 @@ const server = createServer(async (req, res) => {
       const result = answerSanctumGuide(body, readSessionHistorySnapshot(), new Date(), queryAgentEvidence);
       if (body.explain === true && result.kind === 'observed-events') {
         result.explanation = await explainGuideEvidence(body.question, result.evidence, { signal: controller.signal });
-        if (result.explanation.status === 'ok') result.capabilities = result.capabilities.map(item => item.id === 'model-synthesis' ? { ...item, status: 'available', source: 'local Ollama / qwen3:4b' } : item);
       }
       res.setHeader('Cache-Control', 'no-store');
       if (!controller.signal.aborted) sendJson(res, result.status, result);
@@ -1154,7 +1193,7 @@ const server = createServer(async (req, res) => {
       ruleError(res, 403, 'review_only', 'review-only proposals cannot be approved through the local API');
       return;
     }
-    if (body.decision === 'approved' && !simulationExemptProposal(proposal, proposalRecords)) {
+    if (body.decision === 'approved' && !hasPassingSimulation(proposal)) {
       ruleError(res, 409, 'simulation', 'proposal must pass simulation before approval');
       return;
     }

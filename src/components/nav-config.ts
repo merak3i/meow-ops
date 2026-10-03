@@ -72,6 +72,14 @@ export const NAV: readonly NavSurface[] = [
         description: 'Wall-clock view of parent and subagent runs.',
         keywords: ['agent ops', 'gantt', 'timeline', 'parallel'],
       },
+      {
+        id: 'storage',
+        label: 'Storage',
+        description: 'Local log locations and disk usage at the last measurement.',
+        usesDateFilter: false,
+        needsHelper: true,
+        keywords: ['disk', 'logs', 'folders', 'bytes', 'models'],
+      },
     ],
   },
   {
@@ -128,7 +136,7 @@ export const NAV: readonly NavSurface[] = [
     id: 'learn',
     label: 'Learn',
     icon: GraduationCap,
-    description: 'Concepts you already practiced, mined from your sessions.',
+    description: 'Weekly activity patterns and possible practice signals from your sessions.',
     shortcut: 'n',
     usesDateFilter: true,
     keywords: ['practice', 'learning quest', 'concepts'],

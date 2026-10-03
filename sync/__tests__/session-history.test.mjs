@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
+  appendFileSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,8 +9,35 @@ import { join } from 'node:path';
 import {
   querySessionHistory,
   readSessionHistory,
+  readSessionHistorySnapshot,
+  recoverIncompleteSessionHistory,
   updateSessionHistory,
 } from '../session-history.mjs';
+import { publishSnapshot, readSnapshot } from '../snapshot-generation.mjs';
+
+test('published generation survives later revisions and a damaged unpublished tail', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-published-history-'));
+  try {
+    updateSessionHistory([fixture('a'), fixture('b')], { dir });
+    const before = readSessionHistorySnapshot({ dir });
+    const dataDir = join(dir, 'data');
+    publishSnapshot(dataDir, { sessions: before.sessions, summary: {
+      allTime: { sessions: 2 }, archive: { total: 2, version: before.archiveVersion, snapshotBytes: before.snapshotBytes },
+    } });
+    updateSessionHistory([fixture('new'), fixture('a', { total_tokens: 999 })], { dir });
+    appendFileSync(join(dir, 'sessions.jsonl'), '{invalid unpublished revision}\n');
+    const snapshot = readSnapshot(dataDir);
+    const scope = { dir, expectedVersion: snapshot.summary.archive.version, snapshotBytes: snapshot.summary.archive.snapshotBytes, limit: 1 };
+    const page = querySessionHistory(scope);
+    const next = querySessionHistory({ ...scope, cursor: page.nextCursor });
+    assert.equal(page.total, snapshot.summary.allTime.sessions);
+    assert.equal(page.items[0].total_tokens, 100);
+    assert.deepEqual([...page.items, ...next.items].map(row => row.session_id), ['a', 'b']);
+    assert.equal(page.archiveVersion, before.archiveVersion);
+    assert.throws(() => querySessionHistory({ ...scope, snapshotBytes: before.snapshotBytes - 1 }), { code: 'stale_archive_snapshot' });
+    assert.throws(() => querySessionHistory({ dir, snapshotBytes: 0 }), { code: 'invalid_archive_snapshot' });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 
 function fixture(id, overrides = {}) {
   return {
@@ -186,6 +213,164 @@ test('requested pages are bounded but archive retention is not', () => {
     assert.equal(result.archive.total, 650);
     assert.equal(result.archive.warningThreshold, 100);
     assert.equal(result.archive.thresholdExceeded, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('replays committed revisions after an interrupted index publication without writing on read', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-recovery-'));
+  try {
+    updateSessionHistory([fixture('a')], { dir, updatedAt: '2026-07-16T00:00:00Z' });
+    const indexBefore = readFileSync(join(dir, 'current.json'), 'utf8');
+    appendFileSync(join(dir, 'sessions.jsonl'), JSON.stringify({
+      archived_at: '2026-07-17T00:00:00Z', session: fixture('recovered'),
+    }) + '\n');
+    const snapshot = readSessionHistorySnapshot({ dir });
+    assert.equal(snapshot.sessions.length, 2);
+    assert.equal(snapshot.updatedAt, '2026-07-17T00:00:00Z');
+    assert.equal(readFileSync(join(dir, 'current.json'), 'utf8'), indexBefore);
+
+    updateSessionHistory([fixture('new')], { dir });
+    assert.deepEqual(readSessionHistory({ dir }).map(row => row.session_id).sort(), ['a', 'new', 'recovered']);
+    unlinkSync(join(dir, 'current.json'));
+    assert.equal(readSessionHistory({ dir }).length, 3);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('an incomplete append preserves the last committed snapshot and blocks further writes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-torn-tail-'));
+  try {
+    updateSessionHistory([fixture('a'), fixture('b')], { dir });
+    const log = join(dir, 'sessions.jsonl');
+    appendFileSync(log, '{"archived_at":"incomplete');
+    const before = readFileSync(log);
+    const first = querySessionHistory({ dir, limit: 1 });
+    assert.equal(first.total, 2);
+    assert.equal(first.archive.incompleteTailBytes, Buffer.byteLength('{"archived_at":"incomplete'));
+    assert.equal(querySessionHistory({ dir, limit: 1, cursor: first.nextCursor }).total, 2);
+    assert.throws(() => updateSessionHistory([fixture('c')], { dir }), /incomplete append/);
+    assert.deepEqual(readFileSync(log), before);
+    unlinkSync(join(dir, 'current.json'));
+    assert.equal(readSessionHistory({ dir }).length, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('recovery saves torn bytes before resuming the append log', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-recover-tail-'));
+  try {
+    updateSessionHistory([fixture('a')], { dir });
+    const log = join(dir, 'sessions.jsonl');
+    const torn = Buffer.from('{"archived_at":"private-incomplete');
+    appendFileSync(log, torn);
+    const repaired = recoverIncompleteSessionHistory({ dir });
+    assert.equal(repaired.recovered, true);
+    assert.equal(repaired.bytes, torn.length);
+    assert.deepEqual(readFileSync(repaired.recoveryFile), torn);
+    assert.equal(querySessionHistory({ dir }).archive.incompleteTailBytes, 0);
+    updateSessionHistory([fixture('b')], { dir });
+    assert.deepEqual(readSessionHistory({ dir }).map(row => row.session_id).sort(), ['a', 'b']);
+    assert.equal(readdirSync(join(dir, 'recovery')).length, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('automatic recovery refuses hard-linked logs and preserves oversized torn bytes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-recover-guard-'));
+  const history = join(dir, 'history');
+  const linked = join(dir, 'linked.jsonl');
+  try {
+    mkdirSync(history);
+    updateSessionHistory([fixture('a')], { dir: history });
+    const log = join(history, 'sessions.jsonl');
+    appendFileSync(log, 'torn');
+    linkSync(log, linked);
+    const before = readFileSync(log);
+    assert.throws(() => recoverIncompleteSessionHistory({ dir: history }), /linked archive log/);
+    assert.deepEqual(readFileSync(log), before);
+    unlinkSync(linked);
+    appendFileSync(log, 'x'.repeat(16));
+    const large = readFileSync(log);
+    assert.throws(() => recoverIncompleteSessionHistory({ dir: history, maxBytes: 12 }), /recovery limit/);
+    assert.deepEqual(readFileSync(log), large);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('malformed committed revisions and log truncation fail closed instead of losing history', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-corruption-'));
+  try {
+    updateSessionHistory([fixture('a')], { dir });
+    const log = join(dir, 'sessions.jsonl');
+    const before = readFileSync(log);
+    appendFileSync(log, '{broken}\n');
+    assert.throws(() => readSessionHistory({ dir }), /invalid revision/);
+    assert.throws(() => updateSessionHistory([fixture('b')], { dir }), /invalid revision/);
+    writeFileSync(log, before.subarray(0, before.length - 1));
+    assert.throws(() => readSessionHistory({ dir }), /shorter than/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('archive version guards a frozen pagination snapshot and rejects a changed restart', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-version-'));
+  try {
+    updateSessionHistory([fixture('a'), fixture('b')], { dir, updatedAt: '2026-07-16T00:00:00Z' });
+    const first = querySessionHistory({ dir, limit: 1 });
+    assert.match(first.archiveVersion, /^[a-f0-9]{64}$/);
+    assert.equal(readSessionHistorySnapshot({ dir }).archiveVersion, first.archiveVersion);
+    assert.equal(readSessionHistorySnapshot({ dir }).snapshotBytes, statSync(join(dir, 'sessions.jsonl')).size);
+    updateSessionHistory([fixture('a'), fixture('b')], { dir, updatedAt: '2026-07-17T00:00:00Z' });
+    assert.equal(querySessionHistory({ dir }).archiveVersion, first.archiveVersion, 'a no-change sync keeps its version');
+    updateSessionHistory([fixture('new')], { dir });
+    const second = querySessionHistory({ dir, limit: 1, cursor: first.nextCursor, expectedVersion: first.archiveVersion });
+    assert.equal(second.total, 2);
+    assert.equal(second.archiveVersion, first.archiveVersion);
+    assert.throws(() => querySessionHistory({ dir, expectedVersion: first.archiveVersion }), {
+      code: 'stale_archive_snapshot',
+    });
+    assert.throws(() => querySessionHistory({ dir, cursor: 'malformed' }), {
+      code: 'invalid_session_cursor',
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('the same native ID from different harnesses remains two identities through replay and pagination', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-source-identity-'));
+  try {
+    updateSessionHistory([
+      fixture('same-id', { source: 'claude' }),
+      fixture('same-id', { source: 'codex' }),
+    ], { dir });
+    const first = querySessionHistory({ dir, limit: 1 });
+    assert.equal(first.total, 2);
+    const second = querySessionHistory({ dir, limit: 1, cursor: first.nextCursor, expectedVersion: first.archiveVersion });
+    assert.deepEqual([...first.items, ...second.items].map(row => row.source), ['claude', 'codex']);
+    unlinkSync(join(dir, 'current.json'));
+    assert.equal(readSessionHistory({ dir }).length, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('legacy indexes rebuild source identities from the log but still detect truncation', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'meow-session-legacy-identity-'));
+  try {
+    updateSessionHistory([fixture('same-id', { source: 'claude' }), fixture('same-id', { source: 'codex' })], { dir });
+    const indexFile = join(dir, 'current.json');
+    const index = JSON.parse(readFileSync(indexFile, 'utf8'));
+    index.schemaVersion = 1;
+    index.sessions = index.sessions.slice(0, 1);
+    writeFileSync(indexFile, JSON.stringify(index));
+    assert.equal(readSessionHistory({ dir }).length, 2);
+    const logFile = join(dir, 'sessions.jsonl');
+    writeFileSync(logFile, readFileSync(logFile).subarray(0, index.logBytes - 1));
+    assert.throws(() => readSessionHistory({ dir }), /shorter than/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

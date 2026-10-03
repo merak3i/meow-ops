@@ -188,6 +188,44 @@ test('adapter apply rejects a stale preview before writing', () => withProjectCo
   assert.equal(existsSync(join(root, 'CLAUDE.md')), false);
 }));
 
+test('adapter rollback preflights every target before restoring any file and remains retryable', () => withProjectControl((dir) => {
+  const root = join(dir, 'project');
+  mkdirSync(join(root, '.meow', 'learning-state'), { recursive: true });
+  writeFileSync(join(root, '.meow', 'learning-state', 'INDEX.md'), '# Approved learning\n', 'utf8');
+  writeFileSync(join(root, 'AGENTS.md'), '# Original rules\n', 'utf8');
+  const preview = previewProjectAdapters({ projectRoot: root });
+  const applied = applyProjectAdapters({
+    projectRoot: root,
+    expectedChecksums: Object.fromEntries(preview.targets.map((target) => [target.agent, target.checksum])),
+  });
+  const appliedCodex = readFileSync(join(root, 'AGENTS.md'), 'utf8');
+  const appliedClaude = readFileSync(join(root, 'CLAUDE.md'), 'utf8');
+  writeFileSync(join(root, 'AGENTS.md'), '# Owner changed this after apply\n', 'utf8');
+
+  assert.throws(() => rollbackProjectAdapters(applied.sync_id), /adapter drift blocks rollback for codex/);
+  assert.equal(readFileSync(join(root, 'CLAUDE.md'), 'utf8'), appliedClaude, 'earlier targets remain applied after later-target drift');
+  assert.equal(readFileSync(join(root, 'AGENTS.md'), 'utf8'), '# Owner changed this after apply\n');
+
+  writeFileSync(join(root, 'AGENTS.md'), appliedCodex, 'utf8');
+  assert.equal(rollbackProjectAdapters(applied.sync_id).restored.length, 5);
+}));
+
+test('adapter rollback treats an empty edited file as drift and permits retry after the owner restores it', () => withProjectControl((dir) => {
+  const root = join(dir, 'project');
+  mkdirSync(join(root, '.meow', 'learning-state'), { recursive: true });
+  writeFileSync(join(root, '.meow', 'learning-state', 'INDEX.md'), '# Approved learning\n', 'utf8');
+  const preview = previewProjectAdapters({ projectRoot: root });
+  const applied = applyProjectAdapters({
+    projectRoot: root,
+    expectedChecksums: Object.fromEntries(preview.targets.map((target) => [target.agent, target.checksum])),
+  });
+  const appliedCodex = readFileSync(join(root, 'AGENTS.md'), 'utf8');
+  writeFileSync(join(root, 'AGENTS.md'), '', 'utf8');
+  assert.throws(() => rollbackProjectAdapters(applied.sync_id), /adapter drift blocks rollback for codex/);
+  writeFileSync(join(root, 'AGENTS.md'), appliedCodex, 'utf8');
+  assert.equal(rollbackProjectAdapters(applied.sync_id).restored.length, 5);
+}));
+
 test('approved learning publishes into the canonical state and updates its index', () => withProjectControl((dir) => {
   const root = join(dir, 'project');
   mkdirSync(join(root, '.meow', 'learning-state'), { recursive: true });

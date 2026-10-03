@@ -472,7 +472,46 @@ export function applyProjectAdapters({ projectRoot, expectedChecksums } = {}) {
   return { sync_id, applied, backup_dir: backupDir };
 }
 
-export function rollbackProjectAdapters(syncId) {
+function validateAdapterRollback(applied, syncId, expectedProjectRoot) {
+  const projectRoot = resolve(cleanText(applied.project_root, 'project root', 2_000));
+  if (expectedProjectRoot && resolve(expectedProjectRoot) !== projectRoot) {
+    throw new Error('[project-control] adapter sync belongs to a different project');
+  }
+  const expectedBackupDir = join(resolveProjectControlDir(), 'adapter-backups', syncId);
+  if (resolve(applied.backup_dir) !== expectedBackupDir || !Array.isArray(applied.targets) || !applied.targets.length) {
+    throw new Error('[project-control] adapter sync backup manifest is invalid');
+  }
+  const seen = new Set();
+  for (const target of applied.targets) {
+    if (!PROJECT_AGENT_SOURCES.includes(target.agent) || seen.has(target.agent)) {
+      throw new Error('[project-control] adapter sync target manifest is invalid');
+    }
+    seen.add(target.agent);
+    const targetPath = resolve(cleanText(target.path, 'adapter target path', 2_000));
+    const pathFromRoot = relative(projectRoot, targetPath);
+    if (!pathFromRoot || pathFromRoot === '..' || pathFromRoot.startsWith('..' + sep)) {
+      throw new Error('[project-control] adapter sync target is outside its project');
+    }
+    const backup = readJson(join(applied.backup_dir, target.agent + '.json'), null);
+    if (!backup || backup.path !== target.path || typeof backup.existed !== 'boolean'
+        || typeof backup.before !== 'string' || !Number.isInteger(backup.mode)
+        || backup.mode < 0 || backup.mode > 0o777) {
+      throw new Error('[project-control] missing or invalid adapter backup for ' + target.agent);
+    }
+    let current;
+    try {
+      if (!statSync(targetPath).isFile()) throw new Error('not a file');
+      current = readFileSync(targetPath, 'utf8');
+    } catch {
+      throw new Error('[project-control] adapter drift blocks rollback for ' + target.agent);
+    }
+    if (sha256(current) !== target.checksum) {
+      throw new Error('[project-control] adapter drift blocks rollback for ' + target.agent);
+    }
+  }
+}
+
+export function rollbackProjectAdapters(syncId, { expectedProjectRoot } = {}) {
   const sync_id = cleanText(syncId, 'sync_id', 120);
   const records = readAdapterSyncs();
   const applied = [...records].reverse().find((record) => record.sync_id === sync_id && record.action === 'applied');
@@ -480,13 +519,14 @@ export function rollbackProjectAdapters(syncId) {
   if (records.some((record) => record.sync_id === sync_id && record.action === 'rolled_back')) {
     throw new Error('[project-control] adapter sync is already rolled back');
   }
+  validateAdapterRollback(applied, sync_id, expectedProjectRoot);
   const restored = [];
   for (const target of [...applied.targets].reverse()) {
     const backupPath = join(applied.backup_dir, `${target.agent}.json`);
     const backup = readJson(backupPath, null);
     if (!backup || backup.path !== target.path) throw new Error(`[project-control] missing backup for ${target.agent}`);
     const current = readText(target.path);
-    if (current && sha256(current) !== target.checksum) {
+    if (sha256(current) !== target.checksum) {
       throw new Error(`[project-control] adapter drift blocks rollback for ${target.agent}`);
     }
     if (backup.existed) writeTextAtomic(backup.path, backup.before, backup.mode);

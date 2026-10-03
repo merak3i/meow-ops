@@ -24,7 +24,7 @@ function withCacheBust(url) {
 
 async function fetchJson(url, init) {
   try {
-    const r = await fetch(url, init);
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000), ...init });
     if (!r.ok) return null;
     return await r.json();
   } catch {
@@ -33,6 +33,7 @@ async function fetchJson(url, init) {
 }
 
 async function resolveLocalSyncBase(force = false) {
+  if (IS_PROD) return null;
   if (!force && LOCAL_SYNC_BASE) return LOCAL_SYNC_BASE;
   if (!force && LOCAL_SYNC_PROBE) return LOCAL_SYNC_PROBE;
 
@@ -73,8 +74,9 @@ async function fetchLocalJson(path) {
 }
 
 // ─── In-memory session cache ──────────────────────────────────────────────────
-let REAL_SESSIONS = null;
-let REAL_SESSIONS_PROMISE = null;
+let DASHBOARD_PROMISE = null;
+let LAST_GOOD_DASHBOARD = null;
+let DASHBOARD_EPOCH = 0;
 
 // Numeric fields that must be finite, non-negative numbers. sessions.json is
 // generated locally and fetched at runtime; a schema drift or a malformed row
@@ -83,10 +85,50 @@ const NUMERIC_FIELDS = [
   'input_tokens', 'output_tokens', 'cache_creation_tokens', 'cache_read_tokens',
   'total_tokens', 'estimated_cost_usd', 'duration_seconds', 'message_count',
 ];
+const NULLABLE_FIELDS = new Set([
+  'input_tokens', 'output_tokens', 'cache_creation_tokens', 'cache_read_tokens',
+  'total_tokens', 'estimated_cost_usd', 'observed_cost_usd',
+]);
 
 function coerceNum(v) {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function nullableNumber(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function estimatedCost(session) {
+  return ['unknown', 'default', 'family', 'unavailable'].includes(session.pricing_source)
+    || session.cost_available === false ? null : nullableNumber(session.estimated_cost_usd);
+}
+
+function emptyCostBucket() {
+  return { cost: null, estimated_cost_usd: null, observed_cost_usd: null,
+    estimated_cost_sessions: 0, observed_cost_sessions: 0, unavailable_cost_sessions: 0 };
+}
+
+function addCostToBucket(bucket, session) {
+  const estimate = estimatedCost(session);
+  const observed = nullableNumber(session.observed_cost_usd);
+  if (estimate !== null) {
+    bucket.estimated_cost_usd = (bucket.estimated_cost_usd ?? 0) + estimate;
+    bucket.cost = bucket.estimated_cost_usd;
+    bucket.estimated_cost_sessions += 1;
+  }
+  if (observed !== null) {
+    bucket.observed_cost_usd = (bucket.observed_cost_usd ?? 0) + observed;
+    bucket.observed_cost_sessions += 1;
+  }
+  if (estimate === null && observed === null) bucket.unavailable_cost_sessions += 1;
+  return bucket;
+}
+
+export function summarizeCosts(sessions) {
+  return sessions.reduce(addCostToBucket, emptyCostBucket());
 }
 
 // Validate + repair fetched session rows at the trust boundary. Drops anything
@@ -95,49 +137,82 @@ function coerceNum(v) {
 function sanitizeSessions(data) {
   if (!Array.isArray(data)) return [];
   const out = [];
-  for (const s of data) {
-    if (!s || typeof s !== 'object' || typeof s.session_id !== 'string') continue;
-    for (const f of NUMERIC_FIELDS) s[f] = coerceNum(s[f]);
+  for (const row of data) {
+    if (!row || typeof row !== 'object' || typeof row.session_id !== 'string') continue;
+    const s = { ...row };
+    for (const f of NUMERIC_FIELDS) s[f] = NULLABLE_FIELDS.has(f) ? nullableNumber(s[f]) : coerceNum(s[f]);
+    if (s.usage_available === false) {
+      for (const f of NULLABLE_FIELDS) if (f.endsWith('tokens')) s[f] = null;
+    }
+    s.estimated_cost_usd = estimatedCost(s);
+    s.observed_cost_usd = nullableNumber(s.observed_cost_usd);
+    s.cost_available = s.estimated_cost_usd !== null || s.observed_cost_usd !== null;
+    s.cost_kind = s.observed_cost_usd !== null ? 'observed' : s.estimated_cost_usd !== null ? 'estimated' : 'unavailable';
     if (!s.tools || typeof s.tools !== 'object') s.tools = {};
     out.push(s);
   }
   return out;
 }
 
-async function loadRealSessions() {
-  if (REAL_SESSIONS) return REAL_SESSIONS;
-  if (REAL_SESSIONS_PROMISE) return REAL_SESSIONS_PROMISE;
-
-  REAL_SESSIONS_PROMISE = (async () => {
-    // A successful empty array is not "missing". Treat 404 / fetch failure as
-    // missing (demo fallback). Treat `[]` as parsed-but-empty so Learn can
-    // show its empty state instead of invented demo concepts.
-    const local = await fetchLocalJson('/data/sessions.json');
-    if (local !== null) {
-      REAL_SESSIONS = sanitizeSessions(local);
-      return REAL_SESSIONS;
+async function loadDashboard() {
+  if (DASHBOARD_PROMISE) return DASHBOARD_PROMISE;
+  const epoch = DASHBOARD_EPOCH;
+  DASHBOARD_PROMISE = (async () => {
+    const base = await resolveLocalSyncBase();
+    const snapshotUrl = base ? `${base}/data/snapshot.json` : IS_PROD ? '/data/snapshot.json' : '/api/data/snapshot.json';
+    const init = base ? { headers: LOCAL_SYNC_HEADERS, mode: 'cors' } : undefined;
+    let status = 0;
+    let data = null;
+    try {
+      const response = await fetch(withCacheBust(snapshotUrl), { signal: AbortSignal.timeout(8000), ...init });
+      status = response.status ?? (response.ok ? 200 : 404);
+      // Static preview servers return the SPA HTML for an absent /api route.
+      // Only that same-origin compatibility case counts as a missing endpoint.
+      if (!base && response.ok && response.headers?.get('content-type')?.includes('text/html')) status = 404;
+      else if (response.ok) data = await response.json();
+    } catch { /* A failed validated read must not fall through to mixed legacy files. */ }
+    if (status === 200 && data?.schemaVersion === 1 && typeof data.generation?.id === 'string' && Array.isArray(data.sessions) && data.summary && typeof data.summary === 'object' && !Array.isArray(data.summary)) {
+      const snapshot = {
+        state: data.lastGood ? 'last-good' : 'verified', generation: data.generation,
+        warning: data.warning || (data.lastGood ? 'Showing the last verified snapshot.' : null),
+      };
+      const bundle = { sessions: sanitizeSessions(data.sessions), summary: { ...data.summary, snapshot } };
+      if (epoch === DASHBOARD_EPOCH) LAST_GOOD_DASHBOARD = bundle;
+      return bundle;
     }
-
-    const raw = await fetchJson(withCacheBust('/data/sessions.json'));
-    if (raw !== null) {
-      REAL_SESSIONS = sanitizeSessions(raw);
-      return REAL_SESSIONS;
+    if (status === 404) {
+      // Both compatibility files come from the same origin and request cycle.
+      // Older helpers cannot prove that the pair belongs to one generation.
+      const [sessions, summary] = await Promise.all([
+        fetchJson(withCacheBust(`${base || ''}/data/sessions.json`), init),
+        fetchJson(withCacheBust(`${base || ''}/data/cost-summary.json`), init),
+      ]);
+      return {
+        sessions: sessions === null ? null : sanitizeSessions(sessions),
+        summary: { ...(summary || {}), snapshot: { state: 'legacy-unverified', generation: null, warning: 'Legacy snapshot: sessions and summary have not been verified as one generation.' } },
+      };
     }
-    return null;
+    const warning = 'The current snapshot could not be verified. ' + (LAST_GOOD_DASHBOARD ? 'Showing the last verified snapshot.' : 'No verified snapshot is available.');
+    return {
+      sessions: LAST_GOOD_DASHBOARD?.sessions || [],
+      summary: { ...(LAST_GOOD_DASHBOARD?.summary || {}), snapshot: { state: LAST_GOOD_DASHBOARD ? 'last-good' : 'unavailable', generation: LAST_GOOD_DASHBOARD?.summary?.snapshot?.generation || null, warning } },
+    };
   })();
-  return REAL_SESSIONS_PROMISE;
+  return DASHBOARD_PROMISE;
+}
+
+async function loadRealSessions() {
+  return (await loadDashboard()).sessions;
 }
 
 export function invalidateRealSessions() {
-  REAL_SESSIONS = null;
-  REAL_SESSIONS_PROMISE = null;
+  DASHBOARD_EPOCH++;
+  DASHBOARD_PROMISE = null;
 }
 
 // ─── Cost summary (covers ALL sessions, no cap) ───────────────────────────────
 export async function fetchCostSummary() {
-  const local = await fetchLocalJson('/data/cost-summary.json');
-  if (local) return local;
-  return fetchJson(withCacheBust('/data/cost-summary.json'));
+  return (await loadDashboard()).summary;
 }
 
 // ─── Sync trigger / status ────────────────────────────────────────────────────
@@ -189,9 +264,8 @@ export function isDemoData(sessions = [], summary = null) {
     || (sessions.length > 0 && sessions.every(session => session.is_demo || /^demo-session-\d+$/.test(session.session_id)));
 }
 
-// ─── IST helpers ─────────────────────────────────────────────────────────────
-// All day bucketing uses IST so "today" matches the user's clock in India.
-const IST = 'Asia/Kolkata';
+// Calendar labels use the operator's timezone. Rolling bounds use UTC instants.
+const IST = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
 function activityDate(s) {
   return s.ended_at || s.started_at;
@@ -201,10 +275,9 @@ function activityDay(s) {
   return new Date(activityDate(s)).toLocaleDateString('en-CA', { timeZone: IST });
 }
 
-// Returns midnight IST for a given calendar-date string "YYYY-MM-DD".
+// Returns local midnight for a calendar-date string "YYYY-MM-DD".
 function istMidnight(dateStr) {
-  // Parse as IST midnight by constructing in local IST offset.
-  return new Date(`${dateStr}T00:00:00+05:30`);
+  return new Date(`${dateStr}T00:00:00`);
 }
 
 // ─── Date filter ─────────────────────────────────────────────────────────────
@@ -212,27 +285,48 @@ function istMidnight(dateStr) {
 //   'all'  — no filter
 //   '1h'   — last 60 minutes
 //   '24h'  — last 24 hours
-//   number — last N calendar days
+//   number — last N rolling 24-hour periods
 
-function dateRangeCutoff(dateRange) {
-  if (dateRange === 'all') return null;
-  if (dateRange === '1h')  return new Date(Date.now() - 3_600_000);
-  if (dateRange === '24h') return new Date(Date.now() - 86_400_000);
-  return new Date(Date.now() - dateRange * 86_400_000);
+export function getDateRangeBounds(dateRange, now = Date.now()) {
+  const duration = dateRange === '1h' ? 3_600_000 : dateRange === '24h' ? 86_400_000 : Number(dateRange) * 86_400_000;
+  return {
+    from: dateRange === 'all' ? null : new Date(now - duration).toISOString(),
+    to: new Date(now).toISOString(),
+  };
 }
 
-function filterByDateRange(data, dateField, dateRange) {
-  const cutoff = dateRangeCutoff(dateRange);
-  if (!cutoff) return data;
-  return data.filter((d) => new Date(d[dateField]) >= cutoff);
+export function getSessionFilters(dateRange, now, filters = {}) {
+  const custom = Boolean(filters.from || filters.to);
+  const bounds = getDateRangeBounds(custom ? 'all' : dateRange, now);
+  for (const key of ['from', 'to']) {
+    if (!filters[key]) continue;
+    const value = new Date(`${filters[key]}T${key === 'to' ? '23:59:59.999' : '00:00:00'}`);
+    if (!Number.isFinite(value.getTime())) return { error: 'Choose valid dates.' };
+    bounds[key] = value.toISOString();
+  }
+  if (bounds.from && bounds.to && bounds.from > bounds.to) return { error: 'From date must be before to date.' };
+  return { ...filters, ...bounds };
+}
+
+export function filterSessionScope(sessions, filters = {}) {
+  if (filters.error) return [];
+  const from = filters.from ? Date.parse(filters.from) : -Infinity;
+  const to = filters.to ? Date.parse(filters.to) : Infinity;
+  return sessions.filter((session) => {
+    const activity = Date.parse(activityDate(session));
+    return Number.isFinite(activity) && activity >= from && activity <= to
+      && (!filters.project || session.project === filters.project)
+      && (!filters.source || (session.source || 'claude') === filters.source)
+      && (!filters.model || session.model === filters.model);
+  });
 }
 
 function emptyAggregateBucket() {
-  return { cost: 0, tokens: 0, sessions: 0, duration_seconds: 0 };
+  return { ...emptyCostBucket(), tokens: 0, sessions: 0, duration_seconds: 0 };
 }
 
 function addSessionToBucket(acc, s) {
-  acc.cost += s.estimated_cost_usd || 0;
+  addCostToBucket(acc, s);
   acc.tokens += s.total_tokens || 0;
   acc.sessions += 1;
   acc.duration_seconds += s.duration_seconds || 0;
@@ -294,10 +388,9 @@ function generateDemoData() {
 // ─── fetchSessions ────────────────────────────────────────────────────────────
 // Returns sessions filtered by dateRange. The in-memory cache is re-used
 // across date-range changes so we only fetch sessions.json once per page load.
-export async function fetchSessions(dateRange = 30) {
+export async function fetchSessions(dateRange = 30, now = Date.now()) {
   const real = await loadRealSessions();
-  if (real) return filterByDateRange(real, 'ended_at', dateRange);
-  return filterByDateRange(DEMO_SESSIONS, 'ended_at', dateRange);
+  return filterSessionScope(real || DEMO_SESSIONS, getDateRangeBounds(dateRange, now));
 }
 
 // Returns the bounded compatibility preview with no date filter. Complete
@@ -311,21 +404,107 @@ export async function fetchAllSessions() {
 // Query the uncapped local archive. Filters are applied by the local helper
 // before a bounded page is sent to the browser.
 export async function fetchSessionPage(options = {}) {
+  const dashboard = await loadDashboard();
+  const snapshot = dashboard.summary?.snapshot;
+  // An archive append can precede publication, or publication can fail. Bind
+  // the very first page to the generation that supplied the displayed totals.
+  // Older helpers may ignore the boundary, so also verify the returned hash.
+  const publishedVersion = dashboard.summary?.archive?.version;
+  if (snapshot?.state !== 'legacy-unverified' && !publishedVersion) return null;
+  const expectedVersion = options.expectedVersion || publishedVersion;
+  const snapshotBytes = options.snapshotBytes ?? (expectedVersion === publishedVersion ? dashboard.summary?.archive?.snapshotBytes : undefined);
   const params = new URLSearchParams();
-  for (const key of ['limit', 'cursor', 'from', 'to', 'project', 'source', 'model']) {
-    const value = options[key];
+  const boundOptions = { ...options, expectedVersion, snapshotBytes };
+  for (const key of ['limit', 'cursor', 'expectedVersion', 'snapshotBytes', 'from', 'to', 'project', 'source', 'model']) {
+    const value = boundOptions[key];
     if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
   }
   const path = `/session-history/sessions?${params.toString()}`;
   const data = await fetchLocalJson(path)
     || (!IS_PROD ? await fetchJson(withCacheBust(`/api${path}`)) : null);
-  if (!data || !Array.isArray(data.items)) return null;
+  if (!data || !Array.isArray(data.items) || typeof data.archiveVersion !== 'string' || !data.archiveVersion) return null;
+  if (expectedVersion && data.archiveVersion !== expectedVersion) return null;
   return {
     ...data,
     items: sanitizeSessions(data.items),
     total: coerceNum(data.total),
     limit: coerceNum(data.limit),
     nextCursor: typeof data.nextCursor === 'string' ? data.nextCursor : null,
+  };
+}
+
+// Archive cursors pin a read snapshot. Never merge a partial/failed page chain
+// into preview data and call it complete.
+export async function fetchRangeSessions(dateRange, now = Date.now()) {
+  const dashboard = await loadDashboard();
+  const bounds = getDateRangeBounds(dateRange, now);
+  const items = [];
+  const cursors = new Set();
+  let cursor = null;
+  let total = null;
+  let expectedVersion = dashboard.summary?.archive?.version;
+  const snapshotBytes = dashboard.summary?.archive?.snapshotBytes;
+  do {
+    const page = await fetchSessionPage({ ...bounds, limit: 500, cursor, expectedVersion, snapshotBytes });
+    if (!page || (total !== null && total !== page.total)) break;
+    if (expectedVersion && page.archiveVersion !== expectedVersion) break;
+    expectedVersion = page.archiveVersion;
+    total = page.total;
+    items.push(...page.items);
+    if (!page.nextCursor) {
+      if (items.length === total && new Set(items.map(sessionIdentity)).size === total) {
+        return { items, completeness: 'archive', error: null };
+      }
+      break;
+    }
+    if (cursors.has(page.nextCursor)) break;
+    cursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return { items: filterSessionScope(dashboard.sessions || DEMO_SESSIONS, bounds), completeness: 'preview', error: 'The published archive is unavailable. Showing matching sessions from the same snapshot preview.' };
+}
+
+function sessionIdentity(session) {
+  return JSON.stringify([session.source || 'claude', session.session_id]);
+}
+
+// Load an exact bounded interval from one pinned archive generation. A failed
+// page chain falls back as a whole to the compatibility preview, never a mix.
+export async function fetchSessionWindow(from, to, filters = {}) {
+  const dashboard = await loadDashboard();
+  const fromTime = Date.parse(from);
+  const toTime = Date.parse(to);
+  if (!Number.isFinite(fromTime) || !Number.isFinite(toTime) || fromTime > toTime) {
+    return { items: [], completeness: 'unavailable', error: 'The requested evidence window is invalid.' };
+  }
+  const bounds = { from: new Date(fromTime).toISOString(), to: new Date(toTime).toISOString(), ...filters };
+  const items = [];
+  const cursors = new Set();
+  let cursor = null;
+  let total = null;
+  let expectedVersion = dashboard.summary?.archive?.version;
+  const snapshotBytes = dashboard.summary?.archive?.snapshotBytes;
+  do {
+    const page = await fetchSessionPage({ ...bounds, limit: 500, cursor, expectedVersion, snapshotBytes });
+    if (!page || (total !== null && total !== page.total)) break;
+    if (expectedVersion && page.archiveVersion !== expectedVersion) break;
+    expectedVersion = page.archiveVersion;
+    total = page.total;
+    items.push(...page.items);
+    if (!page.nextCursor) {
+      if (items.length === total && new Set(items.map(sessionIdentity)).size === total) {
+        return { items, completeness: 'archive', error: null, archiveVersion: expectedVersion };
+      }
+      break;
+    }
+    if (cursors.has(page.nextCursor)) break;
+    cursors.add(page.nextCursor);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return {
+    items: filterSessionScope(dashboard.sessions || DEMO_SESSIONS, bounds),
+    completeness: 'preview',
+    error: 'The complete local archive could not be read. Showing only matching preview records.',
   };
 }
 
@@ -336,32 +515,20 @@ export async function hasNoData() {
 }
 
 // ─── fetchDailyStats ──────────────────────────────────────────────────────────
-// Prefers cost-summary.daily_summary (all sessions, no cap) when available.
-// Falls back to computing from the in-memory sessions array.
-export async function fetchDailyStats(dateRange = 30, costSummary = null) {
-  // Use pre-computed daily_summary if we have it — it covers ALL sessions.
-  if (costSummary?.daily_summary?.length) {
-    return filterDailySummaryByRange(costSummary.daily_summary, dateRange);
-  }
-
-  // Compute from sessions.json (may be capped).
-  const real = await loadRealSessions();
-  const source = real || DEMO_SESSIONS;
-  const sessions = filterByDateRange(source, 'ended_at', dateRange);
-  return buildDailyFromSessions(sessions);
+// Exact ranges are calculated from session timestamps, never daily rollups.
+export async function fetchDailyStats(dateRange = 30, _costSummary = null, now = Date.now()) {
+  // Daily rollups cannot resolve the partially included first day of a rolling range.
+  return buildDailyFromSessions(await fetchSessions(dateRange, now));
 }
 
-// Filter a daily_summary array by a dateRange (number of days, or special strings).
-export function filterDailySummaryByRange(dailySummary, dateRange) {
+// Overlapping calendar buckets, for calendar context only. These buckets cannot
+// produce exact rolling totals; fetchDailyStats uses timestamp-filtered sessions.
+export function filterDailySummaryByRange(dailySummary, dateRange, now = Date.now()) {
   if (dateRange === 'all') return dailySummary;
-  // For hour-based ranges, only include today's entry (daily_summary is per-day)
-  if (dateRange === '1h' || dateRange === '24h') {
-    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: IST });
-    return dailySummary.filter((d) => d.date === todayStr);
-  }
-  const cutoff    = new Date(Date.now() - dateRange * 86_400_000);
-  const cutoffStr = cutoff.toLocaleDateString('en-CA', { timeZone: IST });
-  return dailySummary.filter((d) => d.date >= cutoffStr);
+  const bounds = getDateRangeBounds(dateRange, now);
+  const first = new Date(bounds.from).toLocaleDateString('en-CA', { timeZone: IST });
+  const last = new Date(bounds.to).toLocaleDateString('en-CA', { timeZone: IST });
+  return dailySummary.filter((day) => day.date >= first && day.date <= last);
 }
 
 // Build daily stats from a session array (fallback when no daily_summary).
@@ -379,7 +546,7 @@ export function buildDailyFromSessions(sessions) {
         total_cache_creation: 0,
         total_cache_read: 0,
         total_tokens: 0,
-        estimated_cost_usd: 0,
+        ...emptyCostBucket(),
         total_duration_seconds: 0,
         active_projects: new Set(),
         ghost_count: 0,
@@ -391,7 +558,7 @@ export function buildDailyFromSessions(sessions) {
     byDate[date].total_cache_creation += s.cache_creation_tokens || 0;
     byDate[date].total_cache_read    += s.cache_read_tokens      || 0;
     byDate[date].total_tokens        += s.total_tokens  || 0;
-    byDate[date].estimated_cost_usd  += s.estimated_cost_usd || 0;
+    addCostToBucket(byDate[date], s);
     byDate[date].total_duration_seconds += s.duration_seconds || 0;
     byDate[date].active_projects.add(s.project);
     if (s.is_ghost) byDate[date].ghost_count++;
@@ -404,16 +571,15 @@ export function buildDailyFromSessions(sessions) {
 // ─── Fill missing days ────────────────────────────────────────────────────────
 // Ensures the ByDay chart always has one entry per calendar day in the range,
 // with zeros for inactive days (no gaps, no jump-cuts in the area chart).
-export function fillMissingDays(dailyData, dateRange) {
+export function fillMissingDays(dailyData, dateRange, nowMs = Date.now()) {
   // Hour-based ranges are sub-day — no day-filling needed
   if (dateRange === '1h' || dateRange === '24h') return dailyData || [];
   if (dateRange === 'all' || !dailyData?.length) return dailyData || [];
   const existing = new Map(dailyData.map((d) => [d.date, d]));
   const filled = [];
-  const now = new Date();
-  for (let i = dateRange - 1; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
+  const d = new Date(getDateRangeBounds(dateRange, nowMs).from);
+  d.setHours(0, 0, 0, 0);
+  for (; d.getTime() <= nowMs; d.setDate(d.getDate() + 1)) {
     const date = d.toLocaleDateString('en-CA', { timeZone: IST });
     filled.push(existing.get(date) || {
       date,
@@ -438,11 +604,12 @@ export function computeOverviewStats(sessions) {
 
   const todaySessions  = sessions.filter((s) => activityDay(s) === today);
   const tokensToday    = todaySessions.reduce((a, s) => a + s.total_tokens, 0);
-  const costToday      = todaySessions.reduce((a, s) => a + s.estimated_cost_usd, 0);
+  const costToday      = summarizeCosts(todaySessions).estimated_cost_usd;
   const projectsToday  = new Set(todaySessions.map((s) => s.project)).size;
 
   const totalTokens    = sessions.reduce((a, s) => a + s.total_tokens, 0);
-  const totalCost      = sessions.reduce((a, s) => a + s.estimated_cost_usd, 0);
+  const costCoverage   = summarizeCosts(sessions);
+  const totalCost      = costCoverage.estimated_cost_usd;
   const totalDuration  = sessions.reduce((a, s) => a + (s.duration_seconds || 0), 0);
   const totalProjects  = new Set(sessions.map((s) => s.project)).size;
   const ghostCount     = sessions.filter((s) => s.is_ghost).length;
@@ -452,6 +619,7 @@ export function computeOverviewStats(sessions) {
 
   return {
     periodSessions:  sessions.length,
+    costCoverage,
     periodTokens:    totalTokens,
     periodCost:      totalCost,
     periodDuration:  totalDuration,
@@ -634,11 +802,11 @@ export function getProjectBreakdown(sessions) {
   for (const s of sessions) {
     const last = activityDate(s);
     if (!byProject[s.project]) {
-      byProject[s.project] = { project: s.project, sessions: 0, tokens: 0, cost: 0, lastActive: last };
+      byProject[s.project] = { project: s.project, sessions: 0, tokens: 0, ...emptyCostBucket(), lastActive: last };
     }
     byProject[s.project].sessions++;
     byProject[s.project].tokens += s.total_tokens;
-    byProject[s.project].cost   += s.estimated_cost_usd;
+    addCostToBucket(byProject[s.project], s);
     if (last > byProject[s.project].lastActive) byProject[s.project].lastActive = last;
   }
   return Object.values(byProject).sort((a, b) => b.tokens - a.tokens);
@@ -676,10 +844,10 @@ export function getModelBreakdown(sessions) {
   const byModel = {};
   for (const s of sessions) {
     const model = s.model || 'unknown';
-    if (!byModel[model]) byModel[model] = { model, sessions: 0, tokens: 0, cost: 0 };
+    if (!byModel[model]) byModel[model] = { model, sessions: 0, tokens: 0, ...emptyCostBucket() };
     byModel[model].sessions++;
     byModel[model].tokens += s.total_tokens;
-    byModel[model].cost   += s.estimated_cost_usd;
+    addCostToBucket(byModel[model], s);
   }
   return Object.values(byModel).sort((a, b) => b.cost - a.cost);
 }

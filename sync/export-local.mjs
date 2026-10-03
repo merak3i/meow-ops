@@ -3,23 +3,33 @@
 // Run: node sync/export-local.mjs
 // Run: node sync/export-local.mjs --push   (also commit + push to GitHub)
 
-import { writeFileSync, readdirSync, statSync, existsSync, mkdirSync, openSync, readSync, closeSync } from 'fs';
+import { writeFileSync, statSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { parseSessionLines }  from './parse-session.mjs';
+import { parseClaudeFile }  from './parse-session.mjs';
 import { scanCodexSessions }  from './parse-codex.mjs';
 import { scanCursorSessions, DEFAULT_CURSOR_PROJECTS_DIR } from './parse-cursor.mjs';
 import { enrichCursorSessions, emptyCursorUsageReport } from './cursor-admin-usage.mjs';
 import { scanAiderProjects }  from './parse-aider.mjs';
 import { scanAntigravitySessions, antigravityCoverage, DEFAULT_ANTIGRAVITY_DIR } from './parse-antigravity.mjs';
-import { scanHermesMessageEvidence, scanHermesModelUsage, scanHermesSessions, DEFAULT_HERMES_DB } from './parse-hermes.mjs';
-import { readSessionHistory, updateSessionHistory } from './session-history.mjs';
+import { scanHermesModelUsage, scanHermesSessions, DEFAULT_HERMES_DB } from './parse-hermes.mjs';
+import { readSessionHistorySnapshot, updateSessionHistory } from './session-history.mjs';
 import { buildSessionRollups } from './session-rollups.mjs';
-import { archiveMessageEvidence, archiveSessionEvidence } from './project-evidence.mjs';
+import { archiveSessionEvidence } from './project-evidence.mjs';
 import { readProjectCatalog } from './project-control.mjs';
 import { syncGuideEvidence } from './guide-evidence-sync.mjs';
+import { buildWeeklyEvidencePatterns } from './weekly-evidence-patterns.mjs';
 import { loadEnv } from './load-env.mjs';
+import { readCursorAdminApiKey } from './cursor-credential.mjs';
+import { publishSnapshot } from './snapshot-generation.mjs';
+import { acquireProcessLock } from './process-lock.mjs';
+import { readSourceDirectory, statSourcePath, walkSourceJsonl } from './source-discovery.mjs';
 
 loadEnv(join(import.meta.dirname, '..'));
+const syncLock = acquireProcessLock(join(process.env.MEOW_RUNTIME_DIR || join(process.env.HOME, '.meow-ops', 'runtime'), 'sync.lock'), {
+  inheritedToken: process.env.MEOW_SYNC_LOCK_TOKEN,
+});
+if (!syncLock) throw new Error('Another local collector is running. Retry after it finishes.');
+process.once('exit', () => syncLock.release());
 
 const CLAUDE_DIR = join(process.env.HOME, '.claude', 'projects');
 const CODEX_DIR  = join(process.env.HOME, '.codex', 'sessions');
@@ -28,34 +38,21 @@ const CODEX_DIR  = join(process.env.HOME, '.codex', 'sessions');
 const ANTIGRAVITY_DIR = process.env.ANTIGRAVITY_DIR || DEFAULT_ANTIGRAVITY_DIR;
 const HERMES_STATE_DB = process.env.HERMES_STATE_DB || DEFAULT_HERMES_DB;
 
-// Read a (possibly very large) JSONL file into an array of non-empty lines
-// without ever materializing the whole file as one JS string. Reading the
-// entire file with readFileSync + split risks Node's ~512 MB single-string
-// cap on long-running session logs; this chunked reader streams instead.
-function readJsonlLines(path) {
-  const CHUNK = 1 << 20; // 1 MiB
-  const fd = openSync(path, 'r');
-  try {
-    const buf = Buffer.allocUnsafe(CHUNK);
-    const lines = [];
-    let leftover = '';
-    let bytes;
-    while ((bytes = readSync(fd, buf, 0, CHUNK, null)) > 0) {
-      const text = leftover + buf.toString('utf8', 0, bytes);
-      const parts = text.split('\n');
-      leftover = parts.pop() ?? '';
-      for (const p of parts) { if (p) lines.push(p); }
-    }
-    if (leftover) lines.push(leftover);
-    return lines;
-  } finally {
-    closeSync(fd);
-  }
+const CHECKPOINT_DIR = join(process.env.MEOW_RUNTIME_DIR || join(process.env.HOME, '.meow-ops', 'runtime'), 'parser-checkpoints');
+const collection = {};
+function recordCoverage(source, report) {
+  const current = collection[source] ||= { discovered: 0, parsed: 0, cached: 0, failed: 0, discoveryFailures: 0, bytesRead: 0, malformedLines: 0, pendingBytes: 0 };
+  if (report.stage === 'discovery') current.discoveryFailures++;
+  else current.discovered++;
+  if (report.mode === 'failed') current.failed++;
+  else if (report.mode === 'cached') current.cached++;
+  else current.parsed++;
+  for (const field of ['bytesRead', 'malformedLines', 'pendingBytes']) current[field] += report[field] || 0;
 }
 
 // Optional extra sources — configure via env vars
 // CURSOR_PROJECTS_DIR — Cursor agent-transcripts root, e.g. ~/.cursor/projects
-// CURSOR_ADMIN_API_KEY — opt-in Enterprise Admin API usage enrichment
+// CURSOR_ADMIN_API_KEY — optional injected team Admin API credential
 // AIDER_PROJECTS — colon-separated list of project dirs containing .aider.chat.history.md
 const CURSOR_PROJECTS_DIR = process.env.CURSOR_PROJECTS_DIR || DEFAULT_CURSOR_PROJECTS_DIR;
 const AIDER_PROJECT_DIRS = process.env.AIDER_PROJECTS
@@ -74,50 +71,41 @@ console.log('🐱 Meow Operations — Local Export\n');
 
 if (!existsSync(OUTPUT_DIR)) mkdirSync(OUTPUT_DIR, { recursive: true });
 
-const projectDirs = (existsSync(CLAUDE_DIR) ? readdirSync(CLAUDE_DIR) : []).filter((d) => {
-  const full = join(CLAUDE_DIR, d);
-  try {
-    return statSync(full).isDirectory() && !d.startsWith('.');
-  } catch {
-    return false;
-  }
+let allSessions = [];
+let fileCount = 0;
+let errorCount = 0;
+const claudeDiscovery = { onCoverage: report => {
+  recordCoverage('claude', report);
+  if (report.mode === 'failed') errorCount++;
+} };
+const projectDirs = readSourceDirectory(CLAUDE_DIR, { ...claudeDiscovery, optional: true }).filter((name) => {
+  if (name.startsWith('.')) return false;
+  return statSourcePath(join(CLAUDE_DIR, name), claudeDiscovery)?.isDirectory();
 });
 
 console.log(`Scanning ${projectDirs.length} project directories...\n`);
 
-let allSessions = [];
-let fileCount = 0;
-let errorCount = 0;
-
-function walkJsonl(dir, projectDir, isSubagent = false) {
-  const entries = readdirSync(dir);
-  for (const entry of entries) {
-    const full = join(dir, entry);
-    let stat;
-    try { stat = statSync(full); } catch { continue; }
-
-    if (stat.isDirectory()) {
-      walkJsonl(full, projectDir, entry === 'subagents' || isSubagent);
-    } else if (entry.endsWith('.jsonl')) {
-      try {
-        const lines = readJsonlLines(full);
-        const sessions = parseSessionLines(lines, projectDir);
-        // Each file = one logical session entry. Make the session_id file-unique.
-        // Keep the real session id in the key so two session ids in one
-        // subagent file can't collide into a single "agent-<file>" row.
-        for (const s of sessions) {
-          const fileKey = entry.replace('.jsonl', '');
-          s.session_id = isSubagent ? `agent-${fileKey}-${s.session_id}` : `${s.session_id}-${fileKey}`;
-          s.is_subagent = isSubagent;
-          s.source = 'claude';
-          s.raw_ref = full;
-          if (isSubagent) s.entrypoint = 'subagent';
-        }
-        allSessions.push(...sessions);
-        fileCount++;
-      } catch {
-        errorCount++;
+function walkJsonl(dir, projectDir) {
+  for (const { filePath: full, name: entry, isSubagent } of walkSourceJsonl(dir, claudeDiscovery)) {
+    try {
+      const sessions = parseClaudeFile(full, projectDir, {
+        checkpointDir: join(CHECKPOINT_DIR, 'claude'), onCoverage: report => recordCoverage('claude', report),
+      });
+      // Each file = one logical session entry. Make the session_id file-unique.
+      // Keep the real session id in the key so two session ids in one
+      // subagent file can't collide into a single "agent-<file>" row.
+      for (const s of sessions) {
+        const fileKey = entry.replace('.jsonl', '');
+        s.session_id = isSubagent ? `agent-${fileKey}-${s.session_id}` : `${s.session_id}-${fileKey}`;
+        s.is_subagent = isSubagent;
+        s.source = 'claude';
+        s.raw_ref = full;
+        if (isSubagent) s.entrypoint = 'subagent';
       }
+      allSessions.push(...sessions);
+      fileCount++;
+    } catch {
+      errorCount++;
     }
   }
 }
@@ -179,7 +167,9 @@ for (const s of allSessions) {
 
 // Merge Codex sessions
 if (existsSync(CODEX_DIR)) {
-  const codexSessions = scanCodexSessions(CODEX_DIR);
+  const codexSessions = scanCodexSessions(CODEX_DIR, {
+    checkpointDir: join(CHECKPOINT_DIR, 'codex'), onCoverage: report => recordCoverage('codex', report),
+  });
   console.log(`Found ${codexSessions.length} Codex session(s)`);
   allSessions.push(...codexSessions);
 } else {
@@ -191,27 +181,29 @@ if (existsSync(CODEX_DIR)) {
 let cursorUsageReport = emptyCursorUsageReport({ status: 'skipped' });
 if (process.env.MEOW_SKIP_CURSOR === '1') {
   console.log('Cursor collection excluded by operator configuration');
-} else if (CURSOR_PROJECTS_DIR && existsSync(CURSOR_PROJECTS_DIR)) {
-  const cursorSessions = scanCursorSessions(CURSOR_PROJECTS_DIR);
+} else {
+  const cursorSessions = scanCursorSessions(CURSOR_PROJECTS_DIR, {
+    checkpointDir: join(CHECKPOINT_DIR, 'cursor'), onCoverage: report => recordCoverage('cursor', report),
+  });
   if (cursorSessions.length > 0) {
     console.log(`Found ${cursorSessions.length} Cursor session(s) (local transcripts; usage not exposed on disk)`);
   } else {
     console.log('Cursor projects dir found but no agent transcripts parsed — skipping');
   }
   const enriched = await enrichCursorSessions(cursorSessions, {
-    apiKey: process.env.CURSOR_ADMIN_API_KEY,
+    apiKey: readCursorAdminApiKey(),
+    historyPath: join(process.env.MEOW_RUNTIME_DIR || join(process.env.HOME, '.meow-ops', 'runtime'), 'cursor-usage', 'history.json'),
+    previousSessions: readSessionHistorySnapshot().sessions.filter(session => session.source === 'cursor'),
   });
   cursorUsageReport = enriched.report;
   if (enriched.report.status === 'missing-credential') {
-    console.log('Cursor Admin API enrichment skipped (set CURSOR_ADMIN_API_KEY to enable)');
+    console.log('Cursor Admin API credential unavailable; local transcript collection is independent.');
   } else if (enriched.report.status === 'ok') {
     console.log(`Cursor Admin API: matched ${enriched.report.matched_sessions} session(s), unmatched ${enriched.report.unmatched_events} event(s) kept as aggregate usage`);
   } else {
     console.log(`Cursor Admin API enrichment skipped (${enriched.report.status})`);
   }
   allSessions.push(...enriched.sessions);
-} else {
-  console.log('No Cursor projects directory found — skipping (set CURSOR_PROJECTS_DIR to enable)');
 }
 
 // Merge Aider sessions (opt-in: AIDER_PROJECTS env var must be set)
@@ -259,8 +251,9 @@ if (HERMES_STATE_DB && existsSync(HERMES_STATE_DB)) {
 // (more messages) so a partial re-read never shrinks a session.
 const byId = new Map();
 for (const s of allSessions) {
-  const prev = byId.get(s.session_id);
-  if (!prev || (s.message_count || 0) > (prev.message_count || 0)) byId.set(s.session_id, s);
+  const key = JSON.stringify([s.source || 'claude', s.session_id]);
+  const prev = byId.get(key);
+  if (!prev || (s.message_count || 0) > (prev.message_count || 0)) byId.set(key, s);
 }
 const allUnique = [...byId.values()];
 const sourceHealth = Object.fromEntries([
@@ -275,10 +268,14 @@ const sourceHealth = Object.fromEntries([
   const rows = allUnique.filter((session) => session.source === source);
   const latest = rows.map((session) => session.ended_at || session.started_at).filter(Boolean).sort().at(-1) || null;
   const coverage = source === 'antigravity' ? antigravityCoverage(ANTIGRAVITY_DIR, rows) : null;
-  const gaps = coverage && (coverage.unreadable_stores || coverage.unreadable_databases || coverage.unknown_steps);
+  const parsedCoverage = collection[source];
+  const gaps = (coverage && (coverage.unreadable_stores || coverage.unreadable_databases || coverage.unknown_steps))
+    || parsedCoverage?.failed || parsedCoverage?.malformedLines || parsedCoverage?.pendingBytes;
   return [source, {
-    state: state === 'available' ? (gaps ? 'collected-with-gaps' : rows.length ? 'collected' : 'no-readable-sessions') : state,
+    state: parsedCoverage?.failed ? 'collected-with-gaps'
+      : state === 'available' ? (gaps ? 'collected-with-gaps' : rows.length ? 'collected' : 'no-readable-sessions') : state,
     sessions: rows.length, latest, ...(coverage ? { coverage } : {}),
+    ...(parsedCoverage ? { collection: parsedCoverage } : {}),
   }];
 }));
 const dupCount = allSessions.length - allUnique.length;
@@ -287,16 +284,23 @@ console.log(`Total unique session entries: ${allUnique.length}${dupCount > 0 ? `
 // Preserve private project evidence before content-bearing labels are removed
 // from the public dashboard artifact. Only registered projects and supported
 // agent sources enter the private vault.
+let guideEvidenceCoverage = { status: 'unavailable', by_source: {} };
 try {
   const catalog = readProjectCatalog();
-  const guideEvidence = await syncGuideEvidence(allUnique, { catalog, sourceRoot: CODEX_DIR });
+  const guideEvidence = await syncGuideEvidence(allUnique, {
+    catalog, checkpointDir: join(CHECKPOINT_DIR, 'guide-evidence'),
+    sourceRoots: { codex: CODEX_DIR, claude: CLAUDE_DIR, cursor: CURSOR_PROJECTS_DIR, antigravity: ANTIGRAVITY_DIR, hermes: HERMES_STATE_DB },
+  });
+  guideEvidenceCoverage = {
+    status: guideEvidence.failed || guideEvidence.skipped ? 'partial' : 'available',
+    by_source: guideEvidence.by_source,
+    covered_sessions: guideEvidence.imported_sessions + guideEvidence.unchanged_sessions,
+    excluded_sessions: guideEvidence.skipped,
+    limitations: guideEvidence.coverage,
+  };
   console.log(`Guide evidence: ${guideEvidence.appended} new message(s), ${guideEvidence.duplicates} duplicate(s), ${guideEvidence.imported_sessions}/${guideEvidence.considered} registered session(s) imported, ${guideEvidence.skipped} skipped (${guideEvidence.unregistered_sessions} unregistered, ${guideEvidence.invalid_bindings} invalid binding, ${guideEvidence.no_qualifying_messages} without qualifying messages), ${guideEvidence.failed} unreadable session(s); ${guideEvidence.coverage}`);
   const evidence = archiveSessionEvidence(allUnique, { catalog });
   console.log(`Project evidence: ${evidence.appended} new event(s), ${evidence.duplicates} duplicate(s), ${evidence.skipped} unregistered/unsupported session(s)`);
-  if (HERMES_STATE_DB && existsSync(HERMES_STATE_DB)) {
-    const hermesMessages = archiveMessageEvidence(scanHermesMessageEvidence(HERMES_STATE_DB), { catalog });
-    console.log(`Hermes evidence: ${hermesMessages.appended} new message event(s), ${hermesMessages.duplicates} duplicate(s), ${hermesMessages.skipped} unregistered message(s)`);
-  }
 } catch (error) {
   console.warn(`Project evidence archive skipped: ${error instanceof Error ? error.message : String(error)}`);
 }
@@ -311,8 +315,9 @@ allUnique.sort((a, b) => {
 });
 
 const publicSessions = allUnique.map(toPublicSession);
-const archive = updateSessionHistory(publicSessions);
-const completeSessions = readSessionHistory();
+const archive = updateSessionHistory(publicSessions, { recoverIncompleteTail: true });
+const archiveSnapshot = readSessionHistorySnapshot();
+const completeSessions = archiveSnapshot.sessions;
 const latest = completeSessions.slice(0, SESSION_PREVIEW_LIMIT);
 
 console.log(`Archived ${archive.total} sessions (${archive.appended} new or changed revision${archive.appended === 1 ? '' : 's'})`);
@@ -325,7 +330,6 @@ console.log(`Exporting ${latest.length}-session compatibility preview\n`);
 // headline numbers match cost-summary.json rather than under-reporting when
 // more than SESSION_PREVIEW_LIMIT sessions exist.
 const totalTokens = completeSessions.reduce((a, s) => a + (s.total_tokens || 0), 0);
-const totalCost = completeSessions.reduce((a, s) => a + (s.estimated_cost_usd || 0), 0);
 const byProject = {};
 const byCat = {};
 const byModel = {};
@@ -348,7 +352,6 @@ for (const [m, c] of Object.entries(byModel).sort((a, b) => b[1] - a[1])) {
   console.log(`  ${m}: ${c}`);
 }
 console.log(`\nTotal tokens: ${(totalTokens / 1_000_000).toFixed(2)}M`);
-console.log(`Total cost: $${totalCost.toFixed(2)}`);
 
 writeFileSync(OUTPUT_FILE, JSON.stringify(latest, null, 0));
 const fileSize = (statSync(OUTPUT_FILE).size / 1024).toFixed(1);
@@ -372,11 +375,29 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
   function activityTs(s) { return s.ended_at || s.started_at; }
 
   function emptyBucket() {
-    return { cost: 0, tokens: 0, sessions: 0, duration_seconds: 0 };
+    return {
+      cost: null, estimated_cost_usd: null, observed_cost_usd: null,
+      estimated_cost_sessions: 0, observed_cost_sessions: 0, unavailable_cost_sessions: 0,
+      tokens: 0, sessions: 0, duration_seconds: 0,
+    };
   }
 
   function addSession(acc, s) {
-    acc.cost += s.estimated_cost_usd || 0;
+    const validAmount = value => value != null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0;
+    const estimate = validAmount(s.estimated_cost_usd)
+      && !['unknown', 'default', 'family', 'unavailable'].includes(s.pricing_source)
+      && s.cost_available !== false ? Number(s.estimated_cost_usd) : null;
+    const observed = validAmount(s.observed_cost_usd) ? Number(s.observed_cost_usd) : null;
+    if (estimate !== null) {
+      acc.estimated_cost_usd = (acc.estimated_cost_usd ?? 0) + estimate;
+      acc.cost = acc.estimated_cost_usd;
+      acc.estimated_cost_sessions++;
+    }
+    if (observed !== null) {
+      acc.observed_cost_usd = (acc.observed_cost_usd ?? 0) + observed;
+      acc.observed_cost_sessions++;
+    }
+    if (estimate === null && observed === null) acc.unavailable_cost_sessions++;
     acc.tokens += s.total_tokens || 0;
     acc.sessions += 1;
     acc.duration_seconds += s.duration_seconds || 0;
@@ -447,7 +468,12 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
     total_cache_creation: d.cache_creation_tokens,
     total_cache_read: d.cache_read_tokens,
     total_tokens: d.tokens,
-    estimated_cost_usd: d.cost,
+    cost: d.cost,
+    estimated_cost_usd: d.estimated_cost_usd,
+    observed_cost_usd: d.observed_cost_usd,
+    estimated_cost_sessions: d.estimated_cost_sessions,
+    observed_cost_sessions: d.observed_cost_sessions,
+    unavailable_cost_sessions: d.unavailable_cost_sessions,
     total_duration_seconds: d.duration_seconds,
     active_projects: d.distinct_projects,
     projects: d.projects,
@@ -456,6 +482,8 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
 
   const summary = {
     sourceHealth,
+    guideEvidenceCoverage,
+    weeklyEvidencePatterns: buildWeeklyEvidencePatterns(completeSessions, { now, archiveVersion: archiveSnapshot.archiveVersion }),
     exportedAt:    now.toISOString(),
     today:         todayBucket,
     thisWeek:      bucket(completeSessions, thisWeekStart, now),
@@ -476,6 +504,9 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
     cursorUsage: cursorUsageReport,
     hermesModelUsage: hermesModelUsageReport,
     archive: {
+      version: archiveSnapshot.archiveVersion,
+      snapshotBytes: archiveSnapshot.snapshotBytes,
+      recoveredTailBytes: archive.recoveredTailBytes,
       total: archive.total,
       appendOnly: true,
       retentionCapped: false,
@@ -488,7 +519,8 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
 
   const SUMMARY_FILE = join(OUTPUT_DIR, 'cost-summary.json');
   writeFileSync(SUMMARY_FILE, JSON.stringify(summary, null, 2));
-  console.log(`Wrote cost-summary.json — today $${summary.today.cost.toFixed(2)}, this week $${summary.thisWeek.cost.toFixed(2)}, this month $${summary.thisMonth.cost.toFixed(2)}, this year $${summary.thisYear.cost.toFixed(2)}`);
+  publishSnapshot(OUTPUT_DIR, { sessions: latest, summary });
+  console.log(`Wrote cost-summary.json — ${summary.allTime.estimated_cost_sessions}/${summary.allTime.sessions} session estimates have supported historical pricing.`);
 }
 
 // ── --push retired (2026-06-12) ────────────────────────────────────────────────

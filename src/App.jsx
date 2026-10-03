@@ -12,16 +12,14 @@ import { useShortcuts } from './lib/useShortcuts';
 import { useSync } from './lib/useSync';
 import { useTheme } from './lib/useTheme';
 import {
-  fetchSessions,
+  fetchRangeSessions,
   fetchAllSessions,
-  fetchDailyStats,
+  buildDailyFromSessions,
   fetchCostSummary,
-  filterDailySummaryByRange,
   fillMissingDays,
   computeOverviewStats,
   getModelBreakdown,
   invalidateRealSessions,
-  hasNoData,
   isDemoData,
 } from './lib/queries';
 
@@ -33,6 +31,7 @@ const ROUTE_LOADERS = {
   'today/summary':  () => import('./pages/Overview'),
   'today/sessions': () => import('./pages/Sessions'),
   'today/runs':     () => import('./pages/AgentVisualizer'),
+  'today/storage':  () => import('./pages/Storage'),
   'review/inbox':   () => import('./pages/LoopReview'),
   'review/projects':() => import('./pages/ProjectControl'),
   'review/map':     () => import('./pages/LoopOps'),
@@ -45,6 +44,7 @@ const ROUTE_LOADERS = {
 const Overview        = lazy(ROUTE_LOADERS['today/summary']);
 const Sessions        = lazy(ROUTE_LOADERS['today/sessions']);
 const AgentVisualizer = lazy(ROUTE_LOADERS['today/runs']);
+const Storage         = lazy(ROUTE_LOADERS['today/storage']);
 const LoopReview      = lazy(ROUTE_LOADERS['review/inbox']);
 const ProjectControl  = lazy(ROUTE_LOADERS['review/projects']);
 const LoopOps         = lazy(ROUTE_LOADERS['review/map']);
@@ -61,6 +61,7 @@ const SELF_LOADING = new Set([
   'review/projects',
   'learn',
   'capacity',
+  'today/storage',
 ]);
 
 function PageLoader() {
@@ -119,6 +120,10 @@ export default function App() {
   const [loading,     setLoading]     = useState(true);
   const [noData,      setNoData]      = useState(false);
   const [reloadKey,   setReloadKey]   = useState(0);
+  const [scopeNow, setScopeNow] = useState(Date.now);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [rangeCompleteness, setRangeCompleteness] = useState('preview');
+  const [rangeError, setRangeError] = useState(null);
 
   const [tokenBudget, setTokenBudget] = useState(() => {
     try {
@@ -134,6 +139,7 @@ export default function App() {
 
   const reloadData = useCallback(() => {
     invalidateRealSessions();
+    setScopeNow(Date.now());
     setReloadKey((k) => k + 1);
   }, []);
 
@@ -144,45 +150,36 @@ export default function App() {
     async function load() {
       setLoading(true);
 
-      const [sess, all, summary] = await Promise.all([
-        fetchSessions(dateRange),
+      const [range, all, summary] = await Promise.all([
+        fetchRangeSessions(dateRange, scopeNow),
         fetchAllSessions(),
         fetchCostSummary(),
       ]);
 
       if (cancelled) return;
 
-      const empty = await hasNoData();
-      setNoData(empty && sess.length === 0);
-
-      setSessions(sess);
+      setNoData(all.length === 0 && range.items.length === 0);
+      setSessions(range.items);
       setAllSessions(all);
-      if (summary) setCostSummary(summary);
-
-      // cost-summary.daily_summary covers ALL sessions (no preview cap); fall
-      // back to computing from the in-memory array only when it is missing.
-      const raw = summary?.daily_summary?.length
-        ? filterDailySummaryByRange(summary.daily_summary, dateRange)
-        : await fetchDailyStats(dateRange, summary);
-
-      setDailyData(fillMissingDays(raw, dateRange));
+      setCostSummary(summary);
+      setRangeCompleteness(range.completeness);
+      setRangeError(range.error);
+      setDailyData(fillMissingDays(buildDailyFromSessions(range.items), dateRange, scopeNow));
+      setHasLoaded(true);
       setLoading(false);
     }
     load();
     return () => { cancelled = true; };
-  }, [dateRange, reloadKey]);
+  }, [dateRange, reloadKey, scopeNow]);
 
   // Start the active chunk while session data loads so one Loading… covers
   // both, instead of flashing a second loader.
   useEffect(() => { ROUTE_LOADERS[path]?.(); }, [path]);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      invalidateRealSessions();
-      setReloadKey((k) => k + 1);
-    }, AUTO_REFRESH_MS);
+    const id = setInterval(reloadData, AUTO_REFRESH_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [reloadData]);
 
   const openPalette  = useCallback(() => setPaletteOpen(true), []);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
@@ -191,8 +188,8 @@ export default function App() {
   useShortcuts({ onOpenPalette: openPalette, onNavigate: goToSurface, paletteOpen });
 
   const modelData = costSummary?.byModel
-    ? costSummary.byModel.map((row) => ({ model: row.key, sessions: row.sessions, tokens: row.tokens, cost: row.cost }))
-    : getModelBreakdown(sessions);
+    ? costSummary.byModel.map((row) => ({ ...row, model: row.key }))
+    : getModelBreakdown(allSessions);
   const stats = computeOverviewStats(sessions, dateRange);
 
   // Per-source rollup for the budget panel. Computed from ALL sessions so the
@@ -236,6 +233,9 @@ export default function App() {
   const surface = surfaceById(route.surface);
 
   function renderLocation() {
+    if (!SELF_LOADING.has(path) && noData && costSummary?.snapshot?.state === 'unavailable') {
+      return <EmptyState title="Snapshot unavailable" body="The local snapshot could not be verified. Reload after checking the helper; this does not mean your session history is empty." action={<button className="mo-btn" onClick={reloadData}>Retry data</button>} />;
+    }
     if (!SELF_LOADING.has(path) && noData) return <NoDataScreen />;
 
     switch (path) {
@@ -248,16 +248,24 @@ export default function App() {
             dailyData={dailyData}
             costSummary={costSummary}
             dateRange={dateRange}
+            completeness={rangeCompleteness}
             sourceStats={sourceStats}
             tokenBudget={tokenBudget}
             onBudgetChange={saveBudget}
             onNavigate={navigate}
+            referenceAt={scopeNow}
+            refreshKey={reloadKey}
+            sourceCoverage={costSummary?.sourceHealth || null}
+            weeklyEvidencePatterns={costSummary?.weeklyEvidencePatterns || null}
+            sampleData={isDemoData(allSessions, costSummary)}
           />,
         );
       case 'today/sessions':
-        return withSuspense(<Sessions sessions={sessions} />);
+        return withSuspense(<Sessions sessions={allSessions} dateRange={dateRange} scopeNow={scopeNow} refreshKey={reloadKey} />);
       case 'today/runs':
         return withSuspense(<AgentVisualizer sessions={allSessions} />);
+      case 'today/storage':
+        return withSuspense(<Storage />);
       case 'review/inbox':
         return withSuspense(<LoopReview />);
       case 'review/map':
@@ -278,7 +286,7 @@ export default function App() {
       case 'sanctum':
         return withSuspense(<ScryingSanctum sessions={allSessions} onReload={reloadData} />);
       case 'learn':
-        return withSuspense(<LearningQuest sessions={sessions} />);
+        return withSuspense(<LearningQuest sessions={sessions} referenceAt={scopeNow} refreshKey={reloadKey} sourceCoverage={costSummary?.sourceHealth || null} weeklyEvidencePatterns={costSummary?.weeklyEvidencePatterns || null} sampleData={isDemoData(allSessions, costSummary)} />);
       case 'capacity':
         return withSuspense(<CapacityUsage />);
       default:
@@ -287,7 +295,7 @@ export default function App() {
   }
 
   // Keep the active scene and guide mounted during background metric refreshes.
-  const showLoader = loading && !SELF_LOADING.has(path)
+  const showLoader = loading && !hasLoaded && !SELF_LOADING.has(path)
     && !(path === 'sanctum' && allSessions.length > 0);
 
   const header = (
@@ -315,6 +323,12 @@ export default function App() {
           <strong>Sample data</strong>. These figures are examples, not your local sessions.
         </Notice>
       )}
+      {rangeError && chrome.usesDateFilter && !isDemoData(allSessions, costSummary) && (
+        <Notice>{rangeError}</Notice>
+      )}
+      {costSummary?.snapshot?.warning && (chrome.usesDateFilter || route.surface === 'sanctum' || path === 'today/runs') && !isDemoData(allSessions, costSummary) && (
+        <Notice>{costSummary.snapshot.warning}</Notice>
+      )}
       {chrome.needsHelper && !sync.helperOnline && (
         <Notice command="node sync/local-api.mjs">
           This view cannot connect to the local helper. Open the local dashboard and check the helper.
@@ -341,7 +355,7 @@ export default function App() {
           onToggleTheme={toggleTheme}
         />
 
-        <main className={chrome.fullBleed ? 'mo-main mo-main--bleed' : 'mo-main mo-main--standard'}>
+        <main aria-busy={loading} className={chrome.fullBleed ? 'mo-main mo-main--bleed' : 'mo-main mo-main--standard'}>
           {chrome.fullBleed ? (
             <>
               <div className="mo-bleedhead">{header}</div>

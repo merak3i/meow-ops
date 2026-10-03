@@ -8,19 +8,18 @@ test('exact table key resolves as exact', () => {
   assert.equal(r.key, 'gpt-4o');
 });
 
-test('family fuzzy match resolves as family', () => {
-  assert.equal(resolvePricing('claude-opus-4-8').source, 'family');
-  assert.equal(resolvePricing('claude-sonnet-4-6-20990101').source, 'family');
+test('future versions cannot borrow a family price', () => {
+  assert.equal(resolvePricing('claude-opus-4-8').source, 'unknown');
+  assert.equal(resolvePricing('claude-sonnet-4-6-20990101').source, 'unknown');
 });
 
 test('unknown model is FLAGGED, not silently priced as Sonnet', () => {
   const r = resolvePricing('totally-made-up-model-v9');
   assert.equal(r.source, 'unknown');
   assert.equal(isKnownModel('totally-made-up-model-v9'), false);
-  // still returns a number (rough estimate) but the caller can mark it
   const { cost, pricingSource } = calculateCostDetailed('totally-made-up-model-v9', 1_000_000, 0);
   assert.equal(pricingSource, 'unknown');
-  assert.ok(cost > 0);
+  assert.equal(cost, null);
 });
 
 test('the bare "flash" catch-all no longer mis-prices gemini-1.5-flash', () => {

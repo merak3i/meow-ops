@@ -9,8 +9,11 @@ import { getSyncRun, getSyncStatus, startSyncRun } from './sync/sync-runner.mjs'
 import { readLedgerLoopRuns } from './sync/loop-ledger-to-runs.mjs';
 import { querySessionHistory } from './sync/session-history.mjs';
 import { publicDemoAssets } from './sync/build-public-assets.mjs';
+import { readSnapshot } from './sync/snapshot-generation.mjs';
+import { loadEnv } from './sync/load-env.mjs';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
+loadEnv(__dirname);
 
 // Local-only dev plugin: exposes the same observable background sync contract
 // as the localhost helper.
@@ -76,6 +79,21 @@ function meowSyncPlugin() {
         res.end(JSON.stringify(run || { ok: false, error: 'Sync run not found' }));
       });
 
+      server.middlewares.use('/api/data/snapshot.json', (req, res) => {
+        if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
+        if (blockNonLocal(req, res)) return;
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Cache-Control', 'no-store');
+        try {
+          const snapshot = readSnapshot(process.env.MEOW_DATA_DIR || join(server.config.root, 'public', 'data'));
+          res.statusCode = snapshot ? 200 : 404;
+          res.end(JSON.stringify(snapshot || { error: 'No generation published yet.' }));
+        } catch {
+          res.statusCode = 503;
+          res.end(JSON.stringify({ error: 'Local snapshot validation failed.' }));
+        }
+      });
+
       server.middlewares.use('/api/session-history/sessions', (req, res) => {
         if (req.method !== 'GET') { res.statusCode = 405; res.end(); return; }
         if (blockNonLocal(req, res)) return;
@@ -89,11 +107,13 @@ function meowSyncPlugin() {
             project: url.searchParams.get('project'),
             source: url.searchParams.get('source'),
             model: url.searchParams.get('model'),
+            expectedVersion: url.searchParams.get('expectedVersion'),
+            snapshotBytes: url.searchParams.get('snapshotBytes'),
           });
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify(result));
         } catch (err) {
-          res.statusCode = 500;
+          res.statusCode = err?.code === 'stale_archive_snapshot' ? 409 : 500;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : String(err) }));
         }

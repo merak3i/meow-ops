@@ -435,6 +435,29 @@ test('adapter apply and rollback require owner nonces and preserve backups', asy
   assert.equal(existsSync(join(project.root, 'CLAUDE.md')), false);
 });
 
+test('adapter rollback cannot use a sync receipt from a different registered project', async () => {
+  const learningRoot = join(lcwiProject.root, '.meow', 'learning-state');
+  mkdirSync(learningRoot, { recursive: true });
+  writeFileSync(join(learningRoot, 'INDEX.md'), '# Approved test learning\n');
+  const preview = await post('/projects/' + encodeURIComponent(lcwiProject.project_id) + '/adapters/preview', {});
+  const applied = await post('/projects/' + encodeURIComponent(lcwiProject.project_id) + '/adapters/apply', {
+    nonce: await nonce(),
+    expected_checksums: Object.fromEntries(preview.body.preview.targets.map((target) => [target.agent, target.checksum])),
+  });
+  assert.equal(applied.status, 200);
+  const wrongProject = await post('/projects/' + encodeURIComponent(project.project_id) + '/adapters/rollback', {
+    nonce: await nonce(), sync_id: applied.body.result.sync_id,
+  });
+  assert.equal(wrongProject.status, 400);
+  assert.match(wrongProject.body.error, /different project/);
+  assert.equal(existsSync(join(lcwiProject.root, 'CLAUDE.md')), true, 'wrong-project request leaves applied files intact');
+  const correctProject = await post('/projects/' + encodeURIComponent(lcwiProject.project_id) + '/adapters/rollback', {
+    nonce: await nonce(), sync_id: applied.body.result.sync_id,
+  });
+  assert.equal(correctProject.status, 200);
+  assert.equal(existsSync(join(lcwiProject.root, 'CLAUDE.md')), false);
+});
+
 test('project evidence hides name-only session history when project labels collide', async () => {
   const duplicateRoot = join(temp, 'duplicate-meow-ops');
   mkdirSync(duplicateRoot);

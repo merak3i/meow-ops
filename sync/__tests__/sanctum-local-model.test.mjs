@@ -5,7 +5,7 @@ import { explainGuideEvidence, GUIDE_LOCAL_MODEL } from '../sanctum-local-model.
 const env = { MEOW_GUIDE_LOCAL_MODEL: GUIDE_LOCAL_MODEL };
 const evidence = [{ record_id: 'evt_fixture', fields: { timestamp: '2026-09-13T00:00:00Z', event_type: 'tool_result', excerpt: 'A test failed. api_key=abcdefghijk1234567' }, raw_ref: '/private/excluded', project: 'excluded-project' }];
 const response = (value, overrides = {}) => ({ ok: true, json: async () => ({ model: GUIDE_LOCAL_MODEL, done: true, message: { content: JSON.stringify(value) }, ...overrides }) });
-const valid = { answer: 'The supplied event reports a failed test.', citations: ['evt_fixture'] };
+const valid = { selected_record_ids: ['evt_fixture'] };
 
 test('disabled, non-loopback and missing evidence never make model calls', async () => {
   const fetch = () => { throw new Error('must not fetch'); };
@@ -24,12 +24,16 @@ test('only bounded redacted evidence enters a local no-redirect request without 
     assert.equal(body.model, GUIDE_LOCAL_MODEL);
     assert.equal(body.stream, false);
     assert.equal(body.tools, undefined);
+    assert.equal(body.options.num_predict, 120);
+    assert.match(body.messages[0].content, /Do not write any answer or summarize/);
     assert.doesNotMatch(options.body, /abcdefghijk|excluded-project|private\/excluded/);
     assert.match(body.messages[0].content, /untrusted data/);
     return response(valid);
   } });
   assert.equal(result.status, 'ok');
-  assert.equal(result.verification, 'unverified-model-explanation');
+  assert.equal(result.verification, 'deterministic-record-selection');
+  assert.deepEqual(result.selectedEvidence.map(item => item.id), ['evt_fixture']);
+  assert.match(result.answer, /exact imported excerpts/);
 });
 
 test('instruction-like evidence is withheld and instruction-shaped questions never reach the model', async () => {
@@ -124,35 +128,37 @@ test('invented citations and malformed output are rejected', async () => {
   }
 });
 
-test('why answers cannot invent a cause absent from the cited records', async () => {
-  const records = [{ record_id: 'evt_color', fields: {
-    event_type: 'configuration',
-    excerpt: 'At 10:00 display_color was red. At 10:02 display_color was blue.',
-  } }];
-  for (const question of ['Why did display_color change?', 'What is the cause of the change?']) {
-    const unsupported = await explainGuideEvidence(question, records, {
-      env,
-      fetch: async () => response({ answer: 'The color changed because display_color was set to blue.', citations: ['evt_color'] }),
-    });
-    assert.deepEqual(unsupported, { status: 'invalid-response' }, question);
-  }
-
-  const unrelated = await explainGuideEvidence('What is the cause of the display_color change?', [
-    records[0],
-    { record_id: 'evt_unrelated', fields: { event_type: 'build', excerpt: 'The build failed because dependency x was missing.' } },
-  ], {
+test('citation membership alone cannot support an invented result or a second mixed-status claim', async () => {
+  const factualRecord = [{
+    record_id: 'evt_fixture',
+    fields: { event_type: 'test_result', excerpt: 'The integration test failed because the local helper timed out.' },
+  }];
+  const invented = await explainGuideEvidence('What happened?', factualRecord, {
     env,
-    fetch: async () => response({ answer: 'The color changed because display_color was set to blue.', citations: ['evt_color'] }),
+    fetch: async () => response({ selected_record_ids: ['evt_fixture'], answer: 'The deployment completed successfully.' }),
   });
-  assert.deepEqual(unrelated, { status: 'invalid-response' });
+  assert.equal(invented.status, 'invalid-response');
 
-  const explained = await explainGuideEvidence('Why did display_color change?', [{
-    record_id: 'evt_reason', fields: { event_type: 'configuration', excerpt: 'display_color changed to blue because the operator requested dark mode.' },
-  }], {
+  const mixed = await explainGuideEvidence('What happened?', factualRecord, {
     env,
-    fetch: async () => response({ answer: 'The color changed because the operator requested dark mode.', citations: ['evt_reason'] }),
+    fetch: async () => response({ selected_record_ids: ['evt_fixture', 'evt_invented'] }),
   });
-  assert.equal(explained.status, 'ok');
+  assert.equal(mixed.status, 'invalid-response');
+
+  const grounded = await explainGuideEvidence('What happened?', factualRecord, {
+    env,
+    fetch: async () => response({ selected_record_ids: ['evt_fixture'] }),
+  });
+  assert.equal(grounded.status, 'ok');
+  assert.equal(grounded.answer.includes('local helper timed out'), false);
+});
+
+test('empty selection abstains and returned excerpts are exact source text', async () => {
+  const none = await explainGuideEvidence('What caused it?', evidence, { env, fetch: async () => response({ selected_record_ids: [] }) });
+  assert.equal(none.status, 'abstained');
+  const selected = await explainGuideEvidence('What caused it?', evidence, { env, fetch: async () => response(valid) });
+  assert.equal(selected.selectedEvidence[0].excerpt, 'A test failed. api_key=[redacted]');
+  assert.equal(selected.answer.includes('api_key='), false);
 });
 
 test('wrong models and tool calls cannot produce an accepted explanation', async () => {
@@ -161,9 +167,24 @@ test('wrong models and tool calls cannot produce an accepted explanation', async
   }
 });
 
+test('invented claims, costs, statuses, and counts cannot enter an answer field', async () => {
+  const records = [{ record_id: 'evt_fixture', fields: { event_type: 'tool_result', evidence_kind: 'tool_result', excerpt: 'Tests have not passed. Billing unavailable.' } }];
+  for (const answer of [
+    'Twenty tests passed.', 'Billing was free.', 'The deployment succeeded.', 'The sync failed because the cache was corrupt.',
+  ]) {
+    const result = await explainGuideEvidence('What happened?', records, {
+      env, fetch: async () => response({ selected_record_ids: ['evt_fixture'], answer }),
+    });
+    assert.equal(result.status, 'invalid-response', answer);
+  }
+  const exact = await explainGuideEvidence('What happened?', records, { env, fetch: async () => response({ selected_record_ids: ['evt_fixture'] }) });
+  assert.equal(exact.answer, 'I highlighted 1 record for your question. These are exact imported excerpts; they do not by themselves prove a cause or overall success.');
+  assert.equal(exact.selectedEvidence[0].excerpt, 'Tests have not passed. Billing unavailable.');
+});
+
 test('model output is redacted and errors do not disclose private details', async () => {
   const result = await explainGuideEvidence('Why?', evidence, { env, fetch: async () => response({ ...valid, answer: 'password=abcdefghijk1234567' }) });
-  assert.equal(result.answer, '[redacted]');
+  assert.equal(result.status, 'invalid-response');
   assert.deepEqual(await explainGuideEvidence('Why?', evidence, { env, fetch: async () => { throw new Error('/private/secret'); } }), { status: 'unavailable' });
 });
 

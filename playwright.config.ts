@@ -53,7 +53,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      testMatch: /meow-ops\.spec\.ts/,
+      testMatch: /(?:meow-ops|storage|flow-regressions)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'], baseURL: `http://127.0.0.1:${previewPort}` },
     },
     {

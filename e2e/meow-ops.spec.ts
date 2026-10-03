@@ -368,7 +368,7 @@ test('Project Control: register a local project and govern proposed learning end
   await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0);
 });
 
-test('Learn mines concepts from session tool mix', async ({ page }) => {
+test('Learn shows bounded possible-practice signals from session metadata', async ({ page }) => {
   await page.route(/\/data\/sessions\.json(?:\?|$)/, (route) => route.fulfill({
     json: [
       {
@@ -395,24 +395,24 @@ test('Learn mines concepts from session tool mix', async ({ page }) => {
   await waitForApp(page);
   await nav(page, 'Learn');
   await page.getByRole('group', { name: 'Date range' }).getByRole('button', { name: 'All' }).click();
-  await expect(page.getByRole('list', { name: 'Inferred concepts' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Stack tracing' })).toBeVisible();
-  await expect(page.getByText(/That is stack tracing/)).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Idempotent retries' })).toBeVisible();
-  await expect(page.getByText(/You kept rewriting the same helper/)).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Possible practice signals' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Code investigation activity' })).toBeVisible();
+  await expect(page.getByText(/The logs show investigation activity, not whether a cause was found/)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Retry-related work' })).toBeVisible();
+  await expect(page.getByText(/The wording does not establish that a retry was safe or successful/)).toBeVisible();
   await expect(page.getByText(/meow-ops, \d+ sessions?/).first()).toBeVisible();
   await expect(page.getByText(/YouTube/i)).toHaveCount(0);
-  await page.getByRole('button', { name: 'I get this' }).first().click();
-  await expect(page.getByRole('button', { name: 'I get this' }).first()).toBeVisible();
+  await page.getByRole('button', { name: 'I recognize this' }).first().click();
+  await expect(page.getByRole('button', { name: 'Acknowledged' }).first()).toBeVisible();
   await expect(page.getByText(/Builder's Journey|Workshop health|From vibe to first principles/)).toHaveCount(0);
 });
 
-test('Learn empty state asks for a parse when no sessions exist', async ({ page }) => {
+test('Learn empty state reports no sessions in range and the supported sync command', async ({ page }) => {
   await page.route(/\/data\/sessions\.json(?:\?|$)/, (route) => route.fulfill({ json: [] }));
   await page.reload();
   await waitForApp(page);
   await nav(page, 'Learn');
-  await expect(page.getByText('No sessions to mine yet')).toBeVisible();
+  await expect(page.getByText('No sessions in this range')).toBeVisible();
   await expect(page.getByText('node sync/export-local.mjs')).toBeVisible();
 });
 
@@ -431,8 +431,8 @@ test('Overview: stat cards render', async ({ page }) => {
   // StatTile labels use CSS uppercase, so match the rendered text.
   await expect(page.getByText(/^sessions$/i).first()).toBeVisible();
   await expect(page.getByText(/^tokens$/i).first()).toBeVisible();
-  await expect(page.getByText(/^cost$/i).first()).toBeVisible();
-  await expect(page.getByText(/^time$/i).first()).toBeVisible();
+  await expect(page.getByText(/^estimated cost$/i).first()).toBeVisible();
+  await expect(page.getByText(/^session elapsed time$/i).first()).toBeVisible();
 });
 
 test('Overview: daily tokens chart renders', async ({ page }) => {
@@ -1142,7 +1142,7 @@ test('Sanctum: selected-session speech stops when the guide closes and session c
       'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     };
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
-    const body = request.postDataJSON() as { session_id?: string; project?: string };
+    const body = request.postDataJSON() as { session_id?: string; project?: string; explain?: boolean };
     guideRequests.push(body);
     return route.fulfill({
       headers,
@@ -1162,7 +1162,26 @@ test('Sanctum: selected-session speech stops when the guide closes and session c
             excerpt: 'Synthetic status verification.',
           },
         }],
-        explanation: { status: 'invalid-response' },
+        explanation: body.explain ? {
+          status: 'ok',
+          model: 'qwen3:4b',
+          verification: 'deterministic-record-selection',
+          answer: 'I highlighted 1 record for your question. These are exact imported excerpts; they do not by themselves prove a cause or overall success.',
+          citations: ['synthetic-event-guide-a'],
+          selectedEvidence: [{
+            id: 'synthetic-event-guide-a',
+            timestamp: new Date(baseTime).toISOString(),
+            type: 'Synthetic verification',
+            tool_name: '',
+            evidence_kind: 'session_event',
+            excerpt: 'Synthetic status verification.',
+            excerpt_truncated: false,
+          }],
+        } : {
+          status: 'partial', model: 'qwen3:4b',
+          answer: 'The local sync timed out after 300 seconds.',
+          citations: ['synthetic-event-guide-a'],
+        },
         capabilities: [],
       },
     });
@@ -1192,16 +1211,24 @@ test('Sanctum: selected-session speech stops when the guide closes and session c
   await page.getByRole('button', { name: 'Ask the guide' }).click();
   const dialog = page.getByRole('dialog', { name: /Sanctum archive guide/ });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(/Character redesign is deferred.*existing character/i)).toBeVisible();
   await dialog.getByRole('button', { name: 'Ask', exact: true }).click();
   await expect(dialog.getByText('Synthetic evidence for sanctum-guide-guide-a', { exact: true }))
     .toBeVisible();
-  await expect(dialog.getByText(/local model explanation is unavailable \(invalid-response\).*original evidence remains available below/i))
+  await expect(dialog.getByText(/local model evidence selection is unavailable or came from an older helper version.*original evidence remains available below/i))
     .toBeVisible();
+  await expect(dialog.getByText('The local sync timed out after 300 seconds.', { exact: true })).toHaveCount(0);
   await expect(dialog.getByText('synthetic-event-guide-a', { exact: true })).toHaveCount(2);
+  await dialog.getByLabel(/Highlight relevant linked evidence with local Qwen3 4B/).check();
+  await dialog.getByRole('button', { name: 'Ask', exact: true }).click();
+  const highlight = dialog.getByRole('region', { name: 'Local model evidence selection' });
+  await expect(highlight).toContainText('I highlighted 1 record for your question.');
+  await expect(highlight).toContainText('Synthetic status verification.');
   const useVoicebox = dialog.getByLabel(/Use local Voicebox/);
   await expect(useVoicebox).toBeEnabled();
   await useVoicebox.check();
-  expect(guideRequests).toHaveLength(1);
+  expect(guideRequests).toHaveLength(2);
+  expect(guideRequests[1]).toMatchObject({ explain: true });
   expect(guideRequests[0]).toMatchObject({
     session_id: 'sanctum-guide-guide-a',
     project: 'sanctum-guide-e2e',
@@ -1209,7 +1236,7 @@ test('Sanctum: selected-session speech stops when the guide closes and session c
 
   await dialog.getByRole('button', { name: 'Read aloud / replay' }).click();
   await expect(dialog.getByRole('status')).toHaveText('Speaking');
-  expect(spokenText).toBe('Synthetic evidence for sanctum-guide-guide-a');
+  expect(spokenText).toBe('Local model highlight. I highlighted 1 record for your question. These are exact imported excerpts; they do not by themselves prove a cause or overall success.');
   const audioStarted = await page.evaluate(() => {
     const testWindow = window as Window & { __guideTestPlayers?: Array<{ paused: boolean }> };
     return testWindow.__guideTestPlayers?.some((player) => !player.paused) ?? false;
@@ -1282,27 +1309,8 @@ test('Sanctum: guide runtime model loads with its mouth and animation controls',
 });
 
 // ── 10b. Loop Ops ─────────────────────────────────────────────────────────────
-// The spec fixture (public/data/loop-ops/spec.json) is LOCAL-ONLY and gitignored.
-// via public/data/*, regenerated by the Phase 3 importer. Data-dependent tests
-// skip on machines without it (fresh clones, CI) instead of failing; the
-// hosted build intentionally ships the instructional empty state.
-
-async function loopSpecPresent(page: import('@playwright/test').Page): Promise<boolean> {
-  const res = await page.request.get('/data/loop-ops/spec.json');
-  if (res.status() !== 200) return false;
-  // The SPA fallback (vite preview / vercel rewrite) serves index.html with a
-  // 200 for a missing file, so a bare status check false-positives on fresh
-  // clones / CI runners with no local Loom data. Confirm it's really the spec
-  // JSON before treating the fixture as present.
-  const contentType = res.headers()['content-type'] || '';
-  if (!contentType.includes('json')) return false;
-  try {
-    const body = await res.json();
-    return !!(body && body.meta && typeof body.meta.entityCount === 'number');
-  } catch {
-    return false;
-  }
-}
+// Deterministic local-only fixture: exercise the map and run timeline without
+// relying on a private workbook or user-generated import files.
 
 async function mockLoopEng(
   page: import('@playwright/test').Page,
@@ -1340,6 +1348,69 @@ async function mockLoopEng(
   });
 }
 
+function loopOpsFixture() {
+  const entity = (id: string, kind: 'coordinator' | 'director' | 'assistant', group: string | null, wave: number | null) => ({
+    id, kind, label: id, group, surfaceKey: kind === 'assistant' ? id : null,
+    archetype: null, riskClass: null, wave, status: 'passed', sources: ['synthetic fixture'],
+    repoLinks: [], allowedActions: ['read local metadata'], detail: {},
+  });
+  return {
+    meta: {
+      specVersion: 1, generatedBy: 'e2e fixture', generatedAt: '2026-10-03T00:00:00.000Z',
+      masterSpec: 'synthetic loop map', entityCount: 3, assistantCount: 1,
+      productionWritesEnabled: false, links: {},
+    },
+    entities: [
+      entity('coordinator', 'coordinator', null, null),
+      entity('director-research', 'director', 'research', null),
+      {
+        ...entity('meow-ops-fixture', 'assistant', 'research', 1),
+        detail: {
+          validationCommand: 'npm run test:sync',
+          currentTruth: 'Synthetic test entity; no live system was checked.',
+          notVerified: ['No production behavior was inspected.'],
+        },
+      },
+    ],
+    edges: [],
+  };
+}
+
+async function installLoopOpsFixture(
+  page: import('@playwright/test').Page,
+  { runs = [], sessions = [] }: { runs?: unknown[]; sessions?: unknown[] } = {},
+) {
+  const spec = loopOpsFixture();
+  let specMtime = Date.parse('2026-10-03T00:00:00.000Z');
+  const json = (route: import('@playwright/test').Route, body: unknown) => route.fulfill({
+    status: 200, contentType: 'application/json', body: JSON.stringify(body),
+  });
+  await page.route('**/data/loop-ops/spec.json*', (route) => json(route, spec));
+  await page.route('**/data/loop-ops/runs.json*', (route) => json(route, runs));
+  await page.route('**/data/loop-ops/gates.json*', (route) => json(route, []));
+  await page.route('**/data/sessions.json*', (route) => json(route, sessions));
+  await page.route('**/loop-ops/status*', async (route) => {
+    const origin = route.request().headers().origin;
+    const headers = origin ? {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Headers': 'content-type,x-meow-ops-local',
+      'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+      'Access-Control-Allow-Private-Network': 'true',
+    } : undefined;
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers });
+    return route.fulfill({ status: 200, contentType: 'application/json', headers, body: JSON.stringify({
+      ok: true, productionWritesEnabled: false,
+      files: { 'spec.json': { mtime: specMtime, size: 800 }, 'runs.json': null },
+    }) });
+  });
+  await page.route('**/loop-ops/sync*', async (route) => {
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204 });
+    specMtime += 60_000;
+    return json(route, { ok: true, mtime: specMtime });
+  });
+  await mockLoopEng(page, {});
+}
+
 test('Review Map: safety badge renders with or without spec data', async ({ page }) => {
   await nav(page, 'Review');
   await openTab(page, 'Map');
@@ -1350,11 +1421,11 @@ test('Review Map: safety badge renders with or without spec data', async ({ page
 });
 
 test('Loop Ops: canvas renders imported entities when waves expanded', async ({ page }) => {
-  test.skip(!(await loopSpecPresent(page)), 'local-only Loop-Ops fixture absent — run the importer');
-  const spec = await (await page.request.get('/data/loop-ops/spec.json')).json();
+  const spec = loopOpsFixture();
+  await installLoopOpsFixture(page);
   await nav(page, 'Review');
   await openTab(page, 'Map');
-  await expect(page.locator(`text=${spec.meta.entityCount} entities · ${spec.meta.assistantCount} surfaces`)).toBeVisible();
+  await expect(page.getByText(`${spec.meta.entityCount} items · ${spec.meta.assistantCount} surfaces`)).toBeVisible();
   await expect(page.locator('[data-testid="loop-canvas"]')).toBeVisible();
   await page.getByRole('button', { name: 'Expand all waves' }).click();
   await expect(page.locator('[data-testid="loop-entity"]')).toHaveCount(spec.meta.entityCount);
@@ -1363,12 +1434,14 @@ test('Loop Ops: canvas renders imported entities when waves expanded', async ({ 
 });
 
 test('Loop Ops: inspector drawer answers the four questions', async ({ page }) => {
-  test.skip(!(await loopSpecPresent(page)), 'local-only Loop-Ops fixture absent — run the importer');
+  const spec = loopOpsFixture();
+  await installLoopOpsFixture(page);
   await nav(page, 'Review');
   await openTab(page, 'Map');
-  const spec = await (await page.request.get('/data/loop-ops/spec.json')).json();
+  await page.getByRole('button', { name: 'Expand all waves' }).click();
   const firstWorker = spec.entities.find((e: { kind: string }) => e.kind === 'assistant');
-  test.skip(!firstWorker, 'spec has no worker entity');
+  expect(firstWorker).toBeDefined();
+  if (!firstWorker) throw new Error('Synthetic Loop Ops fixture must include an assistant entity.');
   await page.locator(`[data-entity-id="${firstWorker.id}"]`).click();
   const inspector = page.locator('[data-testid="loop-inspector"]');
   await expect(inspector).toBeVisible();
@@ -1384,15 +1457,18 @@ test('Loop Ops: inspector drawer answers the four questions', async ({ page }) =
 });
 
 test('Loop Ops: run timeline renders a recorded run with joined session cost', async ({ page }) => {
-  test.skip(!(await loopSpecPresent(page)), 'local-only Loop-Ops fixture absent — run the importer');
-  const runsRes = await page.request.get('/data/loop-ops/runs.json');
-  const runsContentType = runsRes.headers()['content-type'] || '';
-  test.skip(
-    runsRes.status() !== 200 || !runsContentType.includes('json'),
-    'local-only runs.json absent — record a run first (SOP §5)',
-  );
-  const runs = await runsRes.json();
-  test.skip(!Array.isArray(runs) || runs.length === 0, 'runs.json empty');
+  const sessions = [{
+    session_id: 'loop-ops-cost-fixture', source: 'codex', project: 'meow-ops', model: 'synthetic',
+    started_at: '2026-10-03T00:00:00.000Z', ended_at: '2026-10-03T00:05:00.000Z',
+    duration_seconds: 300, total_tokens: 120_000, estimated_cost_usd: 12.5,
+  }];
+  const runs = [{
+    id: 'loop-ops-run-fixture', goal: 'Synthetic recorded run', entityIds: ['meow-ops-fixture'],
+    state: 'passed', startedAt: '2026-10-03T00:00:00.000Z', endedAt: '2026-10-03T00:05:00.000Z',
+    operator: 'fixture', sessionIds: ['loop-ops-cost-fixture'], artifacts: [], cost: null,
+    verified: ['The fixture response rendered.'], notVerified: ['No live work was inspected.'],
+  }];
+  await installLoopOpsFixture(page, { runs, sessions });
 
   await nav(page, 'Review');
   await openTab(page, 'Map');
@@ -1400,14 +1476,7 @@ test('Loop Ops: run timeline renders a recorded run with joined session cost', a
   await expect(timeline).toBeVisible();
   const card = timeline.locator('[data-testid="loop-run"]').first();
   await expect(card).toBeVisible();
-  // Cost joins only when the run's session ids resolve against sessions.json.
-  const sessionsRes = await page.request.get('/data/sessions.json');
-  if (sessionsRes.status() === 200) {
-    const ids = new Set((await sessionsRes.json()).map((s: { session_id: string }) => s.session_id));
-    if (runs[0].sessionIds.some((id: string) => ids.has(id))) {
-      await expect(card.locator('text=/\\$\\d/')).toBeVisible();
-    }
-  }
+  await expect(card.getByText(/^\$12\.50/)).toBeVisible();
   // Expanding surfaces the evidence contract: verified + not-verified lists.
   await card.getByRole('button').first().click();
   await expect(timeline.locator('text=/not verified:/').first()).toBeVisible();
@@ -1548,21 +1617,23 @@ test('Loop Ops: stale gate degrades node status and exposes evidence in inspecto
   await expect(page.getByText('Other entity proposal')).toHaveCount(0);
 });
 
-test('Review Inbox: empty state renders without local helper', async ({ page }) => {
+test('Review Inbox: helper failure is shown as unavailable, not empty', async ({ page }) => {
   await page.context().route('**/loop-eng/**', route => route.abort());
   await page.goto('/#/loop-review');
   await waitForApp(page);
   await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible();
-  await expect(page.getByText('No proposals yet — run npm run loop:propose')).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('The queue is unavailable, not empty.');
+  await expect(page.getByText('No proposals yet — run npm run loop:propose')).toHaveCount(0);
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
-test('Review Inbox: Runs tab renders empty state without local helper', async ({ page }) => {
+test('Review Inbox: Runs tab preserves helper failure state instead of showing an empty result', async ({ page }) => {
   await page.context().route('**/loop-eng/**', route => route.abort());
   await page.goto('/#/loop-review');
   await waitForApp(page);
   await page.getByRole('button', { name: 'Runs', exact: true }).click();
-  await expect(page.getByText('No runs yet — run npm run loop:capture')).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('The queue is unavailable, not empty.');
+  await expect(page.getByText('No runs yet — run npm run loop:capture')).toHaveCount(0);
   await expect(page.locator('[data-vite-error]')).toHaveCount(0);
 });
 
