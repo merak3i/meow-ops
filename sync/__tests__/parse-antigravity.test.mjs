@@ -112,6 +112,23 @@ test('parses time, tools, project, and snippet; usage is NOT fabricated', () => 
   }
 });
 
+test('malformed transcript lines remain visible in source coverage', () => {
+  const { dir, file } = writeTranscript([
+    { step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', created_at: '2026-06-08T10:00:00Z', content: 'fixture request' },
+  ]);
+  const priorWarn = console.warn;
+  try {
+    appendFileSync(file, '{malformed fixture line}\n');
+    console.warn = () => {};
+    const session = parseAntigravityTranscript(file, 'coverage-fixture');
+    assert.equal(session.sync_coverage.malformed_lines, 1);
+    assert.equal(antigravityCoverage(dir, [session]).malformed_lines, 1);
+  } finally {
+    console.warn = priorWarn;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('returns null for an empty transcript', () => {
   const { dir, file } = writeTranscript([]);
   try {

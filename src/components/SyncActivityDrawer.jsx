@@ -112,6 +112,7 @@ export default function SyncActivityDrawer({ open, status, onClose, onRetry, onO
               <span>{sourceMeta(source).label}</span>
               <strong>{health.state === 'collected' ? `${health.sessions} collected` : health.state.replaceAll('-', ' ')}</strong>
               {health.coverage?.recovered_steps > 0 && <span>{health.coverage.recovered_steps} steps recovered</span>}
+              {health.coverage?.malformed_lines > 0 && <span>{health.coverage.malformed_lines} malformed transcript lines skipped</span>}
             </div>
           ))}
         </div>

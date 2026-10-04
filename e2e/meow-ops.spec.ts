@@ -181,7 +181,7 @@ test('source collection status stays readable on a narrow screen', async ({ page
   await page.setViewportSize({ width: 375, height: 812 });
   const status = { ok: true, state: 'succeeded', artifact: { source_health: {
     claude: { state: 'collected', sessions: 948 }, codex: { state: 'collected', sessions: 157 },
-    hermes: { state: 'collected', sessions: 53 }, antigravity: { state: 'collected', sessions: 50, coverage: { recovered_steps: 539 } },
+    hermes: { state: 'collected', sessions: 53 }, antigravity: { state: 'collected-with-gaps', sessions: 50, coverage: { recovered_steps: 539, malformed_lines: 1 } },
     aider: { state: 'not-configured', sessions: 0 }, cursor: { state: 'excluded', sessions: 0 },
   } } };
   const storage = { ok: true, snapshot: {
@@ -203,6 +203,7 @@ test('source collection status stays readable on a narrow screen', async ({ page
   const facts = page.locator('.sync-activity__facts').last();
   await expect(facts.getByText('539 steps recovered', { exact: true })).toBeVisible();
   await expect(facts.getByText('not configured', { exact: true })).toBeVisible();
+  await expect(facts.getByText('1 malformed transcript lines skipped', { exact: true })).toBeVisible();
   expect(await facts.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
   expect(await facts.locator('div').evaluateAll(cells => (
     cells.every(cell => cell.scrollWidth <= cell.clientWidth)

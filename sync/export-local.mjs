@@ -269,7 +269,7 @@ const sourceHealth = Object.fromEntries([
   const latest = rows.map((session) => session.ended_at || session.started_at).filter(Boolean).sort().at(-1) || null;
   const coverage = source === 'antigravity' ? antigravityCoverage(ANTIGRAVITY_DIR, rows) : null;
   const parsedCoverage = collection[source];
-  const gaps = (coverage && (coverage.unreadable_stores || coverage.unreadable_databases || coverage.unknown_steps))
+  const gaps = (coverage && (coverage.unreadable_stores || coverage.unreadable_databases || coverage.unknown_steps || coverage.malformed_lines))
     || parsedCoverage?.failed || parsedCoverage?.malformedLines || parsedCoverage?.pendingBytes;
   return [source, {
     state: parsedCoverage?.failed ? 'collected-with-gaps'

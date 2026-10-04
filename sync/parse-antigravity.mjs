@@ -121,6 +121,7 @@ export function parseAntigravityTranscript(filePath, uuid, { databasePath } = {}
       database_status: conflicts ? 'unsupported' : database.status,
       database_steps: database.steps.length, recovered_steps: recovered,
       unknown_steps: database.steps.filter(step => step.type === 'UNKNOWN_STEP').length,
+      malformed_lines: malformed,
     },
   });
 
@@ -252,5 +253,6 @@ export function antigravityCoverage(root, sessions) {
     unreadable_databases: coverage.filter(value => ['unsupported', 'unreadable'].includes(value.database_status)).length,
     recovered_steps: coverage.reduce((total, value) => total + value.recovered_steps, 0),
     unknown_steps: coverage.reduce((total, value) => total + value.unknown_steps, 0),
+    malformed_lines: coverage.reduce((total, value) => total + (value.malformed_lines || 0), 0),
   };
 }
