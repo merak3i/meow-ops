@@ -69,6 +69,24 @@
 .sync-activity__footer button { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; padding: 7px 10px; border: 1px solid var(--border-hover); border-radius: 7px; background: var(--bg-hover); color: var(--text-primary); font: inherit; font-size: 10px; cursor: pointer; }
 .sync-activity__footer button:disabled { opacity: .55; cursor: wait; }
 
+.sync-activity__hint { display: flex; flex-direction: column; gap: 5px; margin: 0 16px 14px; padding: 10px 12px; border: 1px dashed var(--border-hover); border-radius: 8px; color: var(--text-muted); font-size: 10px; line-height: 1.5; }
+.sync-activity__hint code { color: var(--text-primary); font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+
+.sync-activity__github { display: flex; flex-direction: column; gap: 8px; margin: 0 16px 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-page); }
+.sync-activity__github-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sync-activity__github-head strong { color: var(--text-primary); font-size: 11px; font-weight: 500; }
+.sync-activity__github-head span, .sync-activity__github p { margin: 0; color: var(--text-muted); font-size: 9px; }
+.sync-activity__repo { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding-top: 7px; border-top: 1px solid var(--border); }
+.sync-activity__repo-name { display: flex; justify-content: space-between; gap: 8px; color: var(--text-secondary); font-size: 10px; }
+.sync-activity__repo a { color: inherit; text-decoration: none; }
+.sync-activity__repo a:hover { color: var(--accent-hover); }
+.sync-activity__repo small { color: var(--text-muted); font-size: 9px; }
+.sync-activity__repo small[data-conclusion="failure"] { color: var(--danger); }
+.sync-activity__repo small[data-conclusion="success"] { color: var(--success); }
+.sync-activity__commit { display: grid; grid-template-columns: 12px auto 1fr; align-items: center; gap: 6px; color: var(--text-muted); font-size: 10px; }
+.sync-activity__commit code { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-secondary); }
+.sync-activity__commit > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-secondary); }
+
 @keyframes sync-activity-enter { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 @keyframes sync-activity-spin { to { transform: rotate(360deg); } }
 

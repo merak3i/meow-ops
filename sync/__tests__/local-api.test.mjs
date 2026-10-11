@@ -144,8 +144,6 @@ test('hosted dashboards cannot fetch raw local session or cost summaries', async
 test('hosted dashboards cannot read or trigger local operational APIs', async () => {
   const hostedHeaders = { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1' };
   const requests = [
-    ['/sync/status', 'GET'],
-    ['/sync', 'POST'],
     ['/storage/refresh', 'POST'],
     ['/storage/open-folder', 'POST'],
     ['/sync/runs/example', 'GET'],
@@ -165,13 +163,48 @@ test('hosted dashboards cannot read or trigger local operational APIs', async ()
   }
 });
 
+test('hosted dashboard reads only redacted sync status', async () => {
+  const response = await fetch(`${BASE}/sync/status`, {
+    headers: { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1' },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://meow-ops.vercel.app');
+  const body = await response.json();
+  assert.equal(body.redacted, true);
+  assert.deepEqual(Object.keys(body.artifact).sort(), ['available', 'mtime', 'sessions', 'source_counts', 'source_health']);
+  for (const key of ['size', 'generation', 'summary', 'paths', 'sessions_file']) assert.equal(key in body, false, key);
+
+  const other = await fetch(`${BASE}/sync/status`, {
+    headers: { Origin: 'https://example.com', 'x-meow-ops-local': '1' },
+  });
+  assert.equal(other.status, 403);
+
+  const missingHeader = await fetch(`${BASE}/sync/status`, { headers: { Origin: 'https://meow-ops.vercel.app' } });
+  assert.equal(missingHeader.status, 400);
+});
+
+test('hosted dashboard may preflight the two sync routes', async () => {
+  for (const [path, method] of [['/sync/status', 'GET'], ['/sync', 'POST']]) {
+    const response = await fetch(`${BASE}${path}`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://meow-ops.vercel.app',
+        'Access-Control-Request-Method': method,
+        'Access-Control-Request-Headers': 'x-meow-ops-local',
+      },
+    });
+    assert.equal(response.status, 204, `${method} ${path}`);
+    assert.equal(response.headers.get('access-control-allow-private-network'), 'true');
+  }
+});
+
 test('hosted preflights cannot request private API access', async () => {
   const origin = 'https://meow-ops.vercel.app';
   for (const [path, method] of [
     ['/session-history/sessions', 'GET'],
     ['/data/sessions.json', 'GET'],
     ['/data/cost-summary.json', 'GET'],
-    ['/sync', 'POST'],
+    ['/sync/runs/example', 'GET'],
     ['/loop-eng/summary', 'GET'],
     ['/loop-ops/status', 'GET'],
     ['/superadmin-usage/status', 'GET'],

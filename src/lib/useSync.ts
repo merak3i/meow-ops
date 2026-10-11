@@ -16,7 +16,8 @@ const STATUS_TICK_MS = 30_000;
 const RUNNING_POLL_MS = 1200;
 
 function modeFor(status: SyncStatus | null): SyncMode {
-  return status?.mode === 'local-sync' || status?.mode === 'dev-sync' ? 'sync' : 'refresh';
+  return status?.mode === 'local-sync' || status?.mode === 'dev-sync' || status?.mode === 'hosted-sync'
+    ? 'sync' : 'refresh';
 }
 
 export function useSync(onReload: () => void) {
@@ -71,8 +72,9 @@ export function useSync(onReload: () => void) {
     if (action === 'refresh') {
       // The helper may have come online since the page loaded; re-check before
       // downgrading to a plain reload.
-      const latest = await getSyncStatus();
-      if (latest.mode === 'local-sync') { setMode('sync'); action = 'sync'; }
+      const latest = await getSyncStatus({ interactive: true });
+      setStatus(latest);
+      if (latest.mode === 'local-sync' || latest.mode === 'hosted-sync') { setMode('sync'); action = 'sync'; }
     }
 
     if (action === 'refresh') {
@@ -81,7 +83,7 @@ export function useSync(onReload: () => void) {
     }
 
     const result = await triggerSync();
-    if (result.status) setStatus({ ...result.status, mode: status?.mode ?? 'dev-sync' });
+    if (result.status) setStatus({ ...result.status, mode: result.status.mode ?? status?.mode ?? 'dev-sync' });
     await refreshStatus();
     setRequesting(false);
   }, [mode, onReload, refreshStatus, requesting, status?.mode, status?.state]);
@@ -97,6 +99,8 @@ export function useSync(onReload: () => void) {
     lastSyncAt: status?.artifact?.mtime ?? status?.mtime ?? null,
     /** True when the local helper answered, so helper-backed surfaces will work. */
     helperOnline: status?.mode === 'local-sync' || status?.mode === 'dev-sync',
+    /** Hosted shell linked to this machine's helper for status and sync only. */
+    hostedLinked: status?.mode === 'hosted-sync',
   };
 }
 

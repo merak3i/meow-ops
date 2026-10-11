@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Hosted shell can connect to the local helper for redacted sync status and **Sync now** (owner decision 2026-10-11). Sessions, costs and summaries stay local. Opt out with `MEOW_HOSTED_SYNC=0`.
+- `/api/github-activity` Vercel function and a **Code activity** section in the sync drawer: latest commits and workflow runs from GitHub.
+
+### Fixed
+- Hosted sample data rebases to the current day, so the default 7-day window is no longer empty.
 - **Local Usage Receipt v1 ADR**: docs/schema evidence matrix, fail-closed JSON schema, availability-to-field consistency, importer dedupe recomputation, and schema contract tests. No adapters. See `docs/adr/0001-local-usage-receipt-v1.md`.
 - **Cursor aggregate usage panel**: Overview shows Admin API usage that could not be exactly matched to a local session, grouped by model and explicitly labelled as unassigned.
 - **Cursor Admin API usage enricher** (`sync/cursor-admin-usage.mjs`): opt-in team-admin connector for `POST /teams/filtered-usage-events`. Local agent transcripts still parse without a key. The published schema does not promise a session identifier; when the API explicitly returns a known conversation/cloud-agent id variant, events join only on exact equality with a local id. Unmatched model totals stay aggregate. The exporter never logs the key or copies it into generated data or archives; the operator stores it locally in the gitignored `.env`.

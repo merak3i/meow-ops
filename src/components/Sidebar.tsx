@@ -6,6 +6,7 @@ import {
 import { NAV } from './nav-config';
 import SyncActivityDrawer from './SyncActivityDrawer';
 import { Button } from './ui/Button';
+import { IS_PROD } from '../lib/queries';
 import type { SyncController } from '../lib/useSync';
 import type { Theme } from '../lib/useTheme';
 
@@ -50,7 +51,7 @@ export default function Sidebar({
           : sync.state === 'running' ? 'var(--accent)'
             : 'var(--text-secondary)';
 
-  const idleLabel = sync.mode === 'sync' ? 'Sync sessions' : 'Reload data';
+  const idleLabel = sync.mode === 'sync' ? 'Sync sessions' : IS_PROD ? 'Connect this Mac' : 'Reload data';
   const themeTip = theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme';
   const ThemeIcon = theme === 'dark' ? Sun : Moon;
 
@@ -152,7 +153,9 @@ export default function Sidebar({
             title={sync.status?.failure?.summary
               ?? (sync.mode === 'sync'
                 ? `Last sync ${relativeTime(sync.lastSyncAt)}`
-                : 'Reload the data already available to this dashboard')}
+                : IS_PROD
+                  ? 'Connect to the Meow Ops helper running on this Mac'
+                  : 'Reload the data already available to this dashboard')}
             style={{ justifyContent: 'flex-start', color: statusColor, fontWeight: 400 }}
           >
             <span className={sync.state === 'running' ? 'loop-spin' : ''} style={{ display: 'flex' }}>

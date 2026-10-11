@@ -7,7 +7,9 @@ export type SyncPhase = {
 
 export type SyncStatus = {
   ok: boolean;
-  mode?: 'dev-sync' | 'local-sync' | 'refresh-only';
+  mode?: 'dev-sync' | 'local-sync' | 'hosted-sync' | 'refresh-only';
+  /** True when the helper returned the hosted, allowlisted projection. */
+  redacted?: boolean;
   run_id?: string | null;
   state?: 'idle' | 'running' | 'succeeded' | 'partial' | 'failed';
   phase?: string | null;
@@ -36,7 +38,7 @@ export type SyncStatus = {
   error?: string;
 };
 
-export function getSyncStatus(): Promise<SyncStatus>;
+export function getSyncStatus(options?: { interactive?: boolean }): Promise<SyncStatus>;
 
 /** True when served from a host that is not localhost, i.e. the hosted demo. */
 export const IS_PROD: boolean;

@@ -344,7 +344,7 @@ For a local dashboard to sync from your machine, run the local API:
 node sync/local-api.mjs           # export local data (no git push — that is retired)
 ```
 
-It listens on `http://localhost:7337` by default, serves fresh local `sessions.json` and `cost-summary.json`, and exposes asynchronous `POST /sync`, `GET /sync/status`, and `GET /sync/runs/:id`. A POST returns `202` with a run ID; the local UI then follows `preflight → export sessions → verify artifacts → refresh limits`. Failures remain visible with a sanitized phase, code, and retry hint. Runtime metadata lives outside the worktree at `~/.meow-ops/runtime/`. This process reads local files on your machine and never pushes to git. Private data and operational routes require a local dashboard origin; the hosted Vercel shell cannot read them or trigger local sync, even if its origin is allowlisted for CORS.
+It listens on `http://localhost:7337` by default, serves fresh local `sessions.json` and `cost-summary.json`, and exposes asynchronous `POST /sync`, `GET /sync/status`, and `GET /sync/runs/:id`. A POST returns `202` with a run ID; the local UI then follows `preflight → export sessions → verify artifacts → refresh limits`. Failures remain visible with a sanitized phase, code, and retry hint. Runtime metadata lives outside the worktree at `~/.meow-ops/runtime/`. This process reads local files on your machine and never pushes to git. Private data and operational routes require a local dashboard origin. The one exception is the hosted shell at `https://meow-ops.vercel.app`: it may read a redacted `GET /sync/status` (state, phase names, timestamps, error codes, session and per-source counts) and send `POST /sync` to start a local run. No session rows, costs, titles, projects, paths or summaries cross that bridge. Set `MEOW_HOSTED_SYNC=0` to turn it off, or add more exact https origins with `MEOW_HOSTED_SYNC_ORIGINS`.
 
 The browser bundle uses `VITE_LOCAL_SYNC_URL` at build time and defaults to `http://127.0.0.1:7337`. If the local helper uses another port, set the browser URL to the same loopback port. This value is public in the browser bundle and must not contain credentials.
 
@@ -386,7 +386,7 @@ The sync drawer reports each source as collected, excluded, unavailable or colle
 
 For an operator-managed five-minute macOS refresh, a LaunchAgent can run `node sync/sync-runner.mjs --no-limits` with `StartInterval=300`, `Umask=63` (decimal for `077`), and the same environment settings. The repaired local installation uses `com.meowops.harness-sync`; this job is separate from the daily operator installed by `npm run agents:install`. A successful job normally shows `not running` between scheduled runs, with exit code `0`; its run count should increase. Automatic collection requires the Mac to be awake and the user logged in.
 
-The hosted site remains a sample-data shell under the current privacy boundary. Adding its origin to `MEOW_DASHBOARD_ORIGIN` does not grant access to private history or sync routes. Session counts, token estimates and elapsed thread duration do not by themselves verify a vendor invoice or active working time.
+The hosted site remains a sample-data shell for session analytics. It can show redacted local sync status, start a local sync, and show repository activity from GitHub. Adding its origin to `MEOW_DASHBOARD_ORIGIN` does not grant access to private history. Session counts, token estimates and elapsed thread duration do not by themselves verify a vendor invoice or active working time.
 
 ### How Sessions Are Classified
 
@@ -465,7 +465,7 @@ node sync/fetch-claude-limits.mjs
 
 This is optional. The default Meow Ops setup is local-only.
 
-> **Privacy boundary:** the localhost helper restricts session history, raw summaries, sync, Loop Engineering, Loop Ops, and SuperAdmin usage routes to local dashboard origins. Hosted session, cost, and usage endpoints serve synthetic fixtures; the Privacy section records the latest live check. Open Meow Ops on localhost to view private session data or use local operations.
+> **Privacy boundary:** the localhost helper restricts session history, raw summaries, sync, Loop Engineering, Loop Ops, and SuperAdmin usage routes to local dashboard origins. Hosted session, cost, and usage endpoints serve synthetic fixtures; the Privacy section records the latest live check. The hosted shell may read redacted sync status and start a local sync run; nothing else. Open Meow Ops on localhost to view private session data or use local operations.
 
 ### 1. Install one daily local cycle
 
@@ -495,7 +495,7 @@ npm run daily:cloud
 
 ### 3. Optional: run the localhost helper for a local dashboard
 
-The helper serves private local data and operational APIs only to a local dashboard origin. It cannot send session data or accept sync and workflow actions from the hosted `vercel.app` shell.
+The helper serves private local data and operational APIs only to a local dashboard origin. It never sends session data to the hosted `vercel.app` shell. That shell may read a redacted sync status and start a local sync run; Chrome asks once for local network access the first time you press **Connect**. Other workflow actions stay local.
 
 `npm run agents:install` installs this service together with the daily job. To run only in the current terminal, use `node sync/local-api.mjs`.
 
@@ -618,7 +618,8 @@ npx playwright test --reporter=list
 
 ## Privacy
 
-- **Private sessions and operations stay local.** Local dashboards read session analytics from local files or the localhost helper. Hosted dashboards cannot read private session-history, raw summary, sync, Loop Engineering, Loop Ops, or SuperAdmin usage helper routes.
+- **Private sessions and operations stay local.** Local dashboards read session analytics from local files or the localhost helper. Hosted dashboards cannot read private session-history, raw summary, sync run detail, Loop Engineering, Loop Ops, or SuperAdmin usage helper routes. They may read a redacted sync status and trigger a local sync run (opt out with `MEOW_HOSTED_SYNC=0`).
+- **Repository activity on the hosted shell comes from GitHub.** `/api/github-activity` (a Vercel function) reads commits and workflow runs for `MEOW_ACTIVITY_REPOS` (default `merak3i/meow-ops`). An optional `GITHUB_TOKEN` raises rate limits and allows private repos; private repos return timing and status only, with no messages, authors, workflow names or links.
 - **Current source builds exclude private session files.** The build allowlist publishes only the three reviewed `demo-*` JSON files and validates their synthetic labels and fields.
 - **The current hosted fixtures were checked on 2026-09-29.** All five public session, cost, and usage JSON URLs matched the approved synthetic fixture hashes and returned `Cache-Control: no-store`. Requests with `Origin: https://example.com` received no `Access-Control-Allow-Origin` header. This confirms only the bytes and headers served at those URLs during the check; it does not verify historical cache contents, prior deployments, or a cache purge. Verify the served fixtures again after each hosted release.
 - **Verify each hosted release.** A clean local build does not prove which fixtures or access settings the current Vercel deployment serves.

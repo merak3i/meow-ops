@@ -59,6 +59,46 @@ async function resolveLocalSyncBase(force = false) {
   }
 }
 
+// ─── Hosted shell → local helper (status and sync trigger only) ──────────────
+// Owner decision 2026-10-11: the hosted page may read a redacted sync status
+// and start a local sync run. It never reads sessions, costs or summaries from
+// the helper; resolveLocalSyncBase() stays null on hosted builds for that.
+// Probing loopback from a public origin triggers Chrome's local-network
+// permission prompt, so passive polling only starts after the operator has
+// connected once from this browser.
+const HOSTED_HELPER_KEY = 'meow-ops:hosted-helper';
+let LOCAL_STATUS_BASE = null;
+
+function hostedHelperRemembered() {
+  try { return window.localStorage.getItem(HOSTED_HELPER_KEY) === '1'; } catch { return false; }
+}
+
+function rememberHostedHelper() {
+  try { window.localStorage.setItem(HOSTED_HELPER_KEY, '1'); } catch { /* storage may be blocked */ }
+}
+
+async function fetchHostedStatus({ interactive = false } = {}) {
+  if (!IS_PROD) return null;
+  if (!interactive && !LOCAL_STATUS_BASE && !hostedHelperRemembered()) return null;
+  const bases = LOCAL_STATUS_BASE
+    ? [LOCAL_STATUS_BASE, ...LOCAL_SYNC_URLS.filter((base) => base !== LOCAL_STATUS_BASE)]
+    : LOCAL_SYNC_URLS;
+  for (const base of bases) {
+    const status = await fetchJson(withCacheBust(`${base}/sync/status`), {
+      headers: LOCAL_SYNC_HEADERS,
+      mode: 'cors',
+      signal: AbortSignal.timeout(4000),
+    });
+    if (status && typeof status.state === 'string') {
+      LOCAL_STATUS_BASE = base;
+      rememberHostedHelper();
+      return status;
+    }
+  }
+  LOCAL_STATUS_BASE = null;
+  return null;
+}
+
 async function fetchLocalJson(path) {
   const base = await resolveLocalSyncBase();
   if (!base) return null;
@@ -154,6 +194,40 @@ function sanitizeSessions(data) {
   return out;
 }
 
+// Hosted fixtures are exported once, so a fixed date range would leave the
+// default 7-day window empty. Shift whole days so the newest sample lands on
+// the most recent day; day boundaries and per-day totals stay intact.
+const DAY_MS = 86_400_000;
+
+function shiftIso(value, ms) {
+  const t = Date.parse(value);
+  return Number.isFinite(t) ? new Date(t + ms).toISOString() : value;
+}
+
+function shiftDate(value, ms) {
+  const t = Date.parse(`${value}T12:00:00Z`);
+  return Number.isFinite(t) ? new Date(t + ms).toISOString().slice(0, 10) : value;
+}
+
+export function rebaseDemoBundle(sessions, summary, now = Date.now()) {
+  if (!Array.isArray(sessions) || sessions.length === 0) return { sessions, summary };
+  const newest = sessions.reduce((max, row) => Math.max(max, Date.parse(row.ended_at || row.started_at) || 0), 0);
+  const anchor = Date.parse(summary?.exportedAt) || newest;
+  const days = Math.floor((now - Math.max(anchor, newest)) / DAY_MS);
+  if (!Number.isFinite(days) || days <= 0) return { sessions, summary };
+  const ms = days * DAY_MS;
+  return {
+    sessions: sessions.map((row) => ({ ...row, started_at: shiftIso(row.started_at, ms), ended_at: shiftIso(row.ended_at, ms) })),
+    summary: summary && {
+      ...summary,
+      exportedAt: shiftIso(summary.exportedAt, ms),
+      daily_summary: Array.isArray(summary.daily_summary)
+        ? summary.daily_summary.map((row) => ({ ...row, date: shiftDate(row.date, ms) }))
+        : summary.daily_summary,
+    },
+  };
+}
+
 async function loadDashboard() {
   if (DASHBOARD_PROMISE) return DASHBOARD_PROMISE;
   const epoch = DASHBOARD_EPOCH;
@@ -187,9 +261,12 @@ async function loadDashboard() {
         fetchJson(withCacheBust(`${base || ''}/data/sessions.json`), init),
         fetchJson(withCacheBust(`${base || ''}/data/cost-summary.json`), init),
       ]);
+      let rows = sessions === null ? null : sanitizeSessions(sessions);
+      let totals = summary || {};
+      if (!base && rows && isDemoData(rows, totals)) ({ sessions: rows, summary: totals } = rebaseDemoBundle(rows, totals));
       return {
-        sessions: sessions === null ? null : sanitizeSessions(sessions),
-        summary: { ...(summary || {}), snapshot: { state: 'legacy-unverified', generation: null, warning: 'Legacy snapshot: sessions and summary have not been verified as one generation.' } },
+        sessions: rows,
+        summary: { ...totals, snapshot: { state: 'legacy-unverified', generation: null, warning: 'Legacy snapshot: sessions and summary have not been verified as one generation.' } },
       };
     }
     const warning = 'The current snapshot could not be verified. ' + (LAST_GOOD_DASHBOARD ? 'Showing the last verified snapshot.' : 'No verified snapshot is available.');
@@ -218,7 +295,17 @@ export async function fetchCostSummary() {
 // ─── Sync trigger / status ────────────────────────────────────────────────────
 
 export async function triggerSync() {
-  const status = await getSyncStatus();
+  const status = await getSyncStatus({ interactive: true });
+  if (status.mode === 'hosted-sync' && LOCAL_STATUS_BASE) {
+    try {
+      const r = await fetch(`${LOCAL_STATUS_BASE}/sync`, { method: 'POST', headers: LOCAL_SYNC_HEADERS, mode: 'cors' });
+      const result = await r.json();
+      return result?.status ? { ...result, status: { ...result.status, mode: 'hosted-sync' } } : result;
+    } catch (err) {
+      LOCAL_STATUS_BASE = null;
+      return { ok: false, error: err.message };
+    }
+  }
   const base = status.mode === 'dev-sync' ? null : await resolveLocalSyncBase(true);
   const url = status.mode === 'dev-sync' ? '/api/sync' : base && `${base}/sync`;
 
@@ -244,7 +331,16 @@ export async function triggerSync() {
   }
 }
 
-export async function getSyncStatus() {
+export async function getSyncStatus({ interactive = false } = {}) {
+  if (IS_PROD) {
+    const hosted = await fetchHostedStatus({ interactive });
+    if (hosted) return { ...hosted, mode: 'hosted-sync' };
+    return {
+      ok: false,
+      mode: 'refresh-only',
+      error: 'The local helper did not answer. Start it on this Mac, then connect again.',
+    };
+  }
   const base = await resolveLocalSyncBase();
   const result = base && await fetchJson(withCacheBust(`${base}/sync/status`), {
     headers: LOCAL_SYNC_HEADERS,

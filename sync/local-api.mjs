@@ -6,7 +6,8 @@
 // — which runs on YOUR machine, not on Vercel — so it can read
 // ~/.claude/projects/, ~/.codex/sessions/, and other local-only exports.
 //
-// All endpoints are local-only. Loop Engineering writes still pass through
+// Private endpoints are local-dashboard-only. The hosted shell may read a
+// redacted /sync/status and POST /sync (see hosted-status.mjs). Loop Engineering writes still pass through
 // ledger validation, and execution can push only behind its explicit gate.
 //
 // Usage:
@@ -52,6 +53,7 @@ import {
   recordPreferenceDecision,
 } from './companion-preferences.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
+import { hostedSyncOrigins, isHostedSyncRoute, redactSyncStatusForHosted } from './hosted-status.mjs';
 import { readLedgerLoopRuns } from './loop-ledger-to-runs.mjs';
 import { querySessionHistory, readSessionHistorySnapshot } from './session-history.mjs';
 import { summarizeEternal } from './eternal-stats.mjs';
@@ -92,7 +94,8 @@ const EXTRA_ALLOWED_ORIGINS = (process.env.MEOW_DASHBOARD_ORIGIN || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
-const ALLOWED_ORIGINS = new Set([...DEFAULT_ALLOWED_ORIGINS, ...EXTRA_ALLOWED_ORIGINS]);
+const HOSTED_SYNC_ORIGINS = hostedSyncOrigins(process.env);
+const ALLOWED_ORIGINS = new Set([...DEFAULT_ALLOWED_ORIGINS, ...EXTRA_ALLOWED_ORIGINS, ...HOSTED_SYNC_ORIGINS]);
 const LOCAL_DASHBOARD_PORTS = new Set([4173, 4174, 4175, 4273, 4275, 5173, 5174, 5175, 5176, PORT]);
 
 for (const origin of EXTRA_ALLOWED_ORIGINS) {
@@ -131,6 +134,11 @@ function requiresLocalDashboard(path, method) {
     || path.startsWith('/project-intelligence/')
     || path.startsWith('/companion/')
     || (path.startsWith('/learning-quest/') && !(method === 'GET' && path === '/learning-quest/snapshot'));
+}
+
+/** A hosted shell may read redacted sync status and start a local run, nothing else. */
+function isHostedSyncRequest(origin, path, method) {
+  return Boolean(origin) && HOSTED_SYNC_ORIGINS.has(origin) && isHostedSyncRoute(path, method);
 }
 
 function isAllowedOrigin(origin) {
@@ -314,7 +322,8 @@ const server = createServer(async (req, res) => {
   const requestedMethod = req.method === 'OPTIONS'
     ? (req.headers['access-control-request-method'] || '').toUpperCase()
     : req.method;
-  if (requiresLocalDashboard(path, requestedMethod) && origin && !isLocalDashboardOrigin(origin)) {
+  if (requiresLocalDashboard(path, requestedMethod) && origin && !isLocalDashboardOrigin(origin)
+    && !isHostedSyncRequest(origin, path, requestedMethod)) {
     res.statusCode = 403;
     res.end(JSON.stringify({ ok: false, error: 'This operation requires the local dashboard.' }));
     return;
@@ -400,7 +409,8 @@ const server = createServer(async (req, res) => {
 
   // ── GET /sync/status ──────────────────────────────────────────────────────
   if (path === '/sync/status' && req.method === 'GET') {
-    sendJson(res, 200, getSyncStatus({ repoRoot: ROOT }));
+    const status = getSyncStatus({ repoRoot: ROOT });
+    sendJson(res, 200, origin && !isLocalDashboardOrigin(origin) ? redactSyncStatusForHosted(status) : status);
     return;
   }
 
@@ -459,7 +469,7 @@ const server = createServer(async (req, res) => {
 
   // ── POST /sync ────────────────────────────────────────────────────────────
   if (path === '/sync' && req.method === 'POST') {
-    console.log(`\n[${new Date().toLocaleTimeString()}] Sync triggered from browser`);
+    console.log(`\n[${new Date().toLocaleTimeString()}] Sync triggered from ${origin && !isLocalDashboardOrigin(origin) ? 'hosted dashboard' : 'browser'}`);
     const started = startSyncRun({
       repoRoot: ROOT,
       node: NODE,
@@ -471,7 +481,7 @@ const server = createServer(async (req, res) => {
       accepted: started.accepted,
       busy: started.busy,
       run_id: started.run_id,
-      status: started.snapshot,
+      status: origin && !isLocalDashboardOrigin(origin) ? redactSyncStatusForHosted(started.snapshot) : started.snapshot,
     });
     return;
   }
