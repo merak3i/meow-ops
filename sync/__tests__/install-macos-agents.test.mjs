@@ -76,3 +76,28 @@ test('reinstall accepts a valid service plist without optional environment overr
     assert.ok(existsSync(second.jobs[0].path));
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
+
+test('activation retries bootstrap while launchd finishes a bootout', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { install } = await import('../install-macos-agents.mjs');
+  const home = mkdtempSync(join(tmpdir(), 'meow-agents-retry-'));
+  const repoRoot = mkdtempSync(join(tmpdir(), 'meow-agents-repo-'));
+  mkdirSync(join(repoRoot, 'dist'), { recursive: true });
+  writeFileSync(join(repoRoot, 'dist', 'index.html'), '<html></html>');
+  const failures = new Map();
+  const calls = [];
+  const run = (cmd, args) => {
+    calls.push(args.join(' '));
+    if (args[0] === 'print') throw new Error('not loaded');
+    if (args[0] !== 'bootstrap') return '';
+    const seen = failures.get(args[2]) || 0;
+    failures.set(args[2], seen + 1);
+    if (seen < 2) throw Object.assign(new Error('Bootstrap failed: 5: Input/output error'), { status: 5 });
+    return '';
+  };
+  const result = install({ activate: true, repoRoot, home, node: '/usr/bin/node', configFile: join(home, 'local.env'), run });
+  assert.equal(result.activated, true);
+  assert.equal(calls.filter(c => c.startsWith('bootstrap')).length, 9);
+});

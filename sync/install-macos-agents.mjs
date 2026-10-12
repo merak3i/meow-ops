@@ -36,6 +36,10 @@ function installedOverrides(jobs, agents, configured) {
   return inherited;
 }
 
+const BOOTSTRAP_ATTEMPTS = 10;
+const BOOTSTRAP_RETRY_MS = 500;
+function sleep(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+
 export function renderInstallation({ repoRoot = ROOT, home = homedir(), node = process.execPath,
   configFile = join(home, '.config', 'meow-ops', 'local.env') } = {}) {
   const jobs = [
@@ -111,7 +115,17 @@ export function install({ activate = false, repoRoot = ROOT, home = homedir(), n
   if (activate) {
     for (const job of jobs) {
       try { run('launchctl', ['bootout', `${domain}/${job.label}`], { stdio: 'ignore' }); } catch { /* First install. */ }
-      run('launchctl', ['bootstrap', domain, job.path], { stdio: 'inherit' });
+      // bootout returns before launchd finishes tearing the job down; an
+      // immediate bootstrap then fails with status 5 (I/O error). Retry briefly.
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          run('launchctl', ['bootstrap', domain, job.path], { stdio: attempt < BOOTSTRAP_ATTEMPTS ? 'ignore' : 'inherit' });
+          break;
+        } catch (error) {
+          if (attempt >= BOOTSTRAP_ATTEMPTS) throw error;
+          sleep(BOOTSTRAP_RETRY_MS);
+        }
+      }
     }
   }
   return { jobs, obsolete, backup: existsSync(backup) ? backup : null, configFile, activated: activate };
