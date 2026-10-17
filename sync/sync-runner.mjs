@@ -7,6 +7,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadEnv } from './load-env.mjs';
+import { createLogger, newRunId } from './log.mjs';
+import { notify } from './notify.mjs';
 import { acquireProcessLock } from './process-lock.mjs';
 import { readSnapshot } from './snapshot-generation.mjs';
 
@@ -310,10 +312,33 @@ export function getSyncRun(runId, { env = process.env, runtime = runtimeDir(env)
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const repoRoot = join(import.meta.dirname, '..');
   loadEnv(repoRoot);
-  const result = await runSync({
-    repoRoot, trigger: 'scheduled',
-    refreshLimits: process.env.MEOW_REFRESH_LIMITS !== '0' && !process.argv.includes('--no-limits'),
-  });
+  const log = createLogger({ component: 'sync-runner', run_id: process.env.MEOW_RUN_ID || newRunId(), trigger: 'scheduled' });
+  const startedAt = Date.now();
+  log.info('sync.start');
+  let result;
+  try {
+    result = await runSync({
+      repoRoot, trigger: 'scheduled',
+      refreshLimits: process.env.MEOW_REFRESH_LIMITS !== '0' && !process.argv.includes('--no-limits'),
+    });
+  } catch (error) {
+    log.error('sync.crashed', { error, duration_ms: Date.now() - startedAt });
+    await notify({ event: 'sync_crashed', severity: 'high', title: 'scheduled sync threw', lines: [error instanceof Error ? error.message : String(error)], dedupeKey: 'sync-runner:crashed' });
+    process.exitCode = 1;
+    throw error;
+  }
   console.log(JSON.stringify({ state: result.state, completed_at: result.completed_at, source_health: result.artifact?.source_health }));
-  if (result.state === 'failed') process.exitCode = 1;
+  if (result.state === 'failed') {
+    log.error('sync.failed', { state: result.state, duration_ms: Date.now() - startedAt, error_signature: result.error_signature || result.error || null });
+    await notify({
+      event: 'sync_failed',
+      severity: 'high',
+      title: 'scheduled sync ended in failed',
+      lines: [result.error_signature || result.error || 'see ~/Library/Logs/meow-ops/com.meowops.harness-sync.error.log'],
+      dedupeKey: 'sync-runner:failed',
+    });
+    process.exitCode = 1;
+  } else {
+    log.info('sync.complete', { state: result.state, duration_ms: Date.now() - startedAt });
+  }
 }

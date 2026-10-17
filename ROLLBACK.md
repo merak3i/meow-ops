@@ -201,3 +201,5 @@ Then add a row to the Version Tag Reference table above.
 Meow Ops reads session data from each enabled agent's native local store. Rolling back the app does **not** change those source logs. Hosted `public/data/demo-*` files are synthetic fixtures, not backups of local history.
 
 `node sync/export-local.mjs` regenerates local metrics, but it also updates the local history/evidence archive and may call Cursor's read-only Usage API when its optional Admin key is configured. Treat it as a sync operation, not an automatic rollback step; verify the configured inputs before running it. Its `--push` option is retired. Supabase Realtime is optional transport for the Sanctum pipeline visualizer, not session-history storage or a default backup. `sync/upload-to-supabase.mjs` is a separate operator-managed tool.
+
+The Supabase Postgres itself (sessions, summaries, `ss_*`) has its own backup and restore procedure: [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md). The organization is on the Free plan, so the nightly `com.meowops.db-backup` dump is the only copy until Pro or PITR is enabled.

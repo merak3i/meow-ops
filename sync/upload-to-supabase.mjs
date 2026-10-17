@@ -9,6 +9,7 @@ const ROOT = join(import.meta.dirname, '..');
 const DATA_DIR   = join(ROOT, 'public', 'data');
 const ENV_FILE   = join(ROOT, '.env');
 const BUCKET     = 'meow-ops';
+const UPLOAD_TIMEOUT_MS = Number.parseInt(process.env.MEOW_UPLOAD_TIMEOUT_MS || '60000', 10) || 60_000;
 
 // Load .env
 if (existsSync(ENV_FILE)) {
@@ -36,16 +37,25 @@ async function uploadFile(localPath, objectKey) {
   console.log(`📤 Uploading ${objectKey} (${sizeKB} KB) to ${BUCKET}...`);
 
   const url = `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectKey}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${SERVICE_KEY}`,
-      'Content-Type': 'application/json',
-      'x-upsert': 'true',
-      'Cache-Control': 'public, max-age=300', // 5-minute browser cache
-    },
-    body: data,
-  });
+  let res;
+  try {
+    // Bounded upload (SHIP-GATE check 10): a stalled Storage endpoint must not hang the sync run.
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+        'x-upsert': 'true',
+        'Cache-Control': 'public, max-age=300', // 5-minute browser cache
+      },
+      body: data,
+      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
+    });
+  } catch (error) {
+    const reason = error?.name === 'TimeoutError' ? `timed out after ${UPLOAD_TIMEOUT_MS}ms` : (error instanceof Error ? error.message : String(error));
+    console.error(`❌ Upload failed for ${objectKey}: ${reason}`);
+    return false;
+  }
 
   if (!res.ok) {
     const text = await res.text();

@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { install, renderInstallation } from '../install-macos-agents.mjs';
 
-test('installation shares one config across three current services and escapes XML paths', () => {
+test('installation shares one config across four current services and escapes XML paths', () => {
   const jobs = renderInstallation({ repoRoot: '/fixture/A & B', home: '/fixture/home', node: '/fixture/node' });
-  assert.deepEqual(jobs.map(job => job.label), ['com.meowops.sanctum-helper', 'com.meowops.dashboard', 'com.meowops.harness-sync']);
+  assert.deepEqual(jobs.map(job => job.label), ['com.meowops.sanctum-helper', 'com.meowops.dashboard', 'com.meowops.harness-sync', 'com.meowops.db-backup']);
   for (const job of jobs) {
     assert.match(job.content, /A &amp; B/);
     assert.match(job.content, /MEOW_CONFIG_FILE/);
@@ -99,5 +99,5 @@ test('activation retries bootstrap while launchd finishes a bootout', async () =
   };
   const result = install({ activate: true, repoRoot, home, node: '/usr/bin/node', configFile: join(home, 'local.env'), run });
   assert.equal(result.activated, true);
-  assert.equal(calls.filter(c => c.startsWith('bootstrap')).length, 9);
+  assert.equal(calls.filter(c => c.startsWith('bootstrap')).length, 12);
 });

@@ -46,6 +46,10 @@ export function renderInstallation({ repoRoot = ROOT, home = homedir(), node = p
     { label: 'com.meowops.sanctum-helper', args: [node, 'sync/local-api.mjs'], keepAlive: true },
     { label: 'com.meowops.dashboard', args: [node, 'node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', '4273', '--strictPort'], keepAlive: true },
     { label: 'com.meowops.harness-sync', args: [node, 'sync/sync-runner.mjs', '--no-limits'], interval: 300 },
+    // Nightly logical backup of the Supabase Postgres (SHIP-GATE check 16). Free tier has no
+    // managed backups, so this dump under ~/.meow-ops/intake/backups/db is the only copy.
+    // Needs DATABASE_URL in the config file and pg_dump on the PATH below.
+    { label: 'com.meowops.db-backup', args: [node, 'sync/db-backup.mjs'], interval: 86_400 },
   ];
   return jobs.map(job => ({
     label: job.label, name: `${job.label}.plist`,

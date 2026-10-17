@@ -32,6 +32,8 @@ test('standalone CLI honors the environment opt-out and the no-limits flag', () 
       copyFileSync(new URL('../load-env.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'load-env.mjs'));
       copyFileSync(new URL('../snapshot-generation.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'snapshot-generation.mjs'));
       copyFileSync(new URL('../process-lock.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'process-lock.mjs'));
+      copyFileSync(new URL('../log.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'log.mjs'));
+      copyFileSync(new URL('../notify.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'notify.mjs'));
       writeFileSync(join(fx.repoRoot, 'sync', 'export-local.mjs'),
         `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(join(fx.repoRoot, 'public', 'data', 'sessions.json'))}, '[]');`);
       writeFileSync(join(fx.repoRoot, 'sync', 'fetch-claude-limits.mjs'),

@@ -28,6 +28,8 @@
     "intake:codex": "node sync/intake-codex.mjs",
     "intake:antigravity": "node sync/intake-antigravity.mjs",
     "health": "node sync/automation-health.mjs",
+    "backup:db": "node sync/db-backup.mjs",
+    "restore:drill:db": "node sync/db-restore-drill.mjs",
     "eval": "node sync/loop-eval.mjs",
     "sync:superadmin": "node sync/superadmin-usage.mjs",
     "project:register": "node sync/project-control-cli.mjs register --name 'Meow Ops' --alias meow-ops",
