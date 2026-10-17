@@ -75,8 +75,18 @@ export async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error) => {
+  main().catch(async (error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
+    // SHIP-GATE check 19: a crashed daily operator must reach the owner, not just the error log.
+    const [{ createLogger }, { notify }] = await Promise.all([import('./log.mjs'), import('./notify.mjs')]);
+    createLogger({ component: 'daily-operator' }).error('daily.crashed', { error });
+    await notify({
+      event: 'daily_operator_crashed',
+      severity: 'high',
+      title: 'daily operator threw',
+      lines: [error instanceof Error ? error.message : String(error)],
+      dedupeKey: 'daily-operator:crashed',
+    });
   });
 }

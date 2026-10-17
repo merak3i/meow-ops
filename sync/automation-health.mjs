@@ -9,6 +9,8 @@ import { pathToFileURL } from 'node:url';
 
 import { assertRedacted } from './loop-ledger.mjs';
 import { resolveIntakeDir, writeIntakeJson } from './intake-local.mjs';
+import { notify as defaultNotify, dedupeKeyFor } from './notify.mjs';
+import { createLogger } from './log.mjs';
 
 const execFileAsync = promisify(execFile);
 const HEALTH_FILE = 'automation-health.json';
@@ -194,12 +196,41 @@ export async function runAutomationHealth(options = {}) {
       .map((agent) => summarizeAgent(agent, launchctl, logsDir, now)),
   });
   writeIntakeJson(intakeDir, HEALTH_FILE, snapshot);
+  await alertOnFlags(snapshot, options);
   return snapshot;
+}
+
+// Alert on symptoms (SHIP-GATE check 19): any agent that failed, has no log, or has a
+// stale log. One message per distinct (label, flags, error signature) set per dedupe
+// window, so a flapping agent does not page every five minutes. Opt-in via
+// MEOW_TELEGRAM_*; unconfigured is a silent no-op. Pass { alerts: false } to skip.
+export function flaggedAgents(snapshot) {
+  return (snapshot?.agents || []).filter((agent) => Array.isArray(agent.flags) && agent.flags.length > 0);
+}
+
+export async function alertOnFlags(snapshot, { alerts = true, notify = defaultNotify, logger = createLogger({ component: 'automation-health' }) } = {}) {
+  const flagged = flaggedAgents(snapshot);
+  if (!alerts || flagged.length === 0) return { status: 'clear', flagged: 0 };
+  const lines = flagged.map((agent) => (
+    `${agent.label}: ${agent.flags.join(',')}`
+    + (agent.last_exit_status !== null && agent.last_exit_status !== undefined ? ` exit=${agent.last_exit_status}` : '')
+    + (agent.log_staleness_hours !== null && agent.log_staleness_hours !== undefined ? ` stale=${agent.log_staleness_hours}h` : '')
+    + (agent.last_error_signature ? ` sig=${agent.last_error_signature}` : '')
+  ));
+  logger.warn('health.flagged', { flagged: flagged.length, agents: flagged.map((agent) => `${agent.label}:${agent.flags.join('+')}`) });
+  const result = await notify({
+    event: 'agent_unhealthy',
+    severity: flagged.some((agent) => agent.flags.includes('failed')) ? 'high' : 'medium',
+    title: `${flagged.length} launchd agent${flagged.length === 1 ? '' : 's'} flagged`,
+    lines,
+    dedupeKey: dedupeKeyFor(flagged.map((agent) => [agent.label, agent.flags, agent.last_error_signature])),
+  });
+  return { ...result, flagged: flagged.length };
 }
 
 export async function main(argv = process.argv.slice(2)) {
   parseArgs(argv);
-  const snapshot = await runAutomationHealth();
+  const snapshot = await runAutomationHealth({ alerts: !argv.includes('--no-alert') });
   console.log(JSON.stringify(snapshot, null, 2));
 }
 

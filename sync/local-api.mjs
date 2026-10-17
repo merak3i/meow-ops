@@ -1424,3 +1424,28 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  POST /superadmin-usage/sync   - refresh local usage snapshot');
   console.log(`\n  Allowed browser origins: ${Array.from(ALLOWED_ORIGINS).join(', ')}\n`);
 });
+
+// Graceful shutdown (SHIP-GATE check 13). launchd sends SIGTERM on bootout, reinstall and
+// logout; `npm run agents:install` reinstalls this agent. Stop accepting connections, let
+// in-flight requests finish, then exit 0. A hard exit after SHUTDOWN_GRACE_MS keeps a stuck
+// handler from blocking the agent restart; KeepAlive brings the service back either way.
+const SHUTDOWN_GRACE_MS = Number.parseInt(process.env.MEOW_SHUTDOWN_GRACE_MS || '5000', 10) || 5000;
+let shuttingDown = false;
+export function shutdown(signal, { exit = process.exit, srv = server, graceMs = SHUTDOWN_GRACE_MS } = {}) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n${signal}: draining in-flight requests (up to ${graceMs}ms)`);
+  const force = setTimeout(() => {
+    console.error(`${signal}: grace period elapsed, exiting with open connections`);
+    exit(1);
+  }, graceMs);
+  force.unref();
+  srv.close(() => {
+    clearTimeout(force);
+    exit(0);
+  });
+  // Idle keep-alive sockets would otherwise hold close() open for the whole grace period.
+  srv.closeIdleConnections?.();
+}
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));

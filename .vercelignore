@@ -46,6 +46,9 @@ sync/*
 !sync/load-env.mjs
 !sync/snapshot-generation.mjs
 !sync/process-lock.mjs
+# sync-runner's structured log + failure alert (node builtins only; see sync/notify.mjs header).
+!sync/log.mjs
+!sync/notify.mjs
 # Keep only the selected runtime guide export in the deployment package.
 src/pages/sanctum/assets/guide-originalized-v*-runtime.glb
 !src/pages/sanctum/assets/guide-originalized-v110-runtime.glb
