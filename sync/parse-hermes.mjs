@@ -72,6 +72,7 @@ export function parseHermesRows(sessionRows = [], toolRows = [], messageRows = [
   // sessions.model column only holds the starting model, so a run that moved
   // from DeepSeek Flash to Kimi would otherwise be attributed to the first.
   const modelsBySession = new Map();
+  const usageBySession = new Map();
   for (const row of Array.isArray(modelRows) ? modelRows : []) {
     const name = String(row.model || '').trim();
     if (!row.session_id || !name) continue;
@@ -80,6 +81,30 @@ export function parseHermesRows(sessionRows = [], toolRows = [], messageRows = [
       + count(row.cache_write_tokens) || count(row.api_call_count) || 1;
     list.set(name, (list.get(name) || 0) + weight);
     modelsBySession.set(row.session_id, list);
+
+    const perModel = usageBySession.get(row.session_id) || new Map();
+    const usage = perModel.get(name) || {
+      model: name,
+      api_calls: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      cache_read_tokens: 0,
+      cache_creation_tokens: 0,
+      estimated_cost_usd: null,
+      observed_cost_usd: null,
+      has_usage: false,
+    };
+    usage.api_calls += count(row.api_call_count);
+    usage.input_tokens += count(row.input_tokens);
+    usage.output_tokens += count(row.output_tokens);
+    usage.cache_read_tokens += count(row.cache_read_tokens);
+    usage.cache_creation_tokens += count(row.cache_write_tokens);
+    usage.has_usage ||= row.input_tokens != null || row.output_tokens != null
+      || row.cache_read_tokens != null || row.cache_write_tokens != null;
+    usage.estimated_cost_usd = addAmount(usage.estimated_cost_usd, row.estimated_cost_usd);
+    usage.observed_cost_usd = addAmount(usage.observed_cost_usd, row.actual_cost_usd);
+    perModel.set(name, usage);
+    usageBySession.set(row.session_id, perModel);
   }
   const toolsBySession = new Map();
   for (const row of Array.isArray(toolRows) ? toolRows : []) {
@@ -108,6 +133,36 @@ export function parseHermesRows(sessionRows = [], toolRows = [], messageRows = [
       || row.cache_write_tokens != null;
     const usedModels = [...(modelsBySession.get(row.id) || new Map()).entries()]
       .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
+    const modelUsage = [...(usageBySession.get(row.id) || new Map()).values()].map((usage) => {
+      const totalTokens = usage.has_usage
+        ? usage.input_tokens + usage.output_tokens + usage.cache_read_tokens + usage.cache_creation_tokens
+        : null;
+      const calculated = calculateCostDetailed(
+        usage.model,
+        usage.input_tokens,
+        usage.output_tokens,
+        usage.cache_creation_tokens,
+        usage.cache_read_tokens,
+      );
+      const reportedEstimate = amount(usage.estimated_cost_usd);
+      const estimatedCost = reportedEstimate ?? calculated.cost;
+      const observedCost = amount(usage.observed_cost_usd);
+      return {
+        model: usage.model,
+        api_calls: usage.api_calls,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        cache_read_tokens: usage.cache_read_tokens,
+        cache_creation_tokens: usage.cache_creation_tokens,
+        total_tokens: totalTokens,
+        estimated_cost_usd: estimatedCost,
+        observed_cost_usd: observedCost,
+        usage_available: usage.has_usage,
+        cost_available: observedCost !== null || estimatedCost !== null,
+        cost_kind: observedCost !== null ? 'observed' : estimatedCost !== null ? 'estimated' : 'unavailable',
+        pricing_source: reportedEstimate !== null ? 'hermes-reported-estimate' : calculated.pricingSource,
+      };
+    });
     const model = usedModels[0] || (row.model ? String(row.model) : null);
     const priced = model && hasUsage
       ? calculateCostDetailed(model, input, output, cacheWrite, cacheRead)
@@ -158,6 +213,7 @@ export function parseHermesRows(sessionRows = [], toolRows = [], messageRows = [
       is_ghost: count(row.message_count) < 2,
       archived: Boolean(row.archived),
       models_used: usedModels.length ? usedModels : (model ? [model] : []),
+      model_usage: modelUsage,
     });
   });
 }
@@ -297,7 +353,9 @@ export function scanHermesSessions(dbPath = process.env.HERMES_STATE_DB || DEFAU
       models = queryJson(dbPath, `
         SELECT session_id, model, SUM(api_call_count) AS api_call_count,
                SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens,
-               SUM(cache_read_tokens) AS cache_read_tokens, SUM(cache_write_tokens) AS cache_write_tokens
+               SUM(cache_read_tokens) AS cache_read_tokens, SUM(cache_write_tokens) AS cache_write_tokens,
+               SUM(estimated_cost_usd) AS estimated_cost_usd,
+               SUM(actual_cost_usd) AS actual_cost_usd
         FROM session_model_usage
         GROUP BY session_id, model
       `);

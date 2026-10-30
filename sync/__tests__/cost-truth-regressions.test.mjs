@@ -53,3 +53,33 @@ test('Hermes model usage preserves absent actual charges instead of manufacturin
   assert.equal(usage.totals.actual_cost_usd, 0);
   assert.equal(usage.totals.estimated_cost_usd, 0.4);
 });
+
+test('Hermes source/model rollups count every used model with that model’s own metrics', () => {
+  const [session] = parseHermesRows(
+    [{ id: 'synthetic-hermes-session', model: 'model-a', message_count: 4, ended_at: '2026-10-30T00:00:00Z' }],
+    [],
+    [],
+    [
+      {
+        session_id: 'synthetic-hermes-session', model: 'model-a', api_call_count: 2,
+        input_tokens: 70, output_tokens: 5, cache_read_tokens: 3, cache_write_tokens: 2,
+        estimated_cost_usd: 0.04,
+      },
+      {
+        session_id: 'synthetic-hermes-session', model: 'model-b', api_call_count: 1,
+        input_tokens: 20, output_tokens: 10, cache_read_tokens: 0, cache_write_tokens: 0,
+        actual_cost_usd: 0,
+      },
+    ],
+  );
+  const byModel = buildSessionRollups([session], { timeZone: 'UTC' }).bySourceModel;
+  const pick = (model) => byModel.find((row) => row.key === `hermes:${model}`);
+
+  assert.deepEqual(session.models_used, ['model-a', 'model-b']);
+  assert.equal(pick('model-a').sessions, 1);
+  assert.equal(pick('model-a').tokens, 80);
+  assert.equal(pick('model-a').estimated_cost_usd, 0.04);
+  assert.equal(pick('model-b').sessions, 1);
+  assert.equal(pick('model-b').tokens, 30);
+  assert.equal(pick('model-b').observed_cost_usd, 0);
+});

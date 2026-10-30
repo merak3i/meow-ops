@@ -115,7 +115,31 @@ export function buildSessionRollups(sessions, options = {}) {
     addToMap(byProject, session.project || 'unknown', session);
     addToMap(byModel, session.model || 'unknown', session);
     addToMap(bySource, session.source || 'claude', session);
-    addToMap(bySourceModel, `${session.source || 'claude'}\u0000${session.model || 'unknown'}`, session);
+    const modelAttributions = session.source === 'hermes'
+      && Array.isArray(session.model_usage)
+      && session.model_usage.length > 0
+      ? session.model_usage.map((usage) => ({
+        ...session,
+        model: usage.model,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        cache_creation_tokens: usage.cache_creation_tokens,
+        cache_read_tokens: usage.cache_read_tokens,
+        total_tokens: usage.total_tokens,
+        estimated_cost_usd: usage.estimated_cost_usd,
+        observed_cost_usd: usage.observed_cost_usd,
+        cost_available: usage.cost_available,
+        cost_kind: usage.cost_kind,
+        pricing_source: usage.pricing_source,
+      }))
+      : [session];
+    for (const attribution of modelAttributions) {
+      addToMap(
+        bySourceModel,
+        `${attribution.source || 'claude'}\u0000${attribution.model || 'unknown'}`,
+        attribution,
+      );
+    }
     for (const [tool, rawCount] of Object.entries(session.tools || {})) {
       const count = Number(rawCount);
       if (!tool || !Number.isFinite(count) || count <= 0) continue;
