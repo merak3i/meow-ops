@@ -16,7 +16,7 @@
 //   MEOW_SYNC_PORT=7437 node sync/local-api.mjs   # legacy alias
 
 import { createServer } from 'node:http';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { statSync, existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -53,6 +53,7 @@ import {
   recordPreferenceDecision,
 } from './companion-preferences.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
+import { resolveRuntimeNode } from './node-binary.mjs';
 import { hostedSyncOrigins, isHostedSyncRoute, redactSyncStatusForHosted } from './hosted-status.mjs';
 import { readLedgerLoopRuns } from './loop-ledger-to-runs.mjs';
 import { querySessionHistory, readSessionHistorySnapshot } from './session-history.mjs';
@@ -147,24 +148,10 @@ function isAllowedOrigin(origin) {
 const NONCES = [];
 const NONCE_SET = new Set();
 
-// launchd and background processes don't always inherit a useful PATH.
-// Prefer the exact Node binary running this file, then stable install locations.
-function resolveNode() {
-  const candidates = [
-    process.execPath,
-    '/opt/homebrew/bin/node',
-    '/usr/local/bin/node',
-    '/usr/bin/node',
-  ];
-  for (const candidate of candidates) {
-    if (candidate && existsSync(candidate)) return candidate;
-  }
-  try {
-    return execFileSync('/usr/bin/env', ['which', 'node'], { encoding: 'utf8' }).trim();
-  } catch {}
-  return 'node';
-}
-const NODE = resolveNode();
+// launchd and background processes don't always inherit a useful PATH, and a
+// Homebrew upgrade can delete the binary this long-running helper started from.
+// Resolve on every spawn instead of caching a path at startup.
+const resolveNode = () => resolveRuntimeNode();
 
 // DNS-rebinding defense: a rebound attacker domain resolves to 127.0.0.1 but
 // still sends its own Host header. Only accept localhost Host values.
@@ -472,7 +459,7 @@ const server = createServer(async (req, res) => {
     console.log(`\n[${new Date().toLocaleTimeString()}] Sync triggered from ${origin && !isLocalDashboardOrigin(origin) ? 'hosted dashboard' : 'browser'}`);
     const started = startSyncRun({
       repoRoot: ROOT,
-      node: NODE,
+      node: resolveNode(),
       trigger: 'dashboard',
       env: { ...process.env },
     });
@@ -1245,7 +1232,7 @@ const server = createServer(async (req, res) => {
       return;
     }
     const mode = body.mode === 'push' ? 'push' : 'dry-run';
-    const child = spawn(NODE, [join(ROOT, 'sync', 'loop-execute.mjs'), '--proposal', body.proposal_id, '--mode', mode], {
+    const child = spawn(resolveNode(), [join(ROOT, 'sync', 'loop-execute.mjs'), '--proposal', body.proposal_id, '--mode', mode], {
       cwd: ROOT,
       env: { ...process.env, MEOW_EXECUTOR_ENABLED: '1' },
       stdio: 'pipe',
@@ -1299,7 +1286,7 @@ const server = createServer(async (req, res) => {
 
   if (path === '/loop-ops/sync' && req.method === 'POST') {
     console.log(`\n[${new Date().toLocaleTimeString()}] Loop-Ops import triggered from browser`);
-    const child = spawn(NODE, [join(ROOT, 'sync', 'loop-ops-import.mjs'), '--out', LOOP_OPS_DIR], {
+    const child = spawn(resolveNode(), [join(ROOT, 'sync', 'loop-ops-import.mjs'), '--out', LOOP_OPS_DIR], {
       cwd: ROOT,
       env: { ...process.env },
     });
@@ -1353,7 +1340,7 @@ const server = createServer(async (req, res) => {
 
   if (path === '/superadmin-usage/sync' && req.method === 'POST') {
     console.log(`\n[${new Date().toLocaleTimeString()}] SuperAdmin usage refresh triggered from browser`);
-    const child = spawn(NODE, [join(ROOT, 'sync', 'superadmin-usage.mjs')], {
+    const child = spawn(resolveNode(), [join(ROOT, 'sync', 'superadmin-usage.mjs')], {
       cwd: ROOT,
       env: { ...process.env },
     });

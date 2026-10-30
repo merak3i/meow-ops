@@ -4,6 +4,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFile
 import { homedir, userInfo } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { resolveStableNode } from './node-binary.mjs';
 import { loadEnv } from './load-env.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,7 +41,7 @@ const BOOTSTRAP_ATTEMPTS = 10;
 const BOOTSTRAP_RETRY_MS = 500;
 function sleep(ms) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
 
-export function renderInstallation({ repoRoot = ROOT, home = homedir(), node = process.execPath,
+export function renderInstallation({ repoRoot = ROOT, home = homedir(), node = resolveStableNode(),
   configFile = join(home, '.config', 'meow-ops', 'local.env') } = {}) {
   const jobs = [
     { label: 'com.meowops.sanctum-helper', args: [node, 'sync/local-api.mjs'], keepAlive: true },
@@ -64,7 +65,7 @@ ${job.keepAlive ? '<key>KeepAlive</key><true/>' : `<key>StartInterval</key><inte
   }));
 }
 
-export function install({ activate = false, repoRoot = ROOT, home = homedir(), node = process.execPath,
+export function install({ activate = false, repoRoot = ROOT, home = homedir(), node = resolveStableNode(),
   configFile = join(home, '.config', 'meow-ops', 'local.env'), run = execFileSync } = {}) {
   const agents = join(home, 'Library', 'LaunchAgents');
   const backup = join(home, '.meow-ops', 'backups', `agents-${Date.now()}`);

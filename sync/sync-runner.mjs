@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { loadEnv } from './load-env.mjs';
 import { acquireProcessLock } from './process-lock.mjs';
 import { readSnapshot } from './snapshot-generation.mjs';
+import { childFailureCode, resolveRuntimeNode } from './node-binary.mjs';
 
 const DEFAULT_TIMEOUT_MS = 300_000;
 const PHASES = ['preflight', 'export_sessions', 'verify_artifacts', 'refresh_limits'];
@@ -132,23 +133,24 @@ function runCommand({ command, args, cwd, env, timeoutMs = DEFAULT_TIMEOUT_MS, k
       child.kill('SIGTERM');
       killTimer = setTimeout(() => child.kill('SIGKILL'), killGraceMs);
     }, timeoutMs);
-    child.on('error', () => {
+    let settled = false;
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       clearTimeout(killTimer);
-      resolve({ ok: false, code: null, timedOut: false });
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      clearTimeout(killTimer);
-      resolve({ ok: code === 0 && !timedOut, code, timedOut });
-    });
+      resolve(result);
+    };
+    // Only the errno (e.g. ENOENT) is kept; the message can contain paths.
+    child.on('error', (error) => settle({ ok: false, code: null, signal: null, error: error?.code || 'failed', timedOut: false }));
+    child.on('close', (code, signal) => settle({ ok: code === 0 && !timedOut, code, signal, timedOut }));
   });
 }
 
 async function execute(snapshot, options) {
   const {
     repoRoot,
-    node = process.execPath,
+    node = resolveRuntimeNode(),
     env = process.env,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     killGraceMs = 1500,
@@ -172,8 +174,11 @@ async function execute(snapshot, options) {
       return finish(snapshot, 'failed', runtime, {
         failure: {
           stage: 'export_sessions',
-          code: exported.timedOut ? 'timeout' : `exit_${exported.code ?? 'spawn'}`,
-          summary: exported.timedOut ? 'Session export timed out.' : 'Session export did not complete successfully.',
+          code: childFailureCode(exported),
+          summary: exported.timedOut ? 'Session export timed out.'
+            : exported.error ? 'The session exporter could not start. Node may have been upgraded or moved; restart the helper.'
+              : exported.signal ? 'The session exporter was stopped by the system before finishing.'
+                : 'Session export did not complete successfully.',
           retryable: true,
         },
       });
@@ -216,7 +221,7 @@ async function execute(snapshot, options) {
         size: artifact.size,
         warning: {
           stage: 'refresh_limits',
-          code: limits.timedOut ? 'timeout' : `exit_${limits.code ?? 'spawn'}`,
+          code: childFailureCode(limits),
           summary: 'Sessions synced, but the optional limits refresh failed.',
         },
       });

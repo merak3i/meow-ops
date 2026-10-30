@@ -32,6 +32,7 @@ test('standalone CLI honors the environment opt-out and the no-limits flag', () 
       copyFileSync(new URL('../load-env.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'load-env.mjs'));
       copyFileSync(new URL('../snapshot-generation.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'snapshot-generation.mjs'));
       copyFileSync(new URL('../process-lock.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'process-lock.mjs'));
+      copyFileSync(new URL('../node-binary.mjs', import.meta.url), join(fx.repoRoot, 'sync', 'node-binary.mjs'));
       writeFileSync(join(fx.repoRoot, 'sync', 'export-local.mjs'),
         `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(join(fx.repoRoot, 'public', 'data', 'sessions.json'))}, '[]');`);
       writeFileSync(join(fx.repoRoot, 'sync', 'fetch-claude-limits.mjs'),
@@ -214,4 +215,19 @@ test('timeouts escalate when a child ignores termination and release ownership a
     await runSync({ ...fx, commandRunner: async () => { executed = true; return { ok: false, code: 1 }; } });
     assert.equal(executed, true);
   } finally { rmSync(fx.root, { recursive: true, force: true }); }
+});
+
+test('sync runner reports a missing node binary as spawn_enoent', async () => {
+  const fx = fixture();
+  try {
+    const result = await runSync({
+      repoRoot: fx.repoRoot,
+      runtime: fx.runtime,
+      commandRunner: async () => ({ ok: false, code: null, signal: null, error: 'ENOENT', timedOut: false }),
+    });
+    assert.equal(result.failure.code, 'spawn_enoent');
+    assert.match(result.failure.summary, /restart the helper/);
+  } finally {
+    rmSync(fx.root, { recursive: true, force: true });
+  }
 });
