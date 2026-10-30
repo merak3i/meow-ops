@@ -2,8 +2,10 @@
 // Message text and tool arguments are intentionally never copied to the output.
 
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, relative } from 'node:path';
+import { zstdDecompressSync } from 'node:zlib';
 import { calculateCostDetailed } from './cost-calculator.mjs';
 import { createSession } from './session-utils.mjs';
 import { readJsonlWithCheckpoint } from './incremental-jsonl.mjs';
@@ -12,7 +14,7 @@ import { statSourcePath, walkSourceJsonl } from './source-discovery.mjs';
 export function defaultDeepSeekHarnessDir(env = process.env) {
   const home = env.HOME || homedir();
   return env.DEEPSEEK_HARNESS_DIR
-    || join(home, 'DeepSeek-Workspace', 'codex-parity', 'results', 'deepseek');
+    || join(home, '.config', 'deepseek-harness');
 }
 
 export const DEFAULT_DEEPSEEK_HARNESS_DIR = defaultDeepSeekHarnessDir();
@@ -40,6 +42,7 @@ function createState(sessionId, project) {
     }),
     models: new Map(),
     hasUsage: false,
+    hasSessionMetadata: false,
   };
 }
 
@@ -62,7 +65,11 @@ function consumeEntry(state, entry) {
   const message = data.message && typeof data.message === 'object' ? data.message : {};
   const type = typeof entry.type === 'string' ? entry.type : '';
 
-  addTimestamp(session, entry.time ?? entry.timestamp ?? data.time ?? data.timestamp);
+  addTimestamp(session, entry.time ?? entry.timestamp ?? entry.createdAt ?? data.time ?? data.timestamp);
+  if (typeof entry.id === 'string' && entry.createdAt != null
+    && typeof entry.isSeeded === 'boolean' && entry.isSeeded === false) {
+    state.hasSessionMetadata = true;
+  }
 
   const model = entry.model ?? data.model ?? message.model ?? data.response?.model ?? data.request?.model;
   if (typeof model === 'string' && model.trim()) {
@@ -107,7 +114,7 @@ function consumeEntry(state, entry) {
 
 function finishState(state) {
   const session = structuredClone(state.session);
-  if (session.message_count === 0) return null;
+  if (session.message_count === 0 && !state.hasSessionMetadata) return null;
 
   // A run can switch models mid-session: keep every model seen and attribute
   // the session to the one that appears most often.
@@ -137,11 +144,44 @@ function finishState(state) {
   return session;
 }
 
+function parseCompressedJsonl(filePath, options) {
+  const report = { mode: 'full', bytesRead: 0, parsedBytes: 0, malformedLines: 0, pendingBytes: 0 };
+  let stage = 'read';
+  try {
+    const compressed = readFileSync(filePath);
+    report.bytesRead = compressed.length;
+    stage = 'decompress';
+    const source = zstdDecompressSync(compressed).toString('utf8');
+    report.parsedBytes = Buffer.byteLength(source);
+    const state = options.createState();
+    stage = 'parse';
+    for (const line of source.split(/\r?\n/)) {
+      if (!line.trim()) continue;
+      let entry;
+      try { entry = JSON.parse(line); }
+      catch { report.malformedLines++; continue; }
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        report.malformedLines++;
+        continue;
+      }
+      options.reduceEntry(state, entry);
+    }
+    const session = options.finish(state);
+    options.onCoverage?.(report);
+    return session;
+  } catch {
+    options.onCoverage?.({ ...report, mode: 'failed', stage });
+    throw Object.assign(new Error(`Local session collection failed at ${stage}; compressed source content was not logged.`), {
+      code: 'source_read_failed', stage,
+    });
+  }
+}
+
 export function parseDeepSeekFile(filePath, options = {}) {
   const sessionId = options.sessionId
     || `deepseek-${createHash('sha256').update(options.relativePath || filePath).digest('hex').slice(0, 32)}`;
   const project = options.project || 'deepseek-harness';
-  return readJsonlWithCheckpoint(filePath, {
+  const parserOptions = {
     ...options,
     version: `deepseek-harness-v2:${sessionId}:${project}`,
     createState: () => createState(sessionId, project),
@@ -152,7 +192,10 @@ export function parseDeepSeekFile(filePath, options = {}) {
       return { ...value, models: new Map(value.models.map((item) => (Array.isArray(item) ? item : [item, 1]))) };
     },
     dehydrate: value => ({ ...value, models: [...value.models.entries()] }),
-  });
+  };
+  return filePath.endsWith('.jsonl.zstd')
+    ? parseCompressedJsonl(filePath, parserOptions)
+    : readJsonlWithCheckpoint(filePath, parserOptions);
 }
 
 export function scanDeepSeekSessions(rootDir = DEFAULT_DEEPSEEK_HARNESS_DIR, options = {}) {
@@ -160,7 +203,10 @@ export function scanDeepSeekSessions(rootDir = DEFAULT_DEEPSEEK_HARNESS_DIR, opt
   if (!rootStat?.isDirectory()) return [];
 
   const sessions = [];
-  for (const { filePath } of walkSourceJsonl(rootDir, options)) {
+  for (const { filePath } of walkSourceJsonl(rootDir, {
+    ...options,
+    extensions: ['.jsonl', '.jsonl.zstd'],
+  })) {
     const relativePath = relative(rootDir, filePath);
     const sessionId = `deepseek-${createHash('sha256').update(relativePath).digest('hex').slice(0, 32)}`;
     try {

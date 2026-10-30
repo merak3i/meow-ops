@@ -4,7 +4,8 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { parseDeepSeekFile } from '../parse-deepseek-harness.mjs';
+import { zstdCompressSync } from 'node:zlib';
+import { defaultDeepSeekHarnessDir, parseDeepSeekFile, scanDeepSeekSessions } from '../parse-deepseek-harness.mjs';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', '__fixtures__', 'deepseek', 'synthetic-session.jsonl');
 
@@ -119,4 +120,40 @@ test('a session that switches models keeps every model and picks the dominant on
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('compressed DeepSeek session metadata is discovered without inferring a model', () => {
+  const root = mkdtempSync(join(tmpdir(), 'meow-deepseek-zstd-'));
+  const file = join(root, 'synthetic-session.jsonl.zstd');
+  try {
+    const metadata = {
+      type: 'session',
+      version: 1,
+      id: 'synthetic-session-id',
+      createdAt: 1_798_761_600_000,
+      cwd: '/scratch/synthetic-project',
+      isSeeded: false,
+      delegationDepth: 0,
+      agentPreset: 'synthetic',
+    };
+    writeFileSync(file, zstdCompressSync(Buffer.from(`${JSON.stringify(metadata)}\n`)));
+
+    const [session] = scanDeepSeekSessions(root);
+    assert.ok(session);
+    assert.equal(session.source, 'deepseek');
+    assert.equal(session.started_at, '2027-01-01T00:00:00.000Z');
+    assert.equal(session.ended_at, '2027-01-01T00:00:00.000Z');
+    assert.equal(session.model, null);
+    assert.equal(session.message_count, 0);
+    assert.equal(session.usage_available, false);
+    assert.equal(session.cwd, null);
+    assert.doesNotMatch(JSON.stringify(session), /synthetic-session-id|scratch\/synthetic-project/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('DeepSeek root defaults to the local harness store and keeps its explicit override', () => {
+  assert.equal(defaultDeepSeekHarnessDir({ HOME: '/Users/synthetic' }), '/Users/synthetic/.config/deepseek-harness');
+  assert.equal(defaultDeepSeekHarnessDir({ HOME: '/Users/synthetic', DEEPSEEK_HARNESS_DIR: '/tmp/synthetic-override' }), '/tmp/synthetic-override');
 });

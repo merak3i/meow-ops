@@ -22,6 +22,9 @@ export function statSourcePath(path, options = {}) {
 // directory identities so a symlink to an ancestor cannot recurse forever.
 export function* walkSourceJsonl(dir, options = {}) {
   const visited = new Set();
+  const extensions = Array.isArray(options.extensions) && options.extensions.length > 0
+    ? options.extensions
+    : ['.jsonl'];
   function* walk(path, stat, isSubagent) {
     if (!stat?.isDirectory()) return;
     const identity = `${stat.dev}:${stat.ino}`;
@@ -31,7 +34,9 @@ export function* walkSourceJsonl(dir, options = {}) {
       const filePath = join(path, name);
       const child = statSourcePath(filePath, options);
       if (child?.isDirectory()) yield* walk(filePath, child, isSubagent || name === 'subagents');
-      else if (child?.isFile() && name.endsWith('.jsonl')) yield { filePath, name, isSubagent };
+      else if (child?.isFile() && extensions.some(extension => name.endsWith(extension))) {
+        yield { filePath, name, isSubagent };
+      }
     }
   }
   yield* walk(dir, statSourcePath(dir, options), false);
