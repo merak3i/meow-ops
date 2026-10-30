@@ -187,9 +187,11 @@ export default function App() {
 
   useShortcuts({ onOpenPalette: openPalette, onNavigate: goToSurface, paletteOpen });
 
-  const modelData = costSummary?.byModel
-    ? costSummary.byModel.map((row) => ({ ...row, model: row.key }))
-    : getModelBreakdown(allSessions);
+  const modelData = costSummary?.bySourceModel
+    ? costSummary.bySourceModel
+    : costSummary?.byModel
+      ? costSummary.byModel.map((row) => ({ ...row, key: row.key, model: row.key }))
+      : getModelBreakdown(allSessions);
   const stats = computeOverviewStats(sessions, dateRange);
 
   // Per-source rollup for the budget panel. Computed from ALL sessions so the

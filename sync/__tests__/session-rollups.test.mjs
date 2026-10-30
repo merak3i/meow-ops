@@ -51,3 +51,18 @@ test('builds complete time and dimension rollups with tokens, time, and cost', (
     { key: 'Edit', call_count: 1 },
   ]);
 });
+
+test('rollups split each source by the model it ran', async () => {
+  const { buildSessionRollups } = await import('../session-rollups.mjs');
+  const r = buildSessionRollups([
+    { source: 'hermes', model: 'kimi-k3', total_tokens: 10, ended_at: '2026-10-01T00:00:00Z' },
+    { source: 'hermes', model: 'kimi-k3', total_tokens: 5, ended_at: '2026-10-02T00:00:00Z' },
+    { source: 'deepseek', model: 'deepseek-v4-flash', total_tokens: 7, ended_at: '2026-10-02T00:00:00Z' },
+    { source: 'deepseek', total_tokens: 1, ended_at: '2026-10-02T00:00:00Z' },
+  ], { timeZone: 'UTC' });
+  const pick = (k) => r.bySourceModel.find((row) => row.key === k);
+  assert.equal(pick('hermes:kimi-k3').sessions, 2);
+  assert.equal(pick('hermes:kimi-k3').tokens, 15);
+  assert.equal(pick('deepseek:deepseek-v4-flash').source, 'deepseek');
+  assert.equal(pick('deepseek:unknown').model, 'unknown');
+});

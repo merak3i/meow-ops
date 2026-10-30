@@ -67,7 +67,20 @@ function queryJson(dbPath, sql) {
   return output ? JSON.parse(output) : [];
 }
 
-export function parseHermesRows(sessionRows = [], toolRows = [], messageRows = []) {
+export function parseHermesRows(sessionRows = [], toolRows = [], messageRows = [], modelRows = []) {
+  // session_model_usage records every model a session actually called. The
+  // sessions.model column only holds the starting model, so a run that moved
+  // from DeepSeek Flash to Kimi would otherwise be attributed to the first.
+  const modelsBySession = new Map();
+  for (const row of Array.isArray(modelRows) ? modelRows : []) {
+    const name = String(row.model || '').trim();
+    if (!row.session_id || !name) continue;
+    const list = modelsBySession.get(row.session_id) || new Map();
+    const weight = count(row.input_tokens) + count(row.output_tokens) + count(row.cache_read_tokens)
+      + count(row.cache_write_tokens) || count(row.api_call_count) || 1;
+    list.set(name, (list.get(name) || 0) + weight);
+    modelsBySession.set(row.session_id, list);
+  }
   const toolsBySession = new Map();
   for (const row of Array.isArray(toolRows) ? toolRows : []) {
     const name = normalizeTool(row.tool_name);
@@ -93,7 +106,9 @@ export function parseHermesRows(sessionRows = [], toolRows = [], messageRows = [
       || row.output_tokens != null
       || row.cache_read_tokens != null
       || row.cache_write_tokens != null;
-    const model = row.model ? String(row.model) : null;
+    const usedModels = [...(modelsBySession.get(row.id) || new Map()).entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name]) => name);
+    const model = usedModels[0] || (row.model ? String(row.model) : null);
     const priced = model && hasUsage
       ? calculateCostDetailed(model, input, output, cacheWrite, cacheRead)
       : { cost: null, pricingSource: 'unavailable' };
@@ -142,6 +157,7 @@ export function parseHermesRows(sessionRows = [], toolRows = [], messageRows = [
       cat_type: row.tool_call_count > 0 ? 'architect' : 'ghost',
       is_ghost: count(row.message_count) < 2,
       archived: Boolean(row.archived),
+      models_used: usedModels.length ? usedModels : (model ? [model] : []),
     });
   });
 }
@@ -276,7 +292,17 @@ export function scanHermesSessions(dbPath = process.env.HERMES_STATE_DB || DEFAU
       WHERE active = 1 AND role IN ('user', 'assistant')
       GROUP BY session_id, role
     `);
-    return parseHermesRows(sessions, tools, roles).map((session) => ({
+    let models = [];
+    try {
+      models = queryJson(dbPath, `
+        SELECT session_id, model, SUM(api_call_count) AS api_call_count,
+               SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens,
+               SUM(cache_read_tokens) AS cache_read_tokens, SUM(cache_write_tokens) AS cache_write_tokens
+        FROM session_model_usage
+        GROUP BY session_id, model
+      `);
+    } catch { /* Older Hermes schemas have no per-model usage table. */ }
+    return parseHermesRows(sessions, tools, roles, models).map((session) => ({
       ...session,
       raw_ref: dbPath,
     }));

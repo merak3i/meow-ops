@@ -531,6 +531,7 @@ console.log(`\nWrote ${OUTPUT_FILE} (${fileSize} KB)`);
     yearly_summary: rollups.yearly,
     byProject: rollups.byProject,
     byModel: rollups.byModel,
+    bySourceModel: rollups.bySourceModel,
     byTool: rollups.byTool,
     bySourceAllTime: Object.fromEntries(rollups.bySource.map((row) => [row.key, row])),
     cursorUsage: cursorUsageReport,

@@ -38,7 +38,7 @@ function createState(sessionId, project) {
       source: 'deepseek',
       project: project || 'deepseek-harness',
     }),
-    models: new Set(),
+    models: new Map(),
     hasUsage: false,
   };
 }
@@ -64,8 +64,11 @@ function consumeEntry(state, entry) {
 
   addTimestamp(session, entry.time ?? entry.timestamp ?? data.time ?? data.timestamp);
 
-  const model = entry.model ?? data.model ?? message.model;
-  if (typeof model === 'string' && model.trim()) state.models.add(model.trim());
+  const model = entry.model ?? data.model ?? message.model ?? data.response?.model ?? data.request?.model;
+  if (typeof model === 'string' && model.trim()) {
+    const key = model.trim();
+    state.models.set(key, (state.models.get(key) || 0) + 1);
+  }
   const isUser = type === 'user/message' || (type === 'message' && data.role === 'user');
   const isAssistant = type === 'assistant/message'
     || (type === 'message' && (data.role === 'assistant' || message.role === 'assistant'));
@@ -106,7 +109,11 @@ function finishState(state) {
   const session = structuredClone(state.session);
   if (session.message_count === 0) return null;
 
-  session.model = state.models.size === 1 ? [...state.models][0] : null;
+  // A run can switch models mid-session: keep every model seen and attribute
+  // the session to the one that appears most often.
+  const ranked = [...state.models.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  session.model = ranked[0]?.[0] || null;
+  session.models_used = ranked.map(([name]) => name);
   session.usage_available = state.hasUsage;
   session.total_tokens = session.input_tokens + session.output_tokens
     + session.cache_creation_tokens + session.cache_read_tokens;
@@ -136,15 +143,15 @@ export function parseDeepSeekFile(filePath, options = {}) {
   const project = options.project || 'deepseek-harness';
   return readJsonlWithCheckpoint(filePath, {
     ...options,
-    version: `deepseek-harness-v1:${sessionId}:${project}`,
+    version: `deepseek-harness-v2:${sessionId}:${project}`,
     createState: () => createState(sessionId, project),
     reduceEntry: consumeEntry,
     finish: finishState,
     hydrate: value => {
       if (!value?.session || !Array.isArray(value.models)) throw new Error('Invalid checkpoint state.');
-      return { ...value, models: new Set(value.models) };
+      return { ...value, models: new Map(value.models.map((item) => (Array.isArray(item) ? item : [item, 1]))) };
     },
-    dehydrate: value => ({ ...value, models: [...value.models] }),
+    dehydrate: value => ({ ...value, models: [...value.models.entries()] }),
   });
 }
 

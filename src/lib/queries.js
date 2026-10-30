@@ -940,10 +940,12 @@ export function getModelBreakdown(sessions) {
   const byModel = {};
   for (const s of sessions) {
     const model = s.model || 'unknown';
-    if (!byModel[model]) byModel[model] = { model, sessions: 0, tokens: 0, ...emptyCostBucket() };
-    byModel[model].sessions++;
-    byModel[model].tokens += s.total_tokens;
-    addCostToBucket(byModel[model], s);
+    const source = s.source || 'claude';
+    const key = `${source}:${model}`;
+    if (!byModel[key]) byModel[key] = { key, source, model, sessions: 0, tokens: 0, ...emptyCostBucket() };
+    byModel[key].sessions++;
+    byModel[key].tokens += s.total_tokens;
+    addCostToBucket(byModel[key], s);
   }
-  return Object.values(byModel).sort((a, b) => b.cost - a.cost);
+  return Object.values(byModel).sort((a, b) => a.source.localeCompare(b.source) || b.sessions - a.sessions);
 }

@@ -364,7 +364,7 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
 
       <section className="mo-section">
         <div className="mo-section__head">
-          <Eyebrow>By model</Eyebrow>
+          <Eyebrow>By source and model</Eyebrow>
           <Scope range="All time" completeness={completeness} />
         </div>
         <Card pad={false}>
@@ -372,11 +372,11 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-ui)' }}>
             <thead>
               <tr>
-                {['Model', 'Sessions', 'Tokens', 'Estimate', 'Observed', 'Estimate share'].map((heading, index) => (
+                {['Source', 'Model', 'Sessions', 'Tokens', 'Estimate', 'Observed', 'Estimate share'].map((heading, index) => (
                   <th
                     key={heading}
                     className="mo-eyebrow"
-                    style={{ padding: '10px 14px', textAlign: index === 0 ? 'left' : 'right' }}
+                    style={{ padding: '10px 14px', textAlign: index < 2 ? 'left' : 'right' }}
                   >
                     {heading}
                   </th>
@@ -385,7 +385,8 @@ export default function CostTracker({ dailyData = [], modelData = [], stats, cos
             </thead>
             <tbody>
               {modelData.map((row) => (
-                <tr key={row.model} style={{ borderTop: '1px solid var(--border)' }}>
+                <tr key={row.key || row.model} style={{ borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: '9px 14px', color: 'var(--text-secondary)' }}>{row.source ? sourceMeta(row.source).label : 'All'}</td>
                   <td style={{ padding: '9px 14px' }}><ModelBadge model={row.model} /></td>
                   <td className="mo-num" style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--text-secondary)' }}>{row.sessions}</td>
                   <td className="mo-num" style={{ padding: '9px 14px', textAlign: 'right', color: 'var(--text-secondary)' }}>{formatTokens(row.tokens)}</td>

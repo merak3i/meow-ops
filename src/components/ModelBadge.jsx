@@ -9,7 +9,11 @@ export default function ModelBadge({ model }) {
         ? 'var(--cyan)'
         : normalized.includes('gemini')
           ? 'oklch(0.70 0.17 260)'
-          : 'var(--text-muted)';
+          : normalized.includes('deepseek')
+            ? 'oklch(0.68 0.15 245)'
+            : normalized.includes('kimi') || normalized.includes('moonshot')
+              ? 'oklch(0.75 0.15 75)'
+              : 'var(--text-muted)';
 
   return (
     <span

@@ -75,3 +75,19 @@ test('Hermes messages become private evidence events without internal reasoning 
   assert.equal('reasoning' in event.metadata, false);
   assert.equal(event.raw_ref, '/tmp/hermes.db#messages:42');
 });
+
+test('Hermes sessions are attributed to the model they mostly ran, not just the starting model', () => {
+  const [session] = parseHermesRows(
+    [{ id: 's1', model: 'deepseek-v4-flash', started_at: 1793300000, ended_at: 1793300100, message_count: 6, input_tokens: 300, output_tokens: 30 }],
+    [], [],
+    [
+      { session_id: 's1', model: 'deepseek-v4-flash', input_tokens: 50, output_tokens: 5 },
+      { session_id: 's1', model: 'kimi-k3', input_tokens: 250, output_tokens: 25 },
+    ],
+  );
+  assert.equal(session.model, 'kimi-k3');
+  assert.deepEqual(session.models_used, ['kimi-k3', 'deepseek-v4-flash']);
+  const [plain] = parseHermesRows([{ id: 's2', model: 'kimi-k3', started_at: 1793300000, message_count: 2 }]);
+  assert.equal(plain.model, 'kimi-k3');
+  assert.deepEqual(plain.models_used, ['kimi-k3']);
+});

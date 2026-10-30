@@ -98,3 +98,25 @@ test('DeepSeek exact model keys use only the matching price row', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a session that switches models keeps every model and picks the dominant one', async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { scanDeepSeekSessions } = await import('../parse-deepseek-harness.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'meow-ds-models-'));
+  try {
+    const lines = [
+      { type: 'user/message', time: 1793300000, data: { message: { role: 'user' } } },
+      { type: 'assistant/message', time: 1793300010, data: { model: 'deepseek-v4-flash', usage: { inputTokens: 5, outputTokens: 2 }, message: { role: 'assistant' } } },
+      { type: 'assistant/message', time: 1793300020, data: { model: 'kimi-k3', usage: { inputTokens: 5, outputTokens: 2 }, message: { role: 'assistant' } } },
+      { type: 'assistant/message', time: 1793300030, data: { response: { model: 'kimi-k3' }, usage: { inputTokens: 5, outputTokens: 2 }, message: { role: 'assistant' } } },
+    ];
+    writeFileSync(join(dir, 'run.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const [session] = scanDeepSeekSessions(dir);
+    assert.equal(session.model, 'kimi-k3');
+    assert.deepEqual(session.models_used, ['kimi-k3', 'deepseek-v4-flash']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
