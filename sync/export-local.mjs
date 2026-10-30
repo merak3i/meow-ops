@@ -23,6 +23,7 @@ import { readCursorAdminApiKey } from './cursor-credential.mjs';
 import { publishSnapshot } from './snapshot-generation.mjs';
 import { acquireProcessLock } from './process-lock.mjs';
 import { readSourceDirectory, statSourcePath, walkSourceJsonl } from './source-discovery.mjs';
+import { claudeProjectRoots } from './claude-roots.mjs';
 
 loadEnv(join(import.meta.dirname, '..'));
 const syncLock = acquireProcessLock(join(process.env.MEOW_RUNTIME_DIR || join(process.env.HOME, '.meow-ops', 'runtime'), 'sync.lock'), {
@@ -31,7 +32,7 @@ const syncLock = acquireProcessLock(join(process.env.MEOW_RUNTIME_DIR || join(pr
 if (!syncLock) throw new Error('Another local collector is running. Retry after it finishes.');
 process.once('exit', () => syncLock.release());
 
-const CLAUDE_DIR = join(process.env.HOME, '.claude', 'projects');
+const CLAUDE_ROOTS = claudeProjectRoots();
 const CODEX_DIR  = join(process.env.HOME, '.codex', 'sessions');
 // Google Antigravity agent sessions (~/.gemini/antigravity/brain/<uuid>/...).
 // Override the root with ANTIGRAVITY_DIR.
@@ -78,12 +79,11 @@ const claudeDiscovery = { onCoverage: report => {
   recordCoverage('claude', report);
   if (report.mode === 'failed') errorCount++;
 } };
-const projectDirs = readSourceDirectory(CLAUDE_DIR, { ...claudeDiscovery, optional: true }).filter((name) => {
-  if (name.startsWith('.')) return false;
-  return statSourcePath(join(CLAUDE_DIR, name), claudeDiscovery)?.isDirectory();
-});
+const projectDirs = CLAUDE_ROOTS.flatMap((root) => readSourceDirectory(root, { ...claudeDiscovery, optional: true })
+  .filter((name) => !name.startsWith('.') && statSourcePath(join(root, name), claudeDiscovery)?.isDirectory())
+  .map((name) => ({ root, name })));
 
-console.log(`Scanning ${projectDirs.length} project directories...\n`);
+console.log(`Scanning ${projectDirs.length} Claude project directories across ${CLAUDE_ROOTS.length} root(s)...\n`);
 
 function walkJsonl(dir, projectDir) {
   for (const { filePath: full, name: entry, isSubagent } of walkSourceJsonl(dir, claudeDiscovery)) {
@@ -110,8 +110,8 @@ function walkJsonl(dir, projectDir) {
   }
 }
 
-for (const dir of projectDirs) {
-  const dirPath = join(CLAUDE_DIR, dir);
+for (const { root, name: dir } of projectDirs) {
+  const dirPath = join(root, dir);
   try {
     walkJsonl(dirPath, dir);
   } catch {
@@ -257,7 +257,7 @@ for (const s of allSessions) {
 }
 const allUnique = [...byId.values()];
 const sourceHealth = Object.fromEntries([
-  ['claude', existsSync(CLAUDE_DIR) ? 'available' : 'not-found'],
+  ['claude', CLAUDE_ROOTS.some((root) => existsSync(root)) ? 'available' : 'not-found'],
   ['codex', existsSync(CODEX_DIR) ? 'available' : 'not-found'],
   ['hermes', existsSync(HERMES_STATE_DB) ? 'available' : 'not-found'],
   ['antigravity', ANTIGRAVITY_DIR && existsSync(ANTIGRAVITY_DIR) ? 'available' : 'not-found'],
@@ -289,7 +289,7 @@ try {
   const catalog = readProjectCatalog();
   const guideEvidence = await syncGuideEvidence(allUnique, {
     catalog, checkpointDir: join(CHECKPOINT_DIR, 'guide-evidence'),
-    sourceRoots: { codex: CODEX_DIR, claude: CLAUDE_DIR, cursor: CURSOR_PROJECTS_DIR, antigravity: ANTIGRAVITY_DIR, hermes: HERMES_STATE_DB },
+    sourceRoots: { codex: CODEX_DIR, claude: CLAUDE_ROOTS, cursor: CURSOR_PROJECTS_DIR, antigravity: ANTIGRAVITY_DIR, hermes: HERMES_STATE_DB },
   });
   guideEvidenceCoverage = {
     status: guideEvidence.failed || guideEvidence.skipped ? 'partial' : 'available',

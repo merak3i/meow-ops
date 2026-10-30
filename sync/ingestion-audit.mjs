@@ -15,9 +15,9 @@ import { readSessionHistorySnapshot } from './session-history.mjs';
 import { AGENT_EVENT_SOURCES, projectForSession, queryAgentEvidence } from './project-evidence.mjs';
 import { readProjectCatalog } from './project-control.mjs';
 import { loadEnv } from './load-env.mjs';
+import { claudeProjectRoots } from './claude-roots.mjs';
 
 const REPO_ROOT = join(import.meta.dirname, '..');
-const CLAUDE_DIR = join(homedir(), '.claude', 'projects');
 const CODEX_DIR = join(homedir(), '.codex', 'sessions');
 
 function readJsonlLines(path) {
@@ -40,7 +40,7 @@ function readJsonlLines(path) {
   }
 }
 
-function scanClaudeSessions(root = CLAUDE_DIR) {
+function scanClaudeSessions(root) {
   const sessions = [];
   const report = { files: 0, errors: 0, available: existsSync(root) };
   if (!report.available) return { sessions, report };
@@ -152,7 +152,14 @@ export function summarizeIngestionAudit({ now = new Date(), scanned = [], archiv
 export async function runIngestionAudit({ now = new Date() } = {}) {
   loadEnv(REPO_ROOT);
   delete process.env.CURSOR_ADMIN_API_KEY;
-  const claude = scanClaudeSessions();
+  const claude = claudeProjectRoots().map((root) => scanClaudeSessions(root)).reduce((all, next) => ({
+    sessions: [...all.sessions, ...next.sessions],
+    report: {
+      files: all.report.files + next.report.files,
+      errors: all.report.errors + next.report.errors,
+      available: all.report.available || next.report.available,
+    },
+  }), { sessions: [], report: { files: 0, errors: 0, available: false } });
   let antigravityWarnings = 0;
   let hermesWarnings = 0;
   const priorWarn = console.warn;

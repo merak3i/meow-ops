@@ -85,7 +85,7 @@ export async function syncGuideEvidence(sessions, options = {}) {
       const sourceRoot = sourceRoots[source];
       const validPath = source === 'hermes'
         ? realpathSync(session.raw_ref) === realpathSync(sourceRoot)
-        : session.raw_ref?.endsWith('.jsonl') && contained(session.raw_ref, sourceRoot);
+        : session.raw_ref?.endsWith('.jsonl') && (Array.isArray(sourceRoot) ? sourceRoot : [sourceRoot]).some((root) => contained(session.raw_ref, root));
       const validAntigravityId = source !== 'antigravity' || relative(sourceRoot, session.raw_ref).split(sep)[1] === session.session_id.replace(/^antigravity-/, '');
       if (!validPath || !contained(binding.cwd, project.root) || !validAntigravityId) {
         count(source, 'skipped'); count(source, 'invalid_bindings');
