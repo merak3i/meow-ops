@@ -499,6 +499,8 @@ The helper serves private local data and operational APIs only to a local dashbo
 
 `npm run agents:install` installs this service together with the daily job. To run only in the current terminal, use `node sync/local-api.mjs`.
 
+**Automatic capture.** The helper watches every agent's session folder (Claude Code, Codex, Cursor, Hermes, Antigravity, plus any `MEOW_EXTRA_WATCH_ROOTS`, colon-separated) and starts a sync once new writes settle: 45 s after the last write, at most every 90 s, and within 3 minutes during a live session. The 5-minute `com.meowops.harness-sync` job remains the backstop. Disable with `MEOW_WATCH_SOURCES=0`. Each sync compares transcript files written this week with sessions collected; a large shortfall marks the source "collected with gaps" in the drawer instead of failing silently.
+
 **Dock app.** `npm run dock:install` creates `~/Applications/Meow Ops Local.app` and pins it to the Dock. Clicking it starts the helper and dashboard services if they are down, requests a fresh sync, and opens `http://127.0.0.1:4273` in its own Chrome app window. Launcher log: `~/Library/Logs/meow-ops/dock-launcher.log`.
 
 When the helper is unavailable, a local dashboard can use its bundled demo fallback. The hosted shell uses static demo endpoints; see the Privacy section for the verified state of the current deployment.

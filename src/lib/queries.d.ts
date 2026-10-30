@@ -27,6 +27,7 @@ export type SyncStatus = {
     source_counts?: Record<string, number>;
     source_health?: Record<string, {
       state: string; sessions: number; latest?: string | null;
+      recent?: { files: number; sessions: number; gap: boolean };
       coverage?: {
         recovered_steps: number; conversation_stores: number; unreadable_stores: number;
         database_sessions: number; unreadable_databases: number; unknown_steps: number;
@@ -36,6 +37,7 @@ export type SyncStatus = {
   failure?: { stage?: string; code?: string; summary?: string; retryable?: boolean } | null;
   warning?: { stage?: string; code?: string; summary?: string } | null;
   error?: string;
+  watcher?: { events: number; triggers: number; busy: number; watching: number };
 };
 
 export function getSyncStatus(options?: { interactive?: boolean }): Promise<SyncStatus>;

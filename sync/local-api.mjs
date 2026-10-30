@@ -54,6 +54,7 @@ import {
 } from './companion-preferences.mjs';
 import { getSyncRun, getSyncStatus, startSyncRun } from './sync-runner.mjs';
 import { resolveRuntimeNode } from './node-binary.mjs';
+import { createSourceWatcher } from './source-watcher.mjs';
 import { hostedSyncOrigins, isHostedSyncRoute, redactSyncStatusForHosted } from './hosted-status.mjs';
 import { readLedgerLoopRuns } from './loop-ledger-to-runs.mjs';
 import { querySessionHistory, readSessionHistorySnapshot } from './session-history.mjs';
@@ -397,6 +398,7 @@ const server = createServer(async (req, res) => {
   // ── GET /sync/status ──────────────────────────────────────────────────────
   if (path === '/sync/status' && req.method === 'GET') {
     const status = getSyncStatus({ repoRoot: ROOT });
+    if (sourceWatcher) status.watcher = sourceWatcher.stats();
     sendJson(res, 200, origin && !isLocalDashboardOrigin(origin) ? redactSyncStatusForHosted(status) : status);
     return;
   }
@@ -1371,7 +1373,15 @@ const server = createServer(async (req, res) => {
   res.end(JSON.stringify({ ok: false, error: 'Not found' }));
 });
 
+let sourceWatcher = null;
 server.listen(PORT, '127.0.0.1', () => {
+  if (IS_CLI && process.env.MEOW_WATCH_SOURCES !== '0') {
+    sourceWatcher = createSourceWatcher({
+      trigger: () => startSyncRun({ repoRoot: ROOT, node: resolveNode(), trigger: 'watch', env: { ...process.env } }),
+      log: (message) => console.log(`[watch] ${message}`),
+    });
+    console.log(`  Watching ${sourceWatcher.roots().length} agent source root(s) for new sessions`);
+  }
   console.log('Meow Ops local sync API');
   console.log(`  http://127.0.0.1:${PORT}`);
   console.log('  POST /sync                    - start an observable background sync');

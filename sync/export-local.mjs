@@ -85,8 +85,15 @@ const projectDirs = CLAUDE_ROOTS.flatMap((root) => readSourceDirectory(root, { .
 
 console.log(`Scanning ${projectDirs.length} Claude project directories across ${CLAUDE_ROOTS.length} root(s)...\n`);
 
+// Files written in the last week, compared with collected sessions below, so a
+// parser or archive regression shows up as a coverage gap instead of silence.
+const RECENT_WINDOW_MS = 7 * 86_400_000;
+const recentFiles = { claude: 0 };
 function walkJsonl(dir, projectDir) {
   for (const { filePath: full, name: entry, isSubagent } of walkSourceJsonl(dir, claudeDiscovery)) {
+    try {
+      if (Date.now() - statSync(full).mtimeMs <= RECENT_WINDOW_MS) recentFiles.claude++;
+    } catch { /* Coverage is best effort; parsing reports read failures. */ }
     try {
       const sessions = parseClaudeFile(full, projectDir, {
         checkpointDir: join(CHECKPOINT_DIR, 'claude'), onCoverage: report => recordCoverage('claude', report),
@@ -269,12 +276,21 @@ const sourceHealth = Object.fromEntries([
   const latest = rows.map((session) => session.ended_at || session.started_at).filter(Boolean).sort().at(-1) || null;
   const coverage = source === 'antigravity' ? antigravityCoverage(ANTIGRAVITY_DIR, rows) : null;
   const parsedCoverage = collection[source];
+  const recent = Object.hasOwn(recentFiles, source) ? {
+    files: recentFiles[source],
+    sessions: rows.filter((session) => Date.now() - Date.parse(session.ended_at || session.started_at) <= RECENT_WINDOW_MS).length,
+  } : null;
+  // One transcript file holds one session, so far fewer recent sessions than
+  // recently written files means sessions are being lost after discovery.
+  const recentGap = Boolean(recent && recent.files >= 3 && recent.sessions < recent.files * 0.5);
+  if (recentGap) console.warn(`Coverage gap: ${source} wrote ${recent.files} transcript file(s) this week but only ${recent.sessions} session(s) were collected.`);
   const gaps = (coverage && (coverage.unreadable_stores || coverage.unreadable_databases || coverage.unknown_steps || coverage.malformed_lines))
-    || parsedCoverage?.failed || parsedCoverage?.malformedLines || parsedCoverage?.pendingBytes;
+    || parsedCoverage?.failed || parsedCoverage?.malformedLines || parsedCoverage?.pendingBytes || recentGap;
   return [source, {
     state: parsedCoverage?.failed ? 'collected-with-gaps'
       : state === 'available' ? (gaps ? 'collected-with-gaps' : rows.length ? 'collected' : 'no-readable-sessions') : state,
     sessions: rows.length, latest, ...(coverage ? { coverage } : {}),
+    ...(recent ? { recent: { ...recent, gap: recentGap } } : {}),
     ...(parsedCoverage ? { collection: parsedCoverage } : {}),
   }];
 }));
