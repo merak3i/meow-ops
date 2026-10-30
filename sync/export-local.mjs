@@ -12,6 +12,7 @@ import { enrichCursorSessions, emptyCursorUsageReport } from './cursor-admin-usa
 import { scanAiderProjects }  from './parse-aider.mjs';
 import { scanAntigravitySessions, antigravityCoverage, DEFAULT_ANTIGRAVITY_DIR } from './parse-antigravity.mjs';
 import { scanHermesModelUsage, scanHermesSessions, DEFAULT_HERMES_DB } from './parse-hermes.mjs';
+import { defaultDeepSeekHarnessDir, scanDeepSeekSessions } from './parse-deepseek-harness.mjs';
 import { readSessionHistorySnapshot, updateSessionHistory } from './session-history.mjs';
 import { buildSessionRollups } from './session-rollups.mjs';
 import { archiveSessionEvidence } from './project-evidence.mjs';
@@ -38,6 +39,7 @@ const CODEX_DIR  = join(process.env.HOME, '.codex', 'sessions');
 // Override the root with ANTIGRAVITY_DIR.
 const ANTIGRAVITY_DIR = process.env.ANTIGRAVITY_DIR || DEFAULT_ANTIGRAVITY_DIR;
 const HERMES_STATE_DB = process.env.HERMES_STATE_DB || DEFAULT_HERMES_DB;
+const DEEPSEEK_HARNESS_DIR = defaultDeepSeekHarnessDir(process.env);
 
 const CHECKPOINT_DIR = join(process.env.MEOW_RUNTIME_DIR || join(process.env.HOME, '.meow-ops', 'runtime'), 'parser-checkpoints');
 const collection = {};
@@ -253,6 +255,19 @@ if (HERMES_STATE_DB && existsSync(HERMES_STATE_DB)) {
   console.log('No Hermes state database found — skipping (set HERMES_STATE_DB to enable)');
 }
 
+// Merge DeepSeek harness event logs. The parser retains metrics and tool names,
+// never message text or tool arguments. JSONL parsing uses private checkpoints.
+if (existsSync(DEEPSEEK_HARNESS_DIR)) {
+  const deepSeekSessions = scanDeepSeekSessions(DEEPSEEK_HARNESS_DIR, {
+    checkpointDir: join(CHECKPOINT_DIR, 'deepseek'),
+    onCoverage: report => recordCoverage('deepseek', report),
+  });
+  console.log(`Found ${deepSeekSessions.length} DeepSeek session(s)`);
+  allSessions.push(...deepSeekSessions);
+} else {
+  console.log('No DeepSeek harness session directory found — skipping (set DEEPSEEK_HARNESS_DIR to enable)');
+}
+
 // De-duplicate by session_id (real dedupe, not just a rename). A re-run or an
 // overlapping scan can surface the same id twice; keep the richer record
 // (more messages) so a partial re-read never shrinks a session.
@@ -267,6 +282,7 @@ const sourceHealth = Object.fromEntries([
   ['claude', CLAUDE_ROOTS.some((root) => existsSync(root)) ? 'available' : 'not-found'],
   ['codex', existsSync(CODEX_DIR) ? 'available' : 'not-found'],
   ['hermes', existsSync(HERMES_STATE_DB) ? 'available' : 'not-found'],
+  ['deepseek', existsSync(DEEPSEEK_HARNESS_DIR) ? 'available' : 'not-found'],
   ['antigravity', ANTIGRAVITY_DIR && existsSync(ANTIGRAVITY_DIR) ? 'available' : 'not-found'],
   ['aider', AIDER_PROJECT_DIRS.length ? 'available' : 'not-configured'],
   ['cursor', process.env.MEOW_SKIP_CURSOR === '1' ? 'excluded'

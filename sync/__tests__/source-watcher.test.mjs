@@ -101,7 +101,12 @@ test('real fs.watch fires on a new session file', async () => {
 
 test('default roots include every collected agent and extra roots', () => {
   const roots = defaultWatchRoots({ HOME: '/Users/me', MEOW_EXTRA_WATCH_ROOTS: '/Users/me/deepseek-harness' });
-  for (const part of ['.claude/projects', '.codex/sessions', '.cursor/projects', '.hermes', '.gemini/antigravity', 'deepseek-harness']) {
+  for (const part of ['.claude/projects', '.codex/sessions', '.cursor/projects', '.hermes', '.gemini/antigravity', 'results/deepseek', 'deepseek-harness']) {
     assert.ok(roots.some((r) => r.includes(part)), part);
   }
+});
+
+test('DeepSeek watcher root can be configured explicitly', () => {
+  const roots = defaultWatchRoots({ HOME: '/Users/me', DEEPSEEK_HARNESS_DIR: '/tmp/deepseek-fixture' });
+  assert.ok(roots.includes('/tmp/deepseek-fixture'));
 });

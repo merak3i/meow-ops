@@ -14,6 +14,7 @@ export const SOURCE_META: Readonly<Record<string, SourceMeta>> = {
   aider:       { label: 'Aider',       color: 'var(--amber)' },
   antigravity: { label: 'Antigravity', color: 'oklch(0.70 0.17 150)' },
   hermes:      { label: 'Hermes',      color: 'oklch(0.72 0.16 70)' },
+  deepseek:    { label: 'DeepSeek',    color: 'oklch(0.69 0.18 25)' },
 };
 
 export function sourceMeta(source: string | null | undefined): SourceMeta {

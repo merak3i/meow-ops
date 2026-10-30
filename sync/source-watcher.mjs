@@ -21,6 +21,7 @@ export function defaultWatchRoots(env = process.env) {
     env.CURSOR_PROJECTS_DIR || join(home, '.cursor', 'projects'),
     env.HERMES_STATE_DB ? join(env.HERMES_STATE_DB, '..') : join(home, '.hermes'),
     env.ANTIGRAVITY_DIR || join(home, '.gemini', 'antigravity'),
+    env.DEEPSEEK_HARNESS_DIR || join(home, 'DeepSeek-Workspace', 'codex-parity', 'results', 'deepseek'),
     ...extra,
   ])];
 }
