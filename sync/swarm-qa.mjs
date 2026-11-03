@@ -9,10 +9,12 @@
 //                             Cursor, Hermes, DeepSeek Harness (ACP). No model
 //                             calls, a private AutoSwarm home, nothing shared.
 //   --live --yes-spend        your installed harnesses answer tiny dummy prompts
-//                             (about six calls per harness). The workspace is a
-//                             temp folder; receipts land in your AutoSwarm home,
-//                             run files in ~/.meow-ops/swarm/qa-runs so the
-//                             helper never drives them. Your repos are not touched.
+//                             (about six calls per harness) in a temp workspace.
+//                             AutoSwarm receipts and run files stay in the temp
+//                             folder too (your AutoSwarm config is copied so its
+//                             provider overrides apply); --use-autoswarm-home
+//                             writes receipts to your real AutoSwarm home instead.
+//                             Each harness still keeps its own session history.
 //
 // Usage:
 //   node sync/swarm-qa.mjs --fixture ~/Repos/AutoSwarm/tests/fixtures/provider.py --out ./qa
@@ -21,8 +23,8 @@
 // Writes qa-report.json and qa-report.md to --out (default: a temp folder).
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 
@@ -90,13 +92,18 @@ function setup() {
     };
     writeFileSync(join(swarmHome, 'config.json'), `${JSON.stringify({ providers }, null, 2)}\n`);
   } else {
-    swarmHome = autoswarmHome();
+    const realHome = autoswarmHome();
+    swarmHome = flag('--use-autoswarm-home') ? realHome : join(root, 'autoswarm');
+    if (swarmHome !== realHome) {
+      mkdirSync(swarmHome, { recursive: true });
+      if (existsSync(join(realHome, 'config.json'))) copyFileSync(join(realHome, 'config.json'), join(swarmHome, 'config.json'));
+    }
     const snapshot = readSwarmSnapshot({ models: false });
     const found = new Set(snapshot.providers.filter((item) => item.state !== 'off').map((item) => item.id));
     harnesses = harnesses.filter((id) => found.has(id));
     if (!harnesses.length) { console.error('None of the requested harnesses is found on this machine.'); process.exit(2); }
   }
-  const runsDir = live ? join(process.env.MEOW_SWARM_DIR || join(homedir(), '.meow-ops', 'swarm'), 'qa-runs') : join(root, 'runs');
+  const runsDir = join(root, 'runs');
   const engine = createOrchestrator({ runsDir, swarmHome });
   return { live, fixture: Boolean(fixture), root, workspace, out, traces, swarmHome, runsDir, harnesses, engine };
 }
