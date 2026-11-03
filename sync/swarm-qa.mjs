@@ -108,8 +108,17 @@ const lib = await loadControlLib();
 const timeoutMs = ctx.live ? 600_000 : 90_000;
 const pollMs = ctx.live ? 1500 : 200;
 
+// A real harness may ask for something no scenario expects. QA never approves
+// on your behalf: live runs deny it (a question is declined) and the report lists it.
+const unexpected = [];
+function refuseUnexpected(step, pending) {
+  unexpected.push({ run: step.id, provider: step.provider, kind: pending.kind, title: pending.title });
+  if (pending.kind === 'question') return { answer: lib?.declinePayload?.(pending.question ?? { format: 'unknown', questions: [] }) ?? { action: 'cancel' } };
+  return false;
+}
+
 /** Dispatch a plan and drive it until it settles. onPending decides approvals (true/false) or answers ({ answer }). */
-async function drive(plan, { onPending = () => true, until = null } = {}) {
+async function drive(plan, { onPending = (step, pending) => (ctx.fixture ? true : refuseUnexpected(step, pending)), until = null } = {}) {
   const started = Date.now();
   const draft = ctx.engine.saveDraft({ maxParallel: 3, ...plan, workspace: ctx.workspace, tags: ['qa', ...(plan.tags ?? [])] });
   let run = await ctx.engine.dispatch(draft.id);
@@ -440,6 +449,7 @@ const report = {
   runsDir: ctx.runsDir,
   launcher: launcher.source,
   answerBuilder: lib ? 'src/lib/swarm-control.ts' : 'unavailable',
+  unexpectedRequests: unexpected,
   totals: { scenarios: results.length, passed, failed: results.length - passed, calls: results.reduce((total, item) => total + item.calls, 0), checks: results.reduce((total, item) => total + item.checks.length, 0) },
   groups,
   results,
@@ -453,6 +463,7 @@ const md = [
   '',
   `Dummy workspace: \`${ctx.workspace}\` · AutoSwarm home: \`${ctx.swarmHome}\``,
   '',
+  ...(unexpected.length ? [`Unexpected requests, denied or declined by QA (never approved): ${unexpected.map((item) => `${item.provider} ${item.kind} "${item.title}"`).join('; ')}`, ''] : []),
   '| Group | Passed |',
   '| --- | --- |',
   ...groups.map((item) => `| ${item.group} | ${item.passed}/${item.total} |`),
