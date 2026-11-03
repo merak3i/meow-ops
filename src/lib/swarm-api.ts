@@ -26,6 +26,26 @@ export interface SwarmCallCounts {
   total: number; last7d: number; running: number; completed: number; failed: number; cancelled: number; interrupted: number;
 }
 
+export interface SwarmModel {
+  id: string;
+  /** Where the evidence came from: config, sessions, autoswarm, roster. */
+  sources: string[];
+  default: boolean;
+  firstSeen: string | null;
+  lastSeen: string | null;
+  accepted: number;
+  rejected: number;
+  effortRejected: number;
+  new: boolean;
+}
+
+export interface SwarmModelCatalog {
+  effort: { supported: boolean | 'unknown'; evidence: string | null };
+  models: SwarmModel[];
+}
+
+export interface SwarmControlCapability { dispatch: boolean; launcher: string | null; error: string | null; home: string; enabled: boolean }
+
 export interface SwarmProvider {
   id: string;
   label: string;
@@ -45,6 +65,8 @@ export interface SwarmProvider {
   lastStatus: SwarmCallStatus | null;
   lastErrorCode: string | null;
   evidence: { probe: SwarmProbe | null; reply: SwarmEvidence; resume: SwarmEvidence; approvalRelay: SwarmEvidence };
+  /** Absent on helpers older than the model catalog. */
+  models?: SwarmModelCatalog;
   state: SwarmState;
 }
 
@@ -96,6 +118,8 @@ export interface SwarmSnapshot {
   approvals: SwarmApproval[];
   totals: { found: number; verified: number; visible: number; running: number; waiting: number; calls7d: number; failed7d: number; callsScanned: number };
   coverage: { callDirectories: number; scanned: number; truncated: boolean; unreadable: number };
+  /** Absent on helpers older than Swarm control. */
+  control?: SwarmControlCapability;
 }
 
 // ---------------------------------------------------------------------------
@@ -326,6 +350,10 @@ const SAMPLE_NOW = Date.parse('2026-11-03T06:00:00.000Z');
 const minutesAgo = (minutes: number) => new Date(SAMPLE_NOW - minutes * 60_000).toISOString();
 const zeroCalls = (): SwarmCallCounts => ({ total: 0, last7d: 0, running: 0, completed: 0, failed: 0, cancelled: 0, interrupted: 0 });
 
+function sampleModel(id: string, sources: string[], isDefault = false, isNew = false): SwarmModel {
+  return { id, sources, default: isDefault, firstSeen: minutesAgo(isNew ? 1440 : 40_000), lastSeen: minutesAgo(60), accepted: sources.includes('autoswarm') ? 3 : 0, rejected: 0, effortRejected: 0, new: isNew };
+}
+
 const SAMPLE_BINARIES: Readonly<Record<string, string>> = { 'claude-code': 'claude', cursor: 'cursor-agent' };
 
 function sampleProvider(id: string, label: string, cat: CatClass, state: SwarmState, patch: Partial<SwarmProvider> = {}): SwarmProvider {
@@ -357,17 +385,20 @@ export const SAMPLE_SWARM: SwarmSnapshot = {
   providers: [
     sampleProvider('codex', 'Codex', 'architect', 'verified', {
       meowSource: 'codex', hostInstalled: true, lastCallAt: minutesAgo(42), lastStatus: 'completed',
+      models: { effort: { supported: true, evidence: 'call_sample09' }, models: [sampleModel('example-codex-model', ['config', 'sessions'], true), sampleModel('example-codex-mini', ['sessions'], false, true)] },
       calls: { ...zeroCalls(), total: 14, last7d: 9, completed: 13, failed: 1 },
       evidence: { probe: { at: minutesAgo(300), status: 'verified', initialCallId: 'call_sample01', resumeCallId: 'call_sample02', errorCode: null }, reply: 'verified', resume: 'verified', approvalRelay: 'verified' },
     }),
     sampleProvider('claude-code', 'Claude Code', 'builder', 'running', {
       meowSource: 'claude', model: 'opus', lastCallAt: minutesAgo(3), lastStatus: 'running',
+      models: { effort: { supported: 'unknown', evidence: null }, models: [sampleModel('opus', ['autoswarm', 'config', 'sessions'], true), sampleModel('sonnet', ['sessions'])] },
       calls: { ...zeroCalls(), total: 11, last7d: 7, running: 1, completed: 10 },
       evidence: { probe: { at: minutesAgo(290), status: 'verified', initialCallId: 'call_sample03', resumeCallId: 'call_sample04', errorCode: null }, reply: 'verified', resume: 'verified', approvalRelay: 'observed' },
     }),
     sampleProvider('cursor', 'Cursor', 'commander', 'found', { meowSource: 'cursor' }),
     sampleProvider('hermes', 'Hermes', 'guardian', 'waiting', {
       meowSource: 'hermes', pendingApprovals: 1, lastCallAt: minutesAgo(8), lastStatus: 'running',
+      models: { effort: { supported: false, evidence: 'call_sample08' }, models: [sampleModel('example-hermes-model', ['config'], true)] },
       calls: { ...zeroCalls(), total: 4, last7d: 4, running: 1, completed: 3 },
       evidence: { probe: null, reply: 'observed', resume: 'none', approvalRelay: 'pending' },
     }),
@@ -398,4 +429,5 @@ export const SAMPLE_SWARM: SwarmSnapshot = {
   ],
   totals: { found: 5, verified: 2, visible: 5, running: 2, waiting: 1, calls7d: 22, failed7d: 2, callsScanned: 31 },
   coverage: { callDirectories: 31, scanned: 31, truncated: false, unreadable: 0 },
+  control: { dispatch: false, launcher: null, error: 'Sample data.', home: '~/Library/Application Support/autoswarm', enabled: false },
 };

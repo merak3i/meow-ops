@@ -1,15 +1,16 @@
 import {
-  Inbox, ClipboardCheck, Wallet, Swords, GraduationCap, Gauge,
+  Inbox, ClipboardCheck, Wallet, Workflow, Swords, GraduationCap, Gauge,
   type LucideIcon,
 } from 'lucide-react';
 
-// Navigation — three work surfaces, two rooms, timer is chrome.
+// Navigation: four work surfaces, two rooms, timer is chrome.
 //
-// Today / Review / Ledger are the job. Sanctum and Learn are the two rooms
-// the owner kept. Companion is gone. The focus timer is a chip, not a page.
+// Today / Review / Ledger / Swarm are the job. Sanctum and Learn are the two
+// rooms the owner kept. Companion is gone. The focus timer is a chip, not a
+// page. Swarm became the fourth work surface by owner decision on 2026-11-03.
 //
-// Product Law 3: a new feature joins Today, Review, or Ledger. It does not
-// add a sixth sidebar item.
+// Product Law 3: a new feature joins Today, Review, Ledger, or Swarm. It does
+// not add another sidebar item.
 
 export interface NavTab {
   id: string;
@@ -75,14 +76,6 @@ export const NAV: readonly NavSurface[] = [
         keywords: ['agent ops', 'gantt', 'timeline', 'parallel'],
       },
       {
-        id: 'swarm',
-        label: 'Swarm',
-        description: 'Your agents as one team: who is proven, what is running, what waits on you.',
-        needsHelper: true,
-        shortcut: 'w',
-        keywords: ['autoswarm', 'agent swarm', 'orbit', 'mission control', 'delegate', 'team', 'probe', 'approvals', 'claude code', 'codex', 'cursor', 'hermes', 'deepseek harness'],
-      },
-      {
         id: 'storage',
         label: 'Storage',
         description: 'Local log locations and disk usage at the last measurement.',
@@ -132,6 +125,38 @@ export const NAV: readonly NavSurface[] = [
     shortcut: 'l',
     usesDateFilter: true,
     keywords: ['usage', 'cost', 'analytics', 'burn', 'money'],
+  },
+  {
+    id: 'swarm',
+    label: 'Swarm',
+    icon: Workflow,
+    description: 'Plan, assign and dispatch work across your agent harnesses.',
+    shortcut: 'w',
+    needsHelper: true,
+    keywords: ['autoswarm', 'agent swarm', 'orchestrate', 'delegate', 'dispatch', 'pipeline', 'harness', 'model'],
+    tabs: [
+      {
+        id: 'control',
+        label: 'Control',
+        description: 'Break a goal into steps, give each a harness and model, dispatch, and watch it run.',
+        needsHelper: true,
+        keywords: ['plan', 'breakdown', 'stitch', 'fan-out', 'dag', 'compose', 'controller'],
+      },
+      {
+        id: 'runs',
+        label: 'Runs',
+        description: 'Every orchestrated run: live, waiting on you, finished.',
+        needsHelper: true,
+        keywords: ['history', 'qa', 'results', 'approvals'],
+      },
+      {
+        id: 'agents',
+        label: 'Agents',
+        description: 'Who is found, who is proven, and which models each harness runs.',
+        needsHelper: true,
+        keywords: ['orbit', 'roster', 'verification', 'probe', 'models', 'codex', 'claude code', 'cursor', 'hermes', 'deepseek harness'],
+      },
+    ],
   },
   {
     id: 'sanctum',
@@ -202,9 +227,9 @@ export const LEGACY_ROUTES: Readonly<Record<string, string>> = {
   pomodoro: 'today/summary',
   companion: 'today/summary',
   'learning-quest': 'learn',
-  swarm: 'today/swarm',
-  autoswarm: 'today/swarm',
-  'agent-swarm': 'today/swarm',
+  'today/swarm': 'swarm/agents',
+  autoswarm: 'swarm/control',
+  'agent-swarm': 'swarm/control',
   'focus/timer': 'today/summary',
   'focus/companion': 'today/summary',
   'focus/practice': 'learn',

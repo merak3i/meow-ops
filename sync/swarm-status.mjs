@@ -25,6 +25,7 @@ import { homedir } from 'node:os';
 import { basename, delimiter, isAbsolute, join, resolve } from 'node:path';
 
 import { redactEvidenceText } from './project-evidence.mjs';
+import { defaultModelStatePath, modelCatalog, readDeclaredModels } from './swarm-models.mjs';
 
 export const SWARM_SCHEMA_VERSION = 1;
 export const CAT_CLASSES = Object.freeze(['architect', 'builder', 'commander', 'detective', 'guardian', 'storyteller', 'ghost']);
@@ -98,7 +99,7 @@ const record = (value) => Boolean(value) && typeof value === 'object' && !Array.
 const iso = (value) => (typeof value === 'string' && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null);
 const ms = (value) => (value ? Date.parse(value) : Number.NaN);
 
-function pidAlive(pid) {
+export function pidAlive(pid) {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false;
   try { process.kill(pid, 0); return true; } catch (error) { return error?.code === 'EPERM'; }
 }
@@ -114,25 +115,47 @@ function isExecutableFile(path) {
 }
 
 /**
+ * Folders a LaunchAgent's minimal PATH misses but agent CLIs install into.
+ * The helper searches them, and hands them to AutoSwarm so its runner can
+ * find the same native CLIs the dashboard reports as found.
+ */
+export function toolDirs({ env = process.env, home = homedir() } = {}) {
+  return [...new Set([
+    ...String(env.PATH || '').split(delimiter).filter(Boolean),
+    ...String(env.MEOW_SWARM_PATH || '').split(delimiter).filter(Boolean),
+    '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin',
+    join(home, '.local', 'bin'), join(home, '.claude', 'local'), join(home, '.npm-global', 'bin'),
+    join(home, '.bun', 'bin'), join(home, '.cargo', 'bin'), join(home, 'bin'),
+  ])];
+}
+
+export const toolPath = (options = {}) => toolDirs(options).join(delimiter);
+
+/** Absolute path of a command on the helper PATH plus the usual install folders, or null. */
+export function findExecutable(command, { env = process.env, home = homedir(), platform = process.platform } = {}) {
+  if (typeof command !== 'string' || !command.trim()) return null;
+  const value = expandHome(command.trim(), home);
+  if (isAbsolute(value)) return isExecutableFile(value) ? value : null;
+  if (value.includes('/') || value.includes('\\')) return null;
+  const extensions = platform === 'win32' ? String(env.PATHEXT || '.EXE;.CMD;.BAT').split(';') : [''];
+  for (const dir of toolDirs({ env, home })) {
+    for (const extension of extensions) {
+      const candidate = join(dir, value + extension);
+      if (isExecutableFile(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+/**
  * Where AutoSwarm would find a provider CLI: `found`, `not-found` on this
  * helper's PATH plus the usual install folders, or `unknown`. It never runs it.
  */
 export function locateExecutable(command, { env = process.env, home = homedir(), platform = process.platform } = {}) {
   if (typeof command !== 'string' || !command.trim()) return 'unknown';
   const value = expandHome(command.trim(), home);
-  if (isAbsolute(value)) return isExecutableFile(value) ? 'found' : 'not-found';
-  if (value.includes('/') || value.includes('\\')) return 'unknown';
-  const dirs = new Set([
-    ...String(env.PATH || '').split(delimiter).filter(Boolean),
-    '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin',
-    join(home, '.local', 'bin'), join(home, '.claude', 'local'), join(home, '.npm-global', 'bin'),
-    join(home, '.bun', 'bin'), join(home, '.cargo', 'bin'), join(home, 'bin'),
-  ]);
-  const extensions = platform === 'win32' ? String(env.PATHEXT || '.EXE;.CMD;.BAT').split(';') : [''];
-  for (const dir of dirs) {
-    for (const extension of extensions) if (isExecutableFile(join(dir, value + extension))) return 'found';
-  }
-  return 'not-found';
+  if (!isAbsolute(value) && (value.includes('/') || value.includes('\\'))) return 'unknown';
+  return findExecutable(value, { env, home, platform }) ? 'found' : 'not-found';
 }
 
 /** AutoSwarm installs its Skill per host. Codex, Muse and DeepSeek Harness share ~/.agents. */
@@ -181,6 +204,48 @@ function approvalTitle(request) {
   return snippet(found, 90) ?? label;
 }
 
+// Native questions (AskUserQuestion and friends) come in one of AutoSwarm's
+// response formats. We lift the question text and options out so the panel can
+// offer choices; the reply is still validated by AutoSwarm against the original.
+export const QUESTION_FORMATS = Object.freeze(['claude-question', 'codebuddy-question', 'codex-question', 'cursor-question', 'opencode-question', 'muse-question', 'acp-question', 'codex-async-question', 'cursor-plan', 'elicitation']);
+const questionText = (q) => cleanText([q?.question, q?.prompt, q?.title, q?.header, q?.text, q?.id].find((value) => typeof value === 'string' && value.trim()), 300);
+const optionList = (options, idKey) => (Array.isArray(options) ? options : []).slice(0, 12).map((option) => {
+  if (typeof option === 'string') return { id: option.slice(0, 120), label: cleanText(option, 120) ?? option.slice(0, 120) };
+  const label = cleanText(option?.label ?? option?.name ?? option?.title ?? option?.[idKey], 120);
+  const id = typeof option?.[idKey] === 'string' ? option[idKey].slice(0, 120) : label;
+  return id && label ? { id, label, ...(cleanText(option?.description, 200) ? { description: cleanText(option.description, 200) } : {}) } : null;
+}).filter(Boolean);
+
+export function questionDetail(request) {
+  if (request?.kind !== 'interaction_required') return null;
+  const format = QUESTION_FORMATS.includes(request.response_format) ? request.response_format : 'unknown';
+  const native = record(request.native_request) ? request.native_request : {};
+  let questions = [];
+  if (format === 'claude-question' || format === 'codebuddy-question') {
+    const holder = record(native.input) ? native.input : record(native.toolCall?.rawInput) ? native.toolCall.rawInput : native;
+    // The exact question text is the answer key for these formats.
+    questions = (Array.isArray(holder.questions) ? holder.questions : []).map((q) => (typeof q?.question === 'string' ? { key: q.question, text: questionText(q), multi: q.multiSelect === true, options: optionList(q.options, 'label') } : null));
+  } else if (['codex-question', 'cursor-question', 'muse-question'].includes(format)) {
+    questions = (Array.isArray(native.questions) ? native.questions : []).map((q) => (typeof q?.id === 'string' ? {
+      key: q.id, text: questionText(q), multi: q.allowMultiple === true || q.selection?.mode === 'multiple',
+      options: optionList(q.options, format === 'cursor-question' ? 'id' : 'label'),
+    } : null));
+  } else if (format === 'opencode-question') {
+    questions = (Array.isArray(native.questions) ? native.questions : []).map((q, index) => ({ key: String(index), text: questionText(q), multi: q?.multiple === true, custom: q?.custom !== false, options: optionList(q?.options, 'label') }));
+  } else if (format === 'acp-question') {
+    const asked = native.toolCall?.rawInput?.questions?.[0];
+    questions = [{ key: 'option', text: questionText(asked) ?? cleanText(native.toolCall?.title, 300) ?? 'Choose an option', multi: false, options: optionList(native.options, 'optionId') }];
+  } else if (format === 'codex-async-question') {
+    questions = [{ key: 'text', text: cleanText(JSON.stringify(native.item?.questions ?? native.questions ?? ''), 600) ?? 'The agent asked a question.', multi: false, options: [] }];
+  }
+  return {
+    format,
+    help: cleanText(request.response_help, 400),
+    userRequired: request.user_required === true,
+    questions: questions.filter(Boolean).slice(0, 8),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Personal roster (swarm.json). Unknown keys are dropped; nothing here can
 // change what is verified, only how it is named and drawn.
@@ -201,6 +266,7 @@ export function readSwarmOverlay(path) {
         name: cleanText(entry.name, 40), role: cleanText(entry.role, 60), cat: cat(entry.cat),
         note: cleanText(entry.note, 220), model: cleanText(entry.model, 60), effort: cleanText(entry.effort, 30),
         hidden: entry.hidden === true,
+        models: (Array.isArray(entry.models) ? entry.models : []).map((item) => cleanText(item, 80)).filter(Boolean).slice(0, 20),
       };
     }
   }
@@ -260,9 +326,11 @@ function readCall(directory, name, isAlive) {
       if (request.status !== 'ok' || !record(request.value)) continue;
       const resolution = readJson(join(path, 'resolution.json'));
       const decided = existsSync(join(path, 'decision.json'));
+      const question = questionDetail(request.value);
       approvals.push({
         requestId: entry,
         kind: request.value.kind === 'interaction_required' ? 'question' : 'permission',
+        ...(question ? { question } : {}),
         createdAt: iso(request.value.created_at),
         title: approvalTitle(request.value),
         decided,
@@ -287,10 +355,19 @@ function readCall(directory, name, isAlive) {
     workspace: typeof t.workspace === 'string' ? t.workspace : null,
     model: cleanText(t.model, 60),
     effort: cleanText(t.effort, 30),
-    nativeSessionId: typeof r?.native_session_id === 'string' && r.native_session_id ? r.native_session_id : null,
+    nativeSessionId: typeof r?.native_session_id === 'string' && r.native_session_id ? r.native_session_id
+      : typeof h?.native_session_id === 'string' && h.native_session_id ? h.native_session_id : null,
     errorCode: cleanText(r?.error_code, 60) ?? (status === 'failed' ? 'failed' : null),
+    error: typeof r?.error === 'string' ? cleanText(redactEvidenceText(r.error), 400) : null,
     approvals,
   };
+}
+
+/** One call's receipt by id, for the run engine. Null when it does not exist yet. */
+export function readCallReceipt(swarmHome, callId, { isAlive = pidAlive } = {}) {
+  if (typeof callId !== 'string' || !CALL_DIR.test(callId)) return null;
+  const call = readCall(join(swarmHome, 'calls', callId), callId, isAlive);
+  return call.unreadable || !call.id ? null : { ...call, pending: call.status === 'running' ? call.approvals.filter(isPending) : [] };
 }
 
 function scanCalls(swarmHome, { isAlive, maxCalls }) {
@@ -389,6 +466,15 @@ export function readSwarmSnapshot(options = {}) {
   const { calls, total, unreadable } = exists ? scanCalls(swarmHome, { isAlive, maxCalls }) : { calls: [], total: 0, unreadable: 0 };
   const byId = new Map(calls.map((call) => [call.id, call]));
   const weekAgo = now - 7 * DAY_MS;
+  const providerIds = PROVIDERS.map((provider) => provider.id);
+  const catalog = options.models === false ? null : modelCatalog(providerIds, {
+    calls,
+    sessions: Array.isArray(options.sessions) ? options.sessions : [],
+    declared: options.declared ?? readDeclaredModels(providerIds, { home, env }),
+    roster: Object.fromEntries(Object.entries(overlay.providers).map(([id, entry]) => [id, [entry.model, ...(entry.models ?? [])].filter(Boolean)])),
+    statePath: options.modelStatePath === undefined ? defaultModelStatePath({ env, home }) : options.modelStatePath,
+    now,
+  });
 
   const providers = PROVIDERS.map((provider) => {
     const override = configuredProviders[provider.id];
@@ -426,6 +512,7 @@ export function readSwarmSnapshot(options = {}) {
       lastStatus: latest?.status ?? null,
       lastErrorCode: mine.find((call) => call.errorCode)?.errorCode ?? null,
       evidence,
+      models: catalog?.[provider.id] ?? { effort: { supported: 'unknown', evidence: null }, models: [] },
       state: stateOf({ pending, running: counts.running, latest, evidence, found }),
     };
   });

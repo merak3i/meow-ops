@@ -14,7 +14,7 @@ import type {
 } from '../lib/swarm-api';
 import './Swarm.css';
 
-// Today · Swarm. AutoSwarm turns the coding agents on this Mac into one team;
+// Swarm · Agents. AutoSwarm turns the coding agents on this Mac into one team;
 // this tab is its mission control, read-only: who is found, who is proven to
 // reply and resume, what is running, and what waits on you. The layout follows
 // the MCH agent Orbit: you at the top as the approval gate, the router at the
@@ -32,7 +32,7 @@ const PORTRAITS: Readonly<Record<CatClass, string>> = {
 
 const REFRESH_MS = 15_000;
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-const LOCAL_URL = 'http://127.0.0.1:4273/#/today/swarm';
+const LOCAL_URL = 'http://127.0.0.1:4273/#/swarm/agents';
 
 interface SessionLike { source?: string | null; started_at?: string | null; ended_at?: string | null }
 export interface SwarmProps {
@@ -341,7 +341,7 @@ function ApprovalList({ approvals, providers, now, onCopy }: { approvals: readon
               <Button size="sm" onClick={() => onCopy(decisionCommand(approval.callId, approval.requestId, false), 'deny command')}><Copy size={12} aria-hidden="true" />Copy deny</Button>
             </div>
           ) : (
-            <p className="swarm-muted">Answer it in the agent that asked, or with <span className="swarm-mono">autoswarm answer</span>.</p>
+            <p className="swarm-muted">If a Swarm run started it, answer it in Swarm · Runs. Otherwise answer it in the agent that asked, or with <span className="swarm-mono">autoswarm answer</span>.</p>
           )}
         </li>
       ))}
@@ -431,6 +431,7 @@ export default function Swarm({ sessions = [], sessionsAreSample = false }: Swar
   const scopeTail = sample ? 'sample data' : snapshot.coverage.truncated ? `newest ${snapshot.coverage.scanned} receipts` : 'all receipts';
   const nameOf = (id: string) => snapshot.providers.find((provider) => provider.id === id)?.name ?? id;
   const recent = snapshot.calls.slice(0, 12);
+  const newModels = providers.flatMap((provider) => (provider.models?.models ?? []).filter((model) => model.new).map((model) => ({ harness: provider.name, model: model.id })));
 
   return (
     <div className="swarm">
@@ -602,6 +603,52 @@ export default function Swarm({ sessions = [], sessionsAreSample = false }: Swar
           </table>
         </div>
         <p className="swarm-foot">A completed reply is the only proof of login: an empty native login list does not mean login is needed, and a version check only proves the binary exists.</p>
+      </Card>
+
+      <Card pad={false}>
+        <div className="swarm-section-head">
+          <span className="mo-eyebrow">Models by harness</span>
+          <span className="swarm-muted">Learned from evidence, re-read on every refresh</span>
+        </div>
+        {newModels.length > 0 && (
+          <p className="swarm-newmodels" role="status">New since last week: {newModels.map((item) => `${item.model} on ${item.harness}`).join(', ')}.</p>
+        )}
+        <div className="swarm-table-scroll" tabIndex={0} role="region" aria-label="Models by harness">
+          <table className="swarm-table">
+            <thead><tr><th scope="col">Harness</th><th scope="col">Models seen</th><th scope="col">Effort override</th></tr></thead>
+            <tbody>
+              {providers.map((provider) => {
+                const catalog = provider.models;
+                const effort = catalog?.effort.supported;
+                return (
+                  <tr key={provider.id}>
+                    <th scope="row">{provider.name}<small>{provider.label === provider.name ? provider.id : provider.label}</small></th>
+                    <td>
+                      {catalog && catalog.models.length ? (
+                        <ul className="swarm-models">
+                          {catalog.models.slice(0, 8).map((model) => (
+                            <li key={model.id} title={`First seen ${model.firstSeen ? new Date(model.firstSeen).toLocaleDateString() : 'unknown'}${model.accepted ? ` · accepted ${model.accepted}x by AutoSwarm` : ''}${model.rejected ? ` · rejected ${model.rejected}x` : ''}`}>
+                              <span className="swarm-mono">{model.id}</span>
+                              {model.default && <Badge tone="accent">default</Badge>}
+                              {model.new && <Badge tone="positive">new</Badge>}
+                              {model.rejected > 0 && <Badge tone="danger">rejected</Badge>}
+                              <small>{model.sources.join(' · ')}</small>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : <span className="swarm-muted">{catalog ? 'None seen yet. The harness uses its native default.' : 'This helper predates the model catalog.'}</span>}
+                    </td>
+                    <td>
+                      {effort === true ? <Badge tone="positive" dot>Accepted</Badge> : effort === false ? <Badge tone="danger" dot>Rejected</Badge> : <Badge tone="neutral" dot>Untested</Badge>}
+                      {catalog?.effort.evidence && <small className="swarm-mono">{catalog.effort.evidence}</small>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <p className="swarm-foot">AutoSwarm keeps no model list on purpose. A model shows up here when the harness's own settings name it, when a session Meow Ops parsed ran it, when a delegated call asked for it, or when you pin it in swarm.json. The first sighting is flagged new for 7 days. Effort is proven only by a call that set it and finished.</p>
       </Card>
 
       <Card pad={false}>
