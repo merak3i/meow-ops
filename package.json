@@ -46,7 +46,8 @@
     "menubar:build": "bash menubar/build.sh",
     "menubar:open": "open ~/Applications/MeowOpsBar.app",
     "dock:install": "bash scripts/install-dock-app.sh",
-    "diagnose:claude": "node scripts/diagnose-claude-sessions.mjs"
+    "diagnose:claude": "node scripts/diagnose-claude-sessions.mjs",
+    "swarm:qa": "node sync/swarm-qa.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",

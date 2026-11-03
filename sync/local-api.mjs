@@ -66,6 +66,7 @@ import { generateGuideVoice, guideVoiceStatus } from './guide-voicebox.mjs';
 import { readSnapshot } from './snapshot-generation.mjs';
 import { createStorageService } from './storage-service.mjs';
 import { readSwarmSnapshot } from './swarm-status.mjs';
+import { PlanError, createOrchestrator } from './swarm-orchestrator.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -77,6 +78,8 @@ const LOOP_OPS_DIR = resolve(process.env.MEOW_LOOP_OPS_DIR || join(ROOT, 'public
 const SUPERADMIN_USAGE_FILE = join(ROOT, 'public', 'data', 'superadmin-usage.json');
 const DATA_DIR = process.env.MEOW_DATA_DIR || join(ROOT, 'public', 'data');
 const storage = createStorageService();
+const swarm = createOrchestrator({ log: (message) => console.log(message) });
+const SWARM_DISPATCH = process.env.MEOW_SWARM_DISPATCH !== '0';
 const SESSIONS_FILE = process.env.MEOW_SESSIONS_FILE || join(DATA_DIR, 'sessions.json');
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://meow-ops.vercel.app',
@@ -295,6 +298,71 @@ function hasPassingSimulation(proposal, simulations = readLedger('simulation')) 
   ));
 }
 
+// Swarm control panel. Drafts are free; anything that makes AutoSwarm act
+// (dispatch, plan, cancel, retry, follow-up, approve, deny, answer) needs a one-use
+// owner nonce and honours MEOW_SWARM_DISPATCH=0 as a read-only switch.
+async function handleSwarm(req, res, path) {
+  const fail = (error) => {
+    if (error instanceof PlanError) sendJson(res, 400, { ok: false, error: error.message });
+    else sendJson(res, String(error?.message || '').startsWith('[') ? 400 : 500, { ok: false, error: String(error?.message || '').startsWith('[') ? error.message : 'The swarm engine could not complete this request.' });
+  };
+  const owner = async (limit = 20_000) => {
+    const body = await readJsonBody(req, limit);
+    if (!SWARM_DISPATCH) { ruleError(res, 403, 'swarm-dispatch', 'Dispatch is switched off on this machine (MEOW_SWARM_DISPATCH=0).'); return null; }
+    if (!consumeNonce(body.nonce)) { ruleError(res, 403, 'nonce', 'invalid or already used nonce'); return null; }
+    return body;
+  };
+  try {
+    if (path === '/swarm/nonce' && req.method === 'GET') { sendJson(res, 200, { nonce: createNonce() }); return true; }
+    if (path === '/swarm/runs' && req.method === 'GET') { sendJson(res, 200, { ok: true, runs: swarm.listRuns() }); return true; }
+    if (path === '/swarm/runs' && req.method === 'POST') {
+      const body = await readJsonBody(req, 200_000);
+      sendJson(res, 201, { ok: true, run: swarm.saveDraft(body.plan, { id: typeof body.id === 'string' ? body.id : null }) });
+      return true;
+    }
+    if (path === '/swarm/plan' && req.method === 'POST') {
+      const body = await owner(40_000);
+      if (!body) return true;
+      const snapshot = readSwarmSnapshot({ models: false });
+      const providers = snapshot.providers.filter((item) => !item.hidden && item.state !== 'off').map((item) => ({ id: item.id, label: item.name, role: item.role }));
+      sendJson(res, 202, { ok: true, run: await swarm.draftPlan({ ...body, providers }) });
+      return true;
+    }
+    const runMatch = path.match(/^\/swarm\/runs\/(run_[0-9]{14}_[a-f0-9]{6})(?:\/(dispatch|cancel))?$/);
+    if (runMatch) {
+      const [, id, action] = runMatch;
+      if (!action && req.method === 'GET') { sendJson(res, 200, { ok: true, run: swarm.getRun(id) }); return true; }
+      if (action && req.method === 'POST') {
+        const body = await owner();
+        if (!body) return true;
+        sendJson(res, 200, { ok: true, run: action === 'dispatch' ? await swarm.dispatch(id) : await swarm.cancelRun(id) });
+        return true;
+      }
+    }
+    const stepMatch = path.match(/^\/swarm\/runs\/(run_[0-9]{14}_[a-f0-9]{6})\/steps\/([a-z][a-z0-9-]{0,23})\/(cancel|retry|follow-up|decide|answer)$/);
+    if (stepMatch && req.method === 'POST') {
+      const [, id, stepId, action] = stepMatch;
+      const body = await owner(action === 'answer' ? 40_000 : undefined);
+      if (!body) return true;
+      let run;
+      if (action === 'cancel') run = await swarm.cancelStep(id, stepId);
+      else if (action === 'retry') run = await swarm.retryStep(id, stepId, { provider: body.provider, model: body.model, effort: body.effort });
+      else if (action === 'follow-up') run = await swarm.followUp(id, stepId, body.message);
+      else if (action === 'answer') run = await swarm.answer(id, stepId, body.requestId, body.response);
+      else {
+        if (!['allow', 'deny'].includes(body.decision)) throw new PlanError('decision must be allow or deny.');
+        run = await swarm.decide(id, stepId, body.requestId, body.decision === 'allow');
+      }
+      sendJson(res, 200, { ok: true, run });
+      return true;
+    }
+  } catch (error) {
+    fail(error);
+    return true;
+  }
+  return false;
+}
+
 const server = createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store');
@@ -357,9 +425,14 @@ const server = createServer(async (req, res) => {
   // Today · Swarm: AutoSwarm receipts, read-only. No route here starts a call,
   // answers an approval or runs a provider; the page hands you the command.
   if (path === '/swarm/status' && req.method === 'GET') {
-    try { sendJson(res, 200, readSwarmSnapshot()); }
-    catch { sendJson(res, 503, { ok: false, error: 'AutoSwarm receipts could not be read.' }); }
+    try {
+      const snapshot = readSwarmSnapshot({ sessions: readJsonArray(SESSIONS_FILE) });
+      sendJson(res, 200, { ...snapshot, control: { ...swarm.capabilities(), enabled: SWARM_DISPATCH } });
+    } catch { sendJson(res, 503, { ok: false, error: 'AutoSwarm receipts could not be read.' }); }
     return;
+  }
+  if (path.startsWith('/swarm/')) {
+    if (await handleSwarm(req, res, path)) return;
   }
   if (path === '/storage/refresh' && req.method === 'POST') {
     void storage.refresh();
@@ -1385,6 +1458,7 @@ const server = createServer(async (req, res) => {
 
 let sourceWatcher = null;
 server.listen(PORT, '127.0.0.1', () => {
+  swarm.start();
   if (IS_CLI && process.env.MEOW_WATCH_SOURCES !== '0') {
     sourceWatcher = createSourceWatcher({
       trigger: () => startSyncRun({ repoRoot: ROOT, node: resolveNode(), trigger: 'watch', env: { ...process.env } }),
@@ -1400,7 +1474,9 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /data/sessions.json      - exported session metrics');
   console.log('  GET  /data/cost-summary.json  - exported spend summary');
   console.log('  GET  /session-history/sessions - filtered, paginated session archive');
-  console.log('  GET  /swarm/status            - AutoSwarm receipts, read-only');
+  console.log('  GET  /swarm/status            - AutoSwarm receipts, models and control capability');
+  console.log('  GET  /swarm/runs              - orchestrated runs (drafts, live, finished)');
+  console.log('  POST /swarm/runs/:id/dispatch - owner-nonce dispatch through AutoSwarm');
   console.log('  GET  /loop-ops/spec           - Loop-Ops entities (local import)');
   console.log('  GET  /loop-ops/status         - Loop-Ops file freshness');
   console.log('  GET  /loop-ops/runs           - recorded loop runs');

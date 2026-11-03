@@ -78,6 +78,8 @@ before(async () => {
       LOOP_OPS_SPEC: WORKBOOK,
       AUTOSWARM_HOME: join(loopOpsDir, 'no-autoswarm-here'),
       MEOW_SWARM_CONFIG: join(loopOpsDir, 'no-swarm.json'),
+      MEOW_SWARM_DIR: join(loopOpsDir, 'swarm'),
+      AUTOSWARM_BIN: join(loopOpsDir, 'no-autoswarm-binary'),
     },
     stdio: 'pipe',
   });
@@ -188,6 +190,46 @@ test('swarm receipts are local-dashboard-only, header-gated and read-only', asyn
     method: 'POST', headers: { Origin: 'http://localhost:4273', 'x-meow-ops-local': '1' },
   });
   assert.equal(write.status, 404);
+});
+
+test('swarm control is local-only, drafts freely, and dispatch needs a nonce and a launcher', async () => {
+  const local = { Origin: 'http://localhost:4273', 'x-meow-ops-local': '1', 'Content-Type': 'application/json' };
+  const hosted = { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1', 'Content-Type': 'application/json' };
+  assert.equal((await fetch(`${BASE}/swarm/runs`, { headers: hosted })).status, 403);
+  assert.equal((await fetch(`${BASE}/swarm/nonce`, { headers: hosted })).status, 403);
+
+  const status = await (await fetch(`${BASE}/swarm/status`, { headers: local })).json();
+  assert.equal(status.control.dispatch, false);
+  assert.match(status.control.error, /AUTOSWARM_BIN/);
+  assert.ok(Array.isArray(status.providers[0].models.models));
+
+  const empty = await (await fetch(`${BASE}/swarm/runs`, { headers: local })).json();
+  assert.deepEqual(empty, { ok: true, runs: [] });
+
+  const bad = await fetch(`${BASE}/swarm/runs`, { method: 'POST', headers: local, body: JSON.stringify({ plan: { title: 'x', workspace: loopOpsDir, steps: [] } }) });
+  assert.equal(bad.status, 400);
+  assert.match((await bad.json()).error, /at least one step/);
+
+  const created = await fetch(`${BASE}/swarm/runs`, { method: 'POST', headers: local, body: JSON.stringify({ plan: { title: 'QA', workspace: loopOpsDir, steps: [{ provider: 'codex', instructions: 'Say hi' }] } }) });
+  assert.equal(created.status, 201);
+  const { run } = await created.json();
+  assert.equal(run.status, 'draft');
+
+  const noNonce = await fetch(`${BASE}/swarm/runs/${run.id}/dispatch`, { method: 'POST', headers: local, body: '{}' });
+  assert.equal(noNonce.status, 403);
+
+  const { nonce } = await (await fetch(`${BASE}/swarm/nonce`, { headers: local })).json();
+  const hostedDispatch = await fetch(`${BASE}/swarm/runs/${run.id}/dispatch`, { method: 'POST', headers: hosted, body: JSON.stringify({ nonce }) });
+  assert.equal(hostedDispatch.status, 403);
+  const dispatch = await fetch(`${BASE}/swarm/runs/${run.id}/dispatch`, { method: 'POST', headers: local, body: JSON.stringify({ nonce }) });
+  assert.equal(dispatch.status, 400);
+  assert.match((await dispatch.json()).error, /AUTOSWARM_BIN/);
+  const reused = await fetch(`${BASE}/swarm/runs/${run.id}/dispatch`, { method: 'POST', headers: local, body: JSON.stringify({ nonce }) });
+  assert.equal(reused.status, 403);
+
+  const listed = await (await fetch(`${BASE}/swarm/runs`, { headers: local })).json();
+  assert.equal(listed.runs[0].id, run.id);
+  assert.equal(listed.runs[0].status, 'draft');
 });
 
 test('hosted dashboard reads only redacted sync status', async () => {

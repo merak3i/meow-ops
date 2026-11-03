@@ -28,10 +28,10 @@
   ],
   "shortcuts": [
     {
-      "name": "Agent swarm",
+      "name": "Swarm control",
       "short_name": "Swarm",
-      "description": "AutoSwarm mission control: who is proven, what is running, what waits on you.",
-      "url": "/#/today/swarm",
+      "description": "Plan, assign and dispatch work across your agent harnesses.",
+      "url": "/#/swarm/control",
       "icons": [
         {
           "src": "/meow-logo-dark-512.png",

@@ -6,7 +6,7 @@
 
 Meow Ops is the local inbox for AI coding work. It shows what happened, what it cost, and what you should decide next. Open-source, MIT-licensed, local-first. Parses session JSONLs from `~/.claude/projects/` (and optionally Aider, Cursor, Codex, Hermes, Antigravity). PWA, installs to dock. No telemetry, no accounts.
 
-Primary surfaces: Today, Review, Ledger, Sanctum, Learn. The focus timer is a chip on every screen. Companion is removed from the product.
+Primary surfaces: Today, Review, Ledger, Swarm, Sanctum, Learn (Swarm added by owner decision on 2026-11-03). The focus timer is a chip on every screen. Companion is removed from the product.
 
 Public repo: `merak3i/meow-ops`. Currently v1.2.0.
 

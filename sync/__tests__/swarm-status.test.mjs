@@ -9,8 +9,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-  autoswarmHome, canonicalProvider, readSwarmOverlay, readSwarmSnapshot, swarmOverlayPath, PROVIDERS,
+  autoswarmHome, canonicalProvider, questionDetail, readSwarmOverlay, readSwarmSnapshot, swarmOverlayPath, PROVIDERS,
 } from '../swarm-status.mjs';
+import { autoswarmEnv } from '../swarm-cli.mjs';
 
 const NOW = Date.parse('2026-11-03T06:00:00.000Z');
 const TOKEN = `AUTOSWARM_CHECK_${'a'.repeat(32)}`;
@@ -219,4 +220,27 @@ test('scanning is bounded and says so', () => {
   assert.equal(snap.coverage.callDirectories, 7);
   assert.equal(snap.coverage.scanned, 3);
   assert.equal(snap.coverage.truncated, true);
+});
+
+test('native questions lift their text and options per format; permissions carry none', () => {
+  assert.equal(questionDetail({ kind: 'approval_required' }), null);
+  const acp = questionDetail({ kind: 'interaction_required', response_format: 'acp-question', response_help: 'pick one', native_request: { toolCall: { title: 'AskUserQuestion', rawInput: { questions: [{ question: 'Ship it?' }] } }, options: [{ optionId: 'o-1', name: 'Yes' }, { optionId: 'o-2', name: 'No' }] } });
+  assert.deepEqual(acp.questions, [{ key: 'option', text: 'Ship it?', multi: false, options: [{ id: 'o-1', label: 'Yes' }, { id: 'o-2', label: 'No' }] }]);
+  const cursor = questionDetail({ kind: 'interaction_required', response_format: 'cursor-question', native_request: { questions: [{ id: 'q1', prompt: 'Which env?', allowMultiple: true, options: [{ id: 'a', label: 'Staging' }] }] } });
+  assert.deepEqual(cursor.questions[0], { key: 'q1', text: 'Which env?', multi: true, options: [{ id: 'a', label: 'Staging' }] });
+  const odd = questionDetail({ kind: 'interaction_required', response_format: 'future-format', user_required: true, native_request: {} });
+  assert.equal(odd.format, 'unknown');
+  assert.equal(odd.userRequired, true);
+  assert.deepEqual(odd.questions, []);
+  const hostile = questionDetail({ kind: 'interaction_required', response_format: 'claude-question', native_request: { input: { questions: [{ question: 'Q\u0007?', options: Array.from({ length: 40 }, (_, i) => ({ label: `L${i}` })) }, { question: 42 }] } } });
+  assert.equal(hostile.questions.length, 1);
+  assert.equal(hostile.questions[0].options.length, 12);
+});
+
+test('AutoSwarm commands never inherit a host session identity', () => {
+  const env = autoswarmEnv({ PATH: '/bin', CODEX_THREAD_ID: 't-1', AUTOSWARM_PARENT: '{}', AUTOSWARM_CALL_ID: 'call_x', AUTOSWARM_CODEX_ENDPOINT: 'unix:///x', KEEP: '1' }, '/tmp/asw');
+  for (const name of ['CODEX_THREAD_ID', 'AUTOSWARM_PARENT', 'AUTOSWARM_CALL_ID', 'AUTOSWARM_CODEX_ENDPOINT']) assert.equal(name in env, false, name);
+  assert.equal(env.KEEP, '1');
+  assert.equal(env.AUTOSWARM_HOME, '/tmp/asw');
+  assert.match(env.PATH, /\/bin/);
 });

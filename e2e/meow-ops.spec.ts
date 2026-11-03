@@ -222,7 +222,7 @@ test('page title is Meow Operations', async ({ page }) => {
 });
 
 test('sidebar renders all nav buttons', async ({ page }) => {
-  const expectedNav = ['Today', 'Review', 'Ledger', 'Sanctum', 'Learn'];
+  const expectedNav = ['Today', 'Review', 'Ledger', 'Swarm', 'Sanctum', 'Learn'];
   for (const label of expectedNav) {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     await expect(
@@ -1837,7 +1837,7 @@ test('Review Inbox: mobile Digest stays within the viewport', async ({ page }) =
 // ── 11. Focus chip ───────────────────────────────────────────────────────────
 
 test('Focus timer chip is on the shell, not a page', async ({ page }) => {
-  for (const surface of ['Today', 'Review', 'Ledger', 'Sanctum', 'Learn']) {
+  for (const surface of ['Today', 'Review', 'Ledger', 'Swarm', 'Sanctum', 'Learn']) {
     await nav(page, surface);
     await expect(page.getByRole('button', { name: 'Start focus timer' })).toBeVisible();
   }

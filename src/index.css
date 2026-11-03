@@ -706,6 +706,10 @@ code, .font-mono {
   user-select: all;
 }
 
+/* The sync chip keeps one line: the label shortens, the time never wraps. */
+.sidebar-sync-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-sync-time { flex-shrink: 0; white-space: nowrap; }
+
 @media (max-width: 720px) {
   .mo-tab { padding-inline: var(--sp-2); }
   :root,

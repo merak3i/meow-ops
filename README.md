@@ -171,16 +171,48 @@ Run: storefront-redesign — 3 agents — $0.84 — 12m ago
 
 Click any row for a full breakdown: token split, cache hit rate, tool usage, sidechain flag.
 
-### Agent Swarm (Today · Swarm)
+### Swarm
 
-[AutoSwarm](https://github.com/HKUDS/AutoSwarm) (MIT) hands one task to the coding agents already installed on your machine: Codex, Claude Code, Cursor, Hermes, DeepSeek Harness, Grok Build, Kimi Code and others. **Today · Swarm** (`g w`, or `#/swarm`) is its mission control, laid out as an orbit: you at the top as the approval gate, AutoSwarm at the centre, the team on one ring.
+[AutoSwarm](https://github.com/HKUDS/AutoSwarm) (MIT) hands work to the coding agents already installed on your machine: Codex, Claude Code, Cursor, Hermes, DeepSeek Harness, Grok Build, Kimi Code and others. **Swarm** is its own sidebar item (`g w`) with three tabs: **Control** to plan and run work across harnesses, **Runs** to follow it, and **Agents** to see who is proven to work. Meow Ops orchestrates; AutoSwarm and the native agents execute.
 
-- **What it shows.** Which agents AutoSwarm can find, which are proven to reply and resume their own session (a doctor probe pair with one native session id), what is running, which native approvals wait on you, and the latest delegated calls.
-- **Read-only.** The helper reads AutoSwarm's receipts under its home (`AUTOSWARM_HOME`, else `~/Library/Application Support/autoswarm` on macOS, `$XDG_STATE_HOME/autoswarm` on Linux). It never starts a call, answers an approval or runs an agent binary. Every action is a command the page copies for you: probe (spends model calls), free executable check, inspect, approve or deny with `--by user`.
-- **Missing is never zero.** A version check proves only that the binary exists. An empty native login list does not mean login is needed. Only a completed reply proves login, and only a probe pair proves native resume.
-- **Private by construction.** `/swarm/status` answers the local dashboard only. Prompts leave as a short redacted snippet (none with `MEOW_NO_SNIPPETS=1`); call output never leaves the helper. The hosted shell shows a labelled example team.
-- **Name your team.** Copy [`examples/swarm.example.json`](examples/swarm.example.json) to `~/.meow-ops/swarm.json` (or point `MEOW_SWARM_CONFIG` at it). It renames agents, recasts their cats, sets the probe workspace, hides agents you do not use and adds harnesses AutoSwarm cannot call to a dashed outer ring. It lives outside the repo and cannot change what is verified.
-- **Pinned.** `g w` from any screen, the command palette, and the installed PWA's dock menu (Agent swarm).
+#### Control: break work down, delegate, stitch it back
+
+1. **Write the goal** and pick a workspace folder.
+2. **Break it down.** Start from a template (fan out and merge, build then review, compare agents, research then write) or ask one agent to draft the breakdown. A drafted plan comes back as an editable proposal, never a run.
+3. **Delegate per step.** Each step names one harness and, optionally, a native model and effort, plus its kind: *execute*, *review* (no edits, a verdict) or *integrate* (combine inputs, say where each part came from). Dependencies form a DAG: steps with none start together, up to *at once* (1 to 8).
+4. **Check the pipeline.** The preview draws the DAG and lists the exact `autoswarm` command for every step. Problems (a cycle, a missing harness, a model id with spaces) show before dispatch.
+5. **Dispatch.** A confirm step says it spends model calls, then the helper starts ready steps as AutoSwarm background calls. When a step finishes, its output is stitched into each dependent's prompt (up to 12 KB per input, the rest stays in the AutoSwarm receipt).
+
+While it runs, **Runs** shows each step live. Approvals wait for your **Approve** or **Deny**, relayed with `--by user`. Native questions (Claude Code's AskUserQuestion, Codex, Cursor, OpenCode, Kimi and others) show their options as buttons; AutoSwarm validates your answer against the original request before the agent sees it. A failed step stops its branch until you **retry** it, on the same harness or **reassigned** to another harness or model, with every attempt kept. **Follow up** resumes the same native session. **Cancel** stops running steps and never starts queued ones. Nothing is re-run blindly.
+
+#### How the app knows about new models
+
+AutoSwarm keeps no model catalog, so Meow Ops learns models from evidence on every refresh and nothing runs a harness binary to find out:
+
+- **Settings files** of each harness name its default and profile models (for example `~/.codex/config.toml`, `~/.claude/settings.json`, `~/.hermes/config.yaml`).
+- **Your sessions.** Every model Meow Ops parsed from that harness's logs.
+- **AutoSwarm calls.** A model a step asked for, counted as accepted or rejected with the call id as proof. Effort shows *Accepted*, *Rejected* or *Untested* the same way.
+- **Your roster.** Models you pin in `~/.meow-ops/swarm.json`.
+
+The first sighting of a model is stamped in `~/.meow-ops/swarm/models.json` and flagged **new** for seven days (never on the very first scan). New models appear in the step editor's suggestions; any native id still works if you type it.
+
+#### Agents: who is proven
+
+The orbit puts you at the top as the approval gate, AutoSwarm at the centre and the team on one ring. A version check proves only that a binary exists; only a completed reply proves login, and only a doctor probe pair with one native session proves resume. Each probe, check, inspect, approve and deny is a command you can copy. Name your team by copying [`examples/swarm.example.json`](examples/swarm.example.json) to `~/.meow-ops/swarm.json` (or `MEOW_SWARM_CONFIG`): names, roles, cats, the probe workspace, hidden agents and harnesses AutoSwarm cannot call. It lives outside the repo and cannot change what is verified.
+
+#### Safety
+
+- **Local only.** Control routes answer the local dashboard only and need the `x-meow-ops-local` header. The hosted shell shows a labelled preview with dispatch off.
+- **You act, agents execute.** Dispatch, cancel, retry, follow-up, approve, deny and answer each need a one-use owner nonce. `MEOW_SWARM_DISPATCH=0` makes Swarm read-only on that machine.
+- **No shell.** AutoSwarm is spawned with an argument list. Prompts are written to `0600` files under `~/.meow-ops/swarm/runs/<run>/` (`MEOW_SWARM_DIR`). The launcher comes from `AUTOSWARM_BIN`, the helper `PATH` or AutoSwarm's installed skill.
+- **One controller per run.** Each run gets its own AutoSwarm controller, and the helper strips host session identity (`CODEX_THREAD_ID`, `AUTOSWARM_PARENT`, `AUTOSWARM_CALL_ID`) so a run never binds to whatever terminal started the helper.
+- **Messaging is opt-in.** A plain run passes no names or peer grants, so agents are not told to message a parent nobody reads. With *peers* on, a step may message only the steps it depends on, addressed by call id.
+
+#### QA without real data
+
+`npm run swarm:qa -- --fixture <AutoSwarm>/tests/fixtures/provider.py` runs the run engine and the real AutoSwarm CLI against AutoSwarm's protocol fixtures for Codex (app-server), Claude Code (stream-json), and Cursor, Hermes and DeepSeek Harness (ACP), in a temp workspace with a private AutoSwarm home: every harness solo, all 20 ordered handoffs, fan-out with each harness as integrator, a five-harness diamond, model and effort reaching the native side (or refused in the open), approve and deny per protocol, a native question answered with the panel's own answer builder, failure and reassign, cancel, the parallel cap, peers, plan drafting and session resume on every harness. `--live --yes-spend` repeats the core paths on your real harnesses with tiny dummy prompts (about six calls each), still in a temp workspace. Both write `qa-report.md` and `qa-report.json`.
+
+Old links (`#/today/swarm`, `#/autoswarm`) redirect to the Swarm tabs.
 
 ### Sanctum
 
@@ -622,6 +654,12 @@ The guide test sets system speech volume to zero and does not verify acoustic qu
 
 A local Voicebox smoke check on 2026-09-29 generated a valid 5.22-second mono 24 kHz, 16-bit WAV from synthetic text and returned 26 validated mouth cues. The audio is in Voicebox local history and has not been auditioned, so acoustic quality remains unverified.
 
+Swarm control has its own QA matrix over the real AutoSwarm CLI and its protocol fixtures (no model calls, temp workspace only):
+
+```bash
+npm run swarm:qa -- --fixture ~/Repos/AutoSwarm/tests/fixtures/provider.py --out ./qa
+```
+
 To run a single test file or test by name:
 
 ```bash
@@ -643,7 +681,7 @@ npx playwright test --reporter=list
 - **Service key is local-only.** It never appears in the production bundle.
 - **Hosted demo prompt is optional and cosmetic.** Vite exposes `VITE_` variables in client code ([Vite environment-variable docs](https://vite.dev/guide/env-and-mode#env-variables)), so `VITE_ACCESS_PASSWORD` can be recovered or bypassed; never rely on it to protect private data. Deploy only reviewed public demo assets unless hosting-level access control is configured.
 - **Optional model enrichment is bounded.** Transcript/screenshot intake uses a localhost-only LM Studio endpoint when configured. DeepSeek is optional, with per-process and weekly spend caps. Deterministic answers remain available without it.
-- **AutoSwarm receipts stay local.** `/swarm/status` is local-dashboard-only and read-only. It returns redacted prompt snippets and counts, never call output, and the personal roster in `~/.meow-ops/swarm.json` stays outside the repository.
+- **AutoSwarm stays local.** `/swarm/status` and the Swarm control routes answer the local dashboard only. Status returns redacted prompt snippets and counts; run files, prompts and step output stay in `~/.meow-ops/swarm/` on your machine, and the personal roster in `~/.meow-ops/swarm.json` stays outside the repository. Acting routes need a one-use owner nonce.
 - **No third-party product analytics or tracking scripts are configured in the app.**
 
 ---
@@ -734,6 +772,8 @@ meow-ops/
 │   │   ├── ProjectControl.tsx   Review · Projects
 │   │   ├── LoopOps.tsx          Review · Map
 │   │   ├── CostTracker.jsx      Ledger
+│   │   ├── swarm/               Swarm · Control, Runs (run monitor, pipeline)
+│   │   ├── Swarm.tsx            Swarm · Agents (orbit, verification, models)
 │   │   ├── ScryingSanctum.tsx   Sanctum
 │   │   ├── LearningQuest.tsx    Learn
 │   │   └── CapacityUsage.jsx    Hidden Seats page
@@ -761,6 +801,11 @@ meow-ops/
 │   ├── upload-to-supabase.mjs   Optional advanced Storage upload script
 │   ├── full-sync.mjs            export + upload in one shot
 │   ├── local-api.mjs            localhost sync, loop, intake, and execution API
+│   ├── swarm-status.mjs         Read-only AutoSwarm receipt reader (agents, calls, approvals)
+│   ├── swarm-orchestrator.mjs   Swarm run engine: plan DAG, dispatch, stitch, relay
+│   ├── swarm-cli.mjs            AutoSwarm launcher and argv-only command runner
+│   ├── swarm-models.mjs         Models per harness, learned from evidence
+│   ├── swarm-qa.mjs             Dummy-task QA matrix (fixtures or live harnesses)
 │   ├── intake-*.mjs              Local transcript, log, and screenshot intake
 │   ├── loop-capture.mjs          Capture runs and session evidence
 │   ├── loop-propose.mjs          Deterministic proposal generation and miners
