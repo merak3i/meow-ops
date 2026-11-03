@@ -31,6 +31,7 @@ const ROUTE_LOADERS = {
   'today/summary':  () => import('./pages/Overview'),
   'today/sessions': () => import('./pages/Sessions'),
   'today/runs':     () => import('./pages/AgentVisualizer'),
+  'today/swarm':    () => import('./pages/Swarm'),
   'today/storage':  () => import('./pages/Storage'),
   'review/inbox':   () => import('./pages/LoopReview'),
   'review/projects':() => import('./pages/ProjectControl'),
@@ -44,6 +45,7 @@ const ROUTE_LOADERS = {
 const Overview        = lazy(ROUTE_LOADERS['today/summary']);
 const Sessions        = lazy(ROUTE_LOADERS['today/sessions']);
 const AgentVisualizer = lazy(ROUTE_LOADERS['today/runs']);
+const Swarm           = lazy(ROUTE_LOADERS['today/swarm']);
 const Storage         = lazy(ROUTE_LOADERS['today/storage']);
 const LoopReview      = lazy(ROUTE_LOADERS['review/inbox']);
 const ProjectControl  = lazy(ROUTE_LOADERS['review/projects']);
@@ -62,6 +64,7 @@ const SELF_LOADING = new Set([
   'learn',
   'capacity',
   'today/storage',
+  'today/swarm',
 ]);
 
 function PageLoader() {
@@ -266,6 +269,8 @@ export default function App() {
         return withSuspense(<Sessions sessions={allSessions} dateRange={dateRange} scopeNow={scopeNow} refreshKey={reloadKey} />);
       case 'today/runs':
         return withSuspense(<AgentVisualizer sessions={allSessions} />);
+      case 'today/swarm':
+        return withSuspense(<Swarm sessions={allSessions} sessionsAreSample={isDemoData(allSessions, costSummary)} />);
       case 'today/storage':
         return withSuspense(<Storage />);
       case 'review/inbox':
@@ -320,7 +325,7 @@ export default function App() {
           ariaLabel={`${surface.label} views`}
         />
       )}
-      {isDemoData(allSessions, costSummary) && (
+      {isDemoData(allSessions, costSummary) && path !== 'today/swarm' && (
         <Notice action={<a className="mo-btn" href="http://127.0.0.1:4273/#/today/summary">Open local dashboard</a>}>
           <strong>Sample data</strong>. These figures are examples, not your local sessions.
         </Notice>

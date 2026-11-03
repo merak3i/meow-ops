@@ -1,0 +1,16 @@
+{
+  "owner": { "name": "You", "title": "approval gate" },
+  "workspace": "~/projects/example-app",
+  "hideUnconfigured": true,
+  "providers": {
+    "codex": { "name": "Codex", "role": "Plans and reviews", "cat": "architect", "effort": "high" },
+    "claude-code": { "name": "Claude Code", "role": "Builds and tests", "cat": "builder" },
+    "cursor": { "role": "Edits in the IDE", "cat": "commander" },
+    "hermes": { "role": "Long-running chores with memory", "cat": "guardian" },
+    "dsh": { "name": "DeepSeek Harness", "role": "Browser and computer use", "cat": "detective" },
+    "opencode": { "hidden": true }
+  },
+  "extras": [
+    { "id": "vm-agents", "name": "VM agents", "role": "Runs on local models", "cat": "ghost", "where": "Local VM", "note": "AutoSwarm cannot call these. Listed so the team is complete." }
+  ]
+}

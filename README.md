@@ -171,6 +171,17 @@ Run: storefront-redesign — 3 agents — $0.84 — 12m ago
 
 Click any row for a full breakdown: token split, cache hit rate, tool usage, sidechain flag.
 
+### Agent Swarm (Today · Swarm)
+
+[AutoSwarm](https://github.com/HKUDS/AutoSwarm) (MIT) hands one task to the coding agents already installed on your machine: Codex, Claude Code, Cursor, Hermes, DeepSeek Harness, Grok Build, Kimi Code and others. **Today · Swarm** (`g w`, or `#/swarm`) is its mission control, laid out as an orbit: you at the top as the approval gate, AutoSwarm at the centre, the team on one ring.
+
+- **What it shows.** Which agents AutoSwarm can find, which are proven to reply and resume their own session (a doctor probe pair with one native session id), what is running, which native approvals wait on you, and the latest delegated calls.
+- **Read-only.** The helper reads AutoSwarm's receipts under its home (`AUTOSWARM_HOME`, else `~/Library/Application Support/autoswarm` on macOS, `$XDG_STATE_HOME/autoswarm` on Linux). It never starts a call, answers an approval or runs an agent binary. Every action is a command the page copies for you: probe (spends model calls), free executable check, inspect, approve or deny with `--by user`.
+- **Missing is never zero.** A version check proves only that the binary exists. An empty native login list does not mean login is needed. Only a completed reply proves login, and only a probe pair proves native resume.
+- **Private by construction.** `/swarm/status` answers the local dashboard only. Prompts leave as a short redacted snippet (none with `MEOW_NO_SNIPPETS=1`); call output never leaves the helper. The hosted shell shows a labelled example team.
+- **Name your team.** Copy [`examples/swarm.example.json`](examples/swarm.example.json) to `~/.meow-ops/swarm.json` (or point `MEOW_SWARM_CONFIG` at it). It renames agents, recasts their cats, sets the probe workspace, hides agents you do not use and adds harnesses AutoSwarm cannot call to a dashed outer ring. It lives outside the repo and cannot change what is verified.
+- **Pinned.** `g w` from any screen, the command palette, and the installed PWA's dock menu (Agent swarm).
+
 ### Sanctum
 
 A 3D civic archive atrium for local session data. Follow session activity, token flow, latency, and health as session characters move along signal paths.
@@ -632,6 +643,7 @@ npx playwright test --reporter=list
 - **Service key is local-only.** It never appears in the production bundle.
 - **Hosted demo prompt is optional and cosmetic.** Vite exposes `VITE_` variables in client code ([Vite environment-variable docs](https://vite.dev/guide/env-and-mode#env-variables)), so `VITE_ACCESS_PASSWORD` can be recovered or bypassed; never rely on it to protect private data. Deploy only reviewed public demo assets unless hosting-level access control is configured.
 - **Optional model enrichment is bounded.** Transcript/screenshot intake uses a localhost-only LM Studio endpoint when configured. DeepSeek is optional, with per-process and weekly spend caps. Deterministic answers remain available without it.
+- **AutoSwarm receipts stay local.** `/swarm/status` is local-dashboard-only and read-only. It returns redacted prompt snippets and counts, never call output, and the personal roster in `~/.meow-ops/swarm.json` stays outside the repository.
 - **No third-party product analytics or tracking scripts are configured in the app.**
 
 ---

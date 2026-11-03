@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { NAV } from '../components/nav-config';
 
 // Global keyboard layer: Cmd/Ctrl+K opens the palette, and `g` followed by a
-// surface letter jumps directly. The `g` chord expires after 1.2s so a stray
+// surface letter jumps directly (a few tabs carry their own letter, such as
+// `g w` for Today · Swarm). The `g` chord expires after 1.2s so a stray
 // keypress does not silently arm a jump.
 
 const CHORD_TIMEOUT_MS = 1200;
@@ -17,7 +18,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 export interface ShortcutHandlers {
   onOpenPalette: () => void;
-  onNavigate: (surface: string) => void;
+  onNavigate: (surface: string, tab?: string | null) => void;
   /** True while the palette is open, so we stop handling page-level keys. */
   paletteOpen: boolean;
 }
@@ -46,11 +47,18 @@ export function useShortcuts({ onOpenPalette, onNavigate, paletteOpen }: Shortcu
       if (paletteOpen || modified || event.altKey || isTypingTarget(event.target)) return;
 
       if (chordArmed) {
-        const surface = NAV.find((entry) => entry.shortcut === event.key.toLowerCase());
+        const key = event.key.toLowerCase();
+        const surface = NAV.find((entry) => entry.shortcut === key);
+        const pinned = surface ? null : NAV.flatMap((entry) => (entry.tabs ?? [])
+          .filter((tab) => tab.shortcut === key)
+          .map((tab) => ({ surface: entry.id, tab: tab.id })))[0];
         disarm();
         if (surface) {
           event.preventDefault();
           onNavigate(surface.id);
+        } else if (pinned) {
+          event.preventDefault();
+          onNavigate(pinned.surface, pinned.tab);
         }
         return;
       }

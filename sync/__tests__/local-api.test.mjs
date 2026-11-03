@@ -76,6 +76,8 @@ before(async () => {
       MEOW_SESSION_HISTORY_DIR: historyDir,
       MEOW_LOOP_OPS_DIR: loopOpsDir,
       LOOP_OPS_SPEC: WORKBOOK,
+      AUTOSWARM_HOME: join(loopOpsDir, 'no-autoswarm-here'),
+      MEOW_SWARM_CONFIG: join(loopOpsDir, 'no-swarm.json'),
     },
     stdio: 'pipe',
   });
@@ -161,6 +163,31 @@ test('hosted dashboards cannot read or trigger local operational APIs', async ()
     const response = await fetch(`${BASE}${path}`, { method, headers: hostedHeaders });
     assert.equal(response.status, 403, `${method} ${path}`);
   }
+});
+
+test('swarm receipts are local-dashboard-only, header-gated and read-only', async () => {
+  const hosted = await fetch(`${BASE}/swarm/status`, {
+    headers: { Origin: 'https://meow-ops.vercel.app', 'x-meow-ops-local': '1' },
+  });
+  assert.equal(hosted.status, 403);
+
+  const missingHeader = await fetch(`${BASE}/swarm/status`, { headers: { Origin: 'http://localhost:4273' } });
+  assert.equal(missingHeader.status, 400);
+
+  const local = await fetch(`${BASE}/swarm/status`, {
+    headers: { Origin: 'http://localhost:4273', 'x-meow-ops-local': '1' },
+  });
+  assert.equal(local.status, 200);
+  const body = await local.json();
+  assert.equal(body.schemaVersion, 1);
+  assert.equal(body.scope, 'local-only');
+  assert.equal(body.autoswarm.exists, false);
+  assert.equal(body.providers.length, 12);
+
+  const write = await fetch(`${BASE}/swarm/status`, {
+    method: 'POST', headers: { Origin: 'http://localhost:4273', 'x-meow-ops-local': '1' },
+  });
+  assert.equal(write.status, 404);
 });
 
 test('hosted dashboard reads only redacted sync status', async () => {

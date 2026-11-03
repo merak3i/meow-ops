@@ -24,6 +24,8 @@ export interface NavTab {
   needsHelper?: boolean;
   /** Extra strings the command palette should match on. */
   keywords?: readonly string[];
+  /** Second key of a `g` jump straight to this tab, e.g. `g w` for Today · Swarm. */
+  shortcut?: string;
 }
 
 export interface NavSurface {
@@ -71,6 +73,14 @@ export const NAV: readonly NavSurface[] = [
         label: 'Runs',
         description: 'Wall-clock view of parent and subagent runs.',
         keywords: ['agent ops', 'gantt', 'timeline', 'parallel'],
+      },
+      {
+        id: 'swarm',
+        label: 'Swarm',
+        description: 'Your agents as one team: who is proven, what is running, what waits on you.',
+        needsHelper: true,
+        shortcut: 'w',
+        keywords: ['autoswarm', 'agent swarm', 'orbit', 'mission control', 'delegate', 'team', 'probe', 'approvals', 'claude code', 'codex', 'cursor', 'hermes', 'deepseek harness'],
       },
       {
         id: 'storage',
@@ -192,6 +202,9 @@ export const LEGACY_ROUTES: Readonly<Record<string, string>> = {
   pomodoro: 'today/summary',
   companion: 'today/summary',
   'learning-quest': 'learn',
+  swarm: 'today/swarm',
+  autoswarm: 'today/swarm',
+  'agent-swarm': 'today/swarm',
   'focus/timer': 'today/summary',
   'focus/companion': 'today/summary',
   'focus/practice': 'learn',

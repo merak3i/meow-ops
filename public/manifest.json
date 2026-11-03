@@ -25,5 +25,20 @@
       "type": "image/png",
       "purpose": "any"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Agent swarm",
+      "short_name": "Swarm",
+      "description": "AutoSwarm mission control: who is proven, what is running, what waits on you.",
+      "url": "/#/today/swarm",
+      "icons": [
+        {
+          "src": "/meow-logo-dark-512.png",
+          "sizes": "500x500",
+          "type": "image/png"
+        }
+      ]
+    }
   ]
 }

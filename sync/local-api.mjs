@@ -65,6 +65,7 @@ import { getCursorRequestReport } from './cursor-request-report.mjs';
 import { generateGuideVoice, guideVoiceStatus } from './guide-voicebox.mjs';
 import { readSnapshot } from './snapshot-generation.mjs';
 import { createStorageService } from './storage-service.mjs';
+import { readSwarmSnapshot } from './swarm-status.mjs';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dir, '..');
@@ -124,6 +125,7 @@ function isLocalDashboardOrigin(origin) {
 function requiresLocalDashboard(path, method) {
   return path.startsWith('/session-history/')
     || path === '/storage' || path.startsWith('/storage/')
+    || path === '/swarm' || path.startsWith('/swarm/')
     || path === '/data/snapshot.json'
     || path === '/data/sessions.json'
     || path === '/data/cost-summary.json'
@@ -333,6 +335,7 @@ const server = createServer(async (req, res) => {
   const needsBrowserHeader =
     path.startsWith('/sync')
     || path === '/storage' || path.startsWith('/storage/')
+    || path === '/swarm' || path.startsWith('/swarm/')
     || path === '/data/snapshot.json'
     || path === '/data/sessions.json'
     || path === '/data/cost-summary.json'
@@ -349,6 +352,13 @@ const server = createServer(async (req, res) => {
   if (path === '/storage' && req.method === 'GET') {
     res.setHeader('Cache-Control', 'no-store');
     sendJson(res, 200, storage.status());
+    return;
+  }
+  // Today · Swarm: AutoSwarm receipts, read-only. No route here starts a call,
+  // answers an approval or runs a provider; the page hands you the command.
+  if (path === '/swarm/status' && req.method === 'GET') {
+    try { sendJson(res, 200, readSwarmSnapshot()); }
+    catch { sendJson(res, 503, { ok: false, error: 'AutoSwarm receipts could not be read.' }); }
     return;
   }
   if (path === '/storage/refresh' && req.method === 'POST') {
@@ -1390,6 +1400,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('  GET  /data/sessions.json      - exported session metrics');
   console.log('  GET  /data/cost-summary.json  - exported spend summary');
   console.log('  GET  /session-history/sessions - filtered, paginated session archive');
+  console.log('  GET  /swarm/status            - AutoSwarm receipts, read-only');
   console.log('  GET  /loop-ops/spec           - Loop-Ops entities (local import)');
   console.log('  GET  /loop-ops/status         - Loop-Ops file freshness');
   console.log('  GET  /loop-ops/runs           - recorded loop runs');

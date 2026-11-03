@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Today · Swarm**: read-only mission control for [AutoSwarm](https://github.com/HKUDS/AutoSwarm), laid out as the MCH agent orbit (you as the approval gate, AutoSwarm at the centre, agents on one ring with Meow Ops cat portraits). Shows found vs verified agents (doctor probe pair with one native session), running calls, pending native approvals, a verification matrix and recent calls. Every action is a copied command; nothing is started, approved or run from the page. Pinned with `g w`, `#/swarm`, the palette and a PWA dock shortcut.
+- `sync/swarm-status.mjs` and `GET /swarm/status`: local-dashboard-only, header-gated reader of AutoSwarm receipts (`AUTOSWARM_HOME` or the platform default). Redacted prompt snippets, no call output, bounded scan.
+- Optional personal roster `~/.meow-ops/swarm.json` (`MEOW_SWARM_CONFIG`): names, roles, cats, probe workspace, hidden agents and harnesses outside AutoSwarm. Example in `examples/swarm.example.json`.
 - Hosted shell can connect to the local helper for redacted sync status and **Sync now** (owner decision 2026-10-11). Sessions, costs and summaries stay local. Opt out with `MEOW_HOSTED_SYNC=0`.
 - `/api/github-activity` Vercel function and a **Code activity** section in the sync drawer: latest commits and workflow runs from GitHub.
 
